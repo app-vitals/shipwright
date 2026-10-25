@@ -7,7 +7,7 @@
  * `task stack` against the local chat DB; it is never part of a deployed
  * stack.
  *
- * Flag parsing itself is covered by lib/cli-flags.unit.test.ts; this file
+ * Flag parsing itself is covered by the @app-vitals/agent-lib cli-flags tests; this file
  * only asserts that the flag-name mapping this script relies on
  * (--db-url/--admin-token/--agent-token/--agent-id, both `--flag value` and
  * `--flag=value` forms) resolves the way the CLI entrypoint expects.

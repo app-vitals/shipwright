@@ -5,7 +5,7 @@
  * test file loads, for every `bun test` invocation whose cwd is the repo
  * root — the root suite and any single-file invocation run from root
  * (`bun test path/to/file.test.ts`). This is defense-in-depth so
- * `buildSentryInitOptions()` (lib/sentry.ts) reliably treats test runs as
+ * `buildSentryInitOptions()` (@app-vitals/agent-lib/sentry) reliably treats test runs as
  * inert, without depending on the invoking shell/CI/human not already having
  * exported a conflicting NODE_ENV.
  *

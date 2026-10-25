@@ -6,7 +6,7 @@
  * admin-ui-pages.ts / admin-ui.ts's agent detail route (AEP-3.2).
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { AgentDetailCardSlot } from "../admin-extension.ts";
 import { escapeHtml } from "../admin-ui-styles.ts";
 import type { AgentCronRunService } from "../agent-cron-runs.ts";

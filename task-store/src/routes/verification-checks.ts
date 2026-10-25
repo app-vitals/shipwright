@@ -37,7 +37,7 @@
  * is unchanged for backward compatibility.
  */
 
-import { readJson } from "@app-vitals/agent-lib/http";
+import { readJson } from "@shipwright/lib/http";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { resolveAccountScope } from "../account-scope.ts";

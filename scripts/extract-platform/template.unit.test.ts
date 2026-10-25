@@ -121,14 +121,23 @@ describe("template file set", () => {
 describe("package.json", () => {
   const pkg = JSON.parse(read("package.json"));
 
-  test("workspaces are runtime, admin and lib", () => {
-    expect([...pkg.workspaces].sort()).toEqual(["admin", "lib", "runtime"]);
+  test("workspaces are runtime and admin", () => {
+    expect([...pkg.workspaces].sort()).toEqual(["admin", "runtime"]);
   });
 
-  test("depends on the three extracted packages", () => {
-    for (const name of ["agent-runtime", "agent-admin", "agent-lib"]) {
+  test("depends on the two extracted packages", () => {
+    for (const name of ["agent-runtime", "agent-admin"]) {
       expect(pkg.dependencies[`@app-vitals/${name}`]).toBe("workspace:*");
     }
+  });
+
+  // AGR-4.1: lib is no longer extracted; the tree consumes the registry
+  // package. platform-release.yml bumps this pin with Shipwright's own
+  // (Renovate ignores the template, so it is not asserted equal).
+  test("pins @app-vitals/agent-lib to an exact registry version", () => {
+    expect(pkg.dependencies["@app-vitals/agent-lib"]).toMatch(
+      /^\d+\.\d+\.\d+$/,
+    );
   });
 });
 
@@ -225,10 +234,10 @@ describe("import-boundary gate", () => {
   }
 
   test("flags specifiers that leave the tree and accepts those that do not", () => {
-    put("lib/ok.ts", "export const ok = 1;\n");
+    put("runtime/ok.ts", "export const ok = 1;\n");
     put(
       "runtime/a.ts",
-      'import { ok } from "@app-vitals/agent-lib/ok";\nimport "./b.ts";\n',
+      'import { ok } from "@app-vitals/agent-runtime/ok";\nimport { s } from "@app-vitals/agent-lib/sentry";\nimport "./b.ts";\n',
     );
     put("runtime/b.ts", 'import pg from "pg";\nexport const b = pg;\n');
     put(
@@ -237,7 +246,7 @@ describe("import-boundary gate", () => {
         'import "../../outside";',
         'import "../task-store/src/index.ts";',
         `import "${LEGACY_ADMIN}";`,
-        'import "@app-vitals/agent-lib/missing";',
+        'import "@app-vitals/agent-runtime/missing";',
         'const x = await import("./nope.ts");',
       ].join("\n"),
     );
@@ -250,7 +259,7 @@ describe("import-boundary gate", () => {
         "../../outside",
         "../task-store/src/index.ts",
         LEGACY_ADMIN,
-        "@app-vitals/agent-lib/missing",
+        "@app-vitals/agent-runtime/missing",
         "./nope.ts",
       ].sort(),
     );

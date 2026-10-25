@@ -8,6 +8,8 @@
  *   agent/src/runtime/**, agent/src/fixtures/**, agent/Dockerfile, ... -> runtime/
  *   admin/**                                                          -> admin/
  *   lib/<listed modules>                                              -> lib/
+ *     (none since AGR-4.1: the set consumes @app-vitals/agent-lib from the
+ *     registry, and the template's package.json pins it)
  *   specialties/specialist/**, docs/schemas/specialty.schema.json     -> agent-types/
  *   scripts/extract-platform/template/** (AGR-1.6)                    -> the tree root
  *
@@ -60,7 +62,7 @@ export const PATH_RENAMES: ReadonlyArray<readonly [string, string]> = [
   ["docs/schemas/specialty.schema.json", "agent-types/specialty.schema.json"],
 ];
 
-/** Files the extracted tree needs that the manifest globs do not name. */
+/** Files the extracted tree needs that the manifest globs do not name; only copied when the manifest lists lib modules (lib/ is otherwise Shipwright's own). */
 export const EXTRA_FILES: readonly string[] = ["lib/package.json"];
 
 /** Directory of static files copied over the extracted tree (relative to this script). */
@@ -226,8 +228,10 @@ export function planFiles(root: string): string[] {
   const manifest = loadManifest(join(root, "platform-manifest.json"));
   const generated = manifest.generated.map((g) => new Bun.Glob(g));
   const files = new Set(collectSetFiles(root, manifest));
-  for (const extra of EXTRA_FILES) {
-    if (existsSync(join(root, extra))) files.add(extra);
+  if (manifest.lib.length > 0) {
+    for (const extra of EXTRA_FILES) {
+      if (existsSync(join(root, extra))) files.add(extra);
+    }
   }
   return [...files]
     .filter(

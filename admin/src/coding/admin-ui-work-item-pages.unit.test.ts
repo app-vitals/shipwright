@@ -5988,7 +5988,7 @@ describe("resolveAgentNameFilterAndPaginate", () => {
 // Drawers and their scrims must render above the sticky toolbar (z-index: 100)
 // so they're never obscured by the sticky top nav. Each drawer's scrim should
 // render below the drawer itself (z-index: scrim < drawer), but both must be
-// above the toolbar (z-index > 100). Toolbar z-index is 100 per lib/web/toolbar.ts.
+// above the toolbar (z-index > 100). Toolbar z-index is 100 per @app-vitals/agent-lib/web/toolbar.
 
 describe("drawer z-index above sticky toolbar (DNZ-1.1)", () => {
   const TOOLBAR_ZINDEX = 100;

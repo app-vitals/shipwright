@@ -271,8 +271,8 @@ describe("docs/specialties-sources.md — GitHub source references section", () 
     );
   });
 
-  it("documents owner/repo validation via lib/org-repo.ts's isOrgRepo", () => {
-    expect(section).toContain("lib/org-repo.ts");
+  it("documents owner/repo validation via @app-vitals/agent-lib/org-repo's isOrgRepo", () => {
+    expect(section).toContain("@app-vitals/agent-lib/org-repo");
     expect(section).toContain("isOrgRepo");
   });
 

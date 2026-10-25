@@ -163,7 +163,7 @@ async function startServer(): Promise<void> {
   // /health liveness — see app.ts) so there's nothing to gate on
   // shuttingDown here; still wire the stop()+cleanup+exit sequence so an
   // evicted pod disconnects Prisma and exits promptly instead of riding out
-  // the full terminationGracePeriod. See lib/graceful-shutdown.ts.
+  // the full terminationGracePeriod. See @app-vitals/agent-lib/graceful-shutdown.
   registerGracefulShutdown({
     server,
     cleanup: [() => prisma.$disconnect()],

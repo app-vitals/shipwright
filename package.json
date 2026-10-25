@@ -19,9 +19,8 @@
     "format": "bunx biome format --write .",
     "typecheck": "bun run --filter='*' --sequential typecheck",
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
-    "generate:admin-types": "bunx openapi-typescript ./admin/openapi.platform.json --output ./lib/admin-types.ts && bunx openapi-typescript ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
+    "generate:admin-types": "bunx openapi-typescript ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
     "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",
-    "generate:task-store-types": "bunx openapi-typescript ./task-store/openapi.json --output ./lib/task-store-types.ts",
     "generate:chat-spec": "bun run scripts/generate-chat-spec.ts",
     "generate:mcp-tools": "bun run scripts/generate-mcp-tools.ts",
     "generate:mcp-docs": "bun run scripts/generate-mcp-docs.ts"
@@ -43,7 +42,8 @@
   },
   "dependencies": {
     "@app-vitals/agent-admin": "workspace:*",
-    "@app-vitals/agent-lib": "workspace:*",
+    "@app-vitals/agent-lib": "0.1.0",
+    "@shipwright/lib": "workspace:*",
     "@app-vitals/agent-runtime": "workspace:*",
     "@prisma/client": "^7.0.0"
   },

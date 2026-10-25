@@ -88,7 +88,7 @@ export function toPoolConfig(databaseUrl: string): pg.PoolConfig {
 
   return {
     // Legacy sslmode aliases are pinned to verify-full so a future pg major
-    // cannot silently drop certificate verification — see lib/pg-sslmode.ts.
+    // cannot silently drop certificate verification — see @app-vitals/agent-lib/pg-sslmode.
     connectionString: pinPgSslMode(url.toString()),
     connectionTimeoutMillis: Math.max(poolTimeoutMs, CONNECT_TIMEOUT_MS),
     ...overrides,
@@ -129,9 +129,9 @@ export function createTaskStorePool(
 }
 
 export interface PoolObservabilityConfig {
-  /** Undefined → lib/pool-observability's default hold threshold. */
+  /** Undefined → @app-vitals/agent-lib/pool-observability's default hold threshold. */
   holdThresholdMs?: number;
-  /** Undefined → lib/pool-observability's default monitor interval. */
+  /** Undefined → @app-vitals/agent-lib/pool-observability's default monitor interval. */
   monitorIntervalMs?: number;
 }
 

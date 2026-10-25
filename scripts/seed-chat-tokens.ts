@@ -22,7 +22,7 @@
  *
  * Pure helpers (hashRawToken) and the upsert (seedChatTokens) are exported
  * for unit testing; the import.meta.main block wires real I/O. CLI flags are
- * parsed via the shared lib/cli-flags.ts#parseFlags helper.
+ * parsed via the shared @app-vitals/agent-lib/cli-flags#parseFlags helper.
  */
 
 import { createHash } from "node:crypto";

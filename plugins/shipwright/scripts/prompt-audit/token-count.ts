@@ -19,7 +19,7 @@ export const DEFAULT_CACHE_PATH = "state/prompt-audit/token-cache.json";
 const LISTING_FRACTION = 0.01;
 
 /**
- * Plugin-local copy of lib/pricing CONTEXT_WINDOW (the plugin is
+ * Plugin-local copy of @app-vitals/agent-lib/pricing CONTEXT_WINDOW (the plugin is
  * self-contained and cannot import from lib/). token-count-parity.unit.test.ts
  * fails if this drifts from the source of truth.
  */

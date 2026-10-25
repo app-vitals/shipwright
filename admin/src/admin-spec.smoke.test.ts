@@ -11,7 +11,7 @@
  * drift: its path+method set must match the live spec plus the composed admin
  * extensions' contributions, so a route removed from (or added to) the Hono
  * registrations can't be left behind in the checked-in spec (and therefore in
- * the `lib/admin-types.ts` generated from it).
+ * the generated admin types).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -479,7 +479,7 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     const body = await res.json();
     // Runtime routes mounted via root.route("/agents", runtimeApp) appear with
     // Hono colon notation (:id) in the live /doc output — NOT curly-brace OAS
-    // notation ({id}). The committed admin/openapi.json and lib/admin-types.ts
+    // notation ({id}). The committed admin/openapi.json and the generated admin types
     // use {id} because generate-admin-spec.ts rewrites colons before writing the
     // artifact. Both are correct for their context; these assertions must match
     // the live Hono format, not the committed spec file.

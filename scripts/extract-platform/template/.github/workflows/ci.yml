@@ -53,7 +53,7 @@ jobs:
         run: bun run typecheck
 
       # Port of the monorepo's platform gate: no import may leave runtime/,
-      # admin/, lib/ and agent-types/.
+      # admin/ and agent-types/ (@app-vitals/agent-lib comes from the registry).
       - name: Import-boundary gate
         run: bun run check:boundary
 

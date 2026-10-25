@@ -1,7 +1,7 @@
 /**
  * plugins/shipwright/scripts/prompt-audit/token-count-parity.unit.test.ts
  *
- * Pins the plugin-local CONTEXT_WINDOW map to lib/pricing's source of truth.
+ * Pins the plugin-local CONTEXT_WINDOW map to @app-vitals/agent-lib/pricing's source of truth.
  */
 
 import { describe, expect, test } from "bun:test";

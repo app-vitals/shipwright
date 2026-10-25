@@ -46,6 +46,7 @@ jobs:
           filters: |
             changed:
               - "agent/**"
+              - "lib/**"
               - "plugins/**"
               - ".claude-plugin/**"
               - "package.json"

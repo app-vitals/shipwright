@@ -1,4 +1,4 @@
-import { DEFAULT_CLAUDE_TIMEOUT_MS } from "./claude-timeout.ts";
+import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@app-vitals/agent-lib/claude-timeout";
 
 /** Extra headroom added on top of the session timeout (5min). */
 export const CLAIM_TTL_BUFFER_MS = 300_000;

@@ -1,6 +1,6 @@
 # Observability
 
-> Optional Sentry error/log reporting, wired identically across the admin, metrics, task-store, and agent services via the shared `lib/sentry.ts` helper.
+> Optional Sentry error/log reporting, wired identically across the admin, metrics, task-store, and agent services via the shared `@app-vitals/agent-lib/sentry` helper.
 
 Everything below this line through [Configuration reference](#configuration-reference) covers the **write side**: services reporting their own errors/logs into Sentry via the SDK. See [Read side](#read-side) for the error-patrol skills, which query the Sentry Issues API in the opposite direction — pulling issues *out* of Sentry to drive automated fixes.
 
@@ -8,7 +8,7 @@ Everything below this line through [Configuration reference](#configuration-refe
 
 Every Shipwright service (`admin`, `metrics`, `task-store`, `agent`) can report to Sentry when `SENTRY_DSN` is set in its own environment. Each service reads its own `SENTRY_DSN` — there is no shared/global toggle. When `SENTRY_DSN` is unset (the default), or when `NODE_ENV` is `"test"` (set via a `bunfig.toml` `[test]` preload script, `scripts/test-env-preload.ts`, before any test file loads for `bun test` runs whose cwd is the repo root — each subpackage's own `test` script additionally carries an explicit `NODE_ENV=test` prefix, since Bun does not apply a root `bunfig.toml`'s preload to `bun test` runs whose cwd is a subpackage directory), Sentry is fully inert: no init call, zero telemetry, zero overhead. The test guard prevents test error-path assertions from leaking to production Sentry as real events.
 
-All services share the same init options and scrub hooks via `buildSentryInitOptions()` / `initSentry()` in `lib/sentry.ts`, so behavior is identical regardless of which service reports.
+All services share the same init options and scrub hooks via `buildSentryInitOptions()` / `initSentry()` in `@app-vitals/agent-lib/sentry`, so behavior is identical regardless of which service reports.
 
 ## What is collected
 
@@ -25,7 +25,7 @@ When `SENTRY_DSN` is set, a service reports to Sentry. Below is a summary of wha
 | Request or response bodies | No — never attached to an event, with one narrow exception: see [Foreign response-body snippets](#foreign-response-body-snippets) |
 | The live value of any secret-shaped env var | Redacted — scrubbed wherever it appears, including nested inside longer strings |
 
-**Tags** are structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
+**Tags** are structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `@app-vitals/agent-lib/sentry`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
 
 ### Foreign response-body snippets
 
@@ -62,11 +62,11 @@ The task-store instruments its `pg` pool to diagnose pool starvation (Sentry SEN
 - **Pool monitor** — every `SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS` (default 30000) the pool is checked and `pg pool has waiting clients` is logged when `waiting > 0`. It is stopped on graceful shutdown.
 - **Sentry** — when an unhandled error is a pool timeout (Prisma `P2028`, `Unable to start a transaction`, or a pg connection timeout), the captured event carries a `pg_pool` context (total/idle/waiting/max and route) and `route` / `server_name` tags. Other errors are captured unchanged.
 
-Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in [`lib/pool-observability.ts`](../lib/pool-observability.ts).
+Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in `@app-vitals/agent-lib/pool-observability`.
 
 ### Pool starvation diagnostics (admin)
 
-The admin service instruments its own `pg.Pool` (separate from task-store's) using [`lib/pool-observability.ts`](../lib/pool-observability.ts). This is observability only: pool size and queries are unchanged.
+The admin service instruments its own `pg.Pool` (separate from task-store's) using `@app-vitals/agent-lib/pool-observability`. This is observability only: pool size and queries are unchanged.
 
 - **Route context** — a middleware records the HTTP method and matched route pattern for each request.
 - **Hold tracking** — `pool.connect()` is wrapped so a connection held longer than `SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, `heldMs`, and pool stats.
@@ -112,5 +112,5 @@ See the `SENTRY_DSN` / `SENTRY_ENVIRONMENT` rows under [Observability](./configu
 ## See also
 
 - [`docs/configuration.md`](./configuration.md) — full env var reference
-- [`lib/sentry.ts`](../lib/sentry.ts) — shared init options, scrub hooks, and secret allowlist
+- `@app-vitals/agent-lib/sentry` (registry package) — shared init options, scrub hooks, and secret allowlist
 - [`plugins/shipwright/skills/error-scan/SKILL.md`](../plugins/shipwright/skills/error-scan/SKILL.md), [`error-fix/SKILL.md`](../plugins/shipwright/skills/error-fix/SKILL.md), [`error-resolve/SKILL.md`](../plugins/shipwright/skills/error-resolve/SKILL.md) — the read-side skills

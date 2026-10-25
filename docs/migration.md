@@ -120,9 +120,9 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
   body — along with the `AgentSchema` response shape it returned — is gone from
   `admin/src/openapi-schemas.ts`.
 - `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
-  regenerated [`lib/admin-types.ts`](../lib/admin-types.ts) drops the matching
+  regenerated `@app-vitals/agent-lib/admin-types` drops the matching
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
-  from that file. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
+  from that package. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
   the generated types in sync going forward.
 - `AdminDeps.specialtyRegistry` is now unused by `agents-api.ts` and is retained only as an
   optional field for backward-compatible construction; the admin UI carries its own
@@ -254,7 +254,7 @@ instead of by Prisma's engine. Two connection-string behaviors change as a resul
   that `prefer` / `require` / `verify-ca` will adopt libpq semantics (for `require`: encrypt,
   verify nothing) in its next major. So a `pg` upgrade can't silently weaken verification, admin,
   task-store, and chat rewrite those three values to `sslmode=verify-full` in the string they hand
-  to `pg.Pool` (`lib/pg-sslmode.ts`), which also silences the warning. The env var itself is
+  to `pg.Pool` (`@app-vitals/agent-lib/pg-sslmode`), which also silences the warning. The env var itself is
   not modified, so the Prisma CLI still sees your original URL. An explicit
   `uselibpqcompat=true` opts out and is left untouched. Keeping `sslmode=require` in the URL is
   therefore the recommended form: the Prisma CLI's engine recognizes only

@@ -470,7 +470,7 @@ export interface LoopOrchestratorDeps {
    * console.warn/console.error forwarded as a Sentry Log by
    * consoleLoggingIntegration) carries those tags, so a Sentry
    * Issue/Log is attributable to the specific task/PR in flight — not
-   * just "which service/agent" (lib/sentry.ts's static initialScope
+   * just "which service/agent" (@app-vitals/agent-lib/sentry's static initialScope
    * tags). `withScope` is optional on ErrorCapturingClient — a fake that
    * only implements `captureException` (the older, pre-LO-1.1 shape)
    * still type-checks; dispatch() falls back to running the per-item body

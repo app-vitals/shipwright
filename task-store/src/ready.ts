@@ -32,7 +32,7 @@
  * interface — the dependency semantics are identical.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 
 /** The minimal Task shape resolveReadyTasks needs. */
 export interface ReadyTaskLike {

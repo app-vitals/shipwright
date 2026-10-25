@@ -32,13 +32,13 @@
  *   helper later tasks use to read it.
  *
  * Caller:
- *   A shared `Caller` (see lib/request-context.ts) is also stored as `caller`,
+ *   A shared `Caller` (see @app-vitals/agent-lib/request-context) is also stored as `caller`,
  *   for use in logging (e.g. app.ts's onError handler). Admin tokens resolve
  *   to {name: 'admin', scope: '*'}; agent tokens resolve to {name: agentId,
  *   scope: agentId}.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { MiddlewareHandler } from "hono";
 import type { TokenServiceLike } from "./token-service.ts";
@@ -85,7 +85,7 @@ export type TaskStoreAuthEnv = {
      * NO_ACCESS_ACCOUNT_ID = scope resolution failed (scopeDegraded) — matches no rows.
      */
     accountId: string | null;
-    /** Shared caller identity, derived from agentId — see lib/request-context.ts. */
+    /** Shared caller identity, derived from agentId — see @app-vitals/agent-lib/request-context. */
     caller: Caller;
   };
 };

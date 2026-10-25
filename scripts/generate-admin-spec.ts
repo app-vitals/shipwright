@@ -5,8 +5,10 @@
  *   1. Builds the platform-only document (buildPlatformAdminSpec from the
  *      @app-vitals/agent-admin package: the admin CRUD app and the agent
  *      runtime app merged, no extension routes) and writes it to
- *      admin/openapi.platform.json. It feeds the platform half of the admin
- *      types (lib/admin-types.ts).
+ *      admin/openapi.platform.json. The platform half of the admin types
+ *      (@app-vitals/agent-lib/admin-types) is generated and published by the
+ *      platform repository since AGR-4.1; admin-types-split.unit.test.ts
+ *      checks the registry copy covers this spec.
  *   2. Folds in the static OpenAPI contributions of the admin extensions
  *      main.ts composes (AEP-2.1): the coding extension's routes, each placed
  *      at its historical position (AEP-3.2), and writes the composed document

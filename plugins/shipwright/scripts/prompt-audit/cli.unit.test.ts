@@ -16,7 +16,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type CliDeps, nodeCliDeps, parseArgs, runCli } from "./cli.ts";
+import {
+  type CliDeps,
+  nodeCliDeps,
+  parseArgs,
+  rateKeys,
+  runCli,
+} from "./cli.ts";
 import { countTokens } from "./token-count.ts";
 
 const NOW = new Date("2026-10-08T00:00:00Z");
@@ -103,6 +109,26 @@ describe("parseArgs", () => {
     expect(a.flags.has("json")).toBe(true);
     expect(a.flags.has("dry-run")).toBe(true);
     expect(a.values["since-days"]).toBe("7");
+  });
+});
+
+describe("rateKeys", () => {
+  const PRICING = `export const RATES: Record<string, Rate> = {\n  "claude-a-1": { input: 1, output: 2 },\n  "claude-b-2": { input: 3, output: 4 },\n};\n`;
+
+  test("reads RATES from a local lib/pricing.ts", () => {
+    const deps = memDeps();
+    deps.files["lib/pricing.ts"] = PRICING;
+    expect(rateKeys("/r", deps)).toEqual(["claude-a-1", "claude-b-2"]);
+  });
+
+  test("falls back to the installed @app-vitals/agent-lib package (AGR-4.1)", () => {
+    const deps = memDeps();
+    deps.files["node_modules/@app-vitals/agent-lib/pricing.ts"] = PRICING;
+    expect(rateKeys("/r", deps)).toEqual(["claude-a-1", "claude-b-2"]);
+  });
+
+  test("is empty when neither exists", () => {
+    expect(rateKeys("/r", memDeps())).toEqual([]);
   });
 });
 
