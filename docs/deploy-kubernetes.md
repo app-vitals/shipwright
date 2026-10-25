@@ -140,6 +140,31 @@ notice instead of buttons.
 
 ---
 
+## Admin feature flags
+
+The admin service supports several optional feature flags that gate functionality:
+
+- **`admin.ask.enabled`** — Agent ask feature (`SHIPWRIGHT_AGENT_ASK_ENABLED`). Defaults to `false`. When enabled, also configure `admin.ask.allowlist` with `fromAgentId>toAgentId` pairs (e.g., `[agent-a>agent-b]`); empty means no agent may ask any agent.
+- **`admin.chatCredentialMint.enabled`** — Chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). Defaults to `false`.
+- **`admin.doc.enabled`** — Admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). Defaults to `false`.
+
+Example:
+
+```yaml
+admin:
+  ask:
+    enabled: true
+    allowlist:
+      - agent-a>agent-b
+      - agent-b>agent-c
+  chatCredentialMint:
+    enabled: true
+  doc:
+    enabled: false
+```
+
+---
+
 ## Optional add-ons
 
 Beyond the core deploy concerns above, the chart supports several optional,

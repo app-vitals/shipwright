@@ -133,6 +133,10 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.service.port` | `3001` | Admin service port. |
 | `admin.replicas` | `1` | Admin replica count. |
 | `admin.appBaseUrl` | `""` | Public base URL for the admin service (`SHIPWRIGHT_ADMIN_APP_BASE_URL`, used for OAuth redirect URIs). An explicit value always wins; when empty and `networking.type` is `ingress` or `gateway`, it's auto-derived as `<scheme>://<public host>` from the active networking config (`https` when TLS is on); otherwise (`ClusterIP`/`NodePort`/`LoadBalancer`) the env var is omitted. |
+| `admin.ask.enabled` | `false` | Toggle the agent ask feature (`SHIPWRIGHT_AGENT_ASK_ENABLED`). |
+| `admin.ask.allowlist` | `[]` | Ask feature allowlist: array of `fromAgentId>toAgentId` pairs matching pattern `^[^,>]+>[^,>]+$` (comma-joined in env). Empty means no agent may ask any agent. |
+| `admin.chatCredentialMint.enabled` | `false` | Toggle chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). |
+| `admin.doc.enabled` | `false` | Toggle the admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). |
 | `metrics.enabled` | `true` | Toggle the metrics dashboard (port **3460**). |
 | `metrics.image.repository` | `ghcr.io/app-vitals/shipwright-metrics` | Metrics image repo (fully-qualified GHCR default). |
 | `metrics.image.tag` | pinned per release | Metrics image tag, rewritten on every chart release. |

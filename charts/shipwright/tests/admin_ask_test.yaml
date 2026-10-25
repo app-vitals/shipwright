@@ -1,0 +1,57 @@
+suite: admin ask feature flag
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: renders no ask env by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ALLOWLIST
+
+  - it: renders ask env when enabled with allowlist
+    set:
+      admin.ask.enabled: true
+      admin.ask.allowlist:
+        - agent-a>agent-b
+        - agent-b>agent-c
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ENABLED
+            value: "enabled"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ALLOWLIST
+            value: "agent-a>agent-b,agent-b>agent-c"
+
+  - it: renders empty allowlist when enabled with no allowlist items
+    set:
+      admin.ask.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ENABLED
+            value: "enabled"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ALLOWLIST
+            value: ""
+
+  - it: rejects invalid allowlist pattern via the schema
+    set:
+      admin.ask.allowlist:
+        - "invalid_format"
+    asserts:
+      - failedTemplate: {}

@@ -1,0 +1,32 @@
+suite: admin default env golden (COS-34.1)
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: renders exactly the pre-change admin container env with default values
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: PORT
+              value: "3001"
+            - name: DATABASE_URL_SHIPWRIGHT_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: r-shipwright-admin
+                  key: DATABASE_URL_SHIPWRIGHT_ADMIN
+            - name: SHIPWRIGHT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: r-shipwright-admin
+                  key: SHIPWRIGHT_SESSION_SECRET
+            - name: SHIPWRIGHT_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: r-shipwright-admin
+                  key: SHIPWRIGHT_ENCRYPTION_KEY
+            - name: NODE_ENV
+              value: "development"
+            - name: ADMIN_DEV_AUTH
+              value: "true"

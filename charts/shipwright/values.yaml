@@ -284,6 +284,20 @@ admin:
       existingSecret: ""
       key: SENTRY_DSN
     environment: ""
+  # -- Agent ask feature configuration.
+  ask:
+    # -- Enable the ask feature (sets SHIPWRIGHT_AGENT_ASK_ENABLED).
+    enabled: false
+    # -- Allowlist of `fromAgentId>toAgentId` pairs permitted to ask (comma-joined in env). Empty means no agent may ask any agent.
+    allowlist: []
+  # -- Chat credential mint configuration.
+  chatCredentialMint:
+    # -- Enable chat credential minting (sets SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED).
+    enabled: false
+  # -- Admin documentation feature configuration.
+  doc:
+    # -- Enable the doc feature (sets SHIPWRIGHT_ADMIN_DOC_ENABLED).
+    enabled: false
   # -- Extra annotations for the admin pod template (spec.template.metadata.
   # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
   # above). Empty by default. On GKE Autopilot, set
