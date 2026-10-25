@@ -10,7 +10,10 @@ name: Platform Release Bump
 # This workflow re-pins every registry @app-vitals/agent-* dependency to that
 # exact version (scripts/platform-release-bump.ts, in every package.json that
 # declares one), refreshes bun.lock, and opens the bump PR, or updates the
-# open one, on the fixed branch chore/platform-release. Renovate's
+# open one, on the fixed branch chore/platform-release. It then waits for the
+# PR's required checks (rerunning failed ones, up to 3 attempts) and admin-
+# merges its own PR (the bot cannot self-approve it). If a required check
+# keeps failing, the job fails and the PR is left open. Renovate's
 # "app-vitals agent platform" group (renovate.json) is the fallback if a
 # dispatch is missed.
 #
@@ -20,9 +23,9 @@ name: Platform Release Bump
 # source header. platform-docs-guard.yml blocks hand edits to that directory
 # from any other PR.
 #
-# Failures are loud: the job fails, and a failure step opens (or comments on)
-# a "platform release bump failed" issue, because a stalled release chain
-# otherwise goes unnoticed for days.
+# Failures are loud: the job fails (leaving the PR open), and a failure step
+# opens (or comments on) a "platform release bump failed" issue, because a
+# stalled release chain otherwise goes unnoticed for days.
 #
 # The version comes from an external event, so it is never interpolated into
 # a script: it reaches every step through env and is validated as strict
@@ -54,7 +57,7 @@ concurrency:
 jobs:
   bump:
     name: bump @app-vitals/agent-* and open PR
-    timeout-minutes: 15
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the bump branch
@@ -136,6 +139,7 @@ jobs:
       # carries the `platform-cutover` label for platform-freeze-guard.yml
       # (removed with the guard in AGR-4.4). It only re-pins versions.
       - name: Open or update the bump PR
+        id: pr
         if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -156,6 +160,7 @@ jobs:
           if [ -n "$PR_URL" ]; then
             gh pr edit "$PR_URL" --title "$TITLE" --body "$BODY"
             echo "Updated PR: ${PR_URL}"
+            echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
           else
             PR_URL=$(gh pr create \
               --base main \
@@ -165,7 +170,127 @@ jobs:
               --label platform-cutover \
               --body "$BODY")
             echo "Opened PR: ${PR_URL}"
+            echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
           fi
+
+      # Required checks must pass before the bump lands, and the bump PR cannot
+      # be self-approved (it sits BLOCKED), so the workflow waits for the
+      # required checks (rerunning failed ones up to 3 attempts) and
+      # admin-merges its own PR. Logic mirrors the "Wait for checks and merge"
+      # step in auto-bump-chart.yml and the helpers in
+      # .github/workflows/test-auto-bump-chart.sh — keep both copies in sync.
+      # A failing required check exits 1: the job goes red, the failure() step
+      # below opens an issue, and the PR is left open for a human.
+      # Stale-base retry: "Base branch was modified" is a transient GraphQL
+      # error when main moves between the checks passing and the merge; retry a
+      # few times, never retry any other merge failure.
+      - name: Wait for checks and merge
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+        run: |
+          # `gh pr checks --watch --required` fails fast with "no required
+          # checks reported" if it runs before GitHub has registered any
+          # *required* check run on the new commit. A non-required check
+          # (e.g. "Detect changed paths") commonly registers first — polling
+          # for ANY check (no --required filter) let this loop exit early on
+          # that non-required check, before a required check had appeared,
+          # handing off to --watch --required prematurely and failing
+          # instantly. Poll specifically for a required check to register
+          # before handing off to --watch --required below.
+          echo "Waiting for required checks to register on ${PR_URL}..."
+          for _ in $(seq 1 30); do
+            CHECK_COUNT=$(gh pr checks "$PR_URL" --required --json name -q 'length' 2>/dev/null || echo 0)
+            [ "$CHECK_COUNT" -gt 0 ] && break
+            sleep 2
+          done
+
+          # Extracts the numeric run id from a `gh pr checks --json link`
+          # URL, e.g. ".../actions/runs/31518876841/job/93871505296" →
+          # "31518876841". Mirrors
+          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
+          # sync.
+          extract_run_id_from_link() {
+            local link="$1"
+            echo "$link" | sed -n 's#.*/actions/runs/\([0-9]\+\).*#\1#p'
+          }
+
+          # Prints the unique set of run ids (one per line) behind every
+          # required check whose state is not SUCCESS, from the JSON array
+          # produced by `gh pr checks --required --json name,state,link`.
+          # `state` values from `gh pr checks --json` are uppercase
+          # (SUCCESS, FAILURE, ...). Mirrors
+          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
+          # sync.
+          failed_required_check_run_ids() {
+            local checks_json="$1"
+            echo "$checks_json" \
+              | python3 -c 'import json, sys; data = json.load(sys.stdin); [print(c["link"]) for c in data if c.get("state") != "SUCCESS"]' \
+              | while IFS= read -r link; do
+                  extract_run_id_from_link "$link"
+                done \
+              | sort -u
+          }
+
+          echo "Waiting for required checks on ${PR_URL}..."
+          CHECKS_MAX_ATTEMPTS=3
+          for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
+            gh pr checks "$PR_URL" --watch --interval 15 --required && break
+
+            echo "Required check(s) failed on attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS}." >&2
+
+            if [ "$checks_attempt" -ge "$CHECKS_MAX_ATTEMPTS" ]; then
+              echo "ERROR: exhausted ${CHECKS_MAX_ATTEMPTS} attempts waiting for required checks to pass on ${PR_URL}." >&2
+              exit 1
+            fi
+
+            CHECKS_JSON=$(gh pr checks "$PR_URL" --required --json name,state,link)
+            RUN_IDS=$(failed_required_check_run_ids "$CHECKS_JSON")
+
+            if [ -z "$RUN_IDS" ]; then
+              echo "No failed required check run ids found to rerun — not retrying." >&2
+              exit 1
+            fi
+
+            echo "Rerunning failed job(s) behind: $(echo "$RUN_IDS" | paste -sd, -)"
+            while IFS= read -r run_id; do
+              [ -z "$run_id" ] && continue
+              gh run rerun "$run_id" --failed
+            done <<< "$RUN_IDS"
+          done
+          echo "Checks passed — merging ${PR_URL}."
+
+          # Detects the transient stale-base GraphQL error (see comment
+          # above). Mirrors .github/workflows/test-auto-bump-chart.sh — keep
+          # both copies in sync.
+          is_stale_base_error() {
+            local output="$1"
+            if echo "$output" | grep -qi "Base branch was modified"; then
+              return 0
+            fi
+            return 1
+          }
+
+          MAX_ATTEMPTS=3
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
+              echo "$MERGE_OUTPUT"
+              echo "Merged ${PR_URL}."
+              exit 0
+            }
+
+            echo "$MERGE_OUTPUT" >&2
+
+            if is_stale_base_error "$MERGE_OUTPUT" && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Stale-base race detected (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in 5s..."
+              sleep 5
+              continue
+            fi
+
+            echo "Merge failed on attempt ${attempt}/${MAX_ATTEMPTS} — not retrying (either not a stale-base error, or retries exhausted)."
+            exit 1
+          done
 
       - name: Open an issue on failure
         if: failure()
