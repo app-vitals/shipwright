@@ -51,7 +51,7 @@ export function createChatPool(
 ): pg.Pool {
   const pool = new pg.Pool({
     // Legacy sslmode aliases are pinned to verify-full so a future pg major
-    // cannot silently drop certificate verification — see lib/pg-sslmode.ts.
+    // cannot silently drop certificate verification — see @app-vitals/agent-lib/pg-sslmode.
     connectionString: pinPgSslMode(databaseUrl),
     connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS,
   });

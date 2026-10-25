@@ -11,7 +11,6 @@ COPY admin/package.json ./admin/
 COPY admin/prisma ./admin/prisma/
 COPY admin/prisma.config.ts ./admin/
 COPY runtime/package.json ./runtime/
-COPY lib/package.json ./lib/
 COPY patches/ ./patches/
 
 RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; else bun install; fi
@@ -28,7 +27,6 @@ ENV NODE_ENV=production
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/admin/node_modules ./admin/node_modules
-COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 # .dockerignore keeps node_modules, .git and build output out of the context.
 COPY . .

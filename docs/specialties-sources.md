@@ -20,7 +20,7 @@ github:owner/repo[/path]@ref
 
 ### `owner/repo` validation
 
-The `owner/repo` portion of the reference is validated with the same rule already used elsewhere in this codebase for org/repo strings: [`lib/org-repo.ts`](../lib/org-repo.ts)'s `isOrgRepo` — split on `/`, require exactly two non-empty parts. A future loader is expected to reuse `isOrgRepo` directly rather than reimplement the check.
+The `owner/repo` portion of the reference is validated with the same rule already used elsewhere in this codebase for org/repo strings: `@app-vitals/agent-lib/org-repo`'s `isOrgRepo` — split on `/`, require exactly two non-empty parts. A future loader is expected to reuse `isOrgRepo` directly rather than reimplement the check.
 
 ### Conventional layout
 

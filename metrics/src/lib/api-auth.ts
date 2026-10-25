@@ -24,7 +24,7 @@ import type { AccountsClient } from "./accounts-client.ts";
 import { ForbiddenError } from "./errors.ts";
 
 // Re-exported so existing `import type { Caller } from "./api-auth.ts"` call
-// sites keep working; the shared shape now lives in lib/request-context.ts.
+// sites keep working; the shared shape now lives in @app-vitals/agent-lib/request-context.
 export type { Caller };
 
 // Hono env type for routes that use the auth middleware

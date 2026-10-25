@@ -164,17 +164,16 @@ COPY runtime/package.json ./runtime/
 COPY admin/package.json ./admin/
 COPY admin/prisma ./admin/prisma/
 COPY admin/prisma.config.ts ./admin/
-COPY lib/package.json ./lib/
 COPY patches/ ./patches/
 
 RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; else bun install; fi
 
-# Workspace sources. @app-vitals/agent-lib / -runtime / -admin are workspace
+# Workspace sources. @app-vitals/agent-runtime / -admin are workspace
 # symlinks; only their package.json files were copied above, so the sources
-# must exist for the symlinks to resolve.
+# must exist for the symlinks to resolve. @app-vitals/agent-lib is a registry
+# package and lives in the root node_modules installed above.
 COPY runtime/ ./runtime/
 COPY admin/ ./admin/
-COPY lib/ ./lib/
 # Agent-type definitions (setup.ts reads identity.templatesDir from them).
 COPY agent-types/ ./agent-types/
 # Composition root spawned by runtime/entrypoint.ts (../index.ts).
@@ -217,7 +216,6 @@ ENV PATH="/home/bun/.local/share/mise/shims:/app/scripts/bin:${PATH}"
 COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=build --chown=1000:1000 /app/runtime ./runtime
 COPY --from=build --chown=1000:1000 /app/admin ./admin
-COPY --from=build --chown=1000:1000 /app/lib ./lib
 COPY --from=build --chown=1000:1000 /app/agent-types ./agent-types
 COPY --from=build --chown=1000:1000 /app/index.ts ./index.ts
 COPY --from=build --chown=1000:1000 /app/scripts ./scripts

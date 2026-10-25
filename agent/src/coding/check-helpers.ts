@@ -409,7 +409,7 @@ const BODY_SNIPPET_LIMIT = 500;
  * of it is attached to a thrown Error.
  *
  * `docs/observability.md` documents that request/response bodies are never
- * attached to a Sentry event, and `lib/sentry.ts`'s scrub hook only redacts
+ * attached to a Sentry event, and `@app-vitals/agent-lib/sentry`'s scrub hook only redacts
  * *this* process's own live `SECRET_ENV_VARS` values by exact string match —
  * neither does anything for credential material embedded in a *different*
  * service's response body (e.g. a Prisma `P1013` error echoing task-store's
@@ -608,7 +608,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
         // alone, without cross-referencing task-store's own logs/Sentry events
         // by timestamp. The snippet passes through redactBodySnippet first —
         // this Error's message reaches Sentry via captureException, and
-        // lib/sentry.ts's scrub hook cannot redact another service's secrets.
+        // @app-vitals/agent-lib/sentry's scrub hook cannot redact another service's secrets.
         let bodySnippet = "";
         try {
           bodySnippet = redactBodySnippet(await res.text());

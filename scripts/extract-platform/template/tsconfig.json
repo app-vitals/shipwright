@@ -10,12 +10,6 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": [
-    "runtime",
-    "admin/src",
-    "admin/prisma.config.ts",
-    "lib",
-    "scripts"
-  ],
+  "include": ["runtime", "admin/src", "admin/prisma.config.ts", "scripts"],
   "exclude": ["**/node_modules", "**/dist", "admin/e2e", "admin/prisma/client"]
 }

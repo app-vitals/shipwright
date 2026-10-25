@@ -256,7 +256,7 @@ async function startServer(): Promise<void> {
     pool,
     // Once a shutdown signal has been received, fail readiness immediately
     // (no DB round-trip) so Kubernetes pulls this pod from Service endpoints
-    // as early as possible — see lib/graceful-shutdown.ts.
+    // as early as possible — see @app-vitals/agent-lib/graceful-shutdown.
     checkDbReady: () =>
       isShuttingDown() ? Promise.resolve(false) : checkDbReady(prisma),
   });

@@ -33,7 +33,7 @@ const RULE_BY_KIND: Record<RefKind, ResolverRule> = {
 };
 
 export interface ResolverDeps extends InventoryDeps {
-  /** Keys of `RATES` in lib/pricing.ts — the model ids that still price. */
+  /** Keys of `RATES` in @app-vitals/agent-lib/pricing — the model ids that still price. */
   rateKeys: string[];
 }
 

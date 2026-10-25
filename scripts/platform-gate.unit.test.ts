@@ -46,7 +46,7 @@ beforeEach(() => {
   write("lib/other.ts");
   write(
     "runtime/a.ts",
-    `import { b } from "./b.ts";\nimport { l } from "@app-vitals/agent-lib/leaf";\n`,
+    `import { b } from "./b.ts";\nimport { l } from "@shipwright/lib/leaf";\n`,
   );
   write("runtime/b.ts");
   write("admin/src/x.ts", `import type { T } from "../../runtime/a.ts";\n`);
@@ -254,7 +254,7 @@ describe("analyzeClosure", () => {
   });
 
   it("fails on a lib module the set imports but the manifest does not list", () => {
-    write("runtime/b.ts", `import { o } from "@app-vitals/agent-lib/other";\n`);
+    write("runtime/b.ts", `import { o } from "@shipwright/lib/other";\n`);
     const { violations } = analyzeClosure(root, manifest());
     expect(violations).toEqual([
       expect.objectContaining({
@@ -263,6 +263,16 @@ describe("analyzeClosure", () => {
         reason: "unlisted-lib-module",
       }),
     ]);
+  });
+
+  it("treats @app-vitals/agent-lib/* as a registry package, not an edge (AGR-4.1)", () => {
+    // lib/other.ts exists locally but is unlisted: the registry specifier must
+    // not be mapped onto the local lib/ directory.
+    write(
+      "runtime/b.ts",
+      `import { o } from "@app-vitals/agent-lib/other";\nimport { s } from "@app-vitals/agent-lib/sentry";\n`,
+    );
+    expect(analyzeClosure(root, manifest()).violations).toEqual([]);
   });
 
   it("fails on a relative path into an unlisted lib module", () => {
@@ -349,10 +359,7 @@ describe("analyzeClosure", () => {
 
 describe("checkLibTags", () => {
   it("passes when tags match who imports each lib module outside the set", () => {
-    write(
-      "task-store/src/t.ts",
-      `import { l } from "@app-vitals/agent-lib/leaf";\n`,
-    );
+    write("task-store/src/t.ts", `import { l } from "@shipwright/lib/leaf";\n`);
     const m = manifest({
       lib: [{ module: "leaf", tag: "shared", sharedWith: ["task-store"] }],
     });
@@ -360,10 +367,7 @@ describe("checkLibTags", () => {
   });
 
   it("fails when a platform-only module is imported outside the set", () => {
-    write(
-      "task-store/src/t.ts",
-      `import { l } from "@app-vitals/agent-lib/leaf";\n`,
-    );
+    write("task-store/src/t.ts", `import { l } from "@shipwright/lib/leaf";\n`);
     const errors = checkLibTags(root, manifest());
     expect(errors).toEqual([
       "lib/leaf is tagged platform-only but is imported by: task-store",
@@ -381,7 +385,7 @@ describe("checkLibTags", () => {
   });
 
   it("fails on a stale sharedWith entry and on a missing one", () => {
-    write("chat/src/c.ts", `import { l } from "@app-vitals/agent-lib/leaf";\n`);
+    write("chat/src/c.ts", `import { l } from "@shipwright/lib/leaf";\n`);
     const m = manifest({
       lib: [{ module: "leaf", tag: "shared", sharedWith: ["metrics"] }],
     });

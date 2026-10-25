@@ -18,7 +18,8 @@
     "@prisma/client": "^7.10.0",
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
-    "@app-vitals/agent-lib": "workspace:*",
+    "@app-vitals/agent-lib": "0.1.0",
+    "@shipwright/lib": "workspace:*",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
     "zod": "^4"

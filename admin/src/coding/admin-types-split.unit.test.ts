@@ -2,13 +2,14 @@
  * admin/src/coding/admin-types-split.unit.test.ts
  *
  * The generated admin types are split in two (AGR-1.4): the platform half
- * (lib/admin-types.ts, generated from admin/openapi.platform.json) ships with
- * the platform and types the runtime's admin client; the coding half
- * (admin/src/coding/admin-types.ts, generated from
- * admin/src/coding/openapi.coding.json) is Shipwright's. The runtime's typed
- * client must never depend on Shipwright coding endpoints, so the platform
- * half imports nothing at all (in particular nothing from the coding half)
- * and declares none of the coding extension's paths.
+ * (`@app-vitals/agent-lib/admin-types`, consumed from the registry since
+ * AGR-4.1 and generated in the platform repository) types the runtime's admin
+ * client; the coding half (admin/src/coding/admin-types.ts, generated from
+ * admin/src/coding/openapi.coding.json) is Shipwright's. The platform half
+ * must import nothing at all (in particular nothing from the coding half) and
+ * must cover every path of this repository's platform spec. It may be ahead
+ * of that spec (the platform releases independently), and keeping coding
+ * paths out of it is now the platform repository's check, not this one's.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -53,18 +54,19 @@ describe("generated admin types split (platform | coding)", () => {
     expect(moduleSpecifiers(platformSource)).toEqual([]);
   });
 
-  it("the platform types declare exactly the platform spec's paths", () => {
+  it("the registry platform types declare every path of the local platform spec", () => {
     const platformSpec = readJson(join(ADMIN_DIR, "openapi.platform.json"));
-    expect(pathKeys(platformSource)).toEqual(Object.keys(platformSpec.paths));
+    const declared = new Set(pathKeys(platformSource));
+    expect(
+      Object.keys(platformSpec.paths).filter((p) => !declared.has(p)),
+    ).toEqual([]);
   });
 
-  it("the coding half holds the coding paths, none of which are in the platform half", () => {
+  it("the coding half holds exactly the coding paths", () => {
     const codingSpec = readJson(join(CODING_DIR, "openapi.coding.json"));
     const codingPaths = Object.keys(codingSpec.paths);
     expect(codingPaths.length).toBeGreaterThan(0);
     expect(pathKeys(codingSource)).toEqual(codingPaths);
-    const platformPaths = new Set(pathKeys(platformSource));
-    expect(codingPaths.filter((p) => platformPaths.has(p))).toEqual([]);
   });
 
   it("platform + coding paths cover the composed admin/openapi.json", () => {

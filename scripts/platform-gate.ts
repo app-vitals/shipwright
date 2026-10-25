@@ -12,8 +12,11 @@
  * `@app-vitals/agent-runtime/*` (agent/src/runtime) and
  * `@app-vitals/agent-admin[/*]` (admin, per its exports map) must resolve to a
  * file inside the set. npm packages and `node:`/`bun:` builtins
- * are not edges. `@app-vitals/agent-lib/*` modules are the one allowed way out of
- * admin/agent directories, and only if listed in the manifest's `lib` table.
+ * are not edges; that includes `@app-vitals/agent-lib/*`, which is consumed
+ * from the registry since AGR-4.1. The local, Shipwright-only lib
+ * (`@shipwright/lib/*`, or a relative path into `lib/`) is the one allowed way
+ * out of admin/agent directories, and only if listed in the manifest's `lib`
+ * table (empty today: the platform set imports nothing local).
  *
  * Exports are pure/fs-light so platform-gate.unit.test.ts can drive them with
  * a fixture tree; platform-manifest.unit.test.ts runs them on the real repo.
@@ -260,8 +263,6 @@ export function collectSetFiles(root: string, m: PlatformManifest): string[] {
 
 /** Maps a workspace specifier to the repo-relative path it resolves to, or null if not a workspace specifier. */
 function workspaceTarget(spec: string): string | null {
-  const libMatch = /^@app-vitals\/agent-lib(?:\/(.*))?$/.exec(spec);
-  if (libMatch) return libMatch[1] ? `lib/${libMatch[1]}` : "lib";
   const runtimeMatch = /^@app-vitals\/agent-runtime(?:\/(.*))?$/.exec(spec);
   if (runtimeMatch) {
     return runtimeMatch[1]

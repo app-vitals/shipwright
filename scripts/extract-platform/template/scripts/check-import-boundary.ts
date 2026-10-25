@@ -2,17 +2,17 @@
 /**
  * scripts/check-import-boundary.ts
  *
- * Import-boundary gate. Walks every TypeScript source in runtime/, admin/,
- * lib/ and agent-types/ plus the root index.ts, and fails on any module
+ * Import-boundary gate. Walks every TypeScript source in runtime/, admin/
+ * and agent-types/ plus the root index.ts, and fails on any module
  * specifier that leaves the repository:
  *
  *   - relative specifiers must resolve to a file inside the repository
- *   - @app-vitals/agent-runtime/*, @app-vitals/agent-lib/* and
- *     @app-vitals/agent-admin[/*] must resolve to a source file in runtime/,
- *     lib/ or admin/
+ *   - @app-vitals/agent-runtime/* and @app-vitals/agent-admin[/*] must
+ *     resolve to a source file in runtime/ or admin/
  *   - the pre-extraction workspace scope is not allowed
  *
- * npm packages and node:/bun: builtins are not edges.
+ * npm packages and node:/bun: builtins are not edges; that includes
+ * @app-vitals/agent-lib/*, a pinned registry dependency.
  *
  * Usage: bun scripts/check-import-boundary.ts [root]
  */
@@ -23,7 +23,7 @@ import { dirname, join, relative, resolve } from "node:path";
 /** The workspace scope used before the packages moved to @app-vitals/. */
 const LEGACY_SCOPE = `@${"shipwright"}/`;
 
-const SCAN_DIRS = ["runtime", "admin", "lib", "agent-types", "scripts"];
+const SCAN_DIRS = ["runtime", "admin", "agent-types", "scripts"];
 const SCAN_FILES = ["index.ts"];
 const SKIP_DIRS = new Set(["node_modules", "dist", "client", "e2e"]);
 /** Tests that carry import specifiers as string fixtures, not real imports. */
@@ -100,7 +100,7 @@ function checkSpecifier(
     if (rel.startsWith(join("admin", "prisma", "client"))) return null;
     return resolves(target) ? null : "does not resolve to a file";
   }
-  const workspace = /^@app-vitals\/agent-(runtime|lib|admin)(?:\/(.+))?$/.exec(
+  const workspace = /^@app-vitals\/agent-(runtime|admin)(?:\/(.+))?$/.exec(
     spec,
   );
   if (workspace) {

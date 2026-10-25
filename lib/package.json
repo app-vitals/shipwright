@@ -1,33 +1,15 @@
 {
-  "name": "@app-vitals/agent-lib",
+  "name": "@shipwright/lib",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./admin-types": "./admin-types.ts",
-    "./agent-default-tools": "./agent-default-tools.ts",
     "./chat-notify": "./chat-notify.ts",
     "./claim-ttl": "./claim-ttl.ts",
-    "./claude-timeout": "./claude-timeout.ts",
-    "./cli-flags": "./cli-flags.ts",
-    "./clone-plan": "./clone-plan.ts",
-    "./github-login": "./github-login.ts",
-    "./graceful-shutdown": "./graceful-shutdown.ts",
-    "./http": "./http.ts",
-    "./org-repo": "./org-repo.ts",
-    "./pg-sslmode": "./pg-sslmode.ts",
-    "./pool-observability": "./pool-observability.ts",
-    "./pricing": "./pricing.ts",
-    "./progress-phases": "./progress-phases.ts",
-    "./request-context": "./request-context.ts",
-    "./secret-env-vars": "./secret-env-vars.ts",
     "./default-account": "./default-account.ts",
-    "./default-agent-env": "./default-agent-env.ts",
-    "./sentry": "./sentry.ts",
-    "./task-store-types": "./task-store-types.ts",
-    "./web/*": "./web/*"
+    "./http": "./http.ts"
   },
   "dependencies": {
-    "@sentry/bun": "^10.63.0"
+    "@app-vitals/agent-lib": "0.1.0"
   }
 }

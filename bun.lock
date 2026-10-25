@@ -6,9 +6,10 @@
       "name": "shipwright-monorepo",
       "dependencies": {
         "@app-vitals/agent-admin": "workspace:*",
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@app-vitals/agent-runtime": "workspace:*",
         "@prisma/client": "^7.0.0",
+        "@shipwright/lib": "workspace:*",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.5.13",
@@ -31,7 +32,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@anthropic-ai/sdk": "0.135.0",
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -55,13 +56,14 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.428.2",
+      "version": "1.433.0",
       "dependencies": {
         "@app-vitals/agent-admin": "workspace:*",
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@app-vitals/agent-runtime": "workspace:*",
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
+        "@shipwright/lib": "workspace:*",
         "@slack/bolt": "^5.0.0",
         "@slack/web-api": "^8.1.0",
         "hono": "^4.13.1",
@@ -88,10 +90,11 @@
       "name": "@shipwright/chat",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
+        "@shipwright/lib": "workspace:*",
         "hono": "^4.13.1",
         "pg": "^8.16.3",
         "zod": "^4",
@@ -104,10 +107,10 @@
       },
     },
     "lib": {
-      "name": "@app-vitals/agent-lib",
+      "name": "@shipwright/lib",
       "version": "0.1.0",
       "dependencies": {
-        "@sentry/bun": "^10.63.0",
+        "@app-vitals/agent-lib": "0.1.0",
       },
     },
     "mcp-server": {
@@ -124,9 +127,9 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.428.2",
+      "version": "1.433.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@hono/zod-openapi": "^1.0.0",
         "@sentry/bun": "^10.63.0",
         "@sentry/hono": "^10.63.0",
@@ -142,7 +145,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.428.2",
+      "version": "1.433.0",
       "dependencies": {
         "@app-vitals/agent-runtime": "workspace:*",
         "js-yaml": "^5.0.0",
@@ -157,12 +160,13 @@
       "name": "@shipwright/task-store",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "workspace:*",
+        "@app-vitals/agent-lib": "0.1.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
         "@sentry/bun": "^10.63.0",
         "@sentry/hono": "^10.63.0",
+        "@shipwright/lib": "workspace:*",
         "hono": "^4.13.1",
         "pg": "^8.16.3",
         "zod": "^4",
@@ -211,7 +215,7 @@
 
     "@app-vitals/agent-admin": ["@app-vitals/agent-admin@workspace:admin"],
 
-    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@workspace:lib"],
+    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.1.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-1esy2i8/gw6aMfnVuLgEhQGb0yKa9dPbF0mkv0oIlTp2Sfd7rNACM5KSKg3ANC+5uXm6sw+KjaLDjB7tRwvrbw=="],
 
     "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@workspace:agent/src/runtime"],
 
@@ -406,6 +410,8 @@
     "@shipwright/agent": ["@shipwright/agent@workspace:agent"],
 
     "@shipwright/chat": ["@shipwright/chat@workspace:chat"],
+
+    "@shipwright/lib": ["@shipwright/lib@workspace:lib"],
 
     "@shipwright/mcp-server": ["@shipwright/mcp-server@workspace:mcp-server"],
 

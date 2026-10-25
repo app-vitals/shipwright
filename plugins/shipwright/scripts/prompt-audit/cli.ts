@@ -137,9 +137,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 // ─── scan ────────────────────────────────────────────────────────────────────
 
-function rateKeys(root: string, deps: CliDeps): string[] {
-  if (!deps.fs.exists(root, "lib/pricing.ts")) return [];
-  const text = deps.fs.readFile(root, "lib/pricing.ts");
+/**
+ * Where the RATES table may live in the scanned repo: a local lib/, or the
+ * published @app-vitals/agent-lib package (Shipwright consumes it from the
+ * registry since AGR-4.1). First existing path wins.
+ */
+export const PRICING_PATHS = [
+  "lib/pricing.ts",
+  "node_modules/@app-vitals/agent-lib/pricing.ts",
+] as const;
+
+export function rateKeys(root: string, deps: Pick<CliDeps, "fs">): string[] {
+  const path = PRICING_PATHS.find((p) => deps.fs.exists(root, p));
+  if (!path) return [];
+  const text = deps.fs.readFile(root, path);
   const block = /RATES[^=]*=\s*\{([\s\S]*?)\n\};/.exec(text)?.[1] ?? "";
   return [...block.matchAll(/^\s*"?([\w.-]+)"?\s*:\s*\{/gm)].map((m) => m[1]);
 }

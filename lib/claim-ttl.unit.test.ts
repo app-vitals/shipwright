@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CLAIM_TTL_BUFFER_MS, DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
-import { DEFAULT_CLAUDE_TIMEOUT_MS } from "./claude-timeout.ts";
+import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@app-vitals/agent-lib/claude-timeout";
 
 describe("claim-ttl constants", () => {
   test("CLAIM_TTL_BUFFER_MS is 300_000 (5min)", () => {

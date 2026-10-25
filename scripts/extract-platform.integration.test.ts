@@ -139,7 +139,7 @@ describe("extractPlatform", () => {
       expect(existsSync(join(out, path))).toBe(true);
     expect(
       JSON.parse(readFileSync(join(out, "package.json"), "utf8")).workspaces,
-    ).toEqual(["lib", "runtime", "admin"]);
+    ).toEqual(["runtime", "admin"]);
     expect(readFileSync(join(out, "runtime/Dockerfile"), "utf8")).toBe(
       readFileSync(join(TEMPLATE_DIR, "runtime/Dockerfile"), "utf8"),
     );

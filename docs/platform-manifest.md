@@ -45,12 +45,14 @@ The tags are checked against the repo, not just declared: the test fails if a pl
 
 The gate only records which modules are shared. Whether they are copied, published as a package or consumed from the platform repo stays a decision for the extraction itself.
 
+**Since AGR-4.1 the table is empty.** The shared modules are published by the platform repository as `@app-vitals/agent-lib` and consumed from the registry (pinned exactly, bumped by `.github/workflows/platform-release.yml`). `lib/` now holds only Shipwright's own modules (`@shipwright/lib`: `chat-notify`, `claim-ttl`, `default-account`, `http`), none of which the set imports. A set file that imports one is an `unlisted-lib-module` violation, because that module does not exist in the platform.
+
 ## What the gate checks
 
 For every file in the set (tests included), the walker reads each module specifier: `import`, `import type`, `export ... from`, side-effect `import "x"`, dynamic `import("x")`, `require("x")` and `mock.module("x")`. Comments and string contents are ignored.
 
 - Relative specifiers (`./x`, `../../y`), `@shipwright/*` workspace specifiers and `@app-vitals/agent-runtime/*` (resolved to `agent/src/runtime/*`) and `@app-vitals/agent-admin[/*]` (resolved per `admin/package.json`'s exports map: the root to `admin/src/server.ts`, specs/Prisma files to `admin/`, everything else to `admin/src/`) must resolve to a file inside the set.
-- `@app-vitals/agent-lib/*` (or a relative path into `lib/`) must name a listed `lib` module.
+- `@shipwright/lib/*` (or a relative path into `lib/`) must name a listed `lib` module. `@app-vitals/agent-lib/*` is a registry package, so it is not an edge.
 - Imports of a path matching `generated` (the git-ignored Prisma client) count as inside the set.
 - npm packages and `node:`/`bun:` builtins are not edges.
 
@@ -95,7 +97,7 @@ Layout of the output:
 |---|---|
 | `agent/src/runtime/**`, `agent/src/fixtures/**` (to `runtime/fixtures/`), `agent/src/entrypoint-main.ts`, `agent/Dockerfile`, `agent/workspace/**` | `runtime/` |
 | `admin/**` | `admin/` |
-| the listed `lib` modules and `lib/package.json` | `lib/` |
+| the listed `lib` modules and `lib/package.json` (none since AGR-4.1; the template's `package.json` pins `@app-vitals/agent-lib` from the registry instead) | `lib/` |
 | `specialties/specialist/**`, `docs/schemas/specialty.schema.json` | `agent-types/` |
 | `scripts/extract-platform/template/**` | the tree root (see below) |
 
@@ -109,7 +111,7 @@ The rewrite only sees module specifiers and JSON path values, plus the absolute 
 
 | Group | Files |
 |---|---|
-| Root config | `package.json` (workspaces `runtime`, `admin`, `lib`), `tsconfig.json`, `biome.json`, `bunfig.toml`, `.gitignore`, `.dockerignore`, `.releaserc.json`, `renovate.json`, `patches/` |
+| Root config | `package.json` (workspaces `runtime`, `admin`; `@app-vitals/agent-lib` pinned from the registry), `tsconfig.json`, `biome.json`, `bunfig.toml`, `.gitignore`, `.dockerignore`, `.releaserc.json`, `renovate.json`, `patches/` |
 | Docs and license | `LICENSE` (MIT), `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` |
 | Workflows (`.github/workflows/`) | `ci.yml` (lint, typecheck, import-boundary gate, tests, admin and runtime docker builds, browser-launch check, base-image contract smoke), `pr-title-lint.yml`, `release.yml` (semantic-release) |
 | Images | `runtime/Dockerfile` (`ghcr.io/app-vitals/agent`) and `admin/Dockerfile` (`ghcr.io/app-vitals/agent-admin`); neither copies `task-store/`, `chat/`, `plugins/`, `metrics/` or `mcp-server/`. The runtime image keeps the module-resolution guard and the base-image contract (`/opt/shipwright/marketplaces/`, `installPlugins()`, `/app/runtime/entrypoint-main.ts`). |
@@ -202,7 +204,7 @@ The extracted tree excludes `specialties/coding/` and the coding workspace templ
 - **New platform file under an included directory:** nothing to do. It is picked up by the globs and checked.
 - **New file that should move:** add its path or glob to `include`.
 - **New coding-only file inside a platform directory:** move it under `admin/src/coding/` or `agent/src/coding/`, or add an `exclude` glob. An excluded file can no longer be imported by the set.
-- **New `lib` import in the set:** add the module to the `lib` table with its tag. The test names the module and who else imports it.
+- **New `lib` import in the set:** the module belongs in the platform's `@app-vitals/agent-lib`, not Shipwright's `lib/`. Land it in the platform repository and import it from the registry package; the `lib` table stays empty.
 - **New composition file:** add it to `compositionRoots` with a reason.
 
 ## Limits

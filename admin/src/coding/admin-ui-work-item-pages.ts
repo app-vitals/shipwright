@@ -7,7 +7,7 @@
  * coding AdminExtension's admin UI routes (admin-ui-coding.ts).
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { renderAdminPage } from "../admin-ui-layout.ts";
 import { relativeTime, renderMarkdown } from "../admin-ui-pages.ts";
 import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
@@ -265,7 +265,7 @@ const TASKS_PAGE_EXTRA_STYLES = `
        cascade tie because extraStyles renders after baseStyles() — so only
        the board (AXR-1.3's 5-column Kanban) stretches full width; table
        view and every other admin page stay capped. The
-       @media (max-width:640px) padding rule for .vos-page (lib/web/toolbar.ts)
+       @media (max-width:640px) padding rule for .vos-page (@app-vitals/agent-lib/web/toolbar)
        is untouched and still applies here. */
     .tasks-board-page { max-width:none;width:100% }
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }

@@ -2,7 +2,7 @@
  * agent/scripts/cli-scripts.unit.test.ts
  *
  * Argument-handling tests for the operator CLI scripts that parse argv via
- * lib/cli-flags.ts. The scripts run on import, so each case spawns one and
+ * @app-vitals/agent-lib/cli-flags. The scripts run on import, so each case spawns one and
  * asserts on exit code/output; every case exits before any network or DB use.
  */
 

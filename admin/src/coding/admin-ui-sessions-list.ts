@@ -18,7 +18,7 @@
  * registerSessionSettingsRoutes()/admin-ui-sessions.ts.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { AdminUIEnv } from "../admin-ui.ts";
 import { renderAdminPage } from "../admin-ui-layout.ts";

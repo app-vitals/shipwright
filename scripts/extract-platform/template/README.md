@@ -6,10 +6,9 @@ An open-source platform for running always-on AI agents: the agent runtime, the 
 |---|---|---|
 | `runtime/` | `@app-vitals/agent-runtime` | The agent process: startup sequence, Slack and cron handling, Claude Code sessions, health probe |
 | `admin/` | `@app-vitals/agent-admin` | CRUD API and UI for agents, env vars, cron jobs, tokens, tools and plugins (Hono + Prisma + Postgres) |
-| `lib/` | `@app-vitals/agent-lib` | Small modules shared by the runtime and the admin |
 | `agent-types/` | | Agent-type definitions and the JSON schema they validate against |
 
-All three packages ship TypeScript source and are MIT licensed.
+Both packages ship TypeScript source and are MIT licensed. The small modules they share come from the `@app-vitals/agent-lib` registry package.
 
 ## Images
 
@@ -40,7 +39,7 @@ CI enforces the contract with `runtime/base-image-contract.smoke.test.ts`.
 bun install
 bun run lint
 bun run typecheck
-bun run check:boundary   # no import may leave runtime/, admin/, lib/ and agent-types/
+bun run check:boundary   # no import may leave runtime/, admin/ and agent-types/
 bun test
 ```
 
