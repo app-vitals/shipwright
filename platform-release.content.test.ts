@@ -53,7 +53,7 @@ const runOf = (pred: (s: Step) => boolean) =>
 const allRuns = runOf(() => true).join("\n");
 /** GitHub expression and shell-variable text, built so this source holds no literal template-looking strings. */
 const gha = (expr: string) => `$${"{{"} ${expr} }}`;
-const shellVar = (name: string) => "$" + `{${name}}`;
+const shellVar = (name: string) => ["$", "{", name, "}"].join("");
 
 describe("platform-release.yml triggers", () => {
   it("receives the platform-release repository_dispatch", () => {
@@ -112,10 +112,25 @@ describe("platform-release.yml bump", () => {
     expect(install).toBeGreaterThan(bump);
   });
 
-  it("commits only package.json files and bun.lock, on one fixed bump branch", () => {
+  it("commits only package.json files, bun.lock and the docs snapshot, on one fixed bump branch", () => {
     expect(job.env?.BRANCH).toBe("chore/platform-release");
+    expect(allRuns).toContain("git add -A -- docs/platform");
     expect(allRuns).toContain("git add -u -- bun.lock '*package.json'");
     expect(allRuns).toContain('git push --force origin "$BRANCH"');
+  });
+
+  it("snapshots the platform docs from the release tag before committing", () => {
+    const checkout = steps.find(
+      (s) => s.with?.repository === "app-vitals/agent",
+    );
+    expect(checkout?.with?.ref).toBe(`refs/tags/v${gha("env.VERSION")}`);
+    expect(checkout?.with?.token).toBe(gha("secrets.DISPATCH_TOKEN"));
+    expect(checkout?.with?.["persist-credentials"]).toBe(false);
+    const snap = allRuns.indexOf(
+      'bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src',
+    );
+    expect(snap).toBeGreaterThan(allRuns.indexOf("platform-release-bump.ts"));
+    expect(snap).toBeLessThan(allRuns.indexOf("git commit"));
   });
 
   it("opens or updates the PR with a pr-title-lint-clean title and the platform-cutover label", () => {
@@ -144,5 +159,23 @@ describe("platform-release.yml bump", () => {
     expect(onFailure.length).toBe(1);
     expect(onFailure[0].run).toContain("gh issue create");
     expect(onFailure[0].run).toContain("gh issue comment");
+  });
+});
+
+describe("platform-docs-guard.yml", () => {
+  const guard = readFileSync(
+    join(ROOT, ".github/workflows/platform-docs-guard.yml"),
+    "utf8",
+  );
+
+  it("runs the guard on PRs with the head branch passed via env, not interpolated", () => {
+    expect(guard).toContain("pull_request:");
+    expect(guard).toContain(
+      'bun scripts/platform-docs-guard.ts "$RUNNER_TEMP/changed.txt" "$HEAD_REF"',
+    );
+    const run = (Bun.YAML.parse(guard) as Workflow).jobs["docs-guard"].steps
+      .map((s) => s.run ?? "")
+      .join("\n");
+    expect(run).not.toContain(gha("").slice(0, 3));
   });
 });

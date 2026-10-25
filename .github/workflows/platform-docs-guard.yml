@@ -1,0 +1,35 @@
+name: platform-docs-guard
+
+# PLD-2.1: docs/platform/ is a generated snapshot of app-vitals/agent's docs,
+# refreshed only by the platform-release bump PR (chore/platform-release).
+# Fail any other PR that touches it.
+# Logic: scripts/platform-docs-guard.ts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  docs-guard:
+    name: Platform docs snapshot is read-only
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Check changed paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          # A fork branch named like the bump branch must not bypass the guard.
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then HEAD_REF="fork:$HEAD_REF"; fi
+          git diff --no-renames --name-only "$BASE_SHA"..."$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
+          bun scripts/platform-docs-guard.ts "$RUNNER_TEMP/changed.txt" "$HEAD_REF"
