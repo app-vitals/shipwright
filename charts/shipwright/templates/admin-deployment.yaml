@@ -437,6 +437,29 @@ spec:
               value: {{ .contactEmail | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.admin.ask }}
+            {{- if .enabled }}
+            # ── Agent ask feature flag
+            - name: SHIPWRIGHT_AGENT_ASK_ENABLED
+              value: "enabled"
+            - name: SHIPWRIGHT_AGENT_ASK_ALLOWLIST
+              value: {{ join "," .allowlist | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.admin.chatCredentialMint }}
+            {{- if .enabled }}
+            # ── Chat credential mint feature flag
+            - name: SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
+            {{- with .Values.admin.doc }}
+            {{- if .enabled }}
+            # ── Admin documentation feature flag
+            - name: SHIPWRIGHT_ADMIN_DOC_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.

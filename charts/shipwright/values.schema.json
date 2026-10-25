@@ -222,6 +222,34 @@
               }
             },
             "appBaseUrl": { "type": "string" },
+            "ask": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "allowlist": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^,>]+>[^,>]+$"
+                  }
+                }
+              }
+            },
+            "chatCredentialMint": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "doc": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
             "extraEnv": {
               "type": "array",
               "items": {
