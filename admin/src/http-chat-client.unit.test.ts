@@ -4,11 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  type ChatMessage,
-  filterSince,
-  HttpChatClient,
-} from "./http-chat-client.ts";
+import { type ChatMessage, filterSince } from "./http-chat-client.ts";
 
 function msg(id: string): ChatMessage {
   return {
@@ -53,42 +49,5 @@ describe("filterSince (CFB-2.3 incremental ?since polling)", () => {
       "c",
       "d",
     ]);
-  });
-});
-
-describe("HttpChatClient.createThread ask fields (COS-29.1)", () => {
-  function capture(): { client: HttpChatClient; body: () => unknown } {
-    let sent: unknown;
-    const fetchFn = (async (_url: RequestInfo | URL, init?: RequestInit) => {
-      sent = JSON.parse(init?.body as string);
-      return new Response(JSON.stringify({ id: "t" }), { status: 201 });
-    }) as typeof fetch;
-    return {
-      client: new HttpChatClient("https://chat.example.com", "tok", {
-        fetchFn,
-      }),
-      body: () => sent,
-    };
-  }
-
-  test("sends kind, askFromAgentId and askDepth (including 0) when provided", async () => {
-    const { client, body } = capture();
-    await client.createThread("a1", {
-      kind: "ask",
-      askFromAgentId: "a2",
-      askDepth: 0,
-    });
-    expect(body()).toEqual({
-      agentId: "a1",
-      kind: "ask",
-      askFromAgentId: "a2",
-      askDepth: 0,
-    });
-  });
-
-  test("omits the ask fields when not provided", async () => {
-    const { client, body } = capture();
-    await client.createThread("a1", { title: "hi" });
-    expect(body()).toEqual({ agentId: "a1", title: "hi" });
   });
 });

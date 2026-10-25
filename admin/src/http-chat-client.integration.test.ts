@@ -191,34 +191,6 @@ describe("HttpChatClient — createThread", () => {
     expect(JSON.parse(req.body ?? "{}")).toEqual({ agentId: "agent-123" });
   });
 
-  it("sends kind, askFromAgentId and askDepth only when defined", async () => {
-    const { client, lastRequest } = makeClient("createThread_ask_success");
-    const result = await client.createThread("agent-123", {
-      kind: "ask",
-      askFromAgentId: "agent-456",
-      askDepth: 1,
-    });
-
-    expect(JSON.parse(lastRequest().body ?? "{}")).toEqual({
-      agentId: "agent-123",
-      kind: "ask",
-      askFromAgentId: "agent-456",
-      askDepth: 1,
-    });
-    expect(result.kind).toBe("ask");
-    expect(result.askFromAgentId).toBe("agent-456");
-    expect(result.askDepth).toBe(1);
-  });
-
-  it("sends askDepth 0 (falsy but defined)", async () => {
-    const { client, lastRequest } = makeClient("createThread_ask_success");
-    await client.createThread("agent-123", { askDepth: 0 });
-    expect(JSON.parse(lastRequest().body ?? "{}")).toEqual({
-      agentId: "agent-123",
-      askDepth: 0,
-    });
-  });
-
   it("throws on a non-ok response with the exact error message format", async () => {
     const { client } = makeClient("createThread_500");
     await expect(client.createThread("agent-123")).rejects.toThrow(

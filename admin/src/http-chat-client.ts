@@ -13,10 +13,6 @@ export interface ChatThread {
   agentId: string;
   title: string | null;
   memberId: string | null;
-  /** Admin-only thread kind; only "ask" today. Absent/null for normal threads. */
-  kind?: string | null;
-  askFromAgentId?: string | null;
-  askDepth?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,9 +101,6 @@ interface ListMessagesOptions {
 interface CreateThreadOptions {
   title?: string;
   memberId?: string;
-  kind?: string;
-  askFromAgentId?: string;
-  askDepth?: number;
 }
 
 interface UpdateThreadOptions {
@@ -274,11 +267,6 @@ export class HttpChatClient implements ChatClient {
         agentId,
         ...(opts?.title ? { title: opts.title } : {}),
         ...(opts?.memberId ? { memberId: opts.memberId } : {}),
-        ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
-        ...(opts?.askFromAgentId !== undefined
-          ? { askFromAgentId: opts.askFromAgentId }
-          : {}),
-        ...(opts?.askDepth !== undefined ? { askDepth: opts.askDepth } : {}),
       }),
     });
     if (!res.ok) {
