@@ -180,7 +180,7 @@ startup, and the startup policy-only reconcile adds or removes the wiring on
 existing agents. See
 [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service).
 
-When moving an existing deployment to federation, clean the stored credentials with the one-off `POST /agents/federation/strip-credentials` migration (dry run by default); see [`agent-api.md`](./agent-api.md#environment-variables).
+When moving an existing deployment to federation, clean the stored credentials with the one-off `POST /agents/federation/strip-credentials` migration (dry run by default); see [`agent-api.md`](./platform/agent-api.md#environment-variables).
 
 The chart injects these for you via `agent.provisioning.anthropicFederation`:
 
@@ -309,7 +309,7 @@ are at most 255 characters (the base is truncated to fit) and are unique.
 Set `nameSuffix` when several clusters share one Anthropic organization, so
 their names do not collide. The domain is dropped, so a name identifies the
 owner only loosely. For the exact owner, read the agent record (see the
-[IT runbook](./anthropic-usage-by-agent.md)).
+[IT runbook](./platform/anthropic-usage-by-agent.md)).
 
 ##### Migrating existing agents
 
@@ -348,7 +348,7 @@ Deleting an agent removes its Anthropic identity as part of
 and the checklist names the identity pieces still live.
 
 To attribute Anthropic usage to agents and owners, see
-[Anthropic usage by agent](./anthropic-usage-by-agent.md).
+[Anthropic usage by agent](./platform/anthropic-usage-by-agent.md).
 
 ### Chat service provisioning (opt-in)
 

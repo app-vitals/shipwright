@@ -1,51 +1,8 @@
 # Shipwright Agent — Operations
 
+> Coding half. The platform half is the vendored snapshot [`docs/platform/agent-ops.md`](./platform/agent-ops.md), sourced from `app-vitals/agent`.
+
 > Tool authorization/narrowing, default system crons, environment configuration, and baked marketplaces for the Shipwright agent (artifact **C**). See [agent.md](./agent.md) for the agent's architecture, HTTP surfaces, and data model.
-
-## Tool management and narrowing
-
-The agent runtime implements a two-tier tool authorization system to narrowly grant Claude access to tools: **floor tools** (unconditional, always present) and **allowed tools** (DB-driven, configurable per agent).
-
-### Floor tools
-
-When the agent spawns a Claude session, it always includes a fixed set of 7 **floor tools** (`FLOOR_TOOLS` constant in `agent/src/runtime/claude.ts`):
-
-- `Read` — read-only file access (safe, no side effects)
-- `Write` — create new files (safe, limited blast radius)
-- `Edit` — modify existing file content (safe, scoped)
-- `Glob` — pattern-based file discovery (safe, read-only)
-- `Grep` — content search (safe, read-only)
-- `Skill` — invoke built-in skills (safe by design; does not grant additional system access)
-- `TodoWrite` — legacy task-tracking tool (safe, limited scope)
-
-These tools are **non-revocable** — they are not derivable from the `AgentTool` database table and are always granted, regardless of agent configuration. They have no meaningful security delta from `Read` (which is the assumed safe baseline) and enable essential read-only operations without privileging escalation.
-
-**Crucially**, `Bash`, `WebSearch`, `WebFetch`, `Agent`, and `Monitor` are **not** in the floor set. These are high-privilege tools (arbitrary system execution, external HTTP, sub-agent spawning, and streaming monitoring) and must be explicitly seeded into the agent's `AgentTool` table to be available. An agent with no `AgentTool` rows (or a 404'd config bundle from the admin API) receives only the 7 floor tools and cannot execute shell commands, fetch external URLs, dispatch sub-agents, or stream monitoring data.
-
-### Configurable allowed tools (`AgentTool` table)
-
-Tools beyond the floor set are configured via the `AgentTool` database table (one row per tool pattern per agent). When a new agent is created — either via the admin console's web form (`POST /admin/agents`) or the JSON admin API (`POST /agents`) — the creation process seeds `AgentTool` rows (including high-privilege tools like Bash, WebSearch, WebFetch, Agent, and Monitor) from the resolved Specialty manifest's `tools[]` (see `specialties/coding/manifest.yaml` for the default "coding" type). Operators and integrations can then toggle individual tools on/off via the admin UI or the `/agents/:id/tools` CRUD API.
-
-The agent's config sync loop (every 60 seconds) fetches the agent's full tool list from `/agents/:id/config`, decrypts it, and merges with the floor tools. Deduplication preserves insertion order (floor-tools-first, then extra-allowed-tools), so floor tools always take precedence in the final list.
-
-**Tool changes flow:**
-1. Operator/integration updates AgentTool rows via the admin API (`POST`/`PATCH`/`DELETE /agents/:id/tools/:toolId`)
-2. Agent's 60-second config sync fetches updated `allowedTools` from `/agents/:id/config`
-3. Next Claude session (up to 1 minute later) sees the new tool list — no pod restart required
-
-### Example: narrowing an agent to read-only mode
-
-To disable shell access and external requests for a risky agent, note that the `:toolId` path
-param on the tools routes is the `AgentTool` row's cuid **primary key**, not the tool's `pattern`
-string — so you first need to look up the row ids:
-
-1. Call `GET /agents/:id/tools` (via admin API) and find the rows whose `pattern` is `"Bash"`,
-   `"WebSearch"`, and `"WebFetch"`, noting each row's `id`.
-2. Call `DELETE /agents/:id/tools/:toolId` for the `Bash` row's `id`.
-3. Call `DELETE /agents/:id/tools/:toolId` for the `WebSearch` row's `id`.
-4. Call `DELETE /agents/:id/tools/:toolId` for the `WebFetch` row's `id`.
-
-On the agent's next config sync, Claude will no longer have access to shell execution or external HTTP — only the 7 floor tools remain. The agent can still read files, search locally, and invoke safe skills.
 
 ## Default system crons
 
@@ -113,50 +70,13 @@ Configured via `SHIPWRIGHT_AGENT_PR_CENSUS_ENABLED` (kill switch) and `SHIPWRIGH
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL_SHIPWRIGHT_ADMIN` | ✅ | Dedicated Postgres datasource for the admin service (e.g. `postgresql://user:pass@host:5432/db`). |
-| `SHIPWRIGHT_AGENT_ID` | ✅ (entrypoint) | The agent's ID in the Shipwright platform. Also settable via `--agent-id` CLI flag. |
-| `SHIPWRIGHT_API_URL` | ✅ (entrypoint) | Base URL of the Shipwright API used to fetch agent config at startup. Also settable via `--api-url`. |
-| `SHIPWRIGHT_AGENT_API_KEY` | ✅ (entrypoint) | Bearer token for the config fetch at startup (`/agents/:id/config` and `/agents/:id/crons`). Also settable via `--api-key`. The value must be registered in `SHIPWRIGHT_ADMIN_API_KEYS` on the server with scope `<agentId>` (or `*` for admin bypass) — an agent key not listed there will receive a 401 at startup. |
-| `AGENT_HOME` | entrypoint | Persistent storage root (default: `/data/agent-home`). Mount a PVC here in Kubernetes so mise caches, workspace files, and `~/.claude` survive pod restarts. |
-| `PORT` | server | Port for the admin service (`admin/src/main.ts`). Default: `3000`. |
-| `SHIPWRIGHT_HEALTH_PORT` | server | Dedicated health server port for K8s liveness probes (default: `3459`). Bound by `index.ts` (the subprocess `entrypoint-main.ts` spawns), which owns the single health server. |
-| `SHIPWRIGHT_SESSION_SECRET` | admin API | Secret for verifying the `admin_session` JWT cookie. |
-| `SHIPWRIGHT_ADMIN_API_KEYS` | admin API | Comma-separated `name:token:scope` tuples for env-based bearer auth on `/agents/*`. Scope `*` → admin (bypasses per-agent checks); scope `<agentId>` → restricted to that agent's routes. Optional — absent means env key auth is disabled and only DB tokens and session cookies are accepted. Example: `bodhi:sk_bodhi_abc:*,svc:sk_svc_xyz:agent-id-123`. |
 | `GOOGLE_CLIENT_ID` | admin UI (OAuth) | Google OAuth 2.0 client ID. Required for the admin login flow (optional when using Okta). |
 | `GOOGLE_CLIENT_SECRET` | admin UI (OAuth) | Google OAuth 2.0 client secret. Required for the admin login flow (optional when using Okta). |
 | `OKTA_ISSUER` | admin UI (OIDC) | Okta OIDC issuer URL (e.g. `https://your-org.okta.com/oauth2/default`). Required to enable the `/admin/auth/okta` login flow — when unset, those routes redirect to the login page with `error=server_error` and Google login is unaffected. The login page shows only the configured providers; with neither Google nor Okta configured it shows a misconfiguration notice and no buttons. |
 | `OKTA_CLIENT_ID` | admin UI (OIDC) | Okta OIDC client ID. Required for the admin UI Okta login flow. |
 | `OKTA_CLIENT_SECRET` | admin UI (OIDC) | Okta OIDC client secret. Required for the admin UI Okta login flow. |
-| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth/OIDC) | Comma-separated list of email addresses permitted to log in to the admin UI via either Google OAuth or Okta OIDC. |
-| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | admin UI (OAuth/OIDC) | Public base URL of the server (e.g. `https://shipwright.example.com`). Used to construct the OAuth/OIDC redirect URIs for both providers. An explicit value always wins. When empty and deployed via Helm, auto-derives from the ingress/gateway host when `networking.type=ingress` or `networking.type=gateway` (with HTTPS when TLS is on); omitted for ClusterIP/NodePort/LoadBalancer unless set explicitly. Defaults to `http://localhost:{PORT}` in bare-metal deployment. |
-| `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
-| `GH_APP_INSTALLATION_ID` | GitHub App auth | Optional pin: an installation ID that is always used (and is the default `gh-token` installation). Without it, the agent discovers the App's installations and uses those matching its repo scope. |
 | `GH_APP_SLUG` | GitHub App auth | URL slug of the GitHub App, persisted from the manifest-flow exchange so the install link (`https://github.com/apps/<slug>/installations/new`) can be rebuilt for additional-org installs. |
 | `GH_APP_CLIENT_ID` | GitHub App auth | OAuth client ID for the GitHub App, persisted from the manifest-flow exchange so the App's OAuth settings can be reconfigured later without redoing the manifest flow. |
 | `GH_APP_CLIENT_SECRET` | GitHub App auth | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. |
-| `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
-| `ADMIN_DEV_AUTH` | dev only | Set to `"true"` to enable `GET /admin/dev-login` (bypasses OAuth/OIDC provider login, mints a dev session). Hard-blocked when `NODE_ENV=production` by `dev-auth-guard.ts`. |
-
-## Baked marketplaces (derived images)
-
-A derived Docker image can ship additional Claude Code plugin marketplaces that are automatically registered at agent boot — no env var, no DB entry required. Marketplace availability is an **image property**; plugin selection remains in the AgentPlugin table as usual.
-
-**Convention root:** `/opt/shipwright/marketplaces/`
-
-Place one subdirectory per marketplace under the convention root. Each subdirectory must contain `.claude-plugin/marketplace.json` (the standard marketplace manifest). The harness calls `claude plugin marketplace add <dir>` for every discovered directory **before** registering the built-in shipwright marketplace, so derived-image plugins resolve correctly.
-
-```
-/opt/shipwright/marketplaces/
-  my-org-plugins/
-    .claude-plugin/
-      marketplace.json   ← required; triggers discovery
-      plugin.json        ← optional plugin metadata
-    plugins/
-      ...
-```
-
-Directories that do not contain `.claude-plugin/marketplace.json` are silently skipped. The registration call is idempotent and non-fatal — a missing directory or a non-zero exit from `claude` is logged as a warning and startup continues.
-
-The constant `BAKED_MARKETPLACES_ROOT` and function `discoverBakedMarketplaces()` in `agent/src/runtime/setup.ts` implement this behavior.

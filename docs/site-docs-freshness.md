@@ -67,4 +67,4 @@ An operator who wants it can wire it as a [custom cron](./extending.md#custom-cr
 }
 ```
 
-See [`docs/specialties.md`](./specialties.md) for the manifest schema and the `preCheck` contract, and [`docs/extending.md`](./extending.md) for the full custom-cron API reference.
+See [`docs/platform/specialties.md`](./platform/specialties.md) for the manifest schema and the `preCheck` contract, and [`docs/extending.md`](./extending.md) for the full custom-cron API reference.

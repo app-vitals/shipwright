@@ -124,7 +124,7 @@ shipwright/
 - **[behind-branches.md](./behind-branches.md)** — how `BEHIND` PRs are detected and updated by `patch`, and the strict-mode semantics behind it.
 - **[testing.md](./testing.md)** — the five-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
-- **[self-serve.md](./self-serve.md)** — self-serve accounts, quota and tenant isolation for Shipwright Managed.
+- **[self-serve.md](./platform/self-serve.md)** — self-serve accounts, quota and tenant isolation for Shipwright Managed.
 - **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
 - **[mcp-tools.md](./mcp-tools.md)** — generated MCP server tool reference (name, method, path, params, body).
 - **[configuration.md](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.

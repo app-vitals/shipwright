@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   collectDocumentedVars,
+  configDocPaths,
   collectTsFiles,
   extractDocumentedVars,
   extractEnvVarNames,
@@ -401,5 +402,25 @@ describe("collectDocumentedVars", () => {
     const missingPath = join(scratchDir, "does-not-exist.md");
 
     expect(() => collectDocumentedVars([missingPath])).toThrow();
+  });
+});
+
+describe("configDocPaths", () => {
+  test("includes the coding docs and the vendored platform snapshot", () => {
+    const root = join("/repo", "root");
+
+    expect(configDocPaths(root)).toEqual([
+      join(root, "docs", "configuration.md"),
+      join(root, "docs", "configuration-agent.md"),
+      join(root, "docs", "platform", "configuration-agent.md"),
+    ]);
+  });
+
+  test("every listed doc exists in the real repo", () => {
+    const repoRoot = join(import.meta.dirname, "..");
+
+    for (const p of configDocPaths(repoRoot)) {
+      expect(() => collectDocumentedVars([p])).not.toThrow();
+    }
   });
 });
