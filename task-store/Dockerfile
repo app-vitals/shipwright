@@ -46,17 +46,26 @@ ENV NODE_ENV=production
 
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/task-store/node_modules),
-# NOT the hoisted root — both are required at runtime. lib/node_modules is also
-# required: task-store imports @app-vitals/agent-lib/sentry, which itself imports
-# @sentry/bun — bun nested that package under lib/node_modules (and separately
-# under task-store/node_modules) instead of hoisting it to root, so resolution
-# from lib/sentry.ts fails at runtime unless lib's own node_modules is present.
+# NOT the hoisted root — both are required at runtime. The root node_modules also
+# carries bun's package store (node_modules/.bun), which is where the registry
+# package @app-vitals/agent-lib (and its own deps, e.g. @sentry/bun) lives; the
+# workspace-local @app-vitals/agent-lib entries are symlinks into it.
+# lib/node_modules is copied too: lib/ is the slim local @shipwright/lib
+# workspace, which depends on @app-vitals/agent-lib through its own
+# node_modules (a nested dependency bun did not hoist once already broke
+# task-store + @sentry/bun at runtime — see app-vitals/shipwright#1187).
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/task-store/node_modules ./task-store/node_modules
 COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 # Copy entire monorepo source
 COPY . .
+
+# Lib resolution guard (AGR-4.1): resolve every @app-vitals/agent-lib/* and
+# @shipwright/lib/* import of the service from the final filesystem, so an image
+# missing the registry package or lib/ fails here instead of crash-looping at
+# boot (the 0.100.0 class).
+RUN bun agent/scripts/check-lib-resolution.ts --require @app-vitals/agent-lib --require @shipwright/lib task-store/src
 
 # Generate Prisma client
 RUN cd task-store && bunx prisma generate --schema=prisma/schema.prisma

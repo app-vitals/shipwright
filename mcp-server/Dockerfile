@@ -48,12 +48,14 @@ ENV NODE_ENV=production
 
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/mcp-server/node_modules),
-# NOT the hoisted root — both are required at runtime. lib/node_modules is also
-# copied defensively: bun nests a shared lib dependency under lib/node_modules
-# instead of hoisting it to root whenever a consuming service also declares that
-# same dependency directly (this broke task-store + @sentry/bun at runtime —
-# see app-vitals/shipwright#1187). mcp-server doesn't hit that today, but copying
-# lib/node_modules here means it can't happen silently if that changes.
+# NOT the hoisted root — both are required at runtime. The root node_modules also
+# carries bun's package store (node_modules/.bun), which is where the registry
+# package @app-vitals/agent-lib (and its own deps, e.g. @sentry/bun) lives; the
+# workspace-local @app-vitals/agent-lib entries are symlinks into it.
+# lib/node_modules is copied too: lib/ is the slim local @shipwright/lib
+# workspace, which depends on @app-vitals/agent-lib through its own
+# node_modules (a nested dependency bun did not hoist once already broke
+# task-store + @sentry/bun at runtime — see app-vitals/shipwright#1187).
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/mcp-server/node_modules ./mcp-server/node_modules
 COPY --from=deps /app/lib/node_modules ./lib/node_modules

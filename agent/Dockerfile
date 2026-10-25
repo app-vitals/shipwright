@@ -184,9 +184,12 @@ RUN bun install --frozen-lockfile
 
 # Copy the rest of the agent source
 COPY agent/ ./agent/
-# Copy the shared lib source — @app-vitals/agent-lib is a workspace symlink; only its
-# package.json was copied above (for install caching), so without this the
-# symlink resolves but re-exports like @app-vitals/agent-lib/pricing are missing.
+# Copy the slim local lib source — @shipwright/lib is a workspace symlink; only
+# its package.json was copied above (for install caching), so without this the
+# symlink resolves but modules like @shipwright/lib/claim-ttl are missing. The
+# platform's shared modules (@app-vitals/agent-lib) are a pinned registry
+# package: `bun install` above put them in the root node_modules package store
+# (node_modules/.bun), with agent/node_modules and lib/node_modules symlinking in.
 COPY lib/ ./lib/
 # Copy the plugin source so the local marketplace is available at runtime
 COPY plugins/ ./plugins/
@@ -205,7 +208,9 @@ RUN bun run scripts/sync-version.ts "${AGENT_VERSION}"
 # surfacing as a runtime crash after the image ships. A plain `docker build`
 # succeeding is not proof the image runs — this bundles the whole agent/src
 # tree (not just entrypoint-main.ts's reachable graph) so an import missed
-# by that one entry point, like the lib/ omission above, still gets caught.
+# by that one entry point, like a lib/ omission, still gets caught. This only
+# proves the build stage resolves; the runtime stage re-checks lib imports
+# against the filesystem that actually ships (check-lib-resolution.ts below).
 # playwright/playwright-core are externalized: bun's bundler eagerly resolves
 # playwright-core's internal optional chromium-bidi requires, which aren't
 # actually installed or used by our CDP-based launch path.
@@ -245,13 +250,23 @@ ENV PATH="/home/bun/.local/share/mise/shims:/app/agent/scripts/bin:${PATH}"
 # the root node_modules holds bun's content-addressed store they point into.)
 COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=build --chown=1000:1000 /app/agent ./agent
-# agent/node_modules/@app-vitals/agent-lib is a relative symlink to /app/lib — the
+# agent/node_modules/@shipwright/lib is a relative symlink to /app/lib — the
 # workspace source itself, not just its package.json, must exist here too.
+# (agent/node_modules/@app-vitals/agent-lib points into the root node_modules
+# package store copied above.)
 COPY --from=build --chown=1000:1000 /app/lib ./lib
 # Plugin source + marketplace manifest — needed for local `claude plugin marketplace add`
 COPY --from=build --chown=1000:1000 /app/plugins ./plugins
 COPY --from=build --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 COPY --from=build --chown=1000:1000 /app/specialties ./specialties
+
+# Lib resolution guard (AGR-4.1), run on the runtime stage's own filesystem
+# after every COPY: resolves each @app-vitals/agent-lib/* (registry) and
+# @shipwright/lib/* (local) import under agent/src, and fails if either kind
+# is missing entirely. Dropping a lib COPY from this stage alone (the 0.100.0
+# crash-loop class: lib/ not in the image) passes the build-stage guard above;
+# this one fails the build.
+RUN bun /app/agent/scripts/check-lib-resolution.ts --require @app-vitals/agent-lib --require @shipwright/lib /app/agent/src
 
 # Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
