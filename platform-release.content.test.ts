@@ -21,6 +21,7 @@ const PATH = join(ROOT, ".github/workflows/platform-release.yml");
 type Step = {
   name?: string;
   uses?: string;
+  id?: string;
   run?: string;
   if?: string;
   env?: Record<string, string>;
@@ -37,6 +38,7 @@ type Workflow = {
   jobs: Record<
     string,
     {
+      "timeout-minutes"?: number;
       env?: Record<string, string>;
       permissions?: Record<string, string>;
       steps: Step[];
@@ -159,6 +161,52 @@ describe("platform-release.yml bump", () => {
     expect(onFailure.length).toBe(1);
     expect(onFailure[0].run).toContain("gh issue create");
     expect(onFailure[0].run).toContain("gh issue comment");
+  });
+});
+
+describe("platform-release.yml self-merge (PLD-2.3)", () => {
+  const prIdx = steps.findIndex((s) => s.run?.includes("gh pr create"));
+  const mergeIdx = steps.findIndex(
+    (s) => s.name === "Wait for checks and merge",
+  );
+  const failIdx = steps.findIndex((s) => s.if === "failure()");
+  const merge = steps[mergeIdx];
+
+  it("gives the PR step id pr and writes pr_url to GITHUB_OUTPUT", () => {
+    expect(steps[prIdx].id).toBe("pr");
+    expect(steps[prIdx].run).toContain(
+      'echo "pr_url=$' + '{PR_URL}" >> "$GITHUB_OUTPUT"',
+    );
+    // Both the update and the create branch write the output.
+    expect(steps[prIdx].run?.split("pr_url=").length).toBe(3);
+  });
+
+  it("has a merge step gated on the diff, taking the PR URL and token via env", () => {
+    expect(mergeIdx).toBeGreaterThan(-1);
+    expect(merge.if).toBe("steps.diff.outputs.changed == 'true'");
+    expect(merge.env?.PR_URL).toBe(gha("steps.pr.outputs.pr_url"));
+    expect(merge.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
+  });
+
+  it("waits for required checks, reruns failures and admin-squash-merges", () => {
+    const run = merge.run ?? "";
+    expect(run).toContain("gh pr checks");
+    expect(run).toContain("--watch");
+    expect(run).toContain("--required");
+    expect(run).toContain("gh run rerun");
+    expect(run).toContain("Base branch was modified");
+    expect(run).toContain("gh pr merge");
+    expect(run).toContain("--squash --admin");
+    expect(run).toContain("exit 1");
+  });
+
+  it("runs after the PR step and before the failure step", () => {
+    expect(mergeIdx).toBeGreaterThan(prIdx);
+    expect(mergeIdx).toBeLessThan(failIdx);
+  });
+
+  it("allows 30 minutes for the job", () => {
+    expect(job["timeout-minutes"]).toBe(30);
   });
 });
 
