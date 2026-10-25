@@ -65,6 +65,13 @@ export const ThreadSchema = z
       .nullable()
       .optional()
       .openapi({ example: "Deployment question" }),
+    kind: z.string().nullable().optional().openapi({ example: "ask" }),
+    askFromAgentId: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "agent-id-456" }),
+    askDepth: z.number().int().nullable().optional().openapi({ example: 1 }),
     createdAt: z
       .string()
       .datetime()

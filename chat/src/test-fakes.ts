@@ -108,6 +108,9 @@ export function fakeThreadService(
         agentId: data.agentId,
         memberId: data.memberId ?? null,
         title: data.title ?? null,
+        kind: data.kind ?? null,
+        askFromAgentId: data.askFromAgentId ?? null,
+        askDepth: data.askDepth ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

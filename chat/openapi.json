@@ -295,7 +295,7 @@
           "threads"
         ],
         "summary": "Create a thread",
-        "description": "Body: `{ agentId: string, memberId?: string, title?: string }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. Returns 201 with the created thread.",
+        "description": "Body: `{ agentId: string, memberId?: string, title?: string, kind?: \"ask\", askFromAgentId?: string, askDepth?: number }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. `kind`, `askFromAgentId` and `askDepth` are admin-only — an agent token sending any of them returns 403. Returns 201 with the created thread.",
         "security": [
           {
             "bearerAuth": []
@@ -333,7 +333,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — agent token may only create threads for itself",
+            "description": "Forbidden — agent token may only create threads for itself, and may not set kind/askFromAgentId/askDepth",
             "content": {
               "application/json": {
                 "schema": {
@@ -463,7 +463,7 @@
           "threads"
         ],
         "summary": "Update thread title and/or memberId",
-        "description": "Body: `{ title?: string | null, memberId?: string | null }`. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
+        "description": "Body: `{ title?: string | null, memberId?: string | null }`. `kind`, `askFromAgentId` and `askDepth` are immutable — sending any of them returns 400. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
         "security": [
           {
             "bearerAuth": []
@@ -497,6 +497,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — kind/askFromAgentId/askDepth are immutable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1220,6 +1230,27 @@
             ],
             "example": "Deployment question"
           },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ask"
+          },
+          "askFromAgentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-456"
+          },
+          "askDepth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -1252,6 +1283,18 @@
           "title": {
             "type": "string",
             "example": "Deployment question"
+          },
+          "kind": {
+            "type": "string",
+            "example": "ask"
+          },
+          "askFromAgentId": {
+            "type": "string",
+            "example": "agent-id-456"
+          },
+          "askDepth": {
+            "type": "integer",
+            "example": 1
           }
         },
         "required": [
