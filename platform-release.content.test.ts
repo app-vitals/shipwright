@@ -53,7 +53,7 @@ const runOf = (pred: (s: Step) => boolean) =>
 const allRuns = runOf(() => true).join("\n");
 /** GitHub expression and shell-variable text, built so this source holds no literal template-looking strings. */
 const gha = (expr: string) => `$${"{{"} ${expr} }}`;
-const shellVar = (name: string) => "$" + `{${name}}`;
+const shellVar = (name: string) => `${${name}}`;
 
 describe("platform-release.yml triggers", () => {
   it("receives the platform-release repository_dispatch", () => {

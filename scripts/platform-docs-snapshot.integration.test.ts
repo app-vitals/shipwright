@@ -25,7 +25,11 @@ let root: string;
 let release: string;
 
 const git = (cwd: string, ...args: string[]) => {
-  const r = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["git", ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   expect(r.exitCode, r.stderr.toString()).toBe(0);
   return r.stdout.toString();
 };
@@ -35,13 +39,22 @@ beforeAll(() => {
   release = mkdtempSync(join(tmpdir(), "pds-int-release-"));
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ name: "x", dependencies: { "@app-vitals/agent-lib": "0.1.0" } }, null, 2) + "\n",
+    `${JSON.stringify({ name: "x", dependencies: { "@app-vitals/agent-lib": "0.1.0" } }, null, 2)}\n`,
   );
   mkdirSync(join(root, "docs/platform"), { recursive: true });
   writeFileSync(join(root, "docs/platform/gone.md"), "stale\n");
   git(root, "init", "-q");
   git(root, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A");
-  git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+  git(
+    root,
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "commit",
+    "-qm",
+    "base",
+  );
 
   // Fixture platform release v0.2.0
   mkdirSync(join(release, "docs"));
@@ -58,7 +71,14 @@ describe("platform release receiver against a fixture release", () => {
   test("produces a bump containing the refreshed snapshot", () => {
     const bump = Bun.spawnSync(["bun", BUMP, "0.2.0", "--root", root]);
     expect(bump.exitCode).toBe(0);
-    const snap = Bun.spawnSync(["bun", SNAPSHOT, "0.2.0", release, "--root", root]);
+    const snap = Bun.spawnSync([
+      "bun",
+      SNAPSHOT,
+      "0.2.0",
+      release,
+      "--root",
+      root,
+    ]);
     expect(snap.exitCode, snap.stderr.toString()).toBe(0);
 
     git(root, "add", "-A");
@@ -71,7 +91,9 @@ describe("platform release receiver against a fixture release", () => {
       "docs/platform/specialties.md",
       "package.json",
     ]);
-    expect(readFileSync(join(root, "package.json"), "utf8")).toContain('"0.2.0"');
+    expect(readFileSync(join(root, "package.json"), "utf8")).toContain(
+      '"0.2.0"',
+    );
 
     const agent = readFileSync(join(root, "docs/platform/agent.md"), "utf8");
     expect(agent.split("\n")[0]).toContain("GENERATED");
