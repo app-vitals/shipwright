@@ -38,7 +38,7 @@
  *   scope: agentId}.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { MiddlewareHandler } from "hono";
 import type { TokenServiceLike } from "./token-service.ts";

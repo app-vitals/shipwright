@@ -3,7 +3,6 @@
   "version": "1.435.0",
   "private": true,
   "workspaces": [
-    "lib",
     "plugins/shipwright",
     "metrics",
     "agent",
@@ -43,7 +42,6 @@
   "dependencies": {
     "@app-vitals/agent-admin": "workspace:*",
     "@app-vitals/agent-lib": "0.1.1",
-    "@shipwright/lib": "workspace:*",
     "@app-vitals/agent-runtime": "workspace:*",
     "@prisma/client": "^7.0.0"
   },

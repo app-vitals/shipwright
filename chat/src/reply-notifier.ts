@@ -17,7 +17,7 @@
  * "https://admin.example.com/admin/push/notify"), not a base URL.
  */
 
-import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
+import type { ReplyNotificationEvent } from "@app-vitals/agent-lib/chat-notify";
 
 type FetchLike = (
   input: string | URL | Request,

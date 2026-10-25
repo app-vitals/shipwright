@@ -26,7 +26,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
 import type { ScopeResolver } from "./auth.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";

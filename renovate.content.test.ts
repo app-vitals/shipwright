@@ -185,7 +185,6 @@ describe("renovate.json app-vitals agent platform group rule (AGR-4.1)", () => {
       "admin/package.json",
       "agent/package.json",
       "chat/package.json",
-      "lib/package.json",
       "metrics/package.json",
       "task-store/package.json",
     ]) {

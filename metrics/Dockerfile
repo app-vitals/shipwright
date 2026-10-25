@@ -35,7 +35,6 @@ COPY chat/package.json ./chat/
 COPY chat/prisma ./chat/prisma/
 COPY agent/package.json ./agent/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
-COPY lib/package.json ./lib/
 COPY agent/src/runtime/package.json ./agent/src/runtime/
 COPY mcp-server/package.json ./mcp-server/
 COPY patches/ ./patches/
@@ -60,20 +59,15 @@ ENV NODE_ENV=production
 # carries bun's package store (node_modules/.bun), which is where the registry
 # package @app-vitals/agent-lib (and its own deps, e.g. @sentry/bun) lives; the
 # workspace-local @app-vitals/agent-lib entries are symlinks into it.
-# lib/node_modules is copied too: lib/ is the slim local @shipwright/lib
-# workspace, which depends on @app-vitals/agent-lib through its own
-# node_modules (a nested dependency bun did not hoist once already broke
-# task-store + @sentry/bun at runtime — see app-vitals/shipwright#1187).
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/metrics/node_modules ./metrics/node_modules
-COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 # Copy entire monorepo source
 COPY . .
 
 # Lib resolution guard (AGR-4.1): resolve every @app-vitals/agent-lib/* and
-# @shipwright/lib/* import of the service from the final filesystem, so an image
-# missing the registry package or lib/ fails here instead of crash-looping at
+# import of the service from the final filesystem, so an image
+# missing the registry package fails here instead of crash-looping at
 # boot (the 0.100.0 class).
 RUN bun agent/scripts/check-lib-resolution.ts --require @app-vitals/agent-lib metrics/src
 

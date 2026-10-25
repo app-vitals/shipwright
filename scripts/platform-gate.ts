@@ -13,7 +13,7 @@
  * `@app-vitals/agent-admin[/*]` (admin, per its exports map) must resolve to a
  * file inside the set. npm packages and `node:`/`bun:` builtins
  * are not edges; that includes `@app-vitals/agent-lib/*`, which is consumed
- * from the registry since AGR-4.1. The local, Shipwright-only lib
+ * from the registry since AGR-4.1. A local lib
  * (`@shipwright/lib/*`, or a relative path into `lib/`) is the one allowed way
  * out of admin/agent directories, and only if listed in the manifest's `lib`
  * table (empty today: the platform set imports nothing local).

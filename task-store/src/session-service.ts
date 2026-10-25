@@ -20,7 +20,7 @@
  * on and get one atomic write across both tables.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { NotFoundError } from "./errors.ts";

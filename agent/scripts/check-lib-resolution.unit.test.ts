@@ -22,7 +22,7 @@ const files = [
     source: [
       'import { initSentry } from "@app-vitals/agent-lib/sentry";',
       'import type { paths } from "@app-vitals/agent-lib/admin-types";',
-      'import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";',
+      'import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";',
       'const p = await import("@app-vitals/agent-lib/pricing");',
       'import { x } from "hono";',
       "// see @app-vitals/agent-lib/sentry for details",
@@ -45,7 +45,10 @@ describe("findLibImports", () => {
         specifier: "@app-vitals/agent-lib/admin-types",
         from: "/app/agent/src/a.ts",
       },
-      { specifier: "@shipwright/lib/claim-ttl", from: "/app/agent/src/a.ts" },
+      {
+        specifier: "@app-vitals/agent-lib/claim-ttl",
+        from: "/app/agent/src/a.ts",
+      },
       {
         specifier: "@app-vitals/agent-lib/pricing",
         from: "/app/agent/src/a.ts",
@@ -67,25 +70,25 @@ describe("checkLibResolution", () => {
         dirs.push(dir);
         return "/resolved.ts";
       },
-      ["@app-vitals/agent-lib", "@shipwright/lib"],
+      ["@app-vitals/agent-lib"],
     );
     expect(r.failures).toEqual([]);
     expect(r.missingRequired).toEqual([]);
     expect(new Set(dirs)).toEqual(new Set(["/app/agent/src"]));
   });
 
-  test("reports each import that fails to resolve (lib/ missing from the image)", () => {
+  test("reports each import that fails to resolve (package missing from the image)", () => {
     const r = checkLibResolution(files, (spec) => {
-      if (spec.startsWith("@shipwright/lib/")) {
-        throw new Error("Cannot find package '@shipwright/lib'");
+      if (spec === "@app-vitals/agent-lib/claim-ttl") {
+        throw new Error("Cannot find package '@app-vitals/agent-lib'");
       }
       return "/ok.ts";
     });
     expect(r.failures).toEqual([
       {
-        specifier: "@shipwright/lib/claim-ttl",
+        specifier: "@app-vitals/agent-lib/claim-ttl",
         from: "/app/agent/src/a.ts",
-        error: "Cannot find package '@shipwright/lib'",
+        error: "Cannot find package '@app-vitals/agent-lib'",
       },
     ]);
   });
@@ -94,9 +97,9 @@ describe("checkLibResolution", () => {
     const r = checkLibResolution(
       [{ path: "/x.ts", source: 'import "@app-vitals/agent-lib/sentry";' }],
       () => "/ok.ts",
-      ["@app-vitals/agent-lib", "@shipwright/lib"],
+      ["@app-vitals/agent-lib", "@app-vitals/other"],
     );
-    expect(r.missingRequired).toEqual(["@shipwright/lib"]);
+    expect(r.missingRequired).toEqual(["@app-vitals/other"]);
     expect(
       checkLibResolution([], () => "/ok.ts", ["@app-vitals/agent-lib"])
         .missingRequired,
@@ -105,14 +108,14 @@ describe("checkLibResolution", () => {
 });
 
 describe("real agent/src", () => {
-  test("every registry and local lib import resolves from this checkout", () => {
+  test("every registry lib import resolves from this checkout", () => {
     const src = resolve(import.meta.dir, "..", "src");
     const paths = listSourceFiles(src);
     expect(paths.some((p) => p.endsWith(".test.ts"))).toBe(false);
     const r = checkLibResolution(
       paths.map((path) => ({ path, source: readFileSync(path, "utf8") })),
       (spec, dir) => Bun.resolveSync(spec, dir),
-      ["@app-vitals/agent-lib", "@shipwright/lib"],
+      ["@app-vitals/agent-lib"],
     );
     expect(r.failures).toEqual([]);
     expect(r.missingRequired).toEqual([]);

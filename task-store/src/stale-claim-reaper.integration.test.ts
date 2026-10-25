@@ -9,8 +9,8 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { FixedClock } from "./clock.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
