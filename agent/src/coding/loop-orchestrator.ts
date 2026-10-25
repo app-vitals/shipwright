@@ -303,7 +303,7 @@ export interface LoopOrchestratorDeps {
    * DTW-1.3 — renews this dispatch's claim on a task (POST
    * /tasks/{id}/heartbeat) immediately before each auto-resume attempt.
    *
-   * `lib/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
+   * `@app-vitals/agent-@app-vitals/agent-lib/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
    * is sized on the assumption that a claim spans exactly ONE Claude session,
    * so "a claim isn't reaped mid-session". The auto-resume loop breaks that
    * assumption: one dispatch can issue up to 1 + MAX_AUTO_RESUMES sequential

@@ -3,11 +3,10 @@
  * agent/scripts/check-lib-resolution.ts
  *
  * Image-level lib resolution guard (AGR-4.1). Finds every
- * `@app-vitals/agent-lib/*` (registry package) and `@shipwright/lib/*` (the
- * slim local workspace) import in the given source directories and resolves
- * each one from the importing file, so an image that ships without the lib
- * sources or the node_modules they resolve through fails its build instead of
- * crash-looping at boot (the 0.100.0 class: lib/ missing from the image).
+ * `@app-vitals/agent-lib/*` (registry package) import in the given source
+ * directories and resolves each one from the importing file, so an image that
+ * ships without the node_modules it resolves through fails its build instead
+ * of crash-looping at boot (the 0.100.0 class).
  *
  * The Dockerfiles run it in the final stage, after every COPY, so it checks
  * the filesystem that actually ships, not the build stage's.
@@ -23,11 +22,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export const LIB_PREFIXES = ["@app-vitals/agent-lib", "@shipwright/lib"];
+export const LIB_PREFIXES = ["@app-vitals/agent-lib"];
 
 // `from "x"`, `import "x"`, `import("x")` where x is a lib specifier.
 const LIB_IMPORT =
-  /\b(?:from|import)\s*\(?\s*["']((?:@app-vitals\/agent-lib|@shipwright\/lib)\/[^"']+)["']/g;
+  /\b(?:from|import)\s*\(?\s*["'](@app-vitals\/agent-lib\/[^"']+)["']/g;
 
 export interface SourceFile {
   path: string;

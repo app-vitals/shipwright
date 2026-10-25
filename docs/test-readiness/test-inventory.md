@@ -117,7 +117,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `lib/org-repo.ts` (`isOrgRepo`) | 1. Pure business logic | unit | medium | n/a |
 | `lib/request-context.ts` (`callerLabel`) | 1. Pure business logic | unit | medium | n/a |
 | `lib/secret-env-vars.ts` (constant list) | 1. Pure business logic | unit | high | n/a |
-| `lib/claim-ttl.ts` (claim TTL constants, `DEFAULT_CLAIM_TTL_MS`) | 1. Pure business logic | unit | critical | n/a |
+| `@app-vitals/agent-lib/claim-ttl.ts` (claim TTL constants, `DEFAULT_CLAIM_TTL_MS`) | 1. Pure business logic | unit | critical | n/a |
 | `lib/github-login.ts` (`isGithubLogin`) | 1. Pure business logic | unit | medium | n/a |
 | `lib/http.ts` (`readJson` — shared request-body parser) | 1. Pure business logic | unit | medium | n/a |
 | `lib/sentry.ts` (scrubbing config) | 1. Pure business logic (scrub rules) / 5. external integration (Sentry SDK init) | unit (scrub rules) / integration (init wiring) | high | n/a |

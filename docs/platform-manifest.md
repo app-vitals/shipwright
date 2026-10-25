@@ -45,14 +45,14 @@ The tags are checked against the repo, not just declared: the test fails if a pl
 
 The gate only records which modules are shared. Whether they are copied, published as a package or consumed from the platform repo stays a decision for the extraction itself.
 
-**Since AGR-4.1 the table is empty.** The shared modules are published by the platform repository as `@app-vitals/agent-lib` and consumed from the registry (pinned exactly, bumped by `.github/workflows/platform-release.yml`). `lib/` now holds only Shipwright's own modules (`@shipwright/lib`: `chat-notify`, `claim-ttl`, `default-account`, `http`), none of which the set imports. A set file that imports one is an `unlisted-lib-module` violation, because that module does not exist in the platform.
+**Since AGR-4.1 the table is empty.** The shared modules are published by the platform repository as `@app-vitals/agent-lib` and consumed from the registry (pinned exactly, bumped by `.github/workflows/platform-release.yml`). Since AGR-4.5 the former Shipwright-only modules (`chat-notify`, `claim-ttl`, `default-account`, `http`) also come from the registry package and the local `lib/` workspace is gone, so the `lib` table stays empty and a relative import into `lib/` is an `unlisted-lib-module` violation.
 
 ## What the gate checks
 
 For every file in the set (tests included), the walker reads each module specifier: `import`, `import type`, `export ... from`, side-effect `import "x"`, dynamic `import("x")`, `require("x")` and `mock.module("x")`. Comments and string contents are ignored.
 
 - Relative specifiers (`./x`, `../../y`), `@shipwright/*` workspace specifiers and `@app-vitals/agent-runtime/*` (resolved to `agent/src/runtime/*`) and `@app-vitals/agent-admin[/*]` (resolved per `admin/package.json`'s exports map: the root to `admin/src/server.ts`, specs/Prisma files to `admin/`, everything else to `admin/src/`) must resolve to a file inside the set.
-- `@shipwright/lib/*` (or a relative path into `lib/`) must name a listed `lib` module. `@app-vitals/agent-lib/*` is a registry package, so it is not an edge.
+- A relative path into `lib/` must name a listed `lib` module. `@app-vitals/agent-lib/*` is a registry package, so it is not an edge.
 - Imports of a path matching `generated` (the git-ignored Prisma client) count as inside the set.
 - npm packages and `node:`/`bun:` builtins are not edges.
 

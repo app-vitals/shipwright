@@ -18,7 +18,6 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
-import type { SpecialtyOption } from "./specialty-manifest-loader.ts";
 import { isAudioFilename } from "./attachment-validation.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
@@ -28,6 +27,7 @@ import type {
   ThreadStats,
 } from "./http-chat-client.ts";
 import { renderPushToggle } from "./push-toggle.ts";
+import type { SpecialtyOption } from "./specialty-manifest-loader.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2328,7 +2328,7 @@ const STALL_INDICATOR_CLASS = "chat-stall-indicator";
  * hard stop.
  */
 export const STALL_WARN_AFTER_MS = 120_000;
-// 65min — mirrors lib/claim-ttl.ts's DEFAULT_CLAIM_TTL_MS
+// 65min — mirrors @app-vitals/agent-lib/claim-ttl.ts's DEFAULT_CLAIM_TTL_MS
 // (DEFAULT_CLAUDE_TIMEOUT_MS 1hr + CLAIM_TTL_BUFFER_MS 5min). Inline JS can't
 // import the lib file, so the value is hardcoded here with this reference.
 export const ABSOLUTE_MAX_MS = 3_900_000;
@@ -2819,7 +2819,7 @@ export function renderChatThreadPage(
 
   // Stall-warning threshold — 120s in prod; e2e overrides to a tiny value.
   var STALL_WARN_AFTER_MS = ${stallWarnAfterMs};
-  // Hard ceiling: 65min, mirrors lib/claim-ttl.ts DEFAULT_CLAIM_TTL_MS
+  // Hard ceiling: 65min, mirrors @app-vitals/agent-lib/claim-ttl.ts DEFAULT_CLAIM_TTL_MS
   // (1hr DEFAULT_CLAUDE_TIMEOUT_MS + 5min CLAIM_TTL_BUFFER_MS). Only hard stop.
   var ABSOLUTE_MAX_MS = ${ABSOLUTE_MAX_MS};
 

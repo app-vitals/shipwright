@@ -17,7 +17,6 @@
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@app-vitals/agent-lib": "0.1.1",
-    "@shipwright/lib": "workspace:*",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
     "zod": "^4"

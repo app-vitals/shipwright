@@ -11,14 +11,14 @@
  *
  * The cutoff is: clock.now() - ttlMs. Both Task and PullRequest claims use a
  * single unified TTL, derived from the shared DEFAULT_CLAIM_TTL_MS constant
- * in @shipwright/lib/claim-ttl (which combines the 1-hour `claude -p` hard
+ * in @app-vitals/agent-lib/claim-ttl (which combines the 1-hour `claude -p` hard
  * ceiling timeout plus a 5-minute buffer) — overridable via
  * SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS.
  *
  * Usage: register via setInterval(() => reaper.reap(), 60_000) in main.ts.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { computeSkipStreak } from "./task-service.ts";

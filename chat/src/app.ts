@@ -16,7 +16,7 @@
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
 
-import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
+import type { ReplyNotificationEvent } from "@app-vitals/agent-lib/chat-notify";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { type ChatAuthEnv, createBearerAuthMiddleware } from "./auth.ts";

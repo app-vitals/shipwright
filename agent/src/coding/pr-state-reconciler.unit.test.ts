@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import { type Clock, FixedClock } from "@app-vitals/agent-runtime/clock";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import {

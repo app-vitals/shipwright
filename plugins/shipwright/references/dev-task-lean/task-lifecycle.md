@@ -23,7 +23,7 @@ PATCH `{"status":"blocked"}` and print the PATCH command to set `branch` (`feat/
 `GET /tasks?branch={branch}&status=in_progress&repo={repo}` (the `repo` filter is required: agent-scoped
 tokens span several repos and an unscoped query can match a same-named branch elsewhere). Exclude own id.
 A sibling is fresh if `heartbeatAt` (or, when null, `claimedAt`) is within 65 minutes (`DEFAULT_CLAIM_TTL_MS`
-in `lib/claim-ttl.ts`). Any fresh sibling → `POST /tasks/{id}/release`, print the deferral, emit
+in `@app-vitals/agent-lib/claim-ttl.ts`). Any fresh sibling → `POST /tasks/{id}/release`, print the deferral, emit
 `[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]` then `[silent]`. Stale siblings are
 ignored; the Reality Check handles their abandoned branch.
 

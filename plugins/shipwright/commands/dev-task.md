@@ -162,7 +162,7 @@ AND condition on top of `agentScope`'s OR, narrowing correctly to this task's ow
 Exclude this task's own `{id}` from the results — a task's own in_progress claim is not a
 sibling. For each remaining same-branch task, determine freshness using the same two-case
 formula the task-store's stale-claim reaper uses (`DEFAULT_CLAIM_TTL_MS` in
-`lib/claim-ttl.ts` — 65 minutes: the 1-hour `claude -p` hard-ceiling timeout plus a 5-minute
+`@app-vitals/agent-lib/claim-ttl.ts` — 65 minutes: the 1-hour `claude -p` hard-ceiling timeout plus a 5-minute
 buffer):
 
 - heartbeatAt is set and heartbeatAt is within the last 65 minutes → **fresh**
@@ -850,7 +850,7 @@ needed, poll for completion within this same session (a chained in-Bash loop, or
 Monitor tool). Do not hand the wait off via a scheduled wakeup mechanism that resumes the
 session later: when the current session process ends, it stops sending heartbeats to the
 task store. If the gap between heartbeats exceeds the ~65-minute claim TTL
-(`DEFAULT_CLAIM_TTL_MS` in `lib/claim-ttl.ts` — the 1-hour `claude -p` hard-ceiling
+(`DEFAULT_CLAIM_TTL_MS` in `@app-vitals/agent-lib/claim-ttl.ts` — the 1-hour `claude -p` hard-ceiling
 timeout plus a 5-minute buffer), the task store's `StaleClaimReaper` reclaims the stale
 `in_progress` claim, resetting the task back toward `pending`. The next cron tick then
 re-dispatches this task with no memory of this pipeline's progress — a full context-free
@@ -1190,7 +1190,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 **Implementation: chained in-Bash sleep loop.** Do not wait between polls via a scheduled
 wakeup mechanism that resumes the session later — when the current session process ends,
 it stops sending heartbeats to the task store. If the gap between heartbeats exceeds the
-~65-minute claim TTL (`DEFAULT_CLAIM_TTL_MS` in `lib/claim-ttl.ts` — the 1-hour `claude -p`
+~65-minute claim TTL (`DEFAULT_CLAIM_TTL_MS` in `@app-vitals/agent-lib/claim-ttl.ts` — the 1-hour `claude -p`
 hard-ceiling timeout plus a 5-minute buffer), the task store's `StaleClaimReaper` reclaims
 the stale `in_progress` claim, resetting the task back toward `pending`. The next cron
 tick then re-dispatches this task with no memory of this pipeline's progress — a full

@@ -7,7 +7,7 @@
  * coding AdminExtension's admin UI routes (admin-ui-coding.ts).
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import { renderAdminPage } from "../admin-ui-layout.ts";
 import { relativeTime, renderMarkdown } from "../admin-ui-pages.ts";
 import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
@@ -2112,7 +2112,7 @@ export function renderSessionDetailPage(
  * set (the PR was never claimed) so the caller can render no dot at all.
  *
  * Thresholds are a display nicety, not exact stale-claim-reaper semantics:
- * "stale" mirrors lib/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
+ * "stale" mirrors @app-vitals/agent-lib/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
  * own TTL), and "aging" is half that.
  *
  * `now` is always caller-injected (never read internally) so render output
