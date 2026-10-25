@@ -2,7 +2,7 @@
 
 > Coding half. The platform half is the vendored snapshot [`docs/platform/agent-api-resources.md`](./platform/agent-api-resources.md), sourced from `app-vitals/agent`.
 
-Per-agent resource endpoints for the [Agent Admin API](./agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot. See [`docs/agent-api.md`](./agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/agent-api-ops.md`](./agent-api-ops.md) for cron jobs and cron runs.
+Per-agent resource endpoints for the [Agent Admin API](./platform/agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot. See [`docs/platform/agent-api.md`](./platform/agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/platform/agent-api-ops.md`](./platform/agent-api-ops.md) for cron jobs and cron runs.
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
