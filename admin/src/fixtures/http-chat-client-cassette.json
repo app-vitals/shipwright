@@ -75,6 +75,20 @@
       "updatedAt": "2026-01-03T00:00:00.000Z"
     }
   },
+  "createThread_ask_success": {
+    "status": 201,
+    "body": {
+      "id": "thread_ask",
+      "agentId": "agent-123",
+      "title": null,
+      "memberId": null,
+      "kind": "ask",
+      "askFromAgentId": "agent-456",
+      "askDepth": 1,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.000Z"
+    }
+  },
   "createThread_500": {
     "status": 500,
     "body": { "error": "internal server error" }

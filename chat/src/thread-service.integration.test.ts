@@ -38,6 +38,25 @@ describeOrSkip("ThreadService (integration)", () => {
   // ─── create() ───────────────────────────────────────────────────────────────
 
   describe("create()", () => {
+    it("round-trips kind, askFromAgentId and askDepth; null when omitted", async () => {
+      const ask = await service.create({
+        agentId: "agent-1",
+        kind: "ask",
+        askFromAgentId: "agent-2",
+        askDepth: 1,
+      });
+      const readAsk = await service.findById(ask.id);
+      expect(readAsk?.kind).toBe("ask");
+      expect(readAsk?.askFromAgentId).toBe("agent-2");
+      expect(readAsk?.askDepth).toBe(1);
+
+      const plain = await service.create({ agentId: "agent-1" });
+      const readPlain = await service.findById(plain.id);
+      expect(readPlain?.kind).toBeNull();
+      expect(readPlain?.askFromAgentId).toBeNull();
+      expect(readPlain?.askDepth).toBeNull();
+    });
+
     it("persists a thread with defaults when optional fields are omitted", async () => {
       const created = await service.create({ agentId: "agent-1" });
 
