@@ -288,7 +288,7 @@ admin:
   ask:
     # -- Enable the ask feature (sets SHIPWRIGHT_AGENT_ASK_ENABLED).
     enabled: false
-    # -- Allowlist of ask access patterns (email>scope pairs, comma-separated).
+    # -- Allowlist of `fromAgentId>toAgentId` pairs permitted to ask (comma-joined in env). Empty means no agent may ask any agent.
     allowlist: []
   # -- Chat credential mint configuration.
   chatCredentialMint:

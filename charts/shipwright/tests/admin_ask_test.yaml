@@ -20,8 +20,8 @@ tests:
     set:
       admin.ask.enabled: true
       admin.ask.allowlist:
-        - user1@example.com>team1
-        - user2@example.com>team2
+        - agent-a>agent-b
+        - agent-b>agent-c
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -32,7 +32,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: SHIPWRIGHT_AGENT_ASK_ALLOWLIST
-            value: "user1@example.com>team1,user2@example.com>team2"
+            value: "agent-a>agent-b,agent-b>agent-c"
 
   - it: renders empty allowlist when enabled with no allowlist items
     set:
