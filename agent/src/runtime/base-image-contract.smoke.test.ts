@@ -11,7 +11,7 @@
  * smoke and opt-in: set SHIPWRIGHT_CONTRACT_BASE_IMAGE (CI sets it to the image
  * built by the `agent docker build` job). Skipped otherwise.
  *
- * The platform-based candidate image (agent/Dockerfile.platform, AGR-4.3a) keeps
+ * The platform-based image (agent/Dockerfile, AGR-4.3a/4.3b) keeps
  * the runtime at /app/runtime, so the two module paths are overridable:
  * SHIPWRIGHT_CONTRACT_SETUP_MODULE and SHIPWRIGHT_CONTRACT_ENTRYPOINT.
  */

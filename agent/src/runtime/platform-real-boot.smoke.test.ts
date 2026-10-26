@@ -14,7 +14,7 @@
  *
  * Needs a Docker daemon and an already-built image, so it is image-level smoke
  * and opt-in: set SHIPWRIGHT_CONTRACT_BASE_IMAGE (CI sets it to
- * shipwright-agent:ci-platform). Skipped otherwise. Module paths are
+ * shipwright-agent:ci). Skipped otherwise. Module paths are
  * overridable like base-image-contract.smoke.test.ts:
  * SHIPWRIGHT_CONTRACT_SETUP_MODULE and SHIPWRIGHT_CONTRACT_TEMPLATES_DIR.
  * No network or secrets are needed.
