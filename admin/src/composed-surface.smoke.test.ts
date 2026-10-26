@@ -17,6 +17,11 @@
  *     SHIPWRIGHT_CRON_RUN_NOW_ENABLED)
  *   - cron-run transcript upload/read routes and the config bundle's
  *     `features` block (flag SHIPWRIGHT_TRANSCRIPT_API_ENABLED)
+ *   - the per-repo access probe result on the GitHub installations
+ *     snapshot (RepoAccessEntry, `repoAccess` on the snapshot, `repos` on
+ *     its PUT body; the runtime reports it only when the config bundle's
+ *     `features.repoAccessCheck` is on, flag
+ *     SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED) — added in 0.5.0
  *   - the "Signed commits" checkbox on the agent page of an agent with a
  *     GitHub App (SHIPWRIGHT_SIGNED_COMMITS env row; no flag), and one
  *     blank line in its place on every other agent page
@@ -77,6 +82,7 @@ const EXPECTED_DIFF: {
       AgentAskRecord: "f470e4b5a7c29738",
       CronRunNowResponse: "573587ce13f06f60",
       CronRunTranscriptUploadResult: "4a1283819cff255f",
+      RepoAccessEntry: "e42976826762413d",
       UploadCronRunTranscriptBody: "fb2d6c0c8f6ee427",
       CronRunTranscript: "f601d1c19563cc32",
       AgentConfigFeatures: "f28be53dfab28eb3",
@@ -84,6 +90,8 @@ const EXPECTED_DIFF: {
     removed: [],
     changed: {
       AgentCronJob: "65941cea117e0c88",
+      AgentGitHubInstallationsSnapshot: "077baac77418053c",
+      PutGitHubInstallationsBody: "902b6963f090cc52",
       AgentConfigResponse: "4c3abf6fea0cc33c",
     },
   },

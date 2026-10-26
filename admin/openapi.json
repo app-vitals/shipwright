@@ -3021,6 +3021,16 @@
               "$ref": "#/components/schemas/GitHubInstallation"
             }
           },
+          "repoAccess": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RepoAccessEntry"
+            },
+            "description": "Latest per-repo access probe result; null until a runtime with the repo-access check enabled reports one."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -3032,6 +3042,7 @@
           "agentId",
           "reportedAt",
           "installations",
+          "repoAccess",
           "createdAt"
         ]
       },
@@ -3072,6 +3083,55 @@
         ],
         "additionalProperties": false
       },
+      "RepoAccessEntry": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "agent"
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "app-vitals"
+          },
+          "read": {
+            "type": "boolean",
+            "example": true
+          },
+          "write": {
+            "type": "boolean",
+            "example": false
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "forbidden",
+              "rate_limited",
+              "network"
+            ],
+            "description": "Why the probe could not read the repo; absent when the probe succeeded.",
+            "example": "not_found"
+          }
+        },
+        "required": [
+          "repo",
+          "owner",
+          "read",
+          "write",
+          "checkedAt"
+        ],
+        "additionalProperties": false
+      },
       "PutGitHubInstallationsBody": {
         "type": "object",
         "properties": {
@@ -3085,6 +3145,13 @@
             "items": {
               "$ref": "#/components/schemas/GitHubInstallation"
             }
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoAccessEntry"
+            },
+            "description": "Per-repo access probe result (COS-44.1). Omit to leave the stored result unchanged; send [] to clear it."
           }
         },
         "required": [

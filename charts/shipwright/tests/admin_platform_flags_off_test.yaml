@@ -41,3 +41,8 @@ tests:
           any: true
           content:
             name: SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED

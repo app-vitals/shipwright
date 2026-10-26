@@ -4,7 +4,7 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## Breaking: the admin is built on `@app-vitals/agent-admin` 0.4.0 _(AGR-4.2)_
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.5.0 _(AGR-4.2)_
 
 **Version**: next (AGR-4.2)
 
@@ -24,16 +24,18 @@ Deployments upgrade by rolling out the new admin image as usual.
   the schema and migrations inside the installed package. `task db:provision` is unchanged;
   `task db:migrate` now exits with a pointer, because new admin migrations are created in the
   platform repository.
-- On first boot the admin applies four new, additive migrations from the package:
+- On first boot the admin applies five new, additive migrations from the package:
   `20261025000000_add_agent_ask`, `20261026000000_add_agent_pod_service_account`,
-  `20261027000000_add_cron_run_transcripts` and `20261028000000_add_cron_run_now` (new tables and
-  nullable columns only; existing migrations are unchanged).
+  `20261027000000_add_cron_run_transcripts`, `20261028000000_add_cron_run_now` and
+  `20261028000000_add_repo_access_to_github_installations_snapshot` (new tables and nullable
+  columns only; existing migrations are unchanged).
 - New platform features are off unless their flag is `enabled`, and the chart sets none of them by
   default: agent ask (`SHIPWRIGHT_AGENT_ASK_ENABLED`), chat-credential routes
   (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`), the platform doc route (`SHIPWRIGHT_ADMIN_DOC_ENABLED`),
   cron-run transcripts (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`), cron run-now
-  (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`) and the per-agent pod ServiceAccount
-  (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). Unflagged additions: the
+  (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`), the per-agent pod ServiceAccount
+  (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`) and the runtime's per-repo GitHub access
+  check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Unflagged additions: the
   `POST /agents/{id}/repos` and `DELETE /agents/{id}/repos/{owner}/{name}` routes (admin, the
   agent's own key, or `platform.ops`), the `platform.read` / `platform.ops` API-key scopes, and the
   "Signed commits" checkbox on the agent page of agents with a GitHub App.

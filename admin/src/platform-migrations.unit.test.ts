@@ -79,12 +79,16 @@ const PRE_SWAP: ReadonlyArray<readonly [string, string]> = [
   ["20261019000000_add_agent_anthropic_identity", "f40c0ce269d823e1"],
 ];
 
-/** The migrations @app-vitals/agent-admin 0.4.0 adds; all additive. */
+/** The migrations @app-vitals/agent-admin 0.5.0 adds; all additive. */
 const PLATFORM_ADDITIONS: ReadonlyArray<readonly [string, string]> = [
   ["20261025000000_add_agent_ask", "c13175f9380b563b"],
   ["20261026000000_add_agent_pod_service_account", "d7cf68fd3e0bf309"],
   ["20261027000000_add_cron_run_transcripts", "e9f3d67804d4a2f1"],
   ["20261028000000_add_cron_run_now", "986fc3f8f369c5cb"],
+  [
+    "20261028000000_add_repo_access_to_github_installations_snapshot",
+    "3794b3483416fa04",
+  ],
 ];
 
 function hashOf(name: string): string {
@@ -99,11 +103,11 @@ const shipped = readdirSync(MIGRATIONS_DIR)
   .sort();
 
 describe("admin migration history (AGR-4.2)", () => {
-  it("pins @app-vitals/agent-admin 0.4.0", () => {
+  it("pins @app-vitals/agent-admin 0.5.0", () => {
     const pkg = JSON.parse(
       readFileSync(join(PACKAGE_DIR, "package.json"), "utf8"),
     ) as { version: string };
-    expect(pkg.version).toBe("0.4.0");
+    expect(pkg.version).toBe("0.5.0");
   });
 
   it("is exactly the pre-swap history plus the pinned platform additions", () => {

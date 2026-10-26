@@ -18,6 +18,7 @@ import {
   isPlatformDocEnabled,
 } from "@app-vitals/agent-admin/platform-doc-route";
 import { parsePodServiceAccountConfig } from "@app-vitals/agent-admin/pod-service-account-config";
+import { parseRepoAccessConfig } from "@app-vitals/agent-admin/repo-access-config";
 import { parseTranscriptConfig } from "@app-vitals/agent-admin/transcript-config";
 
 const FLAGS: ReadonlyArray<{
@@ -49,6 +50,11 @@ const FLAGS: ReadonlyArray<{
     feature: "cron run-now",
     env: "SHIPWRIGHT_CRON_RUN_NOW_ENABLED",
     enabled: (env) => parseCronRunNowConfig(env).enabled,
+  },
+  {
+    feature: "repo-access check",
+    env: "SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED",
+    enabled: (env) => parseRepoAccessConfig(env).enabled,
   },
   {
     feature: "pod ServiceAccount",

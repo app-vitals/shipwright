@@ -47,6 +47,7 @@ describe("admin UI — authenticated pages", () => {
                   lastError: "installation suspended",
                 },
               ],
+              repoAccess: null,
               createdAt: new Date(),
             };
           },
