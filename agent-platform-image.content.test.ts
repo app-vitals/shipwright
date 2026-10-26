@@ -58,6 +58,20 @@ describe("platform-based agent candidate image (AGR-4.3a)", () => {
     }
   });
 
+  it("copies only the coding-owned templates into the platform workspace and sets the repo root", () => {
+    const df = read("agent/Dockerfile.platform");
+    const copies = df
+      .split("\n")
+      .filter((l) => l.startsWith("COPY") && l.includes("runtime/workspace"));
+    expect(copies).toHaveLength(2);
+    for (const name of ["CLAUDE.md.template", "CLAUDE-HITL.md.template"]) {
+      expect(copies).toContain(
+        `COPY --chown=1000:1000 agent/workspace/${name} ./runtime/workspace/${name}`,
+      );
+    }
+    expect(df).toContain("ENV SHIPWRIGHT_REPO_ROOT=/app\n");
+  });
+
   it("keeps the existing image build and runs all contract checks on the candidate in CI", () => {
     const ci = read(".github/workflows/ci.yml");
     expect(ci).toContain(

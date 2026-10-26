@@ -45,10 +45,10 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.436.6",
+      "version": "1.437.1",
       "dependencies": {
         "@app-vitals/agent-admin": "0.5.0",
-        "@app-vitals/agent-lib": "0.5.0",
+        "@app-vitals/agent-lib": "0.6.1",
         "@app-vitals/agent-runtime": "workspace:*",
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
@@ -107,7 +107,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.436.6",
+      "version": "1.437.1",
       "dependencies": {
         "@app-vitals/agent-lib": "0.5.0",
         "@hono/zod-openapi": "^1.0.0",
@@ -125,7 +125,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.436.6",
+      "version": "1.437.1",
       "dependencies": {
         "@app-vitals/agent-runtime": "workspace:*",
         "js-yaml": "^5.0.0",
@@ -1421,6 +1421,8 @@
     "@semantic-release/git/execa": ["execa@10.0.1", "", { "dependencies": { "@sindresorhus/merge-streams": "^4.0.0", "figures": "^6.1.0", "get-stream": "^9.0.1", "human-signals": "^8.0.1", "is-plain-obj": "^4.1.0", "is-stream": "^4.0.1", "npm-run-path": "^6.0.0", "pretty-ms": "^9.3.0", "signal-exit": "^4.1.0", "strip-final-newline": "^4.0.0", "which-command": "^0.1.0", "yoctocolors": "^2.1.2" } }, "sha512-ge98qjkRK4IB7tL7Ju/6qmm5LHoH1eEMt5FNZrz3f4UIYhF28lggX20z3FaX1sgc67msLEn0N0BscOs29iuwyw=="],
 
     "@semantic-release/npm/read-pkg": ["read-pkg@10.1.0", "", { "dependencies": { "@types/normalize-package-data": "^2.4.4", "normalize-package-data": "^8.0.0", "parse-json": "^8.3.0", "type-fest": "^5.4.4", "unicorn-magic": "^0.4.0" } }, "sha512-I8g2lArQiP78ll51UeMZojewtYgIRCKCWqZEgOO8c/uefTI+XDXvCSXu3+YNUaTNvZzobrL5+SqHjBrByRRTdg=="],
+
+    "@shipwright/agent/@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.6.1", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-7RINrEvbQwxQ5h0ie0hzHG//eNKPNGpxKQ4rUTDkY6qe8klgRs7Q52Iy4uRWX76uAtTuLF37kxBb0StJ+7ZnOg=="],
 
     "@visx/vendor/d3-array": ["d3-array@3.2.1", "", { "dependencies": { "internmap": "1 - 2" } }, "sha512-gUY/qeHq/yNqqoCKNq4vtpFLdoCdvyNpWoC/KNjhGbhDuQpAM9sIQQKkXSNpXa9h5KySs/gzm7R88WkUutgwWQ=="],
 
