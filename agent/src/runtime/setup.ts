@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { AgentPlugin } from "@app-vitals/agent-admin";
+import type { AgentPlugin } from "@shipwright/admin";
 
 // ---------------------------------------------------------------------------
 // Template loading

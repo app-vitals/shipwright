@@ -44,7 +44,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentConfigResponse, AgentPlugin } from "@app-vitals/agent-admin";
 import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
 import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
 import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
@@ -53,6 +52,7 @@ import {
   installPlugins as realInstallPlugins,
 } from "@app-vitals/agent-runtime/setup";
 import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
+import type { AgentConfigResponse, AgentPlugin } from "@shipwright/admin";
 
 // ---------------------------------------------------------------------------
 // Agent summary (GET /agents list-summary shape — no `repos` field, mirrors

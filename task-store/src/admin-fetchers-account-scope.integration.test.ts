@@ -10,7 +10,7 @@
  * Lives here rather than under admin/ because this package owns the
  * task-store app, its Prisma client and the test DB wiring; the fetcher
  * module is dependency-free, so the import pulls in nothing else. It goes
- * through the `@app-vitals/agent-admin` package specifier (a task-store
+ * through the `@shipwright/admin` package specifier (a task-store
  * devDependency); the module it resolves to sits outside this package's
  * `rootDir`, so the file is type-checked by its own
  * tsconfig.cross-package.json and excluded from tsconfig.json.
@@ -19,8 +19,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createTaskStoreFetchers } from "@app-vitals/agent-admin/coding/task-store-fetchers";
 import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { createTaskStoreFetchers } from "@shipwright/admin/coding/task-store-fetchers";
 import { createTaskStoreApp } from "./app.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";

@@ -86,7 +86,7 @@ perpetual refreshing.
 | integration | `bun test --coverage <16 *.integration.test.ts files>` | 5.35s (468 tests / 16 files, DB-gated cases skip without Postgres) | <30s | ✅ within budget |
 | smoke | (no smoke-layer tests in this package yet) | — | <30s | n/a |
 
-### Admin UI (`@app-vitals/agent-admin`)
+### Admin UI (`@shipwright/admin`)
 
 Not yet formally documented in `test-system.md`'s per-component tables, but measured
 here for completeness since it carries real unit/integration/smoke/e2e layers today.

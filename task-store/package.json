@@ -24,7 +24,7 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@app-vitals/agent-admin": "workspace:*",
+    "@shipwright/admin": "workspace:*",
     "@types/pg": "^8.15.6",
     "bun-types": "^1.3.14",
     "prisma": "^7.10.0",

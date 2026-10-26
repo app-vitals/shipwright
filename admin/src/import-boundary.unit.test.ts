@@ -11,10 +11,10 @@
  * can be copied into its own repo. coding/ is exempt (plugins/task-store/brand).
  *
  * Consumers reach admin through the package specifier only: admin is the
- * `@app-vitals/agent-admin` workspace package (AGR-1.4), so no file outside
+ * `@shipwright/admin` workspace package (AGR-1.4), so no file outside
  * admin/ — the agent runtime, root scripts, task-store, plugins, brand,
  * specialties — may import it with a relative path or the retired
- * `@shipwright/admin` name.
+ * `@app-vitals/agent-admin` name.
  *
  * Runs under `bun test`, so CI (task ci -> test:coverage) enforces it.
  */
@@ -41,8 +41,14 @@ const REPO_SCAN_FIXTURE_FILES = new Set([
   join(REPO_ROOT, "scripts", "platform-gate.unit.test.ts"),
 ]);
 
+// Names the registry package @app-vitals/agent-admin (the Renovate platform
+// group), which is not the retired local workspace.
+const RETIRED_NAME_ALLOWLIST = new Set([
+  join(REPO_ROOT, "renovate.content.test.ts"),
+]);
+
 // The retired workspace name, in any module specifier.
-const RETIRED_SPECIFIER = /["'](@shipwright\/admin(?:\/[^"']*)?)["']/g;
+const RETIRED_SPECIFIER = /["'](@app-vitals\/agent-admin(?:\/[^"']*)?)["']/g;
 
 // Keywords inside a quoted string (e.g. an assertion on source text) are not
 // imports, so the keyword must not directly follow a quote or backtick.
@@ -72,7 +78,7 @@ function listRepoTsFiles(dir: string, excludeDir: string): string[] {
   });
 }
 
-/** `@shipwright/admin[/...]` specifiers in `source`. */
+/** `@app-vitals/agent-admin[/...]` specifiers in `source`. */
 export function findRetiredSpecifiers(source: string): string[] {
   return [...source.matchAll(RETIRED_SPECIFIER)].map((m) => m[1]);
 }
@@ -182,7 +188,7 @@ describe("admin import boundary (coding -> platform only)", () => {
   });
 });
 
-describe("admin package boundary (@app-vitals/agent-admin only)", () => {
+describe("admin package boundary (@shipwright/admin only)", () => {
   const outsideFiles = listRepoTsFiles(REPO_ROOT, ADMIN_DIR).filter(
     (file) => !REPO_SCAN_FIXTURE_FILES.has(file),
   );
@@ -197,12 +203,14 @@ describe("admin package boundary (@app-vitals/agent-admin only)", () => {
     expect(violations).toEqual([]);
   });
 
-  it("no file outside admin/ imports the retired @shipwright/admin name", () => {
-    const violations = outsideFiles.flatMap((file) =>
-      findRetiredSpecifiers(readFileSync(file, "utf8")).map(
-        (spec) => `${repoRel(file)} -> ${spec}`,
-      ),
-    );
+  it("no file outside admin/ imports the retired @app-vitals/agent-admin name", () => {
+    const violations = outsideFiles
+      .filter((file) => !RETIRED_NAME_ALLOWLIST.has(file))
+      .flatMap((file) =>
+        findRetiredSpecifiers(readFileSync(file, "utf8")).map(
+          (spec) => `${repoRel(file)} -> ${spec}`,
+        ),
+      );
     expect(violations).toEqual([]);
   });
 
@@ -225,16 +233,16 @@ describe("admin package boundary (@app-vitals/agent-admin only)", () => {
     expect(
       findImportsInto(
         script,
-        `import { x } from "@app-vitals/agent-admin/admin-boot";`,
+        `import { x } from "@shipwright/admin/admin-boot";`,
         ADMIN_DIR,
       ),
     ).toEqual([]);
     expect(
       findRetiredSpecifiers(
-        `import type { AgentPlugin } from "@shipwright/admin";\n` +
-          `import { y } from "@shipwright/admin/api.ts";\n` +
-          `import { z } from "@app-vitals/agent-admin";`,
+        `import type { AgentPlugin } from "@app-vitals/agent-admin";\n` +
+          `import { y } from "@app-vitals/agent-admin/api.ts";\n` +
+          `import { z } from "@shipwright/admin";`,
       ),
-    ).toEqual(["@shipwright/admin", "@shipwright/admin/api.ts"]);
+    ).toEqual(["@app-vitals/agent-admin", "@app-vitals/agent-admin/api.ts"]);
   });
 });

@@ -9,7 +9,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseSpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
+import { parseSpecialtyManifest } from "@shipwright/admin/specialty-registry";
 
 const rawContent = readFileSync(
   join(import.meta.dir, "manifest.yaml"),

@@ -40,7 +40,7 @@
     "typescript": "^7.0.0"
   },
   "dependencies": {
-    "@app-vitals/agent-admin": "workspace:*",
+    "@shipwright/admin": "workspace:*",
     "@app-vitals/agent-lib": "0.2.0",
     "@app-vitals/agent-runtime": "workspace:*",
     "@prisma/client": "^7.0.0"

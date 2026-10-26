@@ -86,7 +86,7 @@ export async function waitForAgent(deps: WaitDeps): Promise<string> {
 
 if (import.meta.main) {
   const { createAdminPrismaClient } = await import(
-    "@app-vitals/agent-admin/prisma-client"
+    "@shipwright/admin/prisma-client"
   );
 
   const argv = process.argv.slice(2);
