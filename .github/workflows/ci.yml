@@ -351,6 +351,14 @@ jobs:
           SHIPWRIGHT_CONTRACT_ENTRYPOINT=/app/runtime/entrypoint-main.ts \
           bun test agent/src/runtime/base-image-contract.smoke.test.ts
 
+      # Runs the platform runtime's real setup code in the image as uid 1000:
+      # ensureAgentHome() for the coding type and the built-in marketplace install.
+      - name: Platform real-boot smoke test
+        run: |
+          SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci-platform \
+          SHIPWRIGHT_CONTRACT_SETUP_MODULE=/app/runtime/setup.ts \
+          bun test agent/src/runtime/platform-real-boot.smoke.test.ts
+
       - name: Report cgroup delegation mode under sandbox restrictions
         run: |
           docker run --rm --user 1000 --security-opt=no-new-privileges \
