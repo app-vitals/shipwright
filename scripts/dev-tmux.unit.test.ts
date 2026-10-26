@@ -207,16 +207,13 @@ describe("buildStackCommands", () => {
     expect(preflight?.kind).toBe("preflight");
   });
 
-  test("the preflight generates the Prisma client BEFORE migrating", () => {
-    // The agent imports admin/prisma/client — `bun install` does not generate
-    // it, so the preflight must, or the agent pane crashes on a missing module.
+  test("the admin preflight migrates without generating — the client ships in @app-vitals/agent-admin", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const preflight = cmds.find((c) => c.kind === "preflight");
     const cmd = preflight?.argv.join(" ") ?? "";
-    expect(cmd).toContain("prisma generate");
-    expect(cmd.indexOf("prisma generate")).toBeLessThan(
-      cmd.indexOf("migrate deploy"),
-    );
+    expect(cmd).toContain("cd admin");
+    expect(cmd).toContain("migrate deploy");
+    expect(cmd).not.toContain("prisma generate");
   });
 
   test("seeds the task-store admin token AFTER the task-store migrate deploy", () => {

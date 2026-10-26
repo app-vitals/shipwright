@@ -510,8 +510,9 @@ export function buildCloneSteps(
 }
 
 /**
- * Plans the schema/seed steps: prisma generate + migrate for both the
- * task-store and admin services, plus the admin token seed between them.
+ * Plans the schema/seed steps: prisma generate + migrate for the task-store,
+ * migrate for admin (its generated client ships in @app-vitals/agent-admin),
+ * plus the admin token seed between them.
  * Ordering matters — the token seed runs against an already-migrated
  * task-store DB, and admin migrates last.
  */
@@ -546,13 +547,6 @@ export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
       env: { DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl },
     },
     buildTokenSeedStep(cfg, DEV_TOKEN),
-    {
-      kind: "exec",
-      label: "admin prisma generate failed",
-      startLabel: "running admin prisma generate...",
-      argv: prismaArgs("generate"),
-      cwd: join(cfg.repoRoot, "admin"),
-    },
     {
       kind: "exec",
       label: "admin migrate failed",

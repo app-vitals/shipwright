@@ -243,13 +243,12 @@ describe("buildCloneSteps", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildMigrationSteps", () => {
-  test("orders task-store generate → migrate → token seed → admin generate → migrate", () => {
+  test("orders task-store generate → migrate → token seed → admin migrate", () => {
     const steps = buildMigrationSteps(cfg());
     expect(steps.map((s) => [s.cwd, s.argv?.slice(1, 4).join(" ")])).toEqual([
       ["/repo/task-store", "prisma generate --schema=prisma/schema.prisma"],
       ["/repo/task-store", "prisma migrate deploy"],
       [REPO_ROOT, "run /repo/scripts/seed-task-store-token.ts --db-url"],
-      ["/repo/admin", "prisma generate"],
       ["/repo/admin", "prisma migrate deploy"],
     ]);
   });
@@ -261,16 +260,24 @@ describe("buildMigrationSteps", () => {
       DATABASE_URL_SHIPWRIGHT_TASK_STORE:
         "postgresql://alice@localhost:5432/shipwright_task_store_dev",
     });
-    expect(steps[4]?.env).toEqual({
+    expect(steps[3]?.env).toEqual({
       DATABASE_URL_SHIPWRIGHT_ADMIN:
         "postgresql://alice@localhost:5432/shipwright_dev",
     });
   });
 
-  test("leaves generate steps env-free — they touch no database", () => {
+  test("leaves the generate step env-free — it touches no database", () => {
     const steps = buildMigrationSteps(cfg());
     expect(steps[0]?.env).toBeUndefined();
-    expect(steps[3]?.env).toBeUndefined();
+  });
+
+  test("does not generate the admin client — it ships in @app-vitals/agent-admin", () => {
+    const steps = buildMigrationSteps(cfg());
+    expect(
+      steps.filter(
+        (s) => s.cwd === "/repo/admin" && s.argv?.includes("generate"),
+      ),
+    ).toEqual([]);
   });
 
   test("seeds the admin token against an already-migrated task-store DB", () => {
@@ -295,7 +302,6 @@ describe("buildMigrationSteps", () => {
       "running task-store prisma generate...",
       "running task-store prisma migrate...",
       "seeding task-store admin token...",
-      "running admin prisma generate...",
       "running admin prisma migrate...",
     ]);
   });
@@ -348,7 +354,6 @@ describe("buildPreflightSteps", () => {
       "exec",
       "exec",
       "exec",
-      "exec",
     ]);
   });
 
@@ -367,14 +372,7 @@ describe("buildPreflightSteps", () => {
     const kinds = buildPreflightSteps(cfg(), everythingExists).map(
       (s) => s.kind,
     );
-    expect(kinds).toEqual([
-      "install-plugins",
-      "exec",
-      "exec",
-      "exec",
-      "exec",
-      "exec",
-    ]);
+    expect(kinds).toEqual(["install-plugins", "exec", "exec", "exec", "exec"]);
   });
 });
 

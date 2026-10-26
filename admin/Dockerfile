@@ -90,9 +90,13 @@ RUN cd admin && bun -e 'import.meta.resolve("@app-vitals/agent-admin/admin-boot"
 RUN ADMIN_PKG_DIR="$(cd admin && bun -e 'const { dirname } = require("node:path"); const { realpathSync } = require("node:fs"); console.log(dirname(realpathSync(require.resolve("@app-vitals/agent-admin/package.json"))))')" \
     && cp version.txt "$ADMIN_PKG_DIR/../version.txt"
 
-# Generate the Prisma client from the package's schema. admin/prisma.config.ts
-# points the CLI at the schema and migrations inside @app-vitals/agent-admin.
-RUN cd admin && bunx prisma generate
+# The generated Prisma client ships inside @app-vitals/agent-admin
+# (prisma/client), built at the package's release, so the image does not run
+# `prisma generate`: from the installed package its generator resolves the
+# package's tsconfig.json, which extends a monorepo-root ../tsconfig.json that
+# does not exist under node_modules ("File '../tsconfig.json' not found").
+# Fail the build if the shipped client is missing instead.
+RUN cd admin && bun -e 'import.meta.resolve("@app-vitals/agent-admin/prisma/client/client.ts")'
 
 EXPOSE 3000
 
