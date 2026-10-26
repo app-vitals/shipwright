@@ -103,6 +103,31 @@ jobs:
       - name: Refresh the platform docs snapshot
         run: bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src
 
+      # npm lists a new version a few minutes after the platform publishes it,
+      # so `bun install` right after the dispatch failed with "No version
+      # matching X found" (0.6.0, 0.6.1, 0.7.0). Poll the registry for every
+      # pinned package first; the list comes from the bump script so it cannot
+      # drift from what was pinned. VERSION arrives via env only.
+      - name: Wait for @app-vitals/agent-* on npm
+        run: |
+          PACKAGES=$(bun scripts/platform-release-bump.ts --list-packages)
+          for pkg in $PACKAGES; do
+            found=false
+            for _ in $(seq 1 40); do
+              if [ "$(npm view "${pkg}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+                found=true
+                break
+              fi
+              echo "Waiting for ${pkg}@${VERSION} on npm..."
+              sleep 15
+            done
+            if [ "$found" != "true" ]; then
+              echo "ERROR: ${pkg}@${VERSION} not available on npm after ~10 minutes" >&2
+              exit 1
+            fi
+            echo "Found ${pkg}@${VERSION}"
+          done
+
       - name: Refresh bun.lock
         run: bun install
 

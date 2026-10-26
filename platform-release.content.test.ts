@@ -114,6 +114,23 @@ describe("platform-release.yml bump", () => {
     expect(install).toBeGreaterThan(bump);
   });
 
+  it("waits for every pinned package on npm before bun install, deriving the list from the bump script", () => {
+    const idx = steps.findIndex((s) => /npm view/.test(s.run ?? ""));
+    const lockIdx = steps.findIndex((s) => s.name === "Refresh bun.lock");
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(idx).toBeLessThan(lockIdx);
+    const wait = steps[idx];
+    expect(wait.run).toContain("platform-release-bump.ts --list-packages");
+    expect(wait.run).toContain("sleep 15");
+    expect(wait.run).toMatch(/npm view "\$\{?pkg\}?@\$\{?VERSION\}?" version/);
+    expect(wait.run).toContain("exit 1");
+    // The version reaches the step through env only, never a template expression.
+    expect(wait.run).not.toContain("${{");
+    // The step precedes every `bun install` in the job.
+    const firstInstall = steps.findIndex((s) => /bun install/.test(s.run ?? ""));
+    expect(idx).toBeLessThan(firstInstall);
+  });
+
   it("commits only package.json files, bun.lock and the docs snapshot, on one fixed bump branch", () => {
     expect(job.env?.BRANCH).toBe("chore/platform-release");
     expect(allRuns).toContain("git add -A -- docs/platform");
