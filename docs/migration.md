@@ -4,6 +4,42 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.4.0 _(AGR-4.2)_
+
+**Version**: next (AGR-4.2)
+
+**Who this affects**: anyone importing platform admin modules from `@shipwright/admin/*`, running
+admin Prisma commands with `--schema=prisma/schema`, or creating admin migrations in this repo.
+Deployments upgrade by rolling out the new admin image as usual.
+
+- The platform admin (API, UI, auth, Prisma schema, the single migration history) now comes from
+  the registry package `@app-vitals/agent-admin`, pinned to the same exact version as
+  `@app-vitals/agent-lib`. `admin/` keeps only `src/main.ts` (the composition root), `src/coding/`
+  (the coding extension), the composed `openapi.json` and `prisma.config.ts`.
+- `@shipwright/admin` now exports only `./main`, `./coding/*`, `./openapi.json`, `./prisma.config`
+  and `./package.json`. Import every other admin module from `@app-vitals/agent-admin/<module>`
+  (for example `@app-vitals/agent-admin/prisma-client`, `@app-vitals/agent-admin/admin-extension`).
+  `admin/openapi.platform.json` is gone; the package ships its own copy.
+- Admin Prisma commands run from `admin/` with no `--schema` flag: `admin/prisma.config.ts` points at
+  the schema and migrations inside the installed package. `task db:provision` is unchanged;
+  `task db:migrate` now exits with a pointer, because new admin migrations are created in the
+  platform repository.
+- On first boot the admin applies four new, additive migrations from the package:
+  `20261025000000_add_agent_ask`, `20261026000000_add_agent_pod_service_account`,
+  `20261027000000_add_cron_run_transcripts` and `20261028000000_add_cron_run_now` (new tables and
+  nullable columns only; existing migrations are unchanged).
+- New platform features are off unless their flag is `enabled`, and the chart sets none of them by
+  default: agent ask (`SHIPWRIGHT_AGENT_ASK_ENABLED`), chat-credential routes
+  (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`), the platform doc route (`SHIPWRIGHT_ADMIN_DOC_ENABLED`),
+  cron-run transcripts (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`), cron run-now
+  (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`) and the per-agent pod ServiceAccount
+  (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). Unflagged additions: the
+  `POST /agents/{id}/repos` and `DELETE /agents/{id}/repos/{owner}/{name}` routes (admin, the
+  agent's own key, or `platform.ops`), the `platform.read` / `platform.ops` API-key scopes, and the
+  "Signed commits" checkbox on the agent page of agents with a GitHub App.
+
+---
+
 ## Behavior: entropy/security patrol crons gain a fail-closed repo-scope preCheck _(RSF-3.1)_
 
 **Version**: next (RSF-3.1)

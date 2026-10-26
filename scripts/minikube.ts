@@ -12,7 +12,7 @@ import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
  * wrong and produce confusing failures rather than clear errors:
  *
  *   1. VM sizing must be set at `minikube start`. The agent pod alone requests
- *      500m CPU / 2Gi memory (admin/src/agent-manifest.ts); an under-sized VM
+ *      500m CPU / 2Gi memory (@app-vitals/agent-admin/agent-manifest); an under-sized VM
  *      schedules it and then thrashes.
  *   2. `minikube addons enable ingress` must run BEFORE the install, or the
  *      rendered Ingress has no controller and nothing answers.

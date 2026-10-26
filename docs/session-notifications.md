@@ -2,13 +2,13 @@
 
 Session-follow lets a user follow a task-store [Session](./task-store.md) and receive a Web Push notification about it — the session-lifecycle sibling of the chat "your agent replied" push flow documented in [`docs/agent-web-ui.md`](./agent-web-ui.md)'s "PWA shell" section (service worker, VAPID env vars, and the `PushSubscription` model). It reuses that same `PushSubscription`/VAPID infrastructure, but adds its own business-domain state: follow/mute per user per session, per-user notification prefs, and a per-user/per-session alert cooldown.
 
-Implemented across `admin/src/coding/session-follow-service.ts` (CRUD), `admin/src/push-content.ts` (session notification content policy), `admin/src/push-service.ts`'s `notifySession()` (delivery), `admin/src/coding/session-alert-sweeper.ts` (the background job that calls `notifySession()`, stamps `SessionAlertState.lastAlertedAt`, and prunes followers who lose visibility), `admin/src/coding/admin-ui-sessions.ts` (the settings page), `admin/src/admin-ui-push-test.ts` (the "Send test notification" route mounted alongside it), `admin/src/coding/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/coding/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
+Implemented across `admin/src/coding/session-follow-service.ts` (CRUD), `@app-vitals/agent-admin/push-content` (session notification content policy), `@app-vitals/agent-admin/push-service`'s `notifySession()` (delivery), `admin/src/coding/session-alert-sweeper.ts` (the background job that calls `notifySession()`, stamps `SessionAlertState.lastAlertedAt`, and prunes followers who lose visibility), `admin/src/coding/admin-ui-sessions.ts` (the settings page), `@app-vitals/agent-admin/admin-ui-push-test` (the "Send test notification" route mounted alongside it), `admin/src/coding/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/coding/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
 
 ---
 
 ## Data model
 
-Three models, all in `admin/prisma/schema/`, none tied to an `Agent` (no cascade on agent deletion):
+Three models, all in the `@app-vitals/agent-admin` Prisma schema (`prisma/schema/` in the package), none tied to an `Agent` (no cascade on agent deletion):
 
 | Model | Purpose | Key fields |
 |---|---|---|
@@ -27,7 +27,7 @@ Three models, all in `admin/prisma/schema/`, none tied to an `Agent` (no cascade
 
 ## Notification detail-level policy
 
-Session notifications reuse the same three-tier detail levels as the chat-reply push flow (`PushDetailLevel`: `"generic" | "title" | "preview"`), and the same effective-level formula, in `admin/src/push-content.ts`:
+Session notifications reuse the same three-tier detail levels as the chat-reply push flow (`PushDetailLevel`: `"generic" | "title" | "preview"`), and the same effective-level formula, in `@app-vitals/agent-admin/push-content`:
 
 ```
 effective level = min(operator ceiling, per-subscription opt-in, per-call ceiling)
@@ -47,7 +47,7 @@ effective level = min(operator ceiling, per-subscription opt-in, per-call ceilin
 
 `sanitizePublic()` scrubs id/repo/path/cost-shaped substrings (Prisma cuids, `owner/repo`-style slugs, `agt_...`-style ids, `$1,234.56`-style costs) out of the user-authored title/reason before either can reach a locked screen — conservative by design, so an innocuous slash-word being redacted is preferred over a real leak. The deep link (`url: /admin/sessions/:slug`) and the coalescing `tag` (`shipwright-session-:slug`) are the only fields allowed to carry the session slug; neither is rendered on the lock screen.
 
-`PushService.notifySession()` (`admin/src/push-service.ts`) is called by `session-alert-sweeper.ts` — the session-lifecycle event source this payload logic was built for — once per non-muted, still-visible follower: with kind `"immediate"`/`"reminder"` for a session still waiting on them, and `"completed"` when the session closes.
+`PushService.notifySession()` (`@app-vitals/agent-admin/push-service`) is called by `session-alert-sweeper.ts` — the session-lifecycle event source this payload logic was built for — once per non-muted, still-visible follower: with kind `"immediate"`/`"reminder"` for a session still waiting on them, and `"completed"` when the session closes.
 
 ## `/admin/settings/notifications` page
 
