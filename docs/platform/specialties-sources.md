@@ -58,7 +58,7 @@ These three requirements are **required work for the future implementation pass*
 The full JSON Schema for `SpecialtyManifestSchema` is generated from the Zod source of truth and committed at [`agent-types/specialty.schema.json`](../agent-types/specialty.schema.json). Regenerate it after any schema change:
 
 ```bash
-bun -e 'import { buildSpecialtyJsonSchema } from "@app-vitals/agent-admin/specialty-registry"; await Bun.write("agent-types/specialty.schema.json", `${JSON.stringify(buildSpecialtyJsonSchema(), null, 2)}\n`)'
+bun -e 'import { buildSpecialtyJsonSchema } from "@shipwright/admin/specialty-registry"; await Bun.write("agent-types/specialty.schema.json", `${JSON.stringify(buildSpecialtyJsonSchema(), null, 2)}\n`)'
 ```
 
 A drift guard (`admin/src/specialty-registry.schema.unit.test.ts`) fails CI if the committed artifact falls out of sync with the live schema.

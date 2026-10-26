@@ -18,7 +18,7 @@
  */
 
 import { join } from "node:path";
-import type { AgentPlugin } from "@app-vitals/agent-admin";
+import type { AgentPlugin } from "@shipwright/admin";
 import type { ShipwrightConfigClient } from "./shipwright-config-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -171,7 +171,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@app-vitals/agent-admin` | `admin/prisma/schema/` |
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema/` |
 | `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
 | `DATABASE_URL_SHIPWRIGHT_CHAT` | `@shipwright/chat` | `chat/prisma/schema.prisma` |
 

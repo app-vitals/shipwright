@@ -165,7 +165,7 @@ describe("renovate.json app-vitals agent platform group rule (AGR-4.1)", () => {
     expect(platformRuleIndex()).toBeGreaterThanOrEqual(0);
     for (const name of [
       "@app-vitals/agent-lib",
-      "@app-vitals/agent-admin",
+      "@shipwright/admin",
       "@app-vitals/agent-runtime",
     ]) {
       expect(matches(name), name).toBe(true);
