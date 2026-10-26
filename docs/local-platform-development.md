@@ -31,8 +31,30 @@ Rules of thumb:
 | `task dev` (metrics supervisor) | `@app-vitals/agent-lib` | Edits are live. |
 | `task hitl` (`scripts/hitl.ts`) | `agent-runtime` (`claude`, `setup`), `agent-admin` (Prisma client, `prisma.config.ts`), `agent-lib` | Edits are live; the admin it boots is `admin/src/main.ts` on top of the linked `agent-admin`. |
 | `scripts/seed-dev-agent.ts` | `agent-admin` (`prisma-client`, `specialty-manifest-loader`), `agent-lib` | Edits are live; regenerate the Prisma client first if the schema changed. |
-| `task stack` (tmux; agent in Docker) | Host processes use the link. The agent container is built from `agent/Dockerfile`, which starts `FROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}`. | The container does **not** see the link. Build the platform image locally first (below). |
+| `task stack` (tmux; agent in Docker) | Host processes use the link. The agent container is built from `agent/Dockerfile`, which starts `FROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}`. The `chat-svc` pane runs the platform's `chat/src/main.ts` (or the `agent-chat` image). | The container does **not** see the link. Build the platform image locally first (below). The chat pane reads the platform checkout directly (next section). |
 | `task minikube:*` | Images pulled by the chart (`ghcr.io/app-vitals/shipwright-*`) | The link does not apply. Load locally built images (below). |
+
+### Running chat (`task stack`)
+
+The chat service is hosted in the platform repo, not in this one. The `chat-svc` pane (`:3003`) starts it one of two ways:
+
+- **Platform checkout (default).** Runs `chat/src/main.ts` from the checkout at `$AGENT_PLATFORM_DIR` (default `../agent`, the sibling checkout from step 1):
+
+  ```bash
+  (cd ../agent && bun install)   # postinstall generates chat's Prisma client
+  AGENT_PLATFORM_DIR=/path/to/agent task stack   # only if it is not at ../agent
+  ```
+
+  `task stack` fails fast with a pointer to this page if the checkout is missing.
+- **Published image.** Set `SHIPWRIGHT_CHAT_IMAGE` to run `ghcr.io/app-vitals/agent-chat:<platform version>` instead (the tag matches `ARG PLATFORM_VERSION` in `agent/Dockerfile`). The container reaches the host Postgres via `host.docker.internal`; `task stack:down` removes it.
+
+  ```bash
+  SHIPWRIGHT_CHAT_IMAGE=ghcr.io/app-vitals/agent-chat:<PLATFORM_VERSION> task stack
+  ```
+
+Either way chat uses its own dedicated database, `shipwright_chat_dev` on the local Postgres (`DATABASE_URL_SHIPWRIGHT_CHAT`), and runs `prisma migrate deploy` itself on boot, so `task stack` has no chat migration preflight. `scripts/seed-chat-tokens.ts` (run from the agent pane once you have created an agent) inserts the dev admin and agent tokens into that database's `ChatToken` table over plain SQL and waits for chat's boot migration to create it, so it works with either source. Shipwright CI no longer creates or migrates a chat database; chat's own tests run in the platform repo.
+
+For Minikube the chart's `chat` workload still defaults to `ghcr.io/app-vitals/shipwright-chat`; to run the platform build, side-load or point `chat.image.repository`/`chat.image.tag` at the `agent-chat` image (section 3 describes the same approach for the agent image).
 
 ## 3. Running a local platform image
 

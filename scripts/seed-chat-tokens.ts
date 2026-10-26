@@ -13,69 +13,125 @@
  * generates a random raw); we upsert the hashes directly. Mirrors
  * scripts/seed-task-store-token.ts.
  *
- * This script is invoked only by scripts/dev-tmux.ts (`task stack`) as a
- * preflight. It never runs in a deployed stack, so it changes no production
+ * The chat service is hosted in app-vitals/agent (CHX-3.3); this script writes
+ * to its `ChatToken` table over plain SQL (Bun.SQL), so it needs no chat
+ * workspace or Prisma client from this repo.
+ *
+ * This script is invoked only by scripts/dev-tmux.ts (`task stack`) from the
+ * agent pane's script. It never runs in a deployed stack, so it changes no production
  * behavior.
  *
  *   bun run scripts/seed-chat-tokens.ts --db-url <url> \
  *     --admin-token <raw> --agent-token <raw> --agent-id <agentId>
  *
- * Pure helpers (hashRawToken) and the upsert (seedChatTokens) are exported
+ * Pure helpers (hashRawToken) and the insert (seedChatTokens) are exported
  * for unit testing; the import.meta.main block wires real I/O. CLI flags are
  * parsed via the shared @app-vitals/agent-lib/cli-flags#parseFlags helper.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in
- * chat/src/token-service.ts — the hashing contract the chat service uses to
+ * the platform repo's chat/src/token-service.ts — the hashing contract the chat service uses to
  * validate. Kept in sync by the "known vector" unit test.
  */
 export function hashRawToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-/** Minimal slice of the chat PrismaClient this seeder needs. */
-interface ChatTokenUpserter {
-  chatToken: {
-    upsert(args: {
-      where: { token: string };
-      create: { token: string; label: string | null; agentId: string | null };
-      update: Record<string, never>;
-    }): Promise<unknown>;
-  };
+/** A ChatToken row to insert (the seeder never sets id/createdAt/revokedAt). */
+export interface ChatTokenRow {
+  token: string;
+  label: string | null;
+  agentId: string | null;
+}
+
+/** Minimal slice of the chat database this seeder needs. */
+export interface ChatTokenStore {
+  /** Insert the row unless a row with the same (hashed) token exists. */
+  insertIfAbsent(row: ChatTokenRow): Promise<void>;
 }
 
 /**
- * Idempotently upsert the two dev tokens by their hashed raw values. The empty
- * `update` makes re-runs a no-op — running `task stack` repeatedly never
- * creates duplicates or rotates a token.
+ * Idempotently insert the two dev tokens by their hashed raw values. The
+ * insert-if-absent makes re-runs a no-op — running `task stack` repeatedly
+ * never creates duplicates or rotates a token.
  */
 export async function seedChatTokens(opts: {
-  prisma: ChatTokenUpserter;
+  store: ChatTokenStore;
   adminRawToken: string;
   agentRawToken: string;
   agentId: string;
 }): Promise<void> {
-  const adminHashed = hashRawToken(opts.adminRawToken);
-  await opts.prisma.chatToken.upsert({
-    where: { token: adminHashed },
-    create: { token: adminHashed, label: "dev-admin", agentId: null },
-    update: {},
+  await opts.store.insertIfAbsent({
+    token: hashRawToken(opts.adminRawToken),
+    label: "dev-admin",
+    agentId: null,
   });
+  await opts.store.insertIfAbsent({
+    token: hashRawToken(opts.agentRawToken),
+    label: `dev-agent (${opts.agentId})`,
+    agentId: opts.agentId,
+  });
+}
 
-  const agentHashed = hashRawToken(opts.agentRawToken);
-  await opts.prisma.chatToken.upsert({
-    where: { token: agentHashed },
-    create: {
-      token: agentHashed,
-      label: `dev-agent (${opts.agentId})`,
-      agentId: opts.agentId,
+/**
+ * ChatTokenStore over a Postgres URL using Bun's built-in SQL client. The chat
+ * service now lives in app-vitals/agent (CHX-3.3), so this repo no longer has
+ * its Prisma client to import — the seeder talks to the platform's `ChatToken`
+ * table directly. `id` has only a client-side (Prisma cuid) default, so we
+ * supply one.
+ */
+export function createChatTokenStore(
+  databaseUrl: string,
+): ChatTokenStore & { close(): Promise<void> } {
+  const sql = new Bun.SQL(databaseUrl);
+  return {
+    async insertIfAbsent(row) {
+      await sql`INSERT INTO "ChatToken" ("id", "token", "label", "agentId")
+        VALUES (${randomUUID()}, ${row.token}, ${row.label}, ${row.agentId})
+        ON CONFLICT ("token") DO NOTHING`;
     },
-    update: {},
-  });
+    close: () => sql.close(),
+  };
+}
+
+/** True for Postgres "undefined_table" (42P01): the chat service has not migrated yet. */
+export function isMissingTableError(err: unknown): boolean {
+  const e = err as { code?: string; errno?: string; message?: string };
+  return (
+    e?.code === "42P01" ||
+    e?.errno === "42P01" ||
+    /relation "ChatToken" does not exist/.test(e?.message ?? "")
+  );
+}
+
+/**
+ * Run `fn`, retrying while the ChatToken table is missing. The platform chat
+ * service migrates its own database on boot, and `task stack` starts it in a
+ * sibling pane, so the first attempt can race that migration.
+ */
+export async function retryUntilMigrated<T>(
+  fn: () => Promise<T>,
+  opts: {
+    attempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<T> {
+  const attempts = opts.attempts ?? 30;
+  const delayMs = opts.delayMs ?? 2000;
+  const sleep = opts.sleep ?? ((ms) => Bun.sleep(ms));
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isMissingTableError(err) || i >= attempts) throw err;
+      await sleep(delayMs);
+    }
+  }
 }
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
@@ -106,24 +162,25 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  // Prisma 7 dropped `new PrismaClient({ datasources })`: the client must be
-  // built over a driver adapter. Go through the chat service's own factory so
-  // this seeder connects exactly the way the service does — one construction
-  // site, imported lazily so the unit test never has to load pg or the
-  // generated client.
-  const { createPrismaClient } = await import("../chat/src/prisma-client.ts");
-  const prisma = createPrismaClient(databaseUrl);
+  const store = createChatTokenStore(databaseUrl);
   try {
-    await seedChatTokens({
-      prisma: prisma as unknown as ChatTokenUpserter,
-      adminRawToken: adminToken,
-      agentRawToken: agentToken,
-      agentId,
-    });
-    console.log(
-      "[seed-chat-tokens] admin + agent tokens ready (idempotent upsert).",
+    await retryUntilMigrated(() =>
+      seedChatTokens({
+        store,
+        adminRawToken: adminToken,
+        agentRawToken: agentToken,
+        agentId,
+      }),
     );
+    console.log(
+      "[seed-chat-tokens] admin + agent tokens ready (idempotent insert).",
+    );
+  } catch (err) {
+    console.error(
+      `[seed-chat-tokens] failed to seed tokens: ${(err as Error).message}`,
+    );
+    process.exitCode = 1;
   } finally {
-    await prisma.$disconnect();
+    await store.close();
   }
 }

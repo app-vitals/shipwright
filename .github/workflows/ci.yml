@@ -114,7 +114,7 @@ jobs:
       # so its URL below keeps them. Admin's pool is a plain pg.Pool built in
       # admin/src/prisma-client.ts with no such translation, so those knobs are
       # dropped from DATABASE_URL_ADMIN_TEST below — admin's pool is bounded by
-      # pg.Pool's own default max instead. Chat does the same and never set them.
+      # pg.Pool's own default max instead.
       #
       # Note: raising max_connections on the service container itself isn't
       # possible here — GitHub Actions' service `options:` are inserted into
@@ -123,17 +123,15 @@ jobs:
       # docker's `--cpu-shares` shorthand there anyway).
       DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
-      # `prisma migrate deploy` reads the non-_TEST var names below. Admin,
-      # task-store and chat are all on Prisma 7, which dropped `url` from the
-      # schema, so each reads its own var via its own prisma.config.ts — they
-      # need to be set to the same connection strings as the _TEST vars above to
-      # sync schema against the right databases.
-      # DATABASE_URL_SHIPWRIGHT_CHAT is the exception to the
-      # "nothing else reads these at runtime" rule: chat's integration suite
-      # reads it directly (it has no separate _TEST variant).
+      # `prisma migrate deploy` reads the non-_TEST var names below. Admin and
+      # task-store are both on Prisma 7, which dropped `url` from the schema, so
+      # each reads its own var via its own prisma.config.ts — they need to be set
+      # to the same connection strings as the _TEST vars above to sync schema
+      # against the right databases.
+      # The chat service is hosted and tested in app-vitals/agent (CHX-3.3), so
+      # CI no longer creates or migrates a chat database.
       DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
-      DATABASE_URL_SHIPWRIGHT_CHAT: postgres://shipwright:shipwright@localhost:5432/shipwright_chat_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -171,11 +169,10 @@ jobs:
       - name: Create test databases
         run: |
           PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
-          PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_chat_test;"
 
       - name: Sync test DB schema
         run: |
-          # admin, task-store and chat are all on Prisma 7 while the repo root
+          # admin and task-store are both on Prisma 7 while the repo root
           # still resolves Prisma 6. Their schemas no longer carry `url` (v7
           # moved that to each workspace's prisma.config.ts), which the 6.x CLI
           # rejects — so run each from its own workspace, where bunx resolves
@@ -185,7 +182,6 @@ jobs:
           # schema and migrations shipped in @app-vitals/agent-admin.
           (cd admin && bunx prisma migrate deploy)
           (cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma)
-          (cd chat && bunx prisma migrate deploy --schema=prisma/schema.prisma)
 
       - name: Install Playwright chromium-headless-shell
         run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
