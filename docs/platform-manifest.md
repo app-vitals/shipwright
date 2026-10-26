@@ -47,6 +47,8 @@ The gate only records which modules are shared. Whether they are copied, publish
 
 **Since AGR-4.1 the table is empty.** The shared modules are published by the platform repository as `@app-vitals/agent-lib` and consumed from the registry (pinned exactly, bumped by `.github/workflows/platform-release.yml`). Since AGR-4.5 the former Shipwright-only modules (`chat-notify`, `claim-ttl`, `default-account`, `http`) also come from the registry package and the local `lib/` workspace is gone, so the `lib` table stays empty and a relative import into `lib/` is an `unlisted-lib-module` violation.
 
+**Image-level resolution guard (AGR-4.1).** The Dockerfiles (`agent`, `admin`, `chat`, `metrics`, `task-store`) can only resolve the registry package if its `node_modules` ships. `agent/scripts/check-lib-resolution.ts [--require <prefix>]... <dir>...` runs in the final image stage after every COPY, resolves each `@app-vitals/agent-lib/*` import from the importing file, and fails the build on a miss (`--require` stops it passing vacuously). Test files are skipped.
+
 ## What the gate checks
 
 For every file in the set (tests included), the walker reads each module specifier: `import`, `import type`, `export ... from`, side-effect `import "x"`, dynamic `import("x")`, `require("x")` and `mock.module("x")`. Comments and string contents are ignored.
@@ -226,4 +228,4 @@ The platform's own docs live in `app-vitals/agent` (`docs/`). Shipwright keeps a
 - **Guard:** `.github/workflows/platform-docs-guard.yml` (`scripts/platform-docs-guard.ts`) fails any PR that touches `docs/platform/` unless its head branch is `chore/platform-release` in this repository. To change a platform doc, edit it in `app-vitals/agent`; the next release refreshes the snapshot.
 - **Tests:** `scripts/platform-docs-snapshot.unit.test.ts` (copy and header), `scripts/platform-docs-snapshot.integration.test.ts` (receiver steps against a fixture release), `scripts/platform-docs-guard.unit.test.ts`, and the workflow cases in `platform-release.content.test.ts`.
 
-The snapshot is empty until the first platform release after this change.
+The snapshot is populated on each platform release; the bump PR rewrites it wholesale.
