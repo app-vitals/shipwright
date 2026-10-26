@@ -216,6 +216,8 @@ export type ReviewCandidacyTrace =
       check: "not-allowlisted";
       author: string;
       isRequestedReviewer: boolean;
+      /** Whether currentUser has a non-PENDING review on the PR (RAM-1.1). */
+      reviewedByMe: boolean;
       /**
        * The live authorAllowlistRef value at decision time (AAL-3.2),
        * included so a repeat of the ok-wow/ok-wow-ai#1919 mystery — two
@@ -556,50 +558,49 @@ export async function getReviewCandidates(
     }
 
     let record: PrRecord | null = null;
-    let queryPrRecordFailed = false;
     try {
       record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
     } catch {
-      // Query failed → treat as eligible (no dedup). Tracked separately from
-      // "no record" (see queryPrRecordFailed below) so a transient failure
-      // can't be confused with a genuine absence of a PrRecord.
-      queryPrRecordFailed = true;
+      // Query failed → treat as eligible (no dedup).
     }
 
-    // Author allowlist (HRA-1.1) — deliberately gated on `record == null`
-    // (AAL-3.2): the allowlist gates INITIAL exposure to a repo's PRs, not
-    // every subsequent commit on a PR that already cleared it once. Once a
-    // PrRecord exists, the PR already passed this gate at least one prior
-    // tick and entered the review pipeline (a human/agent reviewer already
-    // engaged with it) — re-excluding it on a later commit from the same
-    // (still non-allowlisted) author would silently and permanently drop an
-    // actively-reviewed PR out of candidacy the moment its author pushes a
-    // follow-up commit responding to review feedback (confirmed live on
-    // ok-wow/ok-wow-ai#1919: two review cycles completed, then every
-    // subsequent tick excluded on this check). This does not reopen the
-    // self-request-defeat concern the isRequestedReviewer bypass above
-    // exists to avoid: a non-allowlisted author still cannot manufacture an
-    // initial PrRecord solo — reaching this record-exists branch still
-    // requires having passed the allowlist gate (or the requested-reviewer
-    // bypass) at least once, exactly as today. The live authorAllowlistRef
-    // value is logged alongside the decision so a repeat of the ok-wow-ai#1919
-    // mystery (how the first two cycles got through despite the allowlist)
-    // is diagnosable from Sentry logs alone, without needing to reproduce.
-    //
-    // `queryPrRecordFailed` guards against conflating "queryPrRecord threw"
-    // with "queryPrRecord returned null because no PrRecord exists yet" —
-    // both leave `record == null`, but only the latter is a genuine "never
-    // passed the gate" case that should grant the re-gate exception below. A
-    // transient fetch failure must NOT grant that exception — doing so could
-    // let an already-excluded, non-allowlisted author's PR slip through
-    // undetected. Instead, on failure the allowlist check falls through to
-    // normal isAuthorAllowed evaluation, matching pre-AAL-3.2 behavior
-    // (queryPrRecord was fetched after the allowlist check and so never
-    // influenced it) — this preserves the exact ok-wow-ai#1919 fix (a
-    // genuinely existing record still bypasses re-gating) while not letting
-    // a fetch failure masquerade as one.
+    // reviewData is fetched once per PR, ahead of the allowlist gate, and
+    // reused by the gate, the live-review dedup (RVD-1.1) and the terminal-skip
+    // check (RVG-1.1) below. Stays undefined when the fetch failed: the gate
+    // then fails closed (the allowlist applies), while the dedup checks treat
+    // it as "no terminal review" (old skip behavior preserved).
+    let reviewData: PrReviewData | undefined;
+    try {
+      const [org, repoName] = splitOrgRepo(pr.repo ?? "");
+      reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
+    } catch {
+      // Fetch failed → reviewedByMe stays false below (fail closed)
+    }
+
+    // Author allowlist (HRA-1.1, RAM-1.1) — gates an agent's FIRST exposure to
+    // a PR, not every later commit on one it has already engaged with. Once
+    // THIS agent (currentUser) has submitted a non-PENDING review, it keeps
+    // reviewing: re-excluding it when a non-allowlisted author pushes a
+    // follow-up commit would silently drop an actively-reviewed PR (confirmed
+    // live on ok-wow/ok-wow-ai#1919, where GitHub also clears the review
+    // request after submission, so isRequestedReviewer no longer applies).
+    // Deliberately keyed on the agent's own review rather than the
+    // account-wide PullRequest record: that record is shared across agents,
+    // so another agent's review of a PR would otherwise bypass this agent's
+    // allowlist. Assumes agents use separate GitHub logins. A non-allowlisted
+    // author still cannot manufacture a first review solo — reaching the
+    // reviewedByMe state requires having passed this gate (or the
+    // requested-reviewer bypass) once. The live authorAllowlistRef value and
+    // reviewedByMe are logged alongside the decision so the first-exposure
+    // path is diagnosable from Sentry logs alone.
+    const reviewedByMe =
+      reviewData?.reviews.nodes.some(
+        (r) =>
+          r.state !== "PENDING" &&
+          canonicalLogin(r.author?.login ?? "") === canonicalLogin(currentUser),
+      ) ?? false;
     if (
-      (record == null || queryPrRecordFailed) &&
+      !reviewedByMe &&
       deps.isAuthorAllowed &&
       !deps.isAuthorAllowed(pr.author.login) &&
       !isRequestedReviewer
@@ -608,6 +609,7 @@ export async function getReviewCandidates(
         check: "not-allowlisted",
         author: pr.author.login,
         isRequestedReviewer,
+        reviewedByMe,
         authorAllowlistRef: reviewAuthorAllowlistRef.get(),
       });
       continue;
@@ -620,56 +622,36 @@ export async function getReviewCandidates(
     // no record at all, e.g. an agent running against a different
     // task-store instance already reviewed it). Applied unconditionally
     // before the record-based eligibility checks below, since it excludes
-    // rather than includes. A fetch failure is caught and treated as "no
-    // terminal review" — fail open, matching queryPrRecord's own permissive-
-    // on-error handling above.
-    //
-    // reviewData is hoisted (rather than scoped to this try block) so the
-    // terminal-skip check further below (RVG-1.1) can reuse the same fetch
-    // result to look for a fresh author reply, instead of issuing a second
-    // fetchPrReviews call for the same PR. Stays undefined when the fetch
-    // above failed — the RVG-1.1 check treats that the same as "no eligible
-    // author comment found" (old skip behavior preserved).
+    // rather than includes.
     //
     // hasFreshAuthorReply (RFR-1.1, broadened by RCT-1.1 to
-    // hasFreshNonAgentComment) is computed once here, right after reviewData
-    // is fetched, and reused by BOTH this check and the RVG-1.1 check below.
-    // It must be available here, not just at RVG-1.1: a clean/no-finding
-    // review (classifyReviewState() returns "approved" or "posted", not
-    // null — e.g. "no new issues found, posting as COMMENT only") makes THIS
-    // check `continue` unconditionally, before control ever reaches
-    // RVG-1.1's terminal-skip block further down — so without the exception
-    // here too, RVG-1.1's own fresh-reply exception is unreachable for
-    // exactly the case it exists to handle (confirmed live on PR #2456).
+    // hasFreshNonAgentComment) is computed once here and reused by BOTH this
+    // check and the RVG-1.1 check below. It must be available here, not just
+    // at RVG-1.1: a clean/no-finding review (classifyReviewState() returns
+    // "approved" or "posted", not null) makes THIS check `continue`
+    // unconditionally, before control ever reaches RVG-1.1's terminal-skip
+    // block further down — so without the exception here too, RVG-1.1's own
+    // fresh-reply exception is unreachable for exactly the case it exists to
+    // handle (confirmed live on PR #2456).
     //
-    // RCT-1.1 broadens the identity filter from pr.author.login (the PR's
-    // own author) to currentUser (the reviewing agent's own identity,
-    // excluded rather than required) — a third-party reviewer's plain PR
-    // comment, not just the PR author's, now counts as a fresh reply,
-    // provided it isn't the reviewing agent's own comment. Uses
-    // record?.reviewedAt as the watermark (record is already in scope from
-    // the queryPrRecord call above); record may be null here (no task-store
-    // record yet), in which case the `?? 0` epoch fallback makes any
-    // non-agent comment count, mirroring RVG-1.1's existing null-safety.
+    // RCT-1.1: a third-party reviewer's plain PR comment, not just the PR
+    // author's, counts as a fresh reply, provided it isn't the reviewing
+    // agent's own comment. Uses record?.reviewedAt as the watermark; record
+    // may be null (no task-store record yet), in which case the `?? 0` epoch
+    // fallback makes any non-agent comment count.
     const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
-    let reviewData: PrReviewData | undefined;
     let hasFreshAuthorReply = false;
-    try {
-      const [org, repoName] = splitOrgRepo(pr.repo ?? "");
-      reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
+    if (reviewData) {
       hasFreshAuthorReply = hasFreshNonAgentComment(
         reviewData,
         currentUser,
         reviewedAtMs,
       );
-      // Live-GitHub review dedup (RVD-1.1) short-circuits right here, inside
-      // the try block, before the task-store lookups below — traced via the
-      // same traceReviewCandidacyDecision used for the later checks (RCO-1.3)
-      // so this exclusion is classified identically whether it fires here or
-      // there. isBundleComplete/linkedTask aren't known yet at this point in
-      // the loop, so they're passed as their "not excluding" defaults —
-      // traceReviewCandidacyDecision checks live-review dedup first and
-      // returns before it would ever consult them.
+      // traceReviewCandidacyDecision classifies this exclusion identically to
+      // the later checks (RCO-1.3). isBundleComplete/linkedTask aren't known
+      // yet at this point in the loop, so they're passed as their "not
+      // excluding" defaults — it checks live-review dedup first and returns
+      // before it would ever consult them.
       const liveReviewTrace = traceReviewCandidacyDecision({
         pr,
         record,
@@ -682,8 +664,6 @@ export async function getReviewCandidates(
         logSkippedCandidacy(pr, liveReviewTrace);
         continue;
       }
-    } catch {
-      // Fetch failed → treat as "no terminal review" (no dedup)
     }
 
     // Auto-clear a skip-count block whose head SHA / latest review has since
