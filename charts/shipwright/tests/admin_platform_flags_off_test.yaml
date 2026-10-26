@@ -1,0 +1,43 @@
+suite: admin platform feature flags off by default (AGR-4.2)
+# The admin is built on @app-vitals/agent-admin. Every platform feature that
+# package adds over the pre-swap in-repo admin is behind an env flag that is
+# off unless set to "enabled". With default values the chart must set none of
+# them; admin_flags_default_env_test.yaml pins the whole default env, this
+# suite names each flag so a rename or a new default shows up here.
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: sets none of the platform feature flags with default values
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_ADMIN_DOC_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_TRANSCRIPT_API_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_CRON_RUN_NOW_ENABLED
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED
