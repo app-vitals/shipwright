@@ -41,6 +41,12 @@ const REPO_SCAN_FIXTURE_FILES = new Set([
   join(REPO_ROOT, "scripts", "platform-gate.unit.test.ts"),
 ]);
 
+// Names the registry package @app-vitals/agent-admin (the Renovate platform
+// group), which is not the retired local workspace.
+const RETIRED_NAME_ALLOWLIST = new Set([
+  join(REPO_ROOT, "renovate.content.test.ts"),
+]);
+
 // The retired workspace name, in any module specifier.
 const RETIRED_SPECIFIER = /["'](@app-vitals\/agent-admin(?:\/[^"']*)?)["']/g;
 
@@ -198,11 +204,13 @@ describe("admin package boundary (@shipwright/admin only)", () => {
   });
 
   it("no file outside admin/ imports the retired @app-vitals/agent-admin name", () => {
-    const violations = outsideFiles.flatMap((file) =>
-      findRetiredSpecifiers(readFileSync(file, "utf8")).map(
-        (spec) => `${repoRel(file)} -> ${spec}`,
-      ),
-    );
+    const violations = outsideFiles
+      .filter((file) => !RETIRED_NAME_ALLOWLIST.has(file))
+      .flatMap((file) =>
+        findRetiredSpecifiers(readFileSync(file, "utf8")).map(
+          (spec) => `${repoRel(file)} -> ${spec}`,
+        ),
+      );
     expect(violations).toEqual([]);
   });
 
