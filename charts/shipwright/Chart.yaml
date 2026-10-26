@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.28.2
+version: 1.28.3
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -47,7 +47,7 @@ dependencies:
   # `postgresql.image.digest` in values.yaml instead of a concrete tag. See README
   # "Bitnami registry risk" for the full explanation.
   - name: postgresql
-    version: "18.12.4"
+    version: "18.12.15"
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   # Optional bundled ingress controller subcharts (CNH-6.1). Both default off
@@ -59,12 +59,12 @@ dependencies:
     repository: https://kubernetes.github.io/ingress-nginx
     condition: ingress-nginx.enabled
   - name: traefik
-    version: "42.0.0"
+    version: "42.1.3"
     repository: https://traefik.github.io/charts
     condition: traefik.enabled
   # Optional bundled cert-manager subchart (CNH-6.1), default off. Bring your
   # own cert-manager unless you opt in via cert-manager.enabled=true.
   - name: cert-manager
-    version: "v1.21.2"
+    version: "v1.21.3"
     repository: https://charts.jetstack.io
     condition: cert-manager.enabled
