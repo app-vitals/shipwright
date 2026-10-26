@@ -7,7 +7,10 @@ name: Chart Drift Check
 # requiring manual git archaeology to discover it.
 #
 # For each service (admin, metrics, agent, task-store, chat) this workflow:
-#   1. Finds the highest-semver `{service}-v*` git tag.
+#   1. Finds the highest-semver `{service}-v*` git tag (chat: the platform
+#      version pinned in agent/Dockerfile, since its ghcr.io/app-vitals/agent-chat
+#      image is released by app-vitals/agent and delivered by the
+#      platform-release dispatch rather than a tag in this repo).
 #   2. Reads the tag currently pinned at that service's values.yaml path(s).
 #   3. Compares them. Any mismatch fails the job — the job failure IS the
 #      alert (visible in the Actions tab / a red X on the default branch).
@@ -69,12 +72,11 @@ jobs:
           LATEST_BY_SERVICE=""
           MISSING_SERVICES=()
           for service in "${SERVICES[@]}"; do
-            TAGS=$(git tag -l "${service}-v*")
-            if [ -z "$TAGS" ]; then
+            LATEST=$(latest_tag_for_service "$service")
+            if [ -z "$LATEST" ]; then
               MISSING_SERVICES+=("$service")
               continue
             fi
-            LATEST=$(highest_semver_tag $TAGS)
             LATEST_BY_SERVICE="${LATEST_BY_SERVICE}${service}=${LATEST}
           "
           done

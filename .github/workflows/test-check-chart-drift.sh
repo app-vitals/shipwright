@@ -68,7 +68,7 @@ make_values_yaml() {
   local agent_tag="${3:-agent-v1.107.0}"
   local agent_prov_tag="${4:-agent-v1.107.0}"
   local task_store_tag="${5:-task-store-v1.28.0}"
-  local chat_tag="${6:-chat-v1.19.0}"
+  local chat_tag="${6:-1.19.0}"
   local path="$TMPDIR_TEST/values-$$-${RANDOM}.yaml"
   cat > "$path" <<EOF
 admin:
@@ -106,7 +106,7 @@ taskStore:
 chat:
   enabled: false
   image:
-    repository: ghcr.io/app-vitals/shipwright-chat
+    repository: ghcr.io/app-vitals/agent-chat
     tag: ${chat_tag}
     pullPolicy: ""
 EOF
@@ -124,7 +124,10 @@ assert_eq "admin-v0.188.0 → admin" "admin" "$(service_for_tag 'admin-v0.188.0'
 assert_eq "metrics-v0.150.0 → metrics" "metrics" "$(service_for_tag 'metrics-v0.150.0')"
 assert_eq "agent-v0.172.0 → agent" "agent" "$(service_for_tag 'agent-v0.172.0')"
 assert_eq "task-store-v0.86.0 → task-store" "task-store" "$(service_for_tag 'task-store-v0.86.0')"
-assert_eq "chat-v0.38.0 → chat" "chat" "$(service_for_tag 'chat-v0.38.0')"
+assert_eq "agent-chat-v0.38.0 → chat" "chat" "$(service_for_tag 'agent-chat-v0.38.0')"
+assert_eq "legacy chat-v0.38.0 no longer maps to a service" "" "$(service_for_tag 'chat-v0.38.0')"
+assert_eq "pin_value_for_tag: agent-chat-v0.38.0 → bare 0.38.0" "0.38.0" "$(pin_value_for_tag 'agent-chat-v0.38.0')"
+assert_eq "pin_value_for_tag: other tags unchanged" "admin-v1.50.0" "$(pin_value_for_tag 'admin-v1.50.0')"
 assert_eq "unrecognized prefix → empty" "" "$(service_for_tag 'unknown-v1.0.0')"
 
 echo ""
@@ -145,7 +148,7 @@ assert_eq "single tag is a no-op" "agent-v1.107.0" "$(highest_semver_tag 'agent-
 assert_eq "picks higher patch" "admin-v1.50.1" "$(highest_semver_tag 'admin-v1.50.0' 'admin-v1.50.1')"
 assert_eq "picks higher patch regardless of arg order" "admin-v1.50.1" "$(highest_semver_tag 'admin-v1.50.1' 'admin-v1.50.0')"
 assert_eq "picks higher minor" "metrics-v1.22.0" "$(highest_semver_tag 'metrics-v1.21.9' 'metrics-v1.22.0')"
-assert_eq "picks higher major" "chat-v2.0.0" "$(highest_semver_tag 'chat-v1.19.9' 'chat-v2.0.0')"
+assert_eq "picks higher major" "agent-chat-v2.0.0" "$(highest_semver_tag 'agent-chat-v1.19.9' 'agent-chat-v2.0.0')"
 assert_eq "double-digit patch beats single-digit (not lexicographic)" "agent-v1.107.10" "$(highest_semver_tag 'agent-v1.107.2' 'agent-v1.107.10')"
 assert_eq "three-way batch picks the max" "task-store-v1.28.2" "$(highest_semver_tag 'task-store-v1.28.0' 'task-store-v1.28.2' 'task-store-v1.28.1')"
 
@@ -162,7 +165,7 @@ assert_eq "reads metrics.image.tag" "metrics-v1.21.0" "$(read_pinned_tag "$v1" "
 assert_eq "reads agent.image.tag (top-level, not the nested one)" "agent-v1.107.0" "$(read_pinned_tag "$v1" "agent.image.tag")"
 assert_eq "reads agent.provisioning.image.tag (nested case)" "agent-v1.107.0" "$(read_pinned_tag "$v1" "agent.provisioning.image.tag")"
 assert_eq "reads taskStore.image.tag" "task-store-v1.28.0" "$(read_pinned_tag "$v1" "taskStore.image.tag")"
-assert_eq "reads chat.image.tag" "chat-v1.19.0" "$(read_pinned_tag "$v1" "chat.image.tag")"
+assert_eq "reads chat.image.tag" "1.19.0" "$(read_pinned_tag "$v1" "chat.image.tag")"
 
 # Distinct values at agent.image.tag vs agent.provisioning.image.tag — proves
 # the reader is indentation/path-scoped, not a blind grep for the first "tag:"
@@ -183,7 +186,7 @@ LATEST_IN_SYNC="admin=admin-v1.50.0
 metrics=metrics-v1.21.0
 agent=agent-v1.107.0
 task-store=task-store-v1.28.0
-chat=chat-v1.19.0"
+chat=agent-chat-v1.19.0"
 
 MISMATCHES_NONE=$(compute_drift "$v3" "$LATEST_IN_SYNC")
 assert_eq "fully in sync → no mismatches" "" "$MISMATCHES_NONE"
@@ -196,7 +199,7 @@ LATEST_ADMIN_AHEAD="admin=admin-v1.50.0
 metrics=metrics-v1.21.0
 agent=agent-v1.107.0
 task-store=task-store-v1.28.0
-chat=chat-v1.19.0"
+chat=agent-chat-v1.19.0"
 
 MISMATCHES_ONE=$(compute_drift "$v4" "$LATEST_ADMIN_AHEAD")
 assert_eq "one line reported for one mismatch" "1" "$(echo "$MISMATCHES_ONE" | grep -c '^MISMATCH:')"
@@ -214,7 +217,7 @@ LATEST_MULTI="admin=admin-v1.50.0
 metrics=metrics-v1.21.0
 agent=agent-v1.107.0
 task-store=task-store-v1.28.0
-chat=chat-v1.19.0"
+chat=agent-chat-v1.19.0"
 
 MISMATCHES_MULTI=$(compute_drift "$v5" "$LATEST_MULTI")
 # admin (1) + agent (2 paths) + task-store (1) = 4 mismatch lines; metrics and
@@ -267,7 +270,7 @@ LATEST_AGENT_ONLY="admin=admin-v1.50.0
 metrics=metrics-v1.21.0
 agent=agent-v1.107.0
 task-store=task-store-v1.28.0
-chat=chat-v1.19.0"
+chat=agent-chat-v1.19.0"
 
 MISMATCHES_AGENT=$(compute_drift "$v6" "$LATEST_AGENT_ONLY")
 assert_eq "only the nested provisioning path is reported" "1" "$(echo "$MISMATCHES_AGENT" | grep -c '^MISMATCH:')"
@@ -275,6 +278,18 @@ if echo "$MISMATCHES_AGENT" | grep -qF "service=agent path=agent.provisioning.im
   pass "nested provisioning mismatch correctly isolated from top-level"
 else
   fail "nested provisioning mismatch correctly isolated from top-level" "provisioning-only mismatch" "$MISMATCHES_AGENT"
+fi
+
+echo ""
+echo "=== compute_drift tests: chat compares the bare image tag ==="
+
+v7=$(make_values_yaml "admin-v1.50.0" "metrics-v1.21.0" "agent-v1.107.0" "agent-v1.107.0" "task-store-v1.28.0" "1.18.0")
+MISMATCHES_CHAT=$(compute_drift "$v7" "$LATEST_IN_SYNC")
+assert_eq "chat pin behind the platform version → exactly one chat mismatch" "1" "$(echo "$MISMATCHES_CHAT" | grep -c '^MISMATCH:')"
+if echo "$MISMATCHES_CHAT" | grep -qF "MISMATCH: service=chat path=chat.image.tag expected=1.19.0 actual=1.18.0"; then
+  pass "chat mismatch reports bare expected tag"
+else
+  fail "chat mismatch reports bare expected tag" "MISMATCH: service=chat path=chat.image.tag expected=1.19.0 actual=1.18.0" "$MISMATCHES_CHAT"
 fi
 
 # ---------------------------------------------------------------------------
@@ -309,6 +324,20 @@ assert_eq "highest_semver_tag picks v1.50.2 among 3 git tags" "admin-v1.50.2" "$
 METRICS_TAGS=$(cd "$GIT_TEST_DIR" && git tag -l 'metrics-v*')
 LATEST_METRICS=$(highest_semver_tag $METRICS_TAGS)
 assert_eq "highest_semver_tag single-tag case from git" "metrics-v1.21.0" "$LATEST_METRICS"
+
+echo ""
+echo "=== latest_tag_for_service tests ==="
+
+assert_eq "git-tagged service → highest semver tag" "admin-v1.50.2" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service admin)"
+assert_eq "git-tagged service with no tags → empty" "" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service task-store)"
+assert_eq "chat with no agent/Dockerfile → empty (skipped, not flagged)" "" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service chat)"
+
+mkdir -p "$GIT_TEST_DIR/agent"
+printf '# header\nARG PLATFORM_VERSION=0.7.1\nFROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}\n' > "$GIT_TEST_DIR/agent/Dockerfile"
+assert_eq "chat follows PLATFORM_VERSION in agent/Dockerfile" "agent-chat-v0.7.1" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service chat)"
+# A chat-v* git tag (the retired build-chat.yml tags) must not influence it.
+(cd "$GIT_TEST_DIR" && git tag chat-v9.9.9)
+assert_eq "retired chat-v* git tags are ignored" "agent-chat-v0.7.1" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service chat)"
 
 # ---------------------------------------------------------------------------
 # Results
