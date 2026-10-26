@@ -124,17 +124,9 @@ A template file ending in `.tmpl` is copied without the suffix. `biome.json` is 
 
 History mode needs [`git-filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`). `--no-history` does not. The history integration test skips when it is missing.
 
-## Extraction rehearsal
+## Extraction rehearsal (retired)
 
-`scripts/rehearse-extraction.ts` (AGR-1.7) proves the extracted tree is a working repository. It runs `extract-platform.ts` into a scratch directory in `no-history` and `history` mode, then runs these stages in the extracted tree: frozen install, typecheck, lint, `bun test`, the import-boundary gate, both Dockerfile builds and the base-image contract smoke test. Docker stages run once, in the first mode, because the two trees differ only in git history.
-
-```bash
-bun scripts/rehearse-extraction.ts --mode no-history --skip-docker   # fast local run
-```
-
-Flags: `--mode no-history|history|both`, `--source <repo>`, `--ref <rev>`, `--scratch <dir>`, `--keep`, `--skip-docker`, `--only <stage,stage>`, `--plant-violation` (writes an out-of-repository import into the tree to prove the boundary gate fails the rehearsal).
-
-`.github/workflows/rehearse-extraction.yml` runs it daily at 08:00 UTC and on manual dispatch, not on every PR. A failing run fails the workflow and pages through GitHub's failed-workflow notification. It needs `git-filter-repo` and a Postgres service for the admin tests.
+`scripts/rehearse-extraction.ts` (AGR-1.7) used to prove the extracted tree was a working repository, daily, until the cut. It was retired with AGR-4.2: the platform admin source now lives only in `app-vitals/agent` and Shipwright consumes it as `@app-vitals/agent-admin`, so an extraction from this repository no longer contains a buildable admin. The platform repository's own CI is the proof now.
 
 ## Pre-publication audit
 
