@@ -122,3 +122,19 @@ Safe to deploy standalone: yes. AGR-4.6 is a read-only check; AGR-4.2 is gated b
 - No task to port shipwright-only admin changes: the diff shows none.
 - AGR-4.2 rewritten in place rather than split: the code change is the same size, only the gate moved out.
 - AGR-4.6 placed before AGR-4.2, not after: AGR-4.2 deploys on merge, and migrations run at boot.
+
+## Addendum 2026-10-26: AGR-4.2 blocker (agent-admin 0.1.2 exports map)
+
+AGR-4.2 was blocked: `@app-vitals/agent-admin@0.1.2` ships the platform `src/*.ts` modules and generated `prisma/client/` but its `exports` map exposes none of them, and `./coding/*` dangles. Verified against the published tarball.
+
+Same failure class as 0.1.0 (#36, files missing) and 0.1.1 (#39, wrong packed ranges), different defect: consumer-smoke proves declared exports exist, never that shipped modules are reachable, and a wildcard matching zero files passes vacuously.
+
+| Task | Repo | Depends on | Summary |
+|---|---|---|---|
+| AGR-8.1 | app-vitals/agent | - | Export platform modules and `prisma/client/*`, drop `./coding/*`, extend consumer-smoke; auto-release cuts 0.1.3 |
+| AGR-8.2 | app-vitals/shipwright | - | Rename local admin workspace to `@shipwright/admin`, re-point consumers |
+| AGR-4.2 | app-vitals/shipwright | + 8.1, 8.2 | Unblocked; reruns once the bump PR pins 0.1.3 |
+
+## Decision Log
+- Exports shape: defaulted to `./*` wildcard plus private allowlist - less to maintain than ~20 hand-listed subpaths (approved by Dan).
+- Pin bump: no task - the platform release bot opens and self-merges it.
