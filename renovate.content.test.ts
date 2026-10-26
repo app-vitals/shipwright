@@ -126,11 +126,11 @@ describe("renovate.json app-vitals agent platform group rule (AGR-4.1)", () => {
     expect(platformRuleIndex()).toBeGreaterThan(genericIndex);
   });
 
-  it("keeps majors in the same PR, pins exactly and labels it for the freeze guard", () => {
+  it("keeps majors in the same PR, and pins exactly", () => {
     const rule = rules()[platformRuleIndex()];
     expect(rule.matchUpdateTypes).toBeUndefined();
     expect(rule.separateMajorMinor).toBe(false);
     expect(rule.rangeStrategy).toBe("pin");
-    expect(rule.addLabels).toEqual(["platform-cutover"]);
+    expect(rule.addLabels).toBeUndefined();
   });
 });

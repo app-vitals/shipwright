@@ -37,6 +37,8 @@ task typecheck    # bun run --filter='*' --sequential typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
+The agent platform (runtime, admin, shared lib) lives in `app-vitals/agent` and is consumed as pinned `@app-vitals/agent-*` packages plus the `ghcr.io/app-vitals/agent` base image; to develop both together see `docs/local-platform-development.md`.
+
 Database (admin service):
 ```bash
 export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
@@ -193,6 +195,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/agent-web-ui.md** — Shipwright agent (C) browser-facing surfaces: admin chat UI, sessions list UI, session alert sweeper, public read-only task board, dev auto-login, and PWA shell — split out of docs/agent.md to stay under the docs line-count threshold
 - **docs/configuration-agent.md** — Shipwright agent (C) runtime env var reference (Claude/Anthropic, Slack, GitHub, Shipwright platform, server, database, provisioning, workspace/tooling, voice, dev-only) — split out of docs/configuration.md to stay under the docs line-count threshold
 - **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
+- **docs/local-platform-development.md** — working on app-vitals/agent and Shipwright together: `bun link` of `@app-vitals/agent-{runtime,admin,lib}`, which dev flows (`task dev`, `task hitl`, seed-dev-agent, `task stack`, minikube) pick the link up, running a local platform image, and how a platform release reaches Shipwright
 - **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`
 - **docs/platform/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
 - **docs/platform/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)

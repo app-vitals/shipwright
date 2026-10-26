@@ -46,7 +46,6 @@ jobs:
           filters: |
             changed:
               - "mcp-server/**"
-              - "lib/**"
               - "package.json"
               - "bun.lock"
               - ".github/workflows/build-mcp-server.yml"

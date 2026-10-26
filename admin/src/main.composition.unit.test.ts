@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { applyShipwrightDefaults, SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
 
 // Shipwright's composition root wires the coding admin extension into the
-// platform boot. This tests that composition, so it stays with main.ts and is
-// listed under compositionRoots in platform-manifest.json (not extracted).
+// platform boot. This tests that composition, so it stays with main.ts (Shipwright's
+// composition root, not part of the platform).
 const entrySource = await Bun.file(join(import.meta.dir, "main.ts")).text();
 
 describe("main.ts composition root (coding)", () => {

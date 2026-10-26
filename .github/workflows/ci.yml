@@ -312,7 +312,7 @@ jobs:
           SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci \
           SHIPWRIGHT_CONTRACT_SETUP_MODULE=/app/runtime/setup.ts \
           SHIPWRIGHT_CONTRACT_ENTRYPOINT=/app/runtime/entrypoint-main.ts \
-          bun test agent/src/runtime/base-image-contract.smoke.test.ts
+          bun test agent/src/contract/base-image-contract.smoke.test.ts
 
       # Runs the platform runtime's real setup code in the image as uid 1000:
       # ensureAgentHome() for the coding type and the built-in marketplace install.
@@ -320,12 +320,12 @@ jobs:
         run: |
           SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci \
           SHIPWRIGHT_CONTRACT_SETUP_MODULE=/app/runtime/setup.ts \
-          bun test agent/src/runtime/platform-real-boot.smoke.test.ts
+          bun test agent/src/contract/platform-real-boot.smoke.test.ts
 
       # Reports (does not gate) which process-tree-kill mode the real image
       # resolves to: cgroup v2 delegation if /sys/fs/cgroup is writable inside
       # the container, otherwise the procfs descendant-walk fallback (PLD-1.2).
-      # Both are supported — see agent/src/runtime/process-tree-kill.ts — so this
+      # Both are supported — see @app-vitals/agent-runtime process-tree-kill.ts — so this
       # step always exits 0; it makes the answer visible per-build in CI logs.
       - name: Report cgroup delegation mode under sandbox restrictions
         run: |

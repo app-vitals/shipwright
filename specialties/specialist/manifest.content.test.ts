@@ -129,3 +129,19 @@ describe("specialties/specialist/manifest.yaml — env contract", () => {
     expect(new Set(allKeys).size).toBe(allKeys.length);
   });
 });
+
+describe("specialties/specialist/templates — shared persona layout", () => {
+  it("keeps the same CLAUDE.md.template include order as the coding template", () => {
+    expect(
+      readFileSync(
+        join(import.meta.dir, "templates", "CLAUDE.md.template"),
+        "utf-8",
+      ),
+    ).toBe(
+      readFileSync(
+        join(import.meta.dir, "../../agent/workspace/CLAUDE.md.template"),
+        "utf-8",
+      ),
+    );
+  });
+});

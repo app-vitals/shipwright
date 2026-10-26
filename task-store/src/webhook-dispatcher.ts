@@ -20,7 +20,7 @@
  * header on the receiving side (access logs, a proxy, APM tooling) would
  * already hold the key needed to forge the signature. This mirrors how the
  * repo already separates `SLACK_SIGNING_SECRET` from `SLACK_BOT_TOKEN` /
- * `SLACK_APP_TOKEN` in `agent/src/runtime/config.ts`.
+ * `SLACK_APP_TOKEN` in `config.ts` in `@app-vitals/agent-runtime`.
  *
  * Unlike chat/src/reply-notifier.ts (which swallows delivery failures so a
  * push failure can never fail a reply), this dispatcher throws

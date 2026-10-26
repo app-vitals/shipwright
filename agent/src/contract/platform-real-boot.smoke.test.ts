@@ -27,7 +27,7 @@ import { dirname, join } from "node:path";
 const BASE_IMAGE = process.env.SHIPWRIGHT_CONTRACT_BASE_IMAGE;
 const SETUP_MODULE =
   process.env.SHIPWRIGHT_CONTRACT_SETUP_MODULE ??
-  "/app/agent/src/runtime/setup.ts";
+  "/app/runtime/setup.ts";
 const TEMPLATES_DIR =
   process.env.SHIPWRIGHT_CONTRACT_TEMPLATES_DIR ??
   join(dirname(SETUP_MODULE), "workspace");

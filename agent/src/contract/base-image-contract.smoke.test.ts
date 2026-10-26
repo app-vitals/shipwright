@@ -5,7 +5,7 @@
  * COPY a marketplace to the /opt/shipwright/marketplaces/ convention root. This
  * test builds such a derived image the same way and asserts the contract:
  *   - a marketplace at the convention root registers at boot via installPlugins()
- *   - /app/agent/src/entrypoint-main.ts exists and runs under `bun run`
+ *   - /app/runtime/entrypoint-main.ts exists and runs under `bun run`
  *
  * Needs a Docker daemon and an already-built base image, so it is image-level
  * smoke and opt-in: set SHIPWRIGHT_CONTRACT_BASE_IMAGE (CI sets it to the image
@@ -24,10 +24,10 @@ import { join } from "node:path";
 const BASE_IMAGE = process.env.SHIPWRIGHT_CONTRACT_BASE_IMAGE;
 const SETUP_MODULE =
   process.env.SHIPWRIGHT_CONTRACT_SETUP_MODULE ??
-  "/app/agent/src/runtime/setup.ts";
+  "/app/runtime/setup.ts";
 const ENTRYPOINT =
   process.env.SHIPWRIGHT_CONTRACT_ENTRYPOINT ??
-  "/app/agent/src/entrypoint-main.ts";
+  "/app/runtime/entrypoint-main.ts";
 const CONVENTION_ROOT = "/opt/shipwright/marketplaces";
 const MARKETPLACE_NAME = "contract-test";
 const DERIVED_TAG = `shipwright-agent-contract:${process.pid}`;

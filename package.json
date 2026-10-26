@@ -6,7 +6,6 @@
     "plugins/shipwright",
     "metrics",
     "agent",
-    "agent/src/runtime",
     "admin",
     "task-store",
     "chat",
@@ -43,7 +42,7 @@
     "@shipwright/admin": "workspace:*",
     "@app-vitals/agent-admin": "0.5.0",
     "@app-vitals/agent-lib": "0.5.0",
-    "@app-vitals/agent-runtime": "workspace:*",
+    "@app-vitals/agent-runtime": "0.6.1",
     "@prisma/client": "^7.0.0"
   },
   "overrides": {

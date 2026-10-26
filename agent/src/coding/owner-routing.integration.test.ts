@@ -22,18 +22,6 @@ import { join } from "node:path";
 const BIN = join(import.meta.dir, "..", "..", "scripts", "bin");
 const HELPER = join(BIN, "git-credential-shipwright.sh");
 const GH_WRAPPER = join(BIN, "gh");
-const TEMPLATE_HELPER = join(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "scripts",
-  "extract-platform",
-  "template",
-  "scripts",
-  "bin",
-  "git-credential-shipwright.sh",
-);
 
 let root: string;
 let home: string;
@@ -97,12 +85,6 @@ afterEach(() => {
 
 describe("git-credential-shipwright.sh — owner hint", () => {
   const stdin = "protocol=https\nhost=github.com\npath=other-org/repo.git\n\n";
-
-  test("both copies are byte-identical", () => {
-    expect(readFileSync(TEMPLATE_HELPER, "utf8")).toBe(
-      readFileSync(HELPER, "utf8"),
-    );
-  });
 
   test("uses the hinted owner's token, case-insensitively, ignoring the request path", () => {
     setTokens({ acme: "acme-token", "other-org": "other-token" });
