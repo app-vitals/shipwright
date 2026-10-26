@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@app-vitals/agent-admin": "workspace:*",
-    "@app-vitals/agent-lib": "0.1.2",
+    "@app-vitals/agent-lib": "0.1.3",
     "@app-vitals/agent-runtime": "workspace:*",
     "@octokit/auth-app": "^8.2.0",
     "@prisma/adapter-pg": "^7.10.0",
