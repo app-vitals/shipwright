@@ -298,6 +298,18 @@ admin:
   doc:
     # -- Enable the doc feature (sets SHIPWRIGHT_ADMIN_DOC_ENABLED).
     enabled: false
+  # -- Cron run-now configuration.
+  cronRunNow:
+    # -- Enable the cron run-now route (sets SHIPWRIGHT_CRON_RUN_NOW_ENABLED).
+    enabled: false
+  # -- Cron-run transcript API configuration.
+  transcriptApi:
+    # -- Enable the transcript API routes (sets SHIPWRIGHT_TRANSCRIPT_API_ENABLED).
+    enabled: false
+  # -- Agent repo-access check configuration.
+  repoAccessCheck:
+    # -- Enable the agent repo-access check (sets SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED).
+    enabled: false
   # -- Extra annotations for the admin pod template (spec.template.metadata.
   # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
   # above). Empty by default. On GKE Autopilot, set

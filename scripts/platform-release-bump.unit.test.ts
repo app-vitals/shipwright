@@ -30,7 +30,7 @@ const MANIFEST = `{
   "name": "x",
   "workspaces": ["lib", "admin"],
   "dependencies": {
-    "@app-vitals/agent-admin": "workspace:*",
+    "@shipwright/admin": "workspace:*",
     "@app-vitals/agent-lib": "0.1.0",
     "@app-vitals/agentic": "1.0.0",
     "hono": "^4.13.1"
@@ -87,7 +87,7 @@ describe("bumpManifest", () => {
 
   test("leaves workspace entries and look-alike names untouched", () => {
     const pkg = JSON.parse(bumpManifest(MANIFEST, "0.2.0").text);
-    expect(pkg.dependencies["@app-vitals/agent-admin"]).toBe("workspace:*");
+    expect(pkg.dependencies["@shipwright/admin"]).toBe("workspace:*");
     expect(pkg.dependencies["@app-vitals/agentic"]).toBe("1.0.0");
     expect(pkg.dependencies.hono).toBe("^4.13.1");
   });

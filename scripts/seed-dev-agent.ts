@@ -22,8 +22,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { SpecialtyManifestResolver } from "@app-vitals/agent-admin/specialty-manifest-loader";
 import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
+import type { SpecialtyManifestResolver } from "@shipwright/admin/specialty-manifest-loader";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -226,10 +226,10 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
 
 if (import.meta.main) {
   const { createAdminPrismaClient } = await import(
-    "@app-vitals/agent-admin/prisma-client"
+    "@shipwright/admin/prisma-client"
   );
   const { SpecialtyRegistry } = await import(
-    "@app-vitals/agent-admin/specialty-manifest-loader"
+    "@shipwright/admin/specialty-manifest-loader"
   );
 
   const argv = process.argv.slice(2);

@@ -147,6 +147,9 @@ The admin service supports several optional feature flags that gate functionalit
 - **`admin.ask.enabled`** — Agent ask feature (`SHIPWRIGHT_AGENT_ASK_ENABLED`). Defaults to `false`. When enabled, also configure `admin.ask.allowlist` with `fromAgentId>toAgentId` pairs (e.g., `[agent-a>agent-b]`); empty means no agent may ask any agent.
 - **`admin.chatCredentialMint.enabled`** — Chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). Defaults to `false`.
 - **`admin.doc.enabled`** — Admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). Defaults to `false`.
+- **`admin.cronRunNow.enabled`** — Cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). Defaults to `false`.
+- **`admin.transcriptApi.enabled`** — Cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). Defaults to `false`.
+- **`admin.repoAccessCheck.enabled`** — Agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Defaults to `false`.
 
 Example:
 

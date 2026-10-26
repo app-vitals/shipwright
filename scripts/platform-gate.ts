@@ -10,7 +10,7 @@
  * `require("x")` and `mock.module("x")`, in any file of the set (tests
  * included). Relative specifiers, `@shipwright/*` workspace specifiers,
  * `@app-vitals/agent-runtime/*` (agent/src/runtime) and
- * `@app-vitals/agent-admin[/*]` (admin, per its exports map) must resolve to a
+ * `@shipwright/admin[/*]` (admin, per its exports map) must resolve to a
  * file inside the set. npm packages and `node:`/`bun:` builtins
  * are not edges; that includes `@app-vitals/agent-lib/*`, which is consumed
  * from the registry since AGR-4.1. A local lib
@@ -269,7 +269,7 @@ function workspaceTarget(spec: string): string | null {
       ? `agent/src/runtime/${runtimeMatch[1]}`
       : "agent/src/runtime";
   }
-  const adminMatch = /^@app-vitals\/agent-admin(?:\/(.*))?$/.exec(spec);
+  const adminMatch = /^@shipwright\/admin(?:\/(.*))?$/.exec(spec);
   if (adminMatch) return adminTarget(adminMatch[1]);
   const m = /^@shipwright\/([^/]+)(?:\/(.*))?$/.exec(spec);
   if (!m) return null;

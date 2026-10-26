@@ -3,7 +3,7 @@
  * Generate the OpenAPI 3.1 specs for the Shipwright admin service.
  *
  *   1. Builds the platform-only document (buildPlatformAdminSpec from the
- *      @app-vitals/agent-admin package: the admin CRUD app and the agent
+ *      @shipwright/admin package: the admin CRUD app and the agent
  *      runtime app merged, no extension routes) and writes it to
  *      admin/openapi.platform.json. The platform half of the admin types
  *      (@app-vitals/agent-lib/admin-types) is generated and published by the
@@ -27,13 +27,13 @@ import { dirname, join } from "node:path";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
-} from "@app-vitals/agent-admin/admin-extension";
-import { buildPlatformAdminSpec } from "@app-vitals/agent-admin/admin-spec";
-import { adminExtensions } from "@app-vitals/agent-admin/main";
+} from "@shipwright/admin/admin-extension";
+import { buildPlatformAdminSpec } from "@shipwright/admin/admin-spec";
+import { adminExtensions } from "@shipwright/admin/main";
 
 /** The admin package directory (admin/ in this repo). */
 export const ADMIN_DIR = dirname(
-  Bun.resolveSync("@app-vitals/agent-admin/package.json", import.meta.dir),
+  Bun.resolveSync("@shipwright/admin/package.json", import.meta.dir),
 );
 
 export interface AdminSpecArtifacts {

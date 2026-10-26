@@ -5,10 +5,10 @@
     "": {
       "name": "shipwright-monorepo",
       "dependencies": {
-        "@app-vitals/agent-admin": "workspace:*",
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@app-vitals/agent-runtime": "workspace:*",
         "@prisma/client": "^7.0.0",
+        "@shipwright/admin": "workspace:*",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.5.13",
@@ -27,11 +27,11 @@
       },
     },
     "admin": {
-      "name": "@app-vitals/agent-admin",
+      "name": "@shipwright/admin",
       "version": "0.1.0",
       "dependencies": {
         "@anthropic-ai/sdk": "0.135.0",
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -55,13 +55,13 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.435.2",
+      "version": "1.436.5",
       "dependencies": {
-        "@app-vitals/agent-admin": "workspace:*",
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@app-vitals/agent-runtime": "workspace:*",
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
+        "@shipwright/admin": "workspace:*",
         "@slack/bolt": "^5.0.0",
         "@slack/web-api": "^8.1.0",
         "hono": "^4.13.1",
@@ -88,7 +88,7 @@
       "name": "@shipwright/chat",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -117,9 +117,9 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.435.2",
+      "version": "1.436.5",
       "dependencies": {
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@hono/zod-openapi": "^1.0.0",
         "@sentry/bun": "^10.63.0",
         "@sentry/hono": "^10.63.0",
@@ -135,7 +135,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.435.2",
+      "version": "1.436.5",
       "dependencies": {
         "@app-vitals/agent-runtime": "workspace:*",
         "js-yaml": "^5.0.0",
@@ -150,7 +150,7 @@
       "name": "@shipwright/task-store",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "0.1.2",
+        "@app-vitals/agent-lib": "0.5.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -161,7 +161,7 @@
         "zod": "^4",
       },
       "devDependencies": {
-        "@app-vitals/agent-admin": "workspace:*",
+        "@shipwright/admin": "workspace:*",
         "@types/pg": "^8.15.6",
         "bun-types": "^1.3.14",
         "prisma": "^7.10.0",
@@ -202,9 +202,7 @@
 
     "@apm-js-collab/code-transformer-bundler-plugins": ["@apm-js-collab/code-transformer-bundler-plugins@0.7.4", "", { "dependencies": { "@apm-js-collab/code-transformer": "^0.18.1", "es-module-lexer": "^2.1.0", "magic-string": "^0.30.21", "module-details-from-path": "^1.0.4" } }, "sha512-nAfOeZPSUAQvJa1iFT/5oCrTm5YQhMMrfCNthNnaXHZiOQhu1KGuLoIx7HtbAi3wfwaBYLaICPIeenIaEwcXIg=="],
 
-    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@workspace:admin"],
-
-    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.1.2", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-pFMaCU1URiU4Xsp5TxGnMGv3z1Ct+gIbK/sWNrO+bZQ7nTMnTrJjprRtaLHnD6/cKNBzV7DP4P0dW5OgxJ8AFw=="],
+    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.5.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-VsuEB2ZmcVyRNm8K/cX7815Sz+Y709Sri7/PzKr+7xLr2toHBoqYf5/ncCPY1MuQyDFFKr89ZHw1zX5yIi1veQ=="],
 
     "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@workspace:agent/src/runtime"],
 
@@ -395,6 +393,8 @@
     "@sentry/opentelemetry": ["@sentry/opentelemetry@10.73.0", "", { "dependencies": { "@sentry/conventions": "^0.16.0", "@sentry/core": "10.73.0" }, "peerDependencies": { "@opentelemetry/api": "^1.9.0", "@opentelemetry/core": "^1.30.1 || ^2.1.0", "@opentelemetry/sdk-trace-base": "^1.30.1 || ^2.1.0" } }, "sha512-fQouPQKsH0CQrw6oAn1k0Z2I+tgyochCovifr5qNS69i0OzjknLa03WJyiZ/IuzXc4AVa5jAKfOeE9slABz8Qw=="],
 
     "@sentry/server-utils": ["@sentry/server-utils@10.73.0", "", { "dependencies": { "@sentry/conventions": "^0.16.0", "@sentry/core": "10.73.0" } }, "sha512-QskripdKFbM/+gipC6mpa2crLwL7+VbkX84IpHg2z9UlYQ1kNKd3aMT+Qk9NLRSw/zu1rSIAvlbWfx4D3rgNAA=="],
+
+    "@shipwright/admin": ["@shipwright/admin@workspace:admin"],
 
     "@shipwright/agent": ["@shipwright/agent@workspace:agent"],
 

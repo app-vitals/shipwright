@@ -29,9 +29,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
 const SVG_PATH = join(REPO_ROOT, "assets", "logo", "shipwright-icon.svg");
-// The @app-vitals/agent-admin package directory (admin/ in this repo).
+// The @shipwright/admin package directory (admin/ in this repo).
 const ADMIN_DIR = dirname(
-  Bun.resolveSync("@app-vitals/agent-admin/package.json", import.meta.dir),
+  Bun.resolveSync("@shipwright/admin/package.json", import.meta.dir),
 );
 const OUTPUT_DIR = join(ADMIN_DIR, "pwa-assets", "icons");
 

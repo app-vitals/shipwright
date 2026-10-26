@@ -209,42 +209,36 @@ describe("analyzeClosure", () => {
     ]);
   });
 
-  it("resolves @app-vitals/agent-admin specifiers per admin's exports map", () => {
+  it("resolves @shipwright/admin specifiers per admin's exports map", () => {
     write("admin/src/server.ts");
     write("admin/openapi.platform.json", "{}\n");
     write("admin/prisma/schema/schema.prisma", "\n");
     write(
       "runtime/r.ts",
       [
-        `import type { P } from "@app-vitals/agent-admin";`,
-        `import { x } from "@app-vitals/agent-admin/x";`,
-        `import spec from "@app-vitals/agent-admin/openapi.platform.json";`,
-        `import s from "@app-vitals/agent-admin/prisma/schema/schema.prisma";`,
+        `import type { P } from "@shipwright/admin";`,
+        `import { x } from "@shipwright/admin/x";`,
+        `import spec from "@shipwright/admin/openapi.platform.json";`,
+        `import s from "@shipwright/admin/prisma/schema/schema.prisma";`,
         "",
       ].join("\n"),
     );
     const wholeAdmin = manifest({ include: ["runtime/**", "admin/**"] });
     expect(analyzeClosure(root, wholeAdmin).violations).toEqual([]);
     // Outside the set (a coding module), an admin specifier is a leak.
-    write(
-      "runtime/r.ts",
-      `import { c } from "@app-vitals/agent-admin/coding/c";\n`,
-    );
+    write("runtime/r.ts", `import { c } from "@shipwright/admin/coding/c";\n`);
     expect(analyzeClosure(root, manifest()).violations).toEqual([
       {
         from: "runtime/r.ts",
-        specifier: "@app-vitals/agent-admin/coding/c",
+        specifier: "@shipwright/admin/coding/c",
         target: "admin/src/coding/c.ts",
         reason: "outside-set",
       },
     ]);
   });
 
-  it("fails on an @app-vitals/agent-admin specifier that resolves to no file", () => {
-    write(
-      "runtime/r.ts",
-      `import { g } from "@app-vitals/agent-admin/ghost";\n`,
-    );
+  it("fails on an @shipwright/admin specifier that resolves to no file", () => {
+    write("runtime/r.ts", `import { g } from "@shipwright/admin/ghost";\n`);
     expect(analyzeClosure(root, manifest()).violations).toEqual([
       expect.objectContaining({
         target: "admin/src/ghost",

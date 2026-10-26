@@ -18,13 +18,13 @@
     "@prisma/client": "^7.10.0",
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
-    "@app-vitals/agent-lib": "0.1.2",
+    "@app-vitals/agent-lib": "0.5.0",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
     "zod": "^4"
   },
   "devDependencies": {
-    "@app-vitals/agent-admin": "workspace:*",
+    "@shipwright/admin": "workspace:*",
     "@types/pg": "^8.15.6",
     "bun-types": "^1.3.14",
     "prisma": "^7.10.0",
