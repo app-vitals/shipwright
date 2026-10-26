@@ -1,0 +1,23 @@
+suite: admin transcript API feature flag
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: renders no SHIPWRIGHT_TRANSCRIPT_API_ENABLED by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TRANSCRIPT_API_ENABLED
+            value: "enabled"
+
+  - it: renders SHIPWRIGHT_TRANSCRIPT_API_ENABLED when enabled
+    set:
+      admin.transcriptApi.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TRANSCRIPT_API_ENABLED
+            value: "enabled"

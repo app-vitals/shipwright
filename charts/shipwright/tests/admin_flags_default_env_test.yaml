@@ -30,3 +30,21 @@ tests:
               value: "development"
             - name: ADMIN_DEV_AUTH
               value: "true"
+
+  - it: renders none of the phase 13 flag envs by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CRON_RUN_NOW_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TRANSCRIPT_API_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED
+            value: "enabled"

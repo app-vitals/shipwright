@@ -460,6 +460,27 @@ spec:
               value: "enabled"
             {{- end }}
             {{- end }}
+            {{- with .Values.admin.cronRunNow }}
+            {{- if .enabled }}
+            # ── Cron run-now feature flag
+            - name: SHIPWRIGHT_CRON_RUN_NOW_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
+            {{- with .Values.admin.transcriptApi }}
+            {{- if .enabled }}
+            # ── Cron-run transcript API feature flag
+            - name: SHIPWRIGHT_TRANSCRIPT_API_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
+            {{- with .Values.admin.repoAccessCheck }}
+            {{- if .enabled }}
+            # ── Agent repo-access check feature flag
+            - name: SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.
