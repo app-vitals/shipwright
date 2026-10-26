@@ -400,7 +400,7 @@ const heartbeatRoute = createRoute({
     "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), " +
     "optionally recording the current progress phase",
   description:
-    "Scoped to the claim's owner: the caller's identity (agentId, or \"admin\" for the admin UI) must match the message's `claimedBy`, or the update no-ops. Optional body `{ phase?: string }` is validated against `PROGRESS_PHASES` — an invalid phase returns 400; on success `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`. The heartbeat is bidirectional: the returned message carries `cancelRequestedAt`, so the same tick that proves liveness also tells the agent whether a cancel was requested (see POST /:id/cancel) — no second polling loop is needed. Returns 404 if the message doesn't exist, doesn't belong to the thread, isn't currently claimed by the caller, or has already been replied to.",
+    "Scoped to the claim's owner: the caller's identity (agentId, or \"admin\" for the admin UI) must match the message's `claimedBy`, or the update no-ops. Optional body `{ phase?: string }` (an empty body, with or without a content-type, is treated as `{}`) is validated against `PROGRESS_PHASES` — an invalid phase returns 400; on success `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`. The heartbeat is bidirectional: the returned message carries `cancelRequestedAt`, so the same tick that proves liveness also tells the agent whether a cancel was requested (see POST /:id/cancel) — no second polling loop is needed. Returns 404 if the message doesn't exist, doesn't belong to the thread, isn't currently claimed by the caller, or has already been replied to.",
   request: {
     params: MessageIdParamSchema,
     body: {
@@ -661,6 +661,27 @@ export function createMessagesRoutes(
   });
 
   // ─── Heartbeat (queue API) ──────────────────────────────────────────────────
+  // The body is optional (`required: false`), but the OpenAPI JSON validator
+  // still 400s ("Malformed JSON") or 415s on an empty body that carries a
+  // content-type. Rewrite any empty body to `{}` so a bare tick validates.
+  // An invalid `phase` is still rejected by MessageService.heartbeat().
+  app.use("/:id/heartbeat", async (c, next) => {
+    if (c.req.method === "POST") {
+      const raw = c.req.raw;
+      if ((await raw.clone().text()).trim() === "") {
+        const headers = new Headers(raw.headers);
+        headers.set("content-type", "application/json");
+        headers.delete("content-length");
+        c.req.raw = new Request(raw.url, {
+          method: raw.method,
+          headers,
+          body: "{}",
+        });
+      }
+    }
+    await next();
+  });
+
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const threadId = c.req.param("threadId") as string;

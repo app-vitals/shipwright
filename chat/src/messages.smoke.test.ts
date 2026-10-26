@@ -448,6 +448,53 @@ describe("POST /threads/:id/messages/:msgId/heartbeat", () => {
     expect(body.progressSeq).toBe(1);
   });
 
+  it("accepts a body-less POST (no content-type) and bumps heartbeatAt + progressSeq", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message;
+    expect(body.heartbeatAt).toBeTruthy();
+    expect(body.progressSeq).toBe(1);
+  });
+
+  for (const contentType of ["application/json", "text/plain"]) {
+    it(`accepts an empty body sent with content-type ${contentType}`, async () => {
+      const ts = fakeThreadService();
+      const ms = fakeMessageService();
+      const thread = await ts.create({ agentId: "a1" });
+      const userMsg = await ms.create(thread.id, {
+        role: "user",
+        body: "Long-running question",
+      });
+      await ms.claim(thread.id, "admin");
+      const app = buildApp(ts, ms);
+
+      const res = await app.request(
+        `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+        {
+          method: "POST",
+          headers: { ...H.get, "content-type": contentType },
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Message;
+      expect(body.heartbeatAt).toBeTruthy();
+      expect(body.progressSeq).toBe(1);
+    });
+  }
+
   it("returns 400 for an invalid phase", async () => {
     const ts = fakeThreadService();
     const ms = fakeMessageService();
