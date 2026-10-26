@@ -23,7 +23,7 @@
 # Platform release to build on. Keep equal to the @app-vitals/agent-lib pin in
 # agent/package.json (guarded by agent/Dockerfile.platform.content.test.ts): the
 # coding extension is compiled against that package set.
-ARG PLATFORM_VERSION=0.5.0
+ARG PLATFORM_VERSION=0.6.1
 
 # ─── Version stamp stage ──────────────────────────────────────────────────────
 # Stamps AGENT_VERSION into the plugin version files inside the image only (no
@@ -60,6 +60,14 @@ COPY --from=stamp --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 # $SHIPWRIGHT_SPECIALTIES_DIR or <repo root>/specialties (the `coding` specialty
 # lives here, not in the platform's agent-types).
 COPY --chown=1000:1000 specialties ./specialties
+# Coding-owned workspace templates. The platform owns the rest of
+# /app/runtime/workspace; copy only these two so its own templates stay intact.
+COPY --chown=1000:1000 agent/workspace/CLAUDE.md.template ./runtime/workspace/CLAUDE.md.template
+COPY --chown=1000:1000 agent/workspace/CLAUDE-HITL.md.template ./runtime/workspace/CLAUDE-HITL.md.template
+
+# The runtime derives its repo root from its own module path, which resolves to
+# `/` in this layout. Point it at the root that holds plugins/ and .claude-plugin/.
+ENV SHIPWRIGHT_REPO_ROOT=/app
 
 # js-yaml is only an override in the platform's package.json, not a dependency, so
 # it is not resolvable from /app. The plugin scripts (suppressions.ts,
