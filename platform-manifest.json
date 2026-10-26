@@ -18,6 +18,7 @@
     "agent/workspace/CLAUDE.md.template",
     "agent/src/runtime/setup.templates.integration.test.ts",
     "agent/src/runtime/setup.layered.integration.test.ts",
+    "agent/src/runtime/platform-real-boot.smoke.test.ts",
     "admin/src/specialty-manifest-loader.integration.test.ts",
     "specialties/specialist/manifest.content.test.ts",
     "admin/src/agent-cron-jobs.coding.integration.test.ts",
