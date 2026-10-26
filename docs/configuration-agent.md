@@ -45,6 +45,9 @@
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED` | `string` | — | Admin service feature flag. Set to `enabled` to activate chat credential minting. When unset or any other value, minting is disabled. Set via the Helm chart's `admin.chatCredentialMint.enabled` value. |
+| `SHIPWRIGHT_CRON_RUN_NOW_ENABLED` | `string` | — | Admin service feature flag. Set to `enabled` to activate the cron run-now route. When unset or any other value, the route answers `404`. Set via the Helm chart's `admin.cronRunNow.enabled` value. |
+| `SHIPWRIGHT_TRANSCRIPT_API_ENABLED` | `string` | — | Admin service feature flag. Set to `enabled` to activate the cron-run transcript API routes. When unset or any other value, they answer `404`. Set via the Helm chart's `admin.transcriptApi.enabled` value. |
+| `SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED` | `string` | — | Admin service feature flag. Set to `enabled` to activate the agent repo-access check. When unset or any other value, the check is disabled. Set via the Helm chart's `admin.repoAccessCheck.enabled` value. |
 | `SHIPWRIGHT_ADMIN_DOC_ENABLED` | `string` | — | Admin service feature flag. Set to `enabled` to activate the admin documentation feature. When unset or any other value, the feature is disabled. Set via the Helm chart's `admin.doc.enabled` value. |
 | `DATABASE_URL_SHIPWRIGHT_CHAT` | `string` | required | Postgres connection string for the chat service schema. **Must be a separate database** from the admin and task-store services — the schema forbids sharing. |
 | `SHIPWRIGHT_CHAT_AGENTS_URL` | `string` | — | Base URL of the Shipwright agents service, used by the chat service to resolve agent token scopes. When set alongside `SHIPWRIGHT_CHAT_AGENTS_API_KEY`, the chat service calls this URL to fetch the repos an agent token may access. Optional — when unset, agent tokens default to empty repo lists and scope resolution is disabled. |

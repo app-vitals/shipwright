@@ -250,6 +250,27 @@
                 "enabled": { "type": "boolean" }
               }
             },
+            "cronRunNow": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "transcriptApi": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "repoAccessCheck": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
             "extraEnv": {
               "type": "array",
               "items": {

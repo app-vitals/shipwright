@@ -137,6 +137,9 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.ask.allowlist` | `[]` | Ask feature allowlist: array of `fromAgentId>toAgentId` pairs matching pattern `^[^,>]+>[^,>]+$` (comma-joined in env). Empty means no agent may ask any agent. |
 | `admin.chatCredentialMint.enabled` | `false` | Toggle chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). |
 | `admin.doc.enabled` | `false` | Toggle the admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). |
+| `admin.cronRunNow.enabled` | `false` | Toggle the cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). |
+| `admin.transcriptApi.enabled` | `false` | Toggle the cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). |
+| `admin.repoAccessCheck.enabled` | `false` | Toggle the agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). |
 | `metrics.enabled` | `true` | Toggle the metrics dashboard (port **3460**). |
 | `metrics.image.repository` | `ghcr.io/app-vitals/shipwright-metrics` | Metrics image repo (fully-qualified GHCR default). |
 | `metrics.image.tag` | pinned per release | Metrics image tag, rewritten on every chart release. |
