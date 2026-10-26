@@ -1,0 +1,72 @@
+name: Publish Agent Platform Candidate
+
+# AGR-4.3a: publishes the platform-based shipwright-agent candidate
+# (agent/Dockerfile.platform) under a NON-release tag so AGR-5.1 can build a
+# specialists image against it. This is deliberately not build-agent.yml: it never
+# computes or pushes an agent-v* git tag, so the poller (which follows agent-v*
+# tags) never sees it and nothing rolls out. The contract checks gate the PR in
+# ci.yml ("agent platform docker build"); this workflow only publishes.
+#
+# Manual only. AGR-4.3b retires this file together with agent/Dockerfile.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (branch or SHA) to build the candidate from"
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: build / push candidate
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # docker/login-action push to GHCR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Compute candidate tag
+        id: tag
+        run: echo "tag=platform-candidate-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build candidate image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker build \
+            -f agent/Dockerfile.platform \
+            --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
+            -t ghcr.io/app-vitals/shipwright-agent:"$TAG" \
+            .
+
+      - name: Push candidate image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: docker push ghcr.io/app-vitals/shipwright-agent:"$TAG"
+
+      - name: Report tag and digest
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/app-vitals/shipwright-agent:"$TAG")
+          {
+            echo "### Platform-based agent candidate"
+            echo
+            echo "- tag: \`ghcr.io/app-vitals/shipwright-agent:$TAG\`"
+            echo "- digest: \`$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"

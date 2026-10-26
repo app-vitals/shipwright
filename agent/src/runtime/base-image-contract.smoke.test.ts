@@ -10,6 +10,10 @@
  * Needs a Docker daemon and an already-built base image, so it is image-level
  * smoke and opt-in: set SHIPWRIGHT_CONTRACT_BASE_IMAGE (CI sets it to the image
  * built by the `agent docker build` job). Skipped otherwise.
+ *
+ * The platform-based candidate image (agent/Dockerfile.platform, AGR-4.3a) keeps
+ * the runtime at /app/runtime, so the two module paths are overridable:
+ * SHIPWRIGHT_CONTRACT_SETUP_MODULE and SHIPWRIGHT_CONTRACT_ENTRYPOINT.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -18,6 +22,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BASE_IMAGE = process.env.SHIPWRIGHT_CONTRACT_BASE_IMAGE;
+const SETUP_MODULE =
+  process.env.SHIPWRIGHT_CONTRACT_SETUP_MODULE ??
+  "/app/agent/src/runtime/setup.ts";
+const ENTRYPOINT =
+  process.env.SHIPWRIGHT_CONTRACT_ENTRYPOINT ??
+  "/app/agent/src/entrypoint-main.ts";
 const CONVENTION_ROOT = "/opt/shipwright/marketplaces";
 const MARKETPLACE_NAME = "contract-test";
 const DERIVED_TAG = `shipwright-agent-contract:${process.pid}`;
@@ -72,7 +82,7 @@ describe.skipIf(!BASE_IMAGE)("agent base-image contract", () => {
     // Recording exec: asserts what installPlugins() asks `claude` to do without
     // needing network access or a logged-in CLI inside the container.
     const script = `
-      import { installPlugins } from "/app/agent/src/runtime/setup.ts";
+      import { installPlugins } from "${SETUP_MODULE}";
       const calls = [];
       const exec = async (cmd, args) => {
         calls.push([cmd, ...args]);
@@ -123,7 +133,7 @@ describe.skipIf(!BASE_IMAGE)("agent base-image contract", () => {
       "SHIPWRIGHT_AGENT_API_KEY=",
       DERIVED_TAG,
       "run",
-      "/app/agent/src/entrypoint-main.ts",
+      ENTRYPOINT,
     ]);
     expect(run.exitCode).toBe(1);
     expect(run.stdout + run.stderr).toContain("SHIPWRIGHT_AGENT_ID");
