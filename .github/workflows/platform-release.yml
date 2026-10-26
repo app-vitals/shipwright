@@ -123,11 +123,11 @@ jobs:
         run: |
           git checkout -B "$BRANCH"
           git add -A -- docs/platform
-          git add -u -- bun.lock '*package.json'
+          git add -u -- bun.lock '*package.json' agent/Dockerfile
           # Anything else changing means the bump did more than re-pin and
           # re-snapshot: stop.
           if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
-            echo "ERROR: unexpected changes outside package.json/bun.lock/docs/platform:" >&2
+            echo "ERROR: unexpected changes outside package.json/bun.lock/agent/Dockerfile/docs/platform:" >&2
             git status --porcelain >&2
             exit 1
           fi
@@ -135,9 +135,6 @@ jobs:
           # One bump branch: a newer release replaces an unmerged older bump.
           git push --force origin "$BRANCH"
 
-      # The PR changes admin/package.json, a platform-frozen path, so it
-      # carries the `platform-cutover` label for platform-freeze-guard.yml
-      # (removed with the guard in AGR-4.4). It only re-pins versions.
       - name: Open or update the bump PR
         id: pr
         if: steps.diff.outputs.changed == 'true'
@@ -148,7 +145,7 @@ jobs:
           BODY=$(cat <<EOF
           ## Platform release ${VERSION}
 
-          Re-pins every registry \`@app-vitals/agent-*\` dependency to \`${VERSION}\`, refreshes \`bun.lock\` and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
+          Re-pins every registry \`@app-vitals/agent-*\` dependency and the \`agent/Dockerfile\` platform image (\`PLATFORM_VERSION\`) to \`${VERSION}\`, refreshes \`bun.lock\` and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
 
           Triggered by the \`platform-release\` dispatch from app-vitals/agent (or a manual run).
 
@@ -167,7 +164,6 @@ jobs:
               --head "$BRANCH" \
               --title "$TITLE" \
               --label automated \
-              --label platform-cutover \
               --body "$BODY")
             echo "Opened PR: ${PR_URL}"
             echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"

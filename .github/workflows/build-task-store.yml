@@ -46,7 +46,6 @@ jobs:
           filters: |
             changed:
               - "task-store/**"
-              - "lib/**"
               - "package.json"
               - "bun.lock"
               - ".github/workflows/build-task-store.yml"

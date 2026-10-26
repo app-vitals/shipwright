@@ -21,7 +21,7 @@ There are three ways to run the agent depending on your context:
 | Mode | Entry point | Transport | Entrypoint behavior | When to use |
 |------|-------------|-----------|---------------------|-------------|
 | Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Runs directly on the host | Running directly on a host with a local `.env` file |
-| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Dockerfile `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`, which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
+| K8s container | `entrypoint-main.ts` (platform runtime) | Slack Socket Mode | The image is built on the platform image, whose `ENTRYPOINT` is `bun run /app/runtime/entrypoint-main.ts`, which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
 | Local dev | `task stack` | Chat poll loop → admin Chat UI | Runs the agent in Docker via the agent pane | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
 
 The admin service Dockerfile (`admin/Dockerfile`) `ENTRYPOINT` is `bun run admin/src/main.ts`,
@@ -118,7 +118,7 @@ claude mcp add --transport http <name> <url>
 
 This writes the registration into `~/.claude.json`. On a Shipwright agent, `~/.claude.json`
 is not a real file — it's a symlink to `$AGENT_HOME/claude.json`, created by
-`ensureDotClaudeSymlink()` in `agent/src/runtime/setup.ts` at every agent startup. The same function
+`ensureDotClaudeSymlink()` in `setup.ts` in `@app-vitals/agent-runtime` at every agent startup. The same function
 also symlinks `~/.claude` → `$AGENT_HOME/dot-claude`. Both live on the agent's persistent
 volume (PVC), which survives pod restarts; the container's ephemeral filesystem does not.
 

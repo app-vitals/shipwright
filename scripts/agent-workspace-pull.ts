@@ -238,7 +238,7 @@ export async function pullAgentWorkspace(
 
   const workspaceRoot = buildWorkspaceRoot(pullRoot, agent.name);
   // Clone into <workspaceRoot>/workspace/repos to match ensureAgentHome()'s
-  // scaffolding (agent/src/runtime/setup.ts) and the documented
+  // scaffolding (@app-vitals/agent-runtime setup.ts) and the documented
   // <AGENT_HOME>/workspace/repos convention (docs/configuration.md) — so the
   // clones and the scaffolded state/identity files live in one coherent
   // mirrored tree, not disconnected siblings.

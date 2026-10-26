@@ -46,8 +46,8 @@ jobs:
           filters: |
             changed:
               - "agent/**"
-              - "lib/**"
               - "plugins/**"
+              - "specialties/**"
               - ".claude-plugin/**"
               - "package.json"
               - "bun.lock"

@@ -1,7 +1,0 @@
-# admin/e2e/ holds Playwright *.e2e.ts tests that run via `bunx playwright test`,
-# not the Bun runner. *.canary.test.ts is reserved for a future canary suite that
-# runs through its own entry point.
-[test]
-pathIgnorePatterns = ["**/admin/e2e/**", "**/*.canary.test.ts"]
-# Points the specialty lookup at the minimal fixture specialty (see the preload).
-preload = ["./scripts/test-env-preload.ts"]

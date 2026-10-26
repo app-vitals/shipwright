@@ -46,7 +46,6 @@ jobs:
           filters: |
             changed:
               - "chat/**"
-              - "lib/**"
               - "package.json"
               - "bun.lock"
               - ".github/workflows/build-chat.yml"

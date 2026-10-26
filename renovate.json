@@ -2,7 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
-  "ignorePaths": ["scripts/extract-platform/template/**"],
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
@@ -43,12 +42,11 @@
       "separateMajorMinor": false
     },
     {
-      "description": "The App Vitals agent platform packages (@app-vitals/agent-*) release together; bump them in one PR, majors included, with exact pins. Fallback for .github/workflows/platform-release.yml, which bumps them on each platform release dispatch. Declared after the routine grouping rule so it is not folded into it. The platform-cutover label lets the PR through platform-freeze-guard.yml (admin/package.json is a frozen path until AGR-4.4).",
+      "description": "The App Vitals agent platform packages (@app-vitals/agent-*) release together; bump them in one PR, majors included, with exact pins. Fallback for .github/workflows/platform-release.yml, which bumps them on each platform release dispatch. Declared after the routine grouping rule so it is not folded into it.",
       "matchPackageNames": ["/^@app-vitals\\/agent-/"],
       "groupName": "app-vitals agent platform",
       "separateMajorMinor": false,
-      "rangeStrategy": "pin",
-      "addLabels": ["platform-cutover"]
+      "rangeStrategy": "pin"
     }
   ]
 }

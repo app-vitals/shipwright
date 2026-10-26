@@ -10,6 +10,12 @@
  * (packages still built here) are left alone. The workflow then refreshes
  * bun.lock and opens or updates the bump PR.
  *
+ * It also re-pins `ARG PLATFORM_VERSION=` in agent/Dockerfile (AGR-4.4): the
+ * shipwright-agent image is built FROM the platform image at that version, so
+ * merging the bump PR is what makes build-agent.yml cut a new agent-vX image,
+ * and agent-platform-image.content.test.ts requires it to equal the
+ * @app-vitals/agent-lib pin.
+ *
  * The version arrives from an external event, so it is validated as strict
  * `X.Y.Z` before it touches any file; anything else exits non-zero.
  *
@@ -20,7 +26,7 @@
  * manifest declares a registry @app-vitals/agent-* dependency, 2 usage.
  */
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 /** Strict semver core: X.Y.Z, no leading zeros, no pre-release/build suffix. */
@@ -87,6 +93,26 @@ export function bumpManifest(text: string, version: string): BumpResult {
   };
 }
 
+/** The shipwright-agent Dockerfile and the build arg that selects the platform image. */
+export const AGENT_DOCKERFILE = "agent/Dockerfile";
+const PLATFORM_VERSION_ARG = /^(ARG PLATFORM_VERSION=)(\S*)$/m;
+
+/** Re-pins `ARG PLATFORM_VERSION=` in a Dockerfile; `changed` is false when absent or current. */
+export function bumpDockerfile(
+  text: string,
+  version: string,
+): { text: string; changed: boolean } {
+  if (!isStrictSemver(version)) {
+    throw new Error(`not a strict X.Y.Z version: ${JSON.stringify(version)}`);
+  }
+  const match = PLATFORM_VERSION_ARG.exec(text);
+  if (!match || match[2] === version) return { text, changed: false };
+  return {
+    text: text.replace(PLATFORM_VERSION_ARG, `$1${version}`),
+    changed: true,
+  };
+}
+
 const SKIP_DIRS = new Set(["node_modules", ".git", "worktrees", "dist"]);
 
 /** Every package.json under `root`, repo-relative and sorted. */
@@ -107,7 +133,7 @@ export function findManifests(root: string, dir = root): string[] {
 export interface RepoBump {
   /** Manifests that declare a registry @app-vitals/agent-* dependency. */
   declaring: string[];
-  /** Manifests rewritten by this run. */
+  /** Files (manifests and the agent Dockerfile) rewritten by this run. */
   updated: string[];
 }
 
@@ -123,6 +149,14 @@ export function bumpRepo(root: string, version: string): RepoBump {
     if (result.changed.length > 0) {
       writeFileSync(path, result.text);
       updated.push(file);
+    }
+  }
+  const dockerfile = join(root, AGENT_DOCKERFILE);
+  if (existsSync(dockerfile)) {
+    const result = bumpDockerfile(readFileSync(dockerfile, "utf8"), version);
+    if (result.changed) {
+      writeFileSync(dockerfile, result.text);
+      updated.push(AGENT_DOCKERFILE);
     }
   }
   return { declaring, updated };

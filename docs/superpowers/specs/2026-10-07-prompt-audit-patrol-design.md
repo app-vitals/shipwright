@@ -2,7 +2,7 @@
 
 ## Context
 
-Shipwright runs on a large body of LLM-facing markdown: root `CLAUDE.md` (221 lines), `agent/workspace/CLAUDE.md.template` (228 lines, the file the deployed agent actually loads every session), 29 plugin commands (~150k tokens), 26 skills (~115k tokens), 4 agents, `.claude/` rules/skills, and 31 docs. Much of it was written against a Sonnet that no longer exists: the fleet default is `claude-sonnet-4-6` (`lib/default-agent-env.ts`), current Sonnet is 5.5, and `lib/pricing.ts` has no 5.x model at all. Nobody re-audits this text when models change, and there is no token accounting per file, per skill, or per run.
+Shipwright runs on a large body of LLM-facing markdown: root `CLAUDE.md` (221 lines), the platform's `agent/workspace/CLAUDE.md.template` (228 lines, the file the deployed agent actually loads every session; now in `@app-vitals/agent`), 29 plugin commands (~150k tokens), 26 skills (~115k tokens), 4 agents, `.claude/` rules/skills, and 31 docs. Much of it was written against a Sonnet that no longer exists: the fleet default is `claude-sonnet-4-6` (`lib/default-agent-env.ts`), current Sonnet is 5.5, and `lib/pricing.ts` has no 5.x model at all. Nobody re-audits this text when models change, and there is no token accounting per file, per skill, or per run.
 
 Goal: a **periodic audit** (scan → report → queue fixes) that proposes markdown changes which lower input/output tokens and improve fit for the model in use. **Every proposed change carries a measurable result.**
 
@@ -29,16 +29,16 @@ PR 5  prompt-eval (evals)        with/without, A/B on two checkouts, trigger set
 
 Two **contexts** are reported everywhere, because load class differs:
 - `local-dev`: cwd = repo root. Always-loaded = root `CLAUDE.md` + `.claude/rules/*.md` without `paths:` + skill/agent listing.
-- `agent-runtime`: cwd = `$AGENT_HOME/workspace`. Always-loaded = rendered `agent/workspace/CLAUDE.md.template` (+ its `@SOUL/IDENTITY/BOOTSTRAP/VOICE` imports) + listing. Root `CLAUDE.md` is a *subdirectory* file, loaded on demand when the agent touches `repos/shipwright/`.
+- `agent-runtime`: cwd = `$AGENT_HOME/workspace`. Always-loaded = rendered workspace template from the platform (`@app-vitals/agent`) (+ its `@SOUL/IDENTITY/BOOTSTRAP/VOICE` imports) + listing. Root `CLAUDE.md` is a *subdirectory* file, loaded on demand when the agent touches `repos/shipwright/`.
 
 ## PR 1 — Metrics production
 
 **Why first:** without per-run and per-skill token data, every "saving" is an estimate and no quality regression is detectable. The agent's stream-json already carries what is needed; it is just not recorded.
 
 ### A1. Per-run context baseline
-- `agent/src/runtime/claude.ts` `_consumeStream`: on the first `assistant` line with `message.usage`, capture `FirstTurnUsage { model, inputTokens, cacheCreationTokens, cacheReadTokens, contextTokens (sum of three), messageId }`. The three-way sum is the full turn-1 context regardless of cache warmth (verified on a local transcript: 2 + 41,415 + 37,771 ≈ 79k before any work). Also count `turns` (distinct message ids) and `toolCalls` (tool_use blocks). Expose on `ClaudeRunResult` and on the partial-usage paths of `ClaudeTimeoutError` / `ClaudeRunError` (same pattern as `partialModelUsage`).
-- New `agent/src/runtime/context-stamp.ts`: `computeContextStamp(deps) → { contextFingerprint, pluginVersion, claudeCodeVersion }` where fingerprint = sha256(workspace CLAUDE.md + sorted no-`paths` rules + plugin version)[:12]. Lets series be grouped by *content*, not merge date. Reuse `detectClaudeCodeVersion` (`agent/src/runtime/claude-version.ts`).
-- `agent/src/runtime/cron-handler.ts` `buildTokenPayload(usage, modelUsage, extra?)` and `agent/src/runtime/cron-run-reporter.ts` `RunReportOpts`: add `contextBaseline`, `turns`, `toolCalls`, `claudeCodeVersion`, `pluginVersion`, `contextFingerprint`. Pass at all call sites (`cron-handler.ts` ~476/495, `loop-orchestrator.ts` ~1049/1105/1163).
+- **Platform module** (`@app-vitals/agent-runtime`): in the runtime's `claude.ts` `_consumeStream()`, on the first `assistant` line with `message.usage`, capture `FirstTurnUsage { model, inputTokens, cacheCreationTokens, cacheReadTokens, contextTokens (sum of three), messageId }`. The three-way sum is the full turn-1 context regardless of cache warmth (verified on a local transcript: 2 + 41,415 + 37,771 ≈ 79k before any work). Also count `turns` (distinct message ids) and `toolCalls` (tool_use blocks). Expose on `ClaudeRunResult` and on the partial-usage paths of `ClaudeTimeoutError` / `ClaudeRunError` (same pattern as `partialModelUsage`).
+- **Platform module**: new `context-stamp.ts` module in the runtime: `computeContextStamp(deps) → { contextFingerprint, pluginVersion, claudeCodeVersion }` where fingerprint = sha256(workspace CLAUDE.md + sorted no-`paths` rules + plugin version)[:12]. Lets series be grouped by *content*, not merge date. Reuse `detectClaudeCodeVersion` from the runtime's `claude-version.ts`.
+- **Platform module**: in the runtime's `cron-handler.ts` `buildTokenPayload(usage, modelUsage, extra?)` and `cron-run-reporter.ts` `RunReportOpts`: add `contextBaseline`, `turns`, `toolCalls`, `claudeCodeVersion`, `pluginVersion`, `contextFingerprint`. Pass at all call sites.
 - `admin/prisma/schema/` `AgentCronRun`: nullable additive columns `baselineModel`, `baselineContextTokens`, `baselineInputTokens`, `baselineCacheCreationTokens`, `baselineCacheReadTokens`, `turns`, `toolCalls`, `claudeCodeVersion`, `pluginVersion`, `contextFingerprint` (+ index). Migration; `admin/src/agent-cron-runs.ts` PATCH `runData` spreads them; `openapi-schemas.ts` updated.
 
 ### A2. Per-skill / per-command attribution (primary: in-process transcript attribution)
@@ -62,7 +62,7 @@ Unit: `claude.unit.test.ts` (first-turn capture, dedupe, partials on timeout), `
 ## PR 2 — Model bump as a measured change
 
 - Capture **≥ 2 weeks** (or ≥ 20 runs/phase) of PR 1 series on `claude-sonnet-4-6` first.
-- Change `DEFAULT_ANTHROPIC_MODEL` (`lib/default-agent-env.ts`) and the runtime fallback (`agent/src/runtime/config.ts`, `agent/src/runtime/claude.ts`) to `claude-sonnet-5-5`; move pricing aliases; update `docs/configuration-agent.md`. Existing agents keep their seeded `ANTHROPIC_MODEL` env, so the PR includes a HITL step: update each agent's env via the admin API (`shipwright:agent-admin` skill) and record the date.
+- Change `DEFAULT_ANTHROPIC_MODEL` (`lib/default-agent-env.ts`) and the **platform runtime**'s fallback (`@app-vitals/agent-runtime`'s config and claude modules) to `claude-sonnet-5-5`; move pricing aliases; update `docs/configuration-agent.md`. Existing agents keep their seeded `ANTHROPIC_MODEL` env, so the PR includes a HITL step: update each agent's env via the admin API (`shipwright:agent-admin` skill) and record the date.
 - Measurement: `baselines` and `/outcomes` split by `baselineModel`. Report cost per completed task, context tokens at turn 1 (expect a different count on the same markdown: new tokenizer), turns, failure/skip rates, patch cycles, per phase. Keep or revert on evidence. Note for the audit: **token deltas for a markdown edit are only valid same-model**; the scan always reports both models until the fleet is fully on 5.5.
 
 ## PR 3 — `prompt-scan` (static tier)
@@ -71,7 +71,7 @@ Unit: `claude.unit.test.ts` (first-turn capture, dedupe, partials on timeout), `
 
 | File | Exports |
 |---|---|
-| `inventory.ts` | `walkInventory(root, deps) → InventoryEntry[]` — kind (`claude-md|rule|import|skill|command|agent|reference|template|doc`), `loadClass` per context (`always|on-demand-path|on-invoke|on-reference|listing`), frontmatter (`name`, `description`, `paths`), description chars, body lines, `@` imports (≤ 4 hops). Treats `agent/workspace/CLAUDE.md.template` as the `agent-runtime` always file. |
+| `inventory.ts` | `walkInventory(root, deps) → InventoryEntry[]` — kind (`claude-md|rule|import|skill|command|agent|reference|template|doc`), `loadClass` per context (`always|on-demand-path|on-invoke|on-reference|listing`), frontmatter (`name`, `description`, `paths`), description chars, body lines, `@` imports (≤ 4 hops). Treats the platform's workspace template (from `@app-vitals/agent`) as the `agent-runtime` always file. |
 | `token-count.ts` | `countTokens(texts, models, deps:{fetchFn, apiKey, cache})` → per id per model `{tokens, estimated}`. Raw `fetch` to `POST /v1/messages/count_tokens` (the plugin is self-contained: no SDK dependency, see `scripts/clock.ts` header). No key or non-2xx → `ceil(bytes/4)` with `estimated: true`, always labelled. Cache `state/prompt-audit/token-cache.json` keyed by sha256(model+content). `listingBudget(model)` = `CONTEXT_WINDOW × 0.01` chars. |
 | `reference-resolver.ts` | `extractReferences(content) → Ref[]` (path, command, flag, model-id, env-var) and `resolveReferences(refs, deps:{exists, taskNames, packageScripts, commandFlags, knownModels}) → Unresolved[]`; `findOrphanedAutoSections(content, deps:{grepRepo})`. |
 | `instruction-density.ts` | `measureDensity(content)` → imperatives, caps emphasis (`MUST|NEVER|ALWAYS|CRITICAL`), numbered steps, bold imperatives, first-hard-constraint line ratio. |

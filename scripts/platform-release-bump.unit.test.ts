@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  bumpDockerfile,
   bumpManifest,
   bumpRepo,
   findManifests,
@@ -116,6 +117,29 @@ describe("bumpManifest", () => {
   });
 });
 
+describe("bumpDockerfile", () => {
+  test("rewrites only the PLATFORM_VERSION arg", () => {
+    const r = bumpDockerfile(
+      "ARG PLATFORM_VERSION=0.1.0\nARG OTHER=0.1.0\n",
+      "0.2.0",
+    );
+    expect(r).toEqual({
+      text: "ARG PLATFORM_VERSION=0.2.0\nARG OTHER=0.1.0\n",
+      changed: true,
+    });
+  });
+
+  test("is a no-op when current or absent, and rejects a non-strict version", () => {
+    expect(
+      bumpDockerfile("ARG PLATFORM_VERSION=0.2.0\n", "0.2.0").changed,
+    ).toBe(false);
+    expect(bumpDockerfile("FROM x\n", "0.2.0").changed).toBe(false);
+    expect(() =>
+      bumpDockerfile("ARG PLATFORM_VERSION=0.1.0\n", "0.2.0\nRUN x"),
+    ).toThrow();
+  });
+});
+
 describe("bumpRepo / CLI", () => {
   let root: string;
   const put = (path: string, text: string) => {
@@ -157,6 +181,19 @@ describe("bumpRepo / CLI", () => {
     expect(read("site/package.json")).toBe(`{"dependencies":{"astro":"^5"}}\n`);
     expect(read("node_modules/@app-vitals/agent-lib/package.json")).toContain(
       "0.0.1",
+    );
+    expect(bumpRepo(root, "0.3.0").updated).toEqual([]);
+  });
+
+  test("re-pins ARG PLATFORM_VERSION in agent/Dockerfile and reports it as updated", () => {
+    put(
+      "agent/Dockerfile",
+      "# c\nARG PLATFORM_VERSION=0.1.0\nFROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}\n",
+    );
+    const r = bumpRepo(root, "0.3.0");
+    expect(r.updated).toContain("agent/Dockerfile");
+    expect(read("agent/Dockerfile")).toBe(
+      "# c\nARG PLATFORM_VERSION=0.3.0\nFROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}\n",
     );
     expect(bumpRepo(root, "0.3.0").updated).toEqual([]);
   });

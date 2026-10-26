@@ -4,8 +4,8 @@
  *
  * Pins the trigger contract the sender relies on, the injection rule (the
  * externally supplied version never appears as a `${{ }}` expression inside a
- * run script), SHA-pinned actions, a pr-title-lint-clean title, the freeze
- * guard label and the loud failure path. The bump logic itself is unit-tested
+ * run script), SHA-pinned actions, a pr-title-lint-clean title, the
+ * loud failure path. The bump logic itself is unit-tested
  * in scripts/platform-release-bump.unit.test.ts.
  *
  * Lives at the repo root (not under .github/) because `bun test` never walks
@@ -135,7 +135,7 @@ describe("platform-release.yml bump", () => {
     expect(snap).toBeLessThan(allRuns.indexOf("git commit"));
   });
 
-  it("opens or updates the PR with a pr-title-lint-clean title and the platform-cutover label", () => {
+  it("opens or updates the PR with a pr-title-lint-clean title", () => {
     expect(allRuns).toContain(
       `TITLE="chore(deps): bump @app-vitals/agent-* to ${shellVar("VERSION")}"`,
     );
@@ -146,7 +146,7 @@ describe("platform-release.yml bump", () => {
     expect(allRuns).toContain('gh pr list --head "$BRANCH" --state open');
     expect(allRuns).toContain('gh pr edit "$PR_URL"');
     expect(allRuns).toContain("gh pr create");
-    expect(allRuns).toContain("--label platform-cutover");
+    expect(allRuns).not.toContain("platform-cutover");
   });
 
   it("uses DISPATCH_TOKEN for the push and the PR so the PR's CI runs", () => {
