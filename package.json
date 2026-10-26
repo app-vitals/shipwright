@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@shipwright/admin": "workspace:*",
-    "@app-vitals/agent-lib": "0.3.0",
+    "@app-vitals/agent-lib": "0.4.0",
     "@app-vitals/agent-runtime": "workspace:*",
     "@prisma/client": "^7.0.0"
   },
