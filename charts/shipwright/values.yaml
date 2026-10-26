@@ -298,6 +298,10 @@ admin:
   doc:
     # -- Enable the doc feature (sets SHIPWRIGHT_ADMIN_DOC_ENABLED).
     enabled: false
+  # -- Pod ServiceAccount configuration.
+  podServiceAccount:
+    # -- Enable the pod ServiceAccount flag (sets SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED).
+    enabled: false
   # -- Cron run-now configuration.
   cronRunNow:
     # -- Enable the cron run-now route (sets SHIPWRIGHT_CRON_RUN_NOW_ENABLED).

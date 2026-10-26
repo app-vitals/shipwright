@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.29.0] - 2026-10-26
+
+### Added
+
+- expose the pod ServiceAccount flag as a chart value
+
 ## [1.28.3] - 2026-10-26
 
 ### Changed

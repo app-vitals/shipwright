@@ -460,6 +460,13 @@ spec:
               value: "enabled"
             {{- end }}
             {{- end }}
+            {{- with .Values.admin.podServiceAccount }}
+            {{- if .enabled }}
+            # ── Pod ServiceAccount feature flag
+            - name: SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED
+              value: "enabled"
+            {{- end }}
+            {{- end }}
             {{- with .Values.admin.cronRunNow }}
             {{- if .enabled }}
             # ── Cron run-now feature flag
