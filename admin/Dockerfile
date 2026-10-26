@@ -1,5 +1,18 @@
 # Shipwright Admin Service — container image
 #
+# The platform admin (API, UI, Prisma schema and migration history) is the
+# registry package @app-vitals/agent-admin, installed from bun.lock at the
+# version admin/package.json pins. This image adds only Shipwright's
+# composition root (admin/src/main.ts) and coding extension (admin/src/coding)
+# on top of it, plus the repo files they read at runtime (specialties/,
+# plugins/shipwright/references/).
+#
+# It is not layered FROM ghcr.io/app-vitals/agent-admin: that image is a
+# runnable platform admin with its own workspace layout and its own
+# node_modules, and the coding extension has to resolve the same
+# @app-vitals/agent-admin, agent-lib and hono copies Shipwright's lockfile
+# pins. Installing the package here keeps one copy of each.
+#
 # Build from repo root:
 #   docker build -f admin/Dockerfile -t shipwright-admin .
 #
@@ -22,13 +35,6 @@ WORKDIR /app
 # Copy workspace manifests for dependency install
 COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
-COPY admin/prisma ./admin/prisma/
-# admin is on Prisma 7, where the datasource block no longer carries `url` — it
-# lives in prisma.config.ts, which sits beside package.json rather than inside
-# prisma/. `bun install` below runs admin's `postinstall: prisma generate`, so
-# the config has to be in the deps stage too, not only in the `COPY . .` of the
-# production stage.
-COPY admin/prisma.config.ts ./admin/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
 COPY chat/package.json ./chat/
@@ -72,8 +78,21 @@ COPY . .
 # boot (the 0.100.0 class).
 RUN bun agent/scripts/check-lib-resolution.ts --require @app-vitals/agent-lib admin/src
 
-# Generate Prisma client
-RUN cd admin && bunx prisma generate --schema=prisma/schema
+# Platform package guard (AGR-4.2): the composition root imports the platform
+# admin from @app-vitals/agent-admin, so fail the build if it does not resolve
+# from admin/ in the shipped filesystem.
+RUN cd admin && bun -e 'import.meta.resolve("@app-vitals/agent-admin/admin-boot")'
+
+# startAdmin() reads the app version (the service worker's cache name) from
+# version.txt two levels above its own src/ — inside node_modules now that it
+# is a package, where no version.txt exists, so it would fall back to "0.0.0".
+# Put Shipwright's version.txt where the package looks for it.
+RUN ADMIN_PKG_DIR="$(cd admin && bun -e 'const { dirname } = require("node:path"); const { realpathSync } = require("node:fs"); console.log(dirname(realpathSync(require.resolve("@app-vitals/agent-admin/package.json"))))')" \
+    && cp version.txt "$ADMIN_PKG_DIR/../version.txt"
+
+# Generate the Prisma client from the package's schema. admin/prisma.config.ts
+# points the CLI at the schema and migrations inside @app-vitals/agent-admin.
+RUN cd admin && bunx prisma generate
 
 EXPOSE 3000
 

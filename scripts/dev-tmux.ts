@@ -468,7 +468,7 @@ export function buildStackCommands(
         argv: [
           "sh",
           "-c",
-          `cd admin && bunx prisma generate --schema=prisma/schema && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema`,
+          `cd admin && bunx prisma generate && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy`,
         ],
       });
     }

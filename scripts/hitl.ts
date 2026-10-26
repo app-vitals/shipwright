@@ -516,12 +516,18 @@ export function buildCloneSteps(
  * task-store DB, and admin migrates last.
  */
 export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
-  // admin's schema is a Prisma multi-file schema folder (prisma/schema/);
-  // task-store still uses a single prisma/schema.prisma file.
-  const prismaArgs = (cmd: "generate" | "deploy", schema: string): string[] =>
-    cmd === "generate"
-      ? ["bunx", "prisma", "generate", `--schema=${schema}`]
-      : ["bunx", "prisma", "migrate", "deploy", `--schema=${schema}`];
+  // task-store uses a single prisma/schema.prisma file. admin passes no
+  // --schema: its schema and migrations ship in @app-vitals/agent-admin and
+  // admin/prisma.config.ts points the CLI at them.
+  const prismaArgs = (
+    cmd: "generate" | "deploy",
+    schema?: string,
+  ): string[] => {
+    const schemaArg = schema ? [`--schema=${schema}`] : [];
+    return cmd === "generate"
+      ? ["bunx", "prisma", "generate", ...schemaArg]
+      : ["bunx", "prisma", "migrate", "deploy", ...schemaArg];
+  };
 
   return [
     {
@@ -544,14 +550,14 @@ export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
       kind: "exec",
       label: "admin prisma generate failed",
       startLabel: "running admin prisma generate...",
-      argv: prismaArgs("generate", "prisma/schema"),
+      argv: prismaArgs("generate"),
       cwd: join(cfg.repoRoot, "admin"),
     },
     {
       kind: "exec",
       label: "admin migrate failed",
       startLabel: "running admin prisma migrate...",
-      argv: prismaArgs("deploy", "prisma/schema"),
+      argv: prismaArgs("deploy"),
       cwd: join(cfg.repoRoot, "admin"),
       env: { DATABASE_URL_SHIPWRIGHT_ADMIN: cfg.adminDatabaseUrl },
     },

@@ -249,7 +249,7 @@ describe("buildMigrationSteps", () => {
       ["/repo/task-store", "prisma generate --schema=prisma/schema.prisma"],
       ["/repo/task-store", "prisma migrate deploy"],
       [REPO_ROOT, "run /repo/scripts/seed-task-store-token.ts --db-url"],
-      ["/repo/admin", "prisma generate --schema=prisma/schema"],
+      ["/repo/admin", "prisma generate"],
       ["/repo/admin", "prisma migrate deploy"],
     ]);
   });

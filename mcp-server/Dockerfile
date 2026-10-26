@@ -19,7 +19,6 @@ WORKDIR /app
 # Copy workspace manifests for dependency install
 COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
-COPY admin/prisma ./admin/prisma/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
 COPY chat/package.json ./chat/
