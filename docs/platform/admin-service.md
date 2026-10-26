@@ -4,7 +4,7 @@
 
 # Admin service (`admin/src`)
 
-The admin service is a single Bun + Hono process (package `@shipwright/admin`)
+The admin service is a single Bun + Hono process (package `@app-vitals/agent-admin`)
 that owns the platform's control plane: agent records and their env vars, cron
 jobs, tools, tokens and plugins; self-serve accounts; provisioning of the
 Kubernetes workloads behind each agent; a server-rendered admin UI; and the
