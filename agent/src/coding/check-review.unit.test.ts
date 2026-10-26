@@ -882,66 +882,165 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  // AAL-3.2: once a PrRecord already exists for a PR (i.e. it already
-  // cleared the allowlist gate once and entered the review pipeline), a
-  // later commit from the same non-allowlisted author must NOT be re-
-  // excluded by isAuthorAllowed — it should proceed to the normal
-  // commitSha/reviewState dedup checks further down instead. Here the
-  // existing record's reviewedCommitSha is stale relative to the PR's
-  // current head, so — once the allowlist re-gate is removed — the PR
-  // should fall through every other check and come out eligible.
-  test("isAuthorAllowed does not re-exclude a non-allowlisted author once a PrRecord already exists (AAL-3.2)", async () => {
+  // RAM-1.1: the allowlist gates an agent's FIRST exposure to a PR. The
+  // PullRequest record is account-wide, so another agent's review (a record)
+  // must not bypass this agent's allowlist; only this agent's own prior
+  // non-PENDING review does.
+  test("isAuthorAllowed excludes a non-allowlisted author when a record exists from another agent's review but currentUser has not reviewed (RAM-1.1 two-agent regression)", async () => {
     const pr = makePr({
-      author: { login: "zayyen-p" },
+      author: { login: "bob" },
       headRefOid: "new-commit-sha",
     });
     const deps: CheckReviewDeps = {
-      ...makeDeps([pr], async () => ({
-        commitSha: "old-commit-sha",
-        reviewedCommitSha: "old-commit-sha",
-        reviewState: "posted",
-      })),
-      isAuthorAllowed: (login) => login === "dmcaulay",
+      ...makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "old-commit-sha",
+          reviewedCommitSha: "old-commit-sha",
+          reviewState: "posted",
+        }),
+        "agent-a",
+        false,
+        undefined,
+        undefined,
+        undefined,
+        async () =>
+          makeReviewData({
+            reviews: {
+              nodes: [
+                makeReviewNode({
+                  author: { login: "agent-b" },
+                  commit: { oid: "old-commit-sha" },
+                }),
+              ],
+            },
+          }),
+      ),
+      isAuthorAllowed: (login) => login === "alice",
     };
-    const result = await getReviewCandidates(deps);
-    expect(result).toHaveLength(1);
+    expect(await getReviewCandidates(deps)).toEqual([]);
   });
 
-  test("isAuthorAllowed still excludes a non-allowlisted author when no PrRecord exists yet (AAL-3.2: initial-gate behavior unchanged)", async () => {
+  test("isAuthorAllowed does not re-exclude a non-allowlisted author once currentUser has already reviewed the PR (RAM-1.1: review request cleared, new commit)", async () => {
+    const pr = makePr({
+      author: { login: "zayyen-p" },
+      headRefOid: "new-commit-sha",
+      reviewRequests: [],
+    });
+    const deps: CheckReviewDeps = {
+      ...makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "old-commit-sha",
+          reviewedCommitSha: "old-commit-sha",
+          reviewState: "posted",
+        }),
+        "agent-a",
+        false,
+        undefined,
+        undefined,
+        undefined,
+        async () =>
+          makeReviewData({
+            headRefOid: "new-commit-sha",
+            reviews: {
+              nodes: [
+                makeReviewNode({
+                  author: { login: "agent-a" },
+                  state: "APPROVED",
+                  commit: { oid: "old-commit-sha" },
+                }),
+              ],
+            },
+          }),
+      ),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    expect(await getReviewCandidates(deps)).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed still excludes a non-allowlisted author when currentUser's only review is PENDING (RAM-1.1)", async () => {
+    const pr = makePr({ author: { login: "zayyen-p" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps(
+        [pr],
+        async () => null,
+        "agent-a",
+        false,
+        undefined,
+        undefined,
+        undefined,
+        async () =>
+          makeReviewData({
+            reviews: {
+              nodes: [
+                makeReviewNode({
+                  author: { login: "agent-a" },
+                  state: "PENDING",
+                }),
+              ],
+            },
+          }),
+      ),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    expect(await getReviewCandidates(deps)).toEqual([]);
+  });
+
+  test("isAuthorAllowed still excludes a non-allowlisted author when no PrRecord exists yet (initial-gate behavior unchanged)", async () => {
     const pr = makePr({ author: { login: "zayyen-p" } });
     const deps: CheckReviewDeps = {
       ...makeDeps([pr], async () => null),
       isAuthorAllowed: (login) => login === "dmcaulay",
     };
-    const result = await getReviewCandidates(deps);
-    expect(result).toEqual([]);
+    expect(await getReviewCandidates(deps)).toEqual([]);
   });
 
-  // A queryPrRecord failure must NOT be conflated with "no PrRecord exists
-  // yet": both leave `record == null`, but only a genuine "no record" case
-  // should grant the AAL-3.2 re-gate exception. If a transient fetch
-  // failure were treated the same as "no record", a non-allowlisted
-  // author's PR would wrongly bypass the allowlist for the duration of the
-  // failure — reintroducing the exact ok-wow-ai#1919 failure mode this PR
-  // fixes.
-  test("isAuthorAllowed still excludes a non-allowlisted author when queryPrRecord throws (AAL-3.2: fetch failure is not conflated with no-record)", async () => {
+  test("allowlist gate fails closed when fetchPrReviews throws, even if a record exists (RAM-1.1)", async () => {
     const pr = makePr({ author: { login: "zayyen-p" } });
     const deps: CheckReviewDeps = {
-      listOpenPrs: async (_repo: string) => [pr],
-      queryPrRecord: async (
-        _repo: string,
-        _prNumber: number,
-      ): Promise<PrRecord | null> => {
-        throw new Error("Network error");
-      },
-      getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: async () => false,
-      getScopedRepos: () => [pr.repo ?? ""],
-      fetchPrReviews: defaultFetchPrReviews,
+      ...makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "old-commit-sha",
+          reviewedCommitSha: "old-commit-sha",
+          reviewState: "posted",
+        }),
+        "bodhi-agent",
+        false,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("Network error");
+        },
+      ),
       isAuthorAllowed: (login) => login === "dmcaulay",
     };
-    const result = await getReviewCandidates(deps);
-    expect(result).toEqual([]);
+    expect(await getReviewCandidates(deps)).toEqual([]);
+  });
+
+  test("fetchPrReviews is called once per PR per tick, even when the allowlist gate is active (RAM-1.1)", async () => {
+    const pr = makePr({ author: { login: "dmcaulay" } });
+    let calls = 0;
+    const deps: CheckReviewDeps = {
+      ...makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          calls++;
+          return makeReviewData();
+        },
+      ),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    expect(await getReviewCandidates(deps)).toHaveLength(1);
+    expect(calls).toBe(1);
   });
 
   // ─── requested-reviewer inclusion (RRR-1.1) ──────────────────────────────
