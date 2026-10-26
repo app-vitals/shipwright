@@ -98,33 +98,27 @@ The AGR-1.7 rehearsal failed 121 tests in the extracted tree: ~45 from hardcoded
 - AGR-1.9 approach: fixture specialty + generic template under `runtime/fixtures/`, platform tests use `SHIPWRIGHT_SPECIALTIES_DIR`/`SHIPWRIGHT_DEFAULT_AGENT_TYPE`; coding-behavior tests stay in Shipwright and are excluded from extraction. Rejected: shipping a generic default specialty in the platform (expands public surface pre-publication). Approved by Dan.
 - AGR-1.8 and AGR-1.9 are serialized (overlapping test files). Approved by Dan.
 
-## Revision 2026-10-26: AGR-4.2 re-planned (platform adopted as-is)
+## Revision 2026-10-26: AGR-4.2 divergence, option (a)
 
-AGR-4.2 was blocked (`platform_package_diverges_from_shipwright_admin`): `@app-vitals/agent-admin` is not byte-identical to `admin/`, which broke AC1/AC2. Option A was chosen (Dan): treat the platform as the source of truth.
+AGR-4.2 blocked (`platform_package_diverges_from_shipwright_admin`): the published `@app-vitals/agent-admin` is not byte-equivalent to shipwright's `admin/`, so the original AC1 (byte-identical openapi/HTML) and AC2 (no change to migration history) could not hold. Decision (Dan, 2026-10-26): option (a), accept the platform additions as a deliberate behavior change.
 
-Findings from diffing `admin/` against `app-vitals/agent` `admin/` at current `main`:
+**Findings.** A file-level and line-level diff of `admin/src` (shipwright vs `app-vitals/agent`) shows the platform is a strict superset. There is no shipwright-only behavior to port: the signed-commits toggle is already in the platform (`de862b7`, agent#6), and the remaining shipwright-only lines are refactors the platform already did differently (`listTokensForAgent`, `isAdminOrSessionMember`, `callerLabel`). `main.ts` and `coding/` are shipwright's composition root and coding extension and stay shipwright-only. Platform additions: `AgentAsk` model and migration `20261025000000_add_agent_ask` with a flagged route (`SHIPWRIGHT_AGENT_ASK_ENABLED`), flagged chat-credential mint/revoke routes, a flagged platform-doc route, repos add/remove routes, `platform.read` / `platform.ops` key scopes.
 
-- **Nothing to port.** Every shipwright commit to platform paths after the cut (#4463, #4477, #4498) already exists in the platform. The shipwright-only lines are the composition root (`main.ts`), `admin-boot.ts`/`agents-api.ts` glue the platform refactored, and `specialty-manifest-loader` imports. `signedCommits` exists only in the platform (SGC-1.3); the earlier note had it backwards.
-- **The platform is additively ahead:** agent-ask (off unless `SHIPWRIGHT_AGENT_ASK_ENABLED=enabled`), platform scopes in `api-auth`, chat-credential routes, `platform-doc-route`, the signed-commits toggle, and migration `20261025000000_add_agent_ask` (`CREATE TABLE AgentAsk` plus two indexes, no FK, no change to existing tables).
-- **Release defect:** published `agent-admin@0.1.1` and `agent-runtime@0.1.1` pin `agent-lib` exactly `0.1.0` (the broken release) because `bun pm pack` ignores the stamped version when rewriting `workspace:*`. Installing them nests a second `agent-lib` copy.
+**Also found.** Published 0.1.1 packages depend on `agent-lib` exactly 0.1.0 (`bun pm pack` ignores the stamped version when rewriting `workspace:*`), so a consumer gets two `agent-lib` copies. Fixed by AGR-3.4 (agent#39), which cuts 0.1.2 and is the first automatic release under `AUTO_RELEASE` (ARL-3.8).
 
-Changes to the task list:
+**Change.** AGR-4.2 is rewritten in place and unblocked; one HITL gate is added in front of it.
 
-| ID | Change | Repo | Cx / Model | Deps |
+| Task | Repo | Title | Depends on | HITL |
 |---|---|---|---|---|
-| AGR-3.4 | **New.** `fix:` pack inter-package ranges at the release version, assert it in the release, and make the consumer smoke fail on duplicate or mismatched `agent-lib`. Its merge cuts 0.1.2 through the automatic path (also the ARL-3.8 verification). | app-vitals/agent | 3 / sonnet | AGR-3.3 |
-| AGR-4.2 | **Rewritten.** Adopt the platform admin deliberately: AC1/AC2 replaced by an additive-only OpenAPI diff, an additive-only migration check (`prisma migrate diff` on a fresh DB), unchanged auth behavior for existing keys, and a single `agent-lib` copy. No longer HITL. | app-vitals/shipwright | 5 / opus | AGR-4.1, AGR-4.5, AGR-3.4 |
+| AGR-4.6 | shipwright | chore: verify the platform admin migration set applies additively to a copy of the live schema | AGR-3.4 | HITL |
+| AGR-4.2 | shipwright | refactor: build the admin on the platform admin package and image (ACs relaxed) | AGR-4.1, AGR-4.5, AGR-4.6 | |
 
-```
-AGR-4.1 ✓ ─┐
-AGR-4.5 ✓ ─┼─ AGR-4.2 ─ AGR-4.3a ─ AGR-5.1 (HITL) ─ AGR-4.3b ─ AGR-4.4 ─ AGR-6.1 ─ AGR-6.2 (HITL) ─ AGR-6.3
-AGR-3.4 ───┘
-```
+AGR-4.6 is HITL because it reads live schema the dev-task environment cannot reach, and it precedes AGR-4.2 because AGR-4.2's PR deploys on merge and migrations run at admin boot. Relaxed AGR-4.2 ACs: openapi/HTML differ only by the listed additions, with the expected diff pinned in a test; migration history gains only the platform's new migrations and existing ones are unchanged; every new platform feature stays off by default in shipwright's deployment; existing suites run unchanged apart from the pinned diff. The downstream chain (4.3a, 5.1, 4.3b, 4.4, 6.x) is unchanged.
 
-Breaking-change safety: AGR-3.4 only adds assertions and changes packaging (safe standalone). AGR-4.2 is an atomic consumer swap with an additive migration.
+Safe to deploy standalone: yes. AGR-4.6 is a read-only check; AGR-4.2 is gated behind it.
 
 ### Decision Log (revision)
 
-- Port step: dropped. The diff shows nothing shipwright-only to port.
-- AGR-4.2 is no longer HITL. The decision is made and the migration is additive; rollback is a revert (the empty table is harmless).
-- AGR-3.4 rides the first automatic release (0.1.2) so it doubles as the ARL-3.8 verification. Approved by Dan.
+- No task to port shipwright-only admin changes: the diff shows none.
+- AGR-4.2 rewritten in place rather than split: the code change is the same size, only the gate moved out.
+- AGR-4.6 placed before AGR-4.2, not after: AGR-4.2 deploys on merge, and migrations run at boot.
