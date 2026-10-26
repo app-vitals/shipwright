@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.29.5] - 2026-10-26
+
+### Changed
+
+- point the chat image default at ghcr.io/app-vitals/agent-chat (tag follows the platform release)
+
 ## [1.29.4] - 2026-10-26
 
 ### Changed
