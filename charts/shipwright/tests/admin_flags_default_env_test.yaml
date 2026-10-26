@@ -31,8 +31,28 @@ tests:
             - name: ADMIN_DEV_AUTH
               value: "true"
 
-  - it: renders none of the phase 13 flag envs by default
+  - it: renders none of the optional admin flag envs by default
     asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_ASK_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_DOC_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED
+            value: "enabled"
       - notContains:
           path: spec.template.spec.containers[0].env
           content:

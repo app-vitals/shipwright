@@ -250,6 +250,13 @@
                 "enabled": { "type": "boolean" }
               }
             },
+            "podServiceAccount": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
             "cronRunNow": {
               "type": "object",
               "additionalProperties": false,
