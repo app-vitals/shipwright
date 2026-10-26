@@ -97,3 +97,34 @@ The AGR-1.7 rehearsal failed 121 tests in the extracted tree: ~45 from hardcoded
 
 - AGR-1.9 approach: fixture specialty + generic template under `runtime/fixtures/`, platform tests use `SHIPWRIGHT_SPECIALTIES_DIR`/`SHIPWRIGHT_DEFAULT_AGENT_TYPE`; coding-behavior tests stay in Shipwright and are excluded from extraction. Rejected: shipping a generic default specialty in the platform (expands public surface pre-publication). Approved by Dan.
 - AGR-1.8 and AGR-1.9 are serialized (overlapping test files). Approved by Dan.
+
+## Revision 2026-10-26: AGR-4.2 re-planned (platform adopted as-is)
+
+AGR-4.2 was blocked (`platform_package_diverges_from_shipwright_admin`): `@app-vitals/agent-admin` is not byte-identical to `admin/`, which broke AC1/AC2. Option A was chosen (Dan): treat the platform as the source of truth.
+
+Findings from diffing `admin/` against `app-vitals/agent` `admin/` at current `main`:
+
+- **Nothing to port.** Every shipwright commit to platform paths after the cut (#4463, #4477, #4498) already exists in the platform. The shipwright-only lines are the composition root (`main.ts`), `admin-boot.ts`/`agents-api.ts` glue the platform refactored, and `specialty-manifest-loader` imports. `signedCommits` exists only in the platform (SGC-1.3); the earlier note had it backwards.
+- **The platform is additively ahead:** agent-ask (off unless `SHIPWRIGHT_AGENT_ASK_ENABLED=enabled`), platform scopes in `api-auth`, chat-credential routes, `platform-doc-route`, the signed-commits toggle, and migration `20261025000000_add_agent_ask` (`CREATE TABLE AgentAsk` plus two indexes, no FK, no change to existing tables).
+- **Release defect:** published `agent-admin@0.1.1` and `agent-runtime@0.1.1` pin `agent-lib` exactly `0.1.0` (the broken release) because `bun pm pack` ignores the stamped version when rewriting `workspace:*`. Installing them nests a second `agent-lib` copy.
+
+Changes to the task list:
+
+| ID | Change | Repo | Cx / Model | Deps |
+|---|---|---|---|---|
+| AGR-3.4 | **New.** `fix:` pack inter-package ranges at the release version, assert it in the release, and make the consumer smoke fail on duplicate or mismatched `agent-lib`. Its merge cuts 0.1.2 through the automatic path (also the ARL-3.8 verification). | app-vitals/agent | 3 / sonnet | AGR-3.3 |
+| AGR-4.2 | **Rewritten.** Adopt the platform admin deliberately: AC1/AC2 replaced by an additive-only OpenAPI diff, an additive-only migration check (`prisma migrate diff` on a fresh DB), unchanged auth behavior for existing keys, and a single `agent-lib` copy. No longer HITL. | app-vitals/shipwright | 5 / opus | AGR-4.1, AGR-4.5, AGR-3.4 |
+
+```
+AGR-4.1 ✓ ─┐
+AGR-4.5 ✓ ─┼─ AGR-4.2 ─ AGR-4.3a ─ AGR-5.1 (HITL) ─ AGR-4.3b ─ AGR-4.4 ─ AGR-6.1 ─ AGR-6.2 (HITL) ─ AGR-6.3
+AGR-3.4 ───┘
+```
+
+Breaking-change safety: AGR-3.4 only adds assertions and changes packaging (safe standalone). AGR-4.2 is an atomic consumer swap with an additive migration.
+
+### Decision Log (revision)
+
+- Port step: dropped. The diff shows nothing shipwright-only to port.
+- AGR-4.2 is no longer HITL. The decision is made and the migration is additive; rollback is a revert (the empty table is harmless).
+- AGR-3.4 rides the first automatic release (0.1.2) so it doubles as the ARL-3.8 verification. Approved by Dan.
