@@ -43,28 +43,12 @@
       "separateMajorMinor": false
     },
     {
-      "description": "Track the claude-code CLI's stable channel (not latest) in its own PR; declared after the routine grouping rule so it is not folded into it. Schedule is inherited (Monday).",
-      "matchPackageNames": ["@anthropic-ai/claude-code"],
-      "followTag": "stable",
-      "groupName": "claude-code"
-    },
-    {
       "description": "The App Vitals agent platform packages (@app-vitals/agent-*) release together; bump them in one PR, majors included, with exact pins. Fallback for .github/workflows/platform-release.yml, which bumps them on each platform release dispatch. Declared after the routine grouping rule so it is not folded into it. The platform-cutover label lets the PR through platform-freeze-guard.yml (admin/package.json is a frozen path until AGR-4.4).",
       "matchPackageNames": ["/^@app-vitals\\/agent-/"],
       "groupName": "app-vitals agent platform",
       "separateMajorMinor": false,
       "rangeStrategy": "pin",
       "addLabels": ["platform-cutover"]
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Bump the pinned claude-code CLI via the annotated ARG CLAUDE_CODE_VERSION line in agent/Dockerfile",
-      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s*\\nARG CLAUDE_CODE_VERSION=(?<currentValue>[\\d.]+)"
-      ]
     }
   ]
 }
