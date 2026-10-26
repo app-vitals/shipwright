@@ -6,7 +6,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type AgentDetail, renderAgentDetailPage } from "../admin-ui-pages.ts";
+import {
+  type AgentDetail,
+  renderAgentDetailPage,
+} from "@app-vitals/agent-admin/admin-ui-pages";
 import {
   renderVerificationActivityCard,
   type VerificationActivitySummary,

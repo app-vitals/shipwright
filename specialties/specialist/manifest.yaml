@@ -5,7 +5,7 @@
 # plugin, and no GitHub/task-store scope by default; specialties layer their
 # own plugins, crons and env on top via the admin API after creation.
 #
-# Validated against admin/src/specialty-registry.ts's SpecialtyManifestSchema
+# Validated against @app-vitals/agent-admin/specialty-registry's SpecialtyManifestSchema
 # (see specialties/specialist/manifest.content.test.ts).
 #
 # NOTE: identity.templatesDir is read by the agent runtime when seeding a new

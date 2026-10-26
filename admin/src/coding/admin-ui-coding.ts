@@ -20,27 +20,27 @@
  * GET /public/tasks.
  */
 
-import { Hono } from "hono";
 import {
   type AdminUIEnv,
   createAgentAccessChecks,
   createHtmlResponder,
   createUIAuthMiddleware,
   resolveBackHref,
-} from "../admin-ui.ts";
-import type { AgentCronJobService } from "../agent-cron-jobs.ts";
-import type { AgentCronRunService } from "../agent-cron-runs.ts";
-import type { AgentMemberService } from "../agent-members.ts";
-import type { AgentService } from "../agents.ts";
-import { publicNoAuthMiddleware } from "../api-auth.ts";
+} from "@app-vitals/agent-admin/admin-ui";
+import type { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import type { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
+import type { AgentMemberService } from "@app-vitals/agent-admin/agent-members";
+import type { AgentService } from "@app-vitals/agent-admin/agents";
+import { publicNoAuthMiddleware } from "@app-vitals/agent-admin/api-auth";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
   type TaskStoreViewScope,
   taskStoreViewScope,
-} from "../caller-scope.ts";
-import { AGENT_PHASES } from "../openapi-schemas.ts";
-import type { PushService } from "../push-service.ts";
+} from "@app-vitals/agent-admin/caller-scope";
+import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
+import type { PushService } from "@app-vitals/agent-admin/push-service";
+import { Hono } from "hono";
 import {
   buildMergedWorkQueueRows,
   renderMergedQueueActivityPage,

@@ -6,12 +6,12 @@
  * admin-ui-pages.ts / admin-ui.ts's agent detail route (AEP-3.2).
  */
 
+import type { AgentDetailCardSlot } from "@app-vitals/agent-admin/admin-extension";
+import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
+import type { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
+import type { AgentGitHubInstallationsService } from "@app-vitals/agent-admin/agent-github-installations";
+import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
 import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
-import type { AgentDetailCardSlot } from "../admin-extension.ts";
-import { escapeHtml } from "../admin-ui-styles.ts";
-import type { AgentCronRunService } from "../agent-cron-runs.ts";
-import type { AgentGitHubInstallationsService } from "../agent-github-installations.ts";
-import { AGENT_PHASES } from "../openapi-schemas.ts";
 import {
   renderVerificationActivityCard,
   type VerificationCheckItem,

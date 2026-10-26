@@ -5,7 +5,10 @@
  * agent-cron-jobs.ts (AEP-3.2), which stays name-agnostic.
  */
 
-import type { AgentCronJob, PrismaClient } from "../../prisma/client/client.ts";
+import type {
+  AgentCronJob,
+  PrismaClient,
+} from "@app-vitals/agent-admin/prisma/client/client.ts";
 
 export class ShipwrightLoopJobService {
   constructor(private readonly prisma: Pick<PrismaClient, "agentCronJob">) {}

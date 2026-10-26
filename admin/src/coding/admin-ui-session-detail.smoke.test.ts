@@ -12,7 +12,7 @@ import {
   AGENT_ID,
   makeSessionCookie,
   SESSION_SECRET,
-} from "../admin-ui.fixtures.ts";
+} from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
   createCodingTestApp,
   makeCodingMockDeps,

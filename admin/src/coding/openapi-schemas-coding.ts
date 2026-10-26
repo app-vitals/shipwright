@@ -6,8 +6,8 @@
  * generated admin/openapi.json is too.
  */
 
+import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
 import { z } from "@hono/zod-openapi";
-import { AGENT_PHASES } from "../openapi-schemas.ts";
 
 // ─── AgentPhaseMethodology ──────────────────────────────────────────────────────
 

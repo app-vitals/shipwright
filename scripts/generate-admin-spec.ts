@@ -1,18 +1,17 @@
 /**
  * scripts/generate-admin-spec.ts
- * Generate the OpenAPI 3.1 specs for the Shipwright admin service.
+ * Generate the OpenAPI 3.1 specs for Shipwright's admin service.
  *
  *   1. Builds the platform-only document (buildPlatformAdminSpec from the
- *      @shipwright/admin package: the admin CRUD app and the agent
- *      runtime app merged, no extension routes) and writes it to
- *      admin/openapi.platform.json. The platform half of the admin types
- *      (@app-vitals/agent-lib/admin-types) is generated and published by the
- *      platform repository since AGR-4.1; admin-types-split.unit.test.ts
- *      checks the registry copy covers this spec.
+ *      @app-vitals/agent-admin package: the admin CRUD app and the agent
+ *      runtime app merged, no extension routes). The platform admin ships its
+ *      own committed copy (@app-vitals/agent-admin/openapi.platform.json) and
+ *      the platform half of the admin types (@app-vitals/agent-lib/admin-types)
+ *      since AGR-4.1/AGR-4.2, so Shipwright no longer writes it.
  *   2. Folds in the static OpenAPI contributions of the admin extensions
  *      main.ts composes (AEP-2.1): the coding extension's routes, each placed
  *      at its historical position (AEP-3.2), and writes the composed document
- *      to admin/openapi.json (unchanged by the split).
+ *      to admin/openapi.json.
  *   3. Writes the coding extension's contributions alone as a standalone
  *      document to admin/src/coding/openapi.coding.json. It feeds the coding
  *      half of the admin types (admin/src/coding/admin-types.ts), kept by
@@ -27,8 +26,8 @@ import { dirname, join } from "node:path";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
-} from "@shipwright/admin/admin-extension";
-import { buildPlatformAdminSpec } from "@shipwright/admin/admin-spec";
+} from "@app-vitals/agent-admin/admin-extension";
+import { buildPlatformAdminSpec } from "@app-vitals/agent-admin/admin-spec";
 import { adminExtensions } from "@shipwright/admin/main";
 
 /** The admin package directory (admin/ in this repo). */
@@ -37,7 +36,7 @@ export const ADMIN_DIR = dirname(
 );
 
 export interface AdminSpecArtifacts {
-  /** admin/openapi.platform.json — platform routes only. */
+  /** The platform routes only (not written; shipped by the platform package). */
   platform: ReturnType<typeof buildPlatformAdminSpec>;
   /** admin/openapi.json — platform plus every composed extension. */
   composed: ReturnType<typeof buildPlatformAdminSpec>;
@@ -71,9 +70,11 @@ export function buildAdminSpecArtifacts(): AdminSpecArtifacts {
   };
 }
 
-/** Repo-relative output path of each artifact, keyed like AdminSpecArtifacts. */
-export const ADMIN_SPEC_OUTPUTS: Record<keyof AdminSpecArtifacts, string> = {
-  platform: join(ADMIN_DIR, "openapi.platform.json"),
+/** Output path of each artifact Shipwright commits, keyed like AdminSpecArtifacts. */
+export const ADMIN_SPEC_OUTPUTS: Record<
+  Exclude<keyof AdminSpecArtifacts, "platform">,
+  string
+> = {
   composed: join(ADMIN_DIR, "openapi.json"),
   coding: join(ADMIN_DIR, "src", "coding", "openapi.coding.json"),
 };
@@ -86,7 +87,7 @@ export function serializeSpec(doc: unknown): string {
 if (import.meta.main) {
   const artifacts = buildAdminSpecArtifacts();
   for (const key of Object.keys(ADMIN_SPEC_OUTPUTS) as Array<
-    keyof AdminSpecArtifacts
+    keyof typeof ADMIN_SPEC_OUTPUTS
   >) {
     writeFileSync(ADMIN_SPEC_OUTPUTS[key], serializeSpec(artifacts[key]));
     console.log(`Written to ${ADMIN_SPEC_OUTPUTS[key]}`);

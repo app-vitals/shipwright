@@ -14,14 +14,14 @@
  * admin-ui-sessions.ts, which also skips the visibility check.
  */
 
-import type { Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
-import type { AgentMemberService } from "../agent-members.ts";
-import type { AgentService } from "../agents.ts";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
+import type { AgentMemberService } from "@app-vitals/agent-admin/agent-members";
+import type { AgentService } from "@app-vitals/agent-admin/agents";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
-} from "../caller-scope.ts";
+} from "@app-vitals/agent-admin/caller-scope";
+import type { Hono, MiddlewareHandler } from "hono";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,

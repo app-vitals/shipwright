@@ -2,7 +2,7 @@
 
 The Shipwright chat service (`@shipwright/chat`) is a standalone Hono service that stores conversation threads between agents and their human members — the backing store for the admin console's Chat tab and the agent's chat poll loop. All routes are mounted at the service root (no base path), e.g. `http://localhost:3003`.
 
-**Full endpoint reference** — every route, parameter, request/response shape, and status code, including behavioral nuance like the claim/reply queue's precondition ordering and transactional atomicity — lives in the generated [`chat/openapi.json`](../chat/openapi.json) spec. Request/response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` (mirrors the pattern in `admin/src/openapi-schemas.ts`); the spec is generated from those schemas via `chat/src/generate-spec.ts` and can be regenerated any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
+**Full endpoint reference** — every route, parameter, request/response shape, and status code, including behavioral nuance like the claim/reply queue's precondition ordering and transactional atomicity — lives in the generated [`chat/openapi.json`](../chat/openapi.json) spec. Request/response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` (mirrors the pattern in `@app-vitals/agent-admin/openapi-schemas`); the spec is generated from those schemas via `chat/src/generate-spec.ts` and can be regenerated any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
 
 This page covers the conceptual auth model, the storage schema, environment config, and cross-cutting queue behavior that don't belong to any single endpoint.
 

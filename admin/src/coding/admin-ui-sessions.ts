@@ -15,17 +15,20 @@
  * only renders around it and translates its BadRequestError into a 400.
  */
 
-import type { Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
-import { renderAdminPage } from "../admin-ui-layout.ts";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
+import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
 import {
   type PushTestRouteDeps,
   registerPushTestRoute,
   renderPushTestControl,
-} from "../admin-ui-push-test.ts";
-import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
-import { BadRequestError } from "../errors.ts";
-import { renderPushToggle } from "../push-toggle.ts";
+} from "@app-vitals/agent-admin/admin-ui-push-test";
+import {
+  escapeHtml,
+  renderAdminToolbar,
+} from "@app-vitals/agent-admin/admin-ui-styles";
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
+import { renderPushToggle } from "@app-vitals/agent-admin/push-toggle";
+import type { Hono, MiddlewareHandler } from "hono";
 import type {
   SessionFollowRow,
   SessionFollowService,

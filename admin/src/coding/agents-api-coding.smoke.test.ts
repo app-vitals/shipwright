@@ -8,9 +8,9 @@
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
+import type { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
+import type { Prisma } from "@app-vitals/agent-admin/prisma/client/client.ts";
 import { sign } from "hono/jwt";
-import type { Prisma } from "../../prisma/client/client.ts";
-import type { AgentTokenService } from "../agent-tokens.ts";
 import {
   type CodingAdminApiDeps,
   createCodingAdminApiApp,

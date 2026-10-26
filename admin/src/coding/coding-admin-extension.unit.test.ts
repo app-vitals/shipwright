@@ -4,11 +4,11 @@ import {
   collectOpenApiContributions,
   collectServiceIntegrations,
   resolveAdminExtensions,
-} from "../admin-extension.ts";
+} from "@app-vitals/agent-admin/admin-extension";
 import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
-} from "../coding-task-store-provisioning-client.ts";
+} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
 import {
   codingAdminExtension,
   taskStoreFetchers,

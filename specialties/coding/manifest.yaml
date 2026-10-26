@@ -6,14 +6,14 @@
 # (lib/agent-default-tools.ts), the bundled shipwright plugin, and the
 # agent's env contract.
 #
-# Validated against admin/src/specialty-registry.ts's SpecialtyManifestSchema
+# Validated against @app-vitals/agent-admin/specialty-registry's SpecialtyManifestSchema
 # (see specialties/coding/manifest.content.test.ts).
 #
 # crons[] below is the source of truth for the coding agent's default system
-# crons. AgentCronJobService.reconcileSystemCrons() (admin/src/agent-cron-jobs.ts)
+# crons. AgentCronJobService.reconcileSystemCrons() (@app-vitals/agent-admin/agent-cron-jobs)
 # resolves this manifest via the SpecialtyRegistry and seeds/updates each
 # agent's system crons from it on every boot (ATS-3.2). The manifest→row
-# golden regression lives in admin/src/agent-cron-jobs.integration.test.ts.
+# golden regression lives in admin/src/agent-cron-jobs.coding.integration.test.ts.
 apiVersion: shipwright.dev/v1alpha1
 kind: Specialty
 metadata:

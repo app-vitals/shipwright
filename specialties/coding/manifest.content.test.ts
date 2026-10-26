@@ -11,13 +11,13 @@
  * parity check. ATS-3.2 cut cron reconciliation over to read this manifest
  * (via SpecialtyRegistry) and deleted the TS array, so that parity assertion
  * has been retired. The manifest→row golden regression now lives in
- * admin/src/agent-cron-jobs.integration.test.ts (GOLDEN_CODING_CRONS).
+ * admin/src/agent-cron-jobs.coding.integration.test.ts (GOLDEN_CODING_CRONS).
  */
 
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseSpecialtyManifest } from "@shipwright/admin/specialty-registry";
+import { parseSpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
 
 const MANIFEST_PATH = join(import.meta.dir, "manifest.yaml");
 const rawContent = readFileSync(MANIFEST_PATH, "utf-8");
@@ -125,7 +125,7 @@ describe("specialties/coding/manifest.yaml — shipwright-plan phase cron", () =
 //
 // This manifest is the single source of truth for the coding agent's tool
 // set as of ATS-3.3 — the former hardcoded tools constant module has been
-// deleted; both admin/src/admin-ui.ts (POST /admin/agents) and
+// deleted; both the platform admin UI (POST /admin/agents) and
 // scripts/seed-dev-agent.ts now resolve tools from this manifest via
 // SpecialtyRegistry instead. This test pins the expected tool set directly
 // so a regression here fails loudly rather than silently drifting.

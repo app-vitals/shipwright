@@ -338,7 +338,7 @@ spec:
             {{- end }}
             # Per-field container resource overrides for the provisioned agent.
             # Each renders only when set; unset fields keep the provisioner's own
-            # built-in defaults (admin/src/agent-manifest.ts).
+            # built-in defaults (@app-vitals/agent-admin/agent-manifest).
             {{- with .Values.agent.provisioning.resources.requests.cpu }}
             - name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
               value: {{ . | quote }}
@@ -428,7 +428,7 @@ spec:
             {{- with .Values.selfServe }}
             {{- if .enabled }}
             # ── Self-serve provisioning env (SSP-1.3) ─────────────────────────
-            # Injected ONLY when selfServe.enabled. Read by admin/src/self-serve-config.ts.
+            # Injected ONLY when selfServe.enabled. Read by @app-vitals/agent-admin/self-serve-config.
             - name: SHIPWRIGHT_SELF_SERVE_ENABLED
               value: "enabled"
             - name: SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS

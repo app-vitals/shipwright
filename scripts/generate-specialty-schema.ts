@@ -1,7 +1,7 @@
 /**
  * scripts/generate-specialty-schema.ts
  * Generate the JSON Schema artifact for the Specialty manifest from its Zod
- * source of truth (admin/src/specialty-registry.ts).
+ * source of truth (@app-vitals/agent-admin/specialty-registry).
  *
  * Output: `docs/schemas/specialty.schema.json` — a committed JSON file.
  * Regenerate with:
@@ -11,7 +11,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSpecialtyJsonSchema } from "@shipwright/admin/specialty-registry";
+import { buildSpecialtyJsonSchema } from "@app-vitals/agent-admin/specialty-registry";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");

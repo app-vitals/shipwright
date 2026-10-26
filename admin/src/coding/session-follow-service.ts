@@ -12,8 +12,8 @@
  * tests can inject a plain object double instead of a real client.
  */
 
-import { type Clock, SystemClock } from "../clock.ts";
-import { BadRequestError } from "../errors.ts";
+import { type Clock, SystemClock } from "@app-vitals/agent-admin/clock";
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
 
 // The narrow slice of PrismaClient this service touches. Injected so unit
 // tests (and any future callers) can use a plain object double instead of a

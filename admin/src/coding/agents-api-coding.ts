@@ -24,26 +24,32 @@
  * document byte-identical to the pre-split one.
  */
 
-import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
-import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
-import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import type { MiddlewareHandler } from "hono";
-import type { AdminOpenApiContribution } from "../admin-extension.ts";
-import type { AgentMemberService } from "../agent-members.ts";
-import type { AgentTokenService } from "../agent-tokens.ts";
-import type { AgentService } from "../agents.ts";
-import { createAdminApiHono, cronRunStatsQuerySchema } from "../agents-api.ts";
+import type { AdminOpenApiContribution } from "@app-vitals/agent-admin/admin-extension";
+import type { AgentMemberService } from "@app-vitals/agent-admin/agent-members";
+import type { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
+import type { AgentService } from "@app-vitals/agent-admin/agents";
+import {
+  createAdminApiHono,
+  cronRunStatsQuerySchema,
+} from "@app-vitals/agent-admin/agents-api";
 import {
   type AdminApiKey,
   type AdminAuthEnv,
   createAdminAuthMiddleware,
-} from "../api-auth.ts";
+} from "@app-vitals/agent-admin/api-auth";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
-} from "../caller-scope.ts";
-import { ForbiddenError, NotFoundError } from "../errors.ts";
-import { AgentIdParamSchema, ErrorSchema } from "../openapi-schemas.ts";
+} from "@app-vitals/agent-admin/caller-scope";
+import { ForbiddenError, NotFoundError } from "@app-vitals/agent-admin/errors";
+import {
+  AgentIdParamSchema,
+  ErrorSchema,
+} from "@app-vitals/agent-admin/openapi-schemas";
+import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
+import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
+import type { MiddlewareHandler } from "hono";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";

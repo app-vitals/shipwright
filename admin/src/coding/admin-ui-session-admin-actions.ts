@@ -20,12 +20,12 @@
  * action anywhere.
  */
 
-import type { Context, Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
 import {
   type CallerScopeResolver,
   taskStoreViewScope,
-} from "../caller-scope.ts";
+} from "@app-vitals/agent-admin/caller-scope";
+import type { Context, Hono, MiddlewareHandler } from "hono";
 
 export interface SessionAdminActionsDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;

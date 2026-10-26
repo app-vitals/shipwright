@@ -7,8 +7,8 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { SpecialtyManifestResolver } from "@shipwright/admin/specialty-manifest-loader";
-import type { SpecialtyManifest } from "@shipwright/admin/specialty-registry";
+import type { SpecialtyManifestResolver } from "@app-vitals/agent-admin/specialty-manifest-loader";
+import type { SpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
 import { parseEnvFile, type SeedDeps, seedDevAgent } from "./seed-dev-agent.ts";
 
 // ─── Fake SpecialtyManifestResolver ────────────────────────────────────────
@@ -222,9 +222,14 @@ describe("seedDevAgent", () => {
 
   it("produces the same tool/plugin set as a manifest-created coding agent (parity assert against the real registry)", async () => {
     const { SpecialtyRegistry } = await import(
-      "@shipwright/admin/specialty-manifest-loader"
+      "@app-vitals/agent-admin/specialty-manifest-loader"
     );
-    const realRegistry = new SpecialtyRegistry();
+    const { SHIPWRIGHT_SPECIALTIES_DIR } = await import(
+      "@shipwright/admin/main"
+    );
+    const realRegistry = new SpecialtyRegistry({
+      typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
+    });
     const codingManifest = realRegistry.getManifest("coding");
 
     const deps: SeedDeps = {

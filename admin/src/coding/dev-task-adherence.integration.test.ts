@@ -6,11 +6,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../../prisma/client/client.ts";
-import { AgentCronJobService } from "../agent-cron-jobs.ts";
-import { AgentCronRunService } from "../agent-cron-runs.ts";
-import { FixedClock } from "../clock.ts";
-import { createAdminPrismaClient } from "../prisma-client.ts";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
+import { FixedClock } from "@app-vitals/agent-admin/clock";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;

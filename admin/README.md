@@ -2,7 +2,7 @@
 
 The admin service provides a web UI and CRUD API for managing Shipwright agents — env vars, cron jobs, tokens, tools, and plugins. It also exposes the runtime API used by deployed agents to fetch their configuration.
 
-The HTTP server is implemented in `admin/src/main.ts`, which composes the admin UI, admin CRUD API, and agent runtime API into a single Hono app running on port 3000.
+`admin/src/main.ts` is the composition root: it boots the platform admin from `@app-vitals/agent-admin` (`startAdmin()`) with Shipwright's coding extension, serving the admin UI, admin CRUD API, and agent runtime API from a single Hono app on port 3000.
 
 ## Running Locally
 
@@ -41,7 +41,7 @@ The admin service uses its own PostgreSQL database. Run migrations before starti
 
 ```bash
 export DATABASE_URL_SHIPWRIGHT_ADMIN=postgres://...
-cd admin && bunx prisma migrate deploy --schema=prisma/schema
+cd admin && bunx prisma migrate deploy
 ```
 
 ## Building the Docker Image

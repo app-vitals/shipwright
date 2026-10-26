@@ -4,6 +4,44 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.5.0 _(AGR-4.2)_
+
+**Version**: next (AGR-4.2)
+
+**Who this affects**: anyone importing platform admin modules from `@shipwright/admin/*`, running
+admin Prisma commands with `--schema=prisma/schema`, or creating admin migrations in this repo.
+Deployments upgrade by rolling out the new admin image as usual.
+
+- The platform admin (API, UI, auth, Prisma schema, the single migration history) now comes from
+  the registry package `@app-vitals/agent-admin`, pinned to the same exact version as
+  `@app-vitals/agent-lib`. `admin/` keeps only `src/main.ts` (the composition root), `src/coding/`
+  (the coding extension), the composed `openapi.json` and `prisma.config.ts`.
+- `@shipwright/admin` now exports only `./main`, `./coding/*`, `./openapi.json`, `./prisma.config`
+  and `./package.json`. Import every other admin module from `@app-vitals/agent-admin/<module>`
+  (for example `@app-vitals/agent-admin/prisma-client`, `@app-vitals/agent-admin/admin-extension`).
+  `admin/openapi.platform.json` is gone; the package ships its own copy.
+- Admin Prisma commands run from `admin/` with no `--schema` flag: `admin/prisma.config.ts` points at
+  the schema and migrations inside the installed package. `task db:provision` is unchanged;
+  `task db:migrate` now exits with a pointer, because new admin migrations are created in the
+  platform repository.
+- On first boot the admin applies five new, additive migrations from the package:
+  `20261025000000_add_agent_ask`, `20261026000000_add_agent_pod_service_account`,
+  `20261027000000_add_cron_run_transcripts`, `20261028000000_add_cron_run_now` and
+  `20261028000000_add_repo_access_to_github_installations_snapshot` (new tables and nullable
+  columns only; existing migrations are unchanged).
+- New platform features are off unless their flag is `enabled`, and the chart sets none of them by
+  default: agent ask (`SHIPWRIGHT_AGENT_ASK_ENABLED`), chat-credential routes
+  (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`), the platform doc route (`SHIPWRIGHT_ADMIN_DOC_ENABLED`),
+  cron-run transcripts (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`), cron run-now
+  (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`), the per-agent pod ServiceAccount
+  (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`) and the runtime's per-repo GitHub access
+  check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Unflagged additions: the
+  `POST /agents/{id}/repos` and `DELETE /agents/{id}/repos/{owner}/{name}` routes (admin, the
+  agent's own key, or `platform.ops`), the `platform.read` / `platform.ops` API-key scopes, and the
+  "Signed commits" checkbox on the agent page of agents with a GitHub App.
+
+---
+
 ## Behavior: entropy/security patrol crons gain a fail-closed repo-scope preCheck _(RSF-3.1)_
 
 **Version**: next (RSF-3.1)
@@ -106,24 +144,24 @@ JSON API (`POST /agents`). Every other `/agents/*` route is unchanged — `GET`/
 sub-resources (envs, crons, tools, tokens, plugins) stay exactly as they were.
 
 The `POST /agents` route has been removed from the admin CRUD API
-([`admin/src/agents-api.ts`](../admin/src/agents-api.ts)), along with its OpenAPI schema entry
+(`@app-vitals/agent-admin/agents-api`), along with its OpenAPI schema entry
 and the corresponding generated types. Agent creation now happens exclusively through the admin
 console's HTML form at `/admin/agents/new`, which submits to `POST /admin/agents` in
-[`admin/src/admin-ui.ts`](../admin/src/admin-ui.ts). That form had already become the real
+(`@app-vitals/agent-admin/admin-ui`). That form had already become the real
 creation path — it is the only one that walks Slack app connection, GitHub auth, AI
 credentials, and runtime selection — leaving the JSON route as a second, partial implementation
 of the same seeding/provisioning logic that had to be kept in sync by hand.
 
 **What changed**:
 - `POST /agents` returns **404**. The route definition (`createAgentRoute`) and its handler are
-  gone from `admin/src/agents-api.ts`, and its now-unreferenced `CreateAgentBodySchema` request
+  gone from `@app-vitals/agent-admin/agents-api`, and its now-unreferenced `CreateAgentBodySchema` request
   body — along with the `AgentSchema` response shape it returned — is gone from
-  `admin/src/openapi-schemas.ts`.
+  `@app-vitals/agent-admin/openapi-schemas`.
 - `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
   regenerated `@app-vitals/agent-lib/admin-types` drops the matching
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
   from that package. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
-  the generated types in sync going forward.
+  the generated types in sync going forward (AGR-4.2: the test now verifies against the platform package's bundled schema).
 - `AdminDeps.specialtyRegistry` is now unused by `agents-api.ts` and is retained only as an
   optional field for backward-compatible construction; the admin UI carries its own
   `specialtyRegistry` dependency for manifest-driven seeding.
@@ -229,7 +267,7 @@ currently needed by any live deployment).
 chart database, nothing changes.
 
 Prisma 7 removed the bundled Rust query engine. The admin service now connects through a
-`PrismaPg` driver adapter over a `pg.Pool` (`admin/src/prisma-client.ts`), so
+`PrismaPg` driver adapter over a `pg.Pool` (`@app-vitals/agent-admin/prisma-client`), so
 `DATABASE_URL_SHIPWRIGHT_ADMIN` is parsed at runtime by
 [`pg-connection-string`](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string)
 instead of by Prisma's engine. Two connection-string behaviors change as a result.

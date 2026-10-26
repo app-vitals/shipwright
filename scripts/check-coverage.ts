@@ -27,11 +27,9 @@ const EXCLUDE_PREFIXES = [
   // Process entrypoints — start a real service or require live
   // credentials/infra to run (DB connections, Docker, mise, GitHub auth,
   // etc.); exercised in practice, not under unit/integration test.
-  "admin/src/server.ts",
+  // Shipwright's admin composition root; the platform admin it boots
+  // (server, startAdmin) ships in @app-vitals/agent-admin (node_modules/).
   "admin/src/main.ts",
-  // startAdmin()'s boot wiring, split out of main.ts (AEP-2.1); its order is
-  // pinned structurally by admin-boot.boot-order.unit.test.ts.
-  "admin/src/admin-boot.ts",
   "agent/src/entrypoint-main.ts",
   "task-store/src/main.ts",
   "chat/src/main.ts",

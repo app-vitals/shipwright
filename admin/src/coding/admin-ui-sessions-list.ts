@@ -18,17 +18,20 @@
  * registerSessionSettingsRoutes()/admin-ui-sessions.ts.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
-import type { Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
-import { renderAdminPage } from "../admin-ui-layout.ts";
-import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
-import type { AgentMemberService } from "../agent-members.ts";
-import type { AgentService } from "../agents.ts";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
+import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
+import {
+  escapeHtml,
+  renderAdminToolbar,
+} from "@app-vitals/agent-admin/admin-ui-styles";
+import type { AgentMemberService } from "@app-vitals/agent-admin/agent-members";
+import type { AgentService } from "@app-vitals/agent-admin/agents";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
-} from "../caller-scope.ts";
+} from "@app-vitals/agent-admin/caller-scope";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import type { Hono, MiddlewareHandler } from "hono";
 import {
   renderRepoOrgFilterFields,
   resolveAgentNameFilterAndPaginate,

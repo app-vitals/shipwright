@@ -15,7 +15,7 @@
 # Or just: `task minikube:up` (handles the ordering traps above).
 #
 # SIZING — the agent pod dominates: 500m CPU / 2Gi memory requests with an 8Gi
-# limit (admin/src/agent-manifest.ts). Everything else is small.
+# limit (@app-vitals/agent-admin/agent-manifest). Everything else is small.
 #   --cpus=4 --memory=8192   floor for the platform plus ONE agent
 #   --cpus=6 --memory=12288  comfortable for an agent doing real work
 # Below 4 CPU / 6Gi the agent pod schedules and then thrashes.
@@ -149,7 +149,7 @@ agent:
     # consumes agent.provisioning.persistence (or homePath/AGENT_HOME) for the
     # admin service's own agent-provisioner deployment; the admin container's
     # AGENT_HOME mount path and PVC size are set directly in code
-    # (admin/src/agent-manifest.ts), not sourced from this value. Set here for
+    # (@app-vitals/agent-admin/agent-manifest), not sourced from this value. Set here for
     # when this is wired through; has no effect yet.
     persistence:
       enabled: true

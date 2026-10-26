@@ -40,8 +40,7 @@ task check-strings  # scan entire repo for banned/confidential identifiers (clie
 Database (admin service):
 ```bash
 export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
-task db:provision   # prisma migrate deploy (idempotent)
-task db:migrate     # prisma migrate dev (creates a new migration)
+task db:provision   # prisma migrate deploy (idempotent) — schema + migrations ship in @app-vitals/agent-admin
 ```
 
 Marketing site (run from `site/`, **not** part of `bun test`):
@@ -171,7 +170,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema/` |
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `prisma/schema/` in `@app-vitals/agent-admin` (via `admin/prisma.config.ts`) |
 | `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
 | `DATABASE_URL_SHIPWRIGHT_CHAT` | `@shipwright/chat` | `chat/prisma/schema.prisma` |
 

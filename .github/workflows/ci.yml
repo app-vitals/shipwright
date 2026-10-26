@@ -181,7 +181,9 @@ jobs:
           # rejects — so run each from its own workspace, where bunx resolves
           # the 7.x CLI and the config file is discovered. Both the CLI
           # resolution and the config discovery are cwd-dependent.
-          (cd admin && bunx prisma migrate deploy --schema=prisma/schema)
+          # admin passes no --schema: admin/prisma.config.ts points at the
+          # schema and migrations shipped in @app-vitals/agent-admin.
+          (cd admin && bunx prisma migrate deploy)
           (cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma)
           (cd chat && bunx prisma migrate deploy --schema=prisma/schema.prisma)
 

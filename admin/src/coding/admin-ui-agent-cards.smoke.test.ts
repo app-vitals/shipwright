@@ -14,7 +14,7 @@ import {
   CRON_ID,
   MOCK_CRON,
   makeSessionCookie,
-} from "../admin-ui.fixtures.ts";
+} from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
   createCodingTestApp,
   makeCodingMockDeps,
@@ -47,6 +47,7 @@ describe("admin UI — authenticated pages", () => {
                   lastError: "installation suspended",
                 },
               ],
+              repoAccess: null,
               createdAt: new Date(),
             };
           },

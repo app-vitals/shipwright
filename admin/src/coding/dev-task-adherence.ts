@@ -31,10 +31,10 @@
  * as "unmeasured" and excluded from adherence rates.
  */
 
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
 import requiredStepsFile from "../../../plugins/shipwright/references/required-steps/dev-task.json" with {
   type: "json",
 };
-import type { PrismaClient } from "../../prisma/client/client.ts";
 
 export interface RequiredStep {
   stepNumber: string;

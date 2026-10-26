@@ -457,18 +457,20 @@ export function buildStackCommands(
   const agentIndex = panes.findIndex((p) => p.label === "agent");
 
   // 3+4+5. For each pane, send its command.
-  //   - Before the admin pane: prisma generate + migrate deploy preflight.
+  //   - Before the admin pane: migrate deploy preflight (the admin Prisma
+  //     client ships generated in @app-vitals/agent-admin).
   //   - Before the agent pane: seed-dev-agent + docker build preflights.
   panes.forEach((pane, i) => {
     if (i === adminIndex) {
-      // Preflight: generate the Prisma client then apply migrations so the
-      // admin service's Postgres schema is up to date before it starts.
+      // Preflight: apply migrations so the admin service's Postgres schema is
+      // up to date before it starts. No `prisma generate`: the client ships
+      // generated in @app-vitals/agent-admin.
       cmds.push({
         kind: "preflight",
         argv: [
           "sh",
           "-c",
-          `cd admin && bunx prisma generate --schema=prisma/schema && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema`,
+          `cd admin && DATABASE_URL_SHIPWRIGHT_ADMIN=${DEV_DATABASE_URL} bunx prisma migrate deploy`,
         ],
       });
     }

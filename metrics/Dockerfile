@@ -28,7 +28,6 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY metrics/package.json ./metrics/
 COPY admin/package.json ./admin/
-COPY admin/prisma ./admin/prisma/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
 COPY chat/package.json ./chat/

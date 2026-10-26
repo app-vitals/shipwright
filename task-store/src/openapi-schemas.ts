@@ -1,7 +1,7 @@
 /**
  * task-store/src/openapi-schemas.ts
  * Zod schemas for the task-store API — Task, PullRequest, and TaskToken response shapes.
- * Mirrors admin/src/openapi-schemas.ts pattern: Zod schemas with OpenAPI metadata.
+ * Mirrors the platform admin's openapi-schemas.ts pattern: Zod schemas with OpenAPI metadata.
  *
  * Import z from "@hono/zod-openapi" so .openapi() metadata is available.
  */
