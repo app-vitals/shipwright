@@ -61,6 +61,17 @@ COPY --from=stamp --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 # lives here, not in the platform's agent-types).
 COPY --chown=1000:1000 specialties ./specialties
 
+# js-yaml is only an override in the platform's package.json, not a dependency, so
+# it is not resolvable from /app. The plugin scripts (suppressions.ts,
+# resolve-dependency-watched-paths.ts) import it. Install it in a scratch dir and
+# copy it (with its own deps) into /app/node_modules without clobbering anything
+# the platform already ships.
+RUN mkdir /tmp/js-yaml-install && cd /tmp/js-yaml-install \
+    && bun add js-yaml@^5.0.0 \
+    && cp -rn node_modules/. /app/node_modules/ \
+    && chown -R 1000:1000 /app/node_modules/js-yaml \
+    && rm -rf /tmp/js-yaml-install
+
 # The platform entrypoint spawns /app/index.ts; point it at the coding
 # composition root.
 RUN printf 'import "./agent/src/index.ts";\n' > /app/index.ts \

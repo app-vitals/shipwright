@@ -40,6 +40,11 @@ describe("platform-based agent candidate image (AGR-4.3a)", () => {
     expect(df).toContain("FROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}");
   });
 
+  it("installs js-yaml itself, since the platform image only overrides it", () => {
+    const df = read("agent/Dockerfile.platform");
+    expect(df).toContain("bun add js-yaml@");
+  });
+
   it("layers the coding extension, plugins, marketplace and specialties", () => {
     const df = read("agent/Dockerfile.platform");
     for (const needle of [
