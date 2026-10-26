@@ -144,24 +144,24 @@ JSON API (`POST /agents`). Every other `/agents/*` route is unchanged — `GET`/
 sub-resources (envs, crons, tools, tokens, plugins) stay exactly as they were.
 
 The `POST /agents` route has been removed from the admin CRUD API
-([`admin/src/agents-api.ts`](../admin/src/agents-api.ts)), along with its OpenAPI schema entry
+(`@app-vitals/agent-admin/agents-api`), along with its OpenAPI schema entry
 and the corresponding generated types. Agent creation now happens exclusively through the admin
 console's HTML form at `/admin/agents/new`, which submits to `POST /admin/agents` in
-[`admin/src/admin-ui.ts`](../admin/src/admin-ui.ts). That form had already become the real
+(`@app-vitals/agent-admin/admin-ui`). That form had already become the real
 creation path — it is the only one that walks Slack app connection, GitHub auth, AI
 credentials, and runtime selection — leaving the JSON route as a second, partial implementation
 of the same seeding/provisioning logic that had to be kept in sync by hand.
 
 **What changed**:
 - `POST /agents` returns **404**. The route definition (`createAgentRoute`) and its handler are
-  gone from `admin/src/agents-api.ts`, and its now-unreferenced `CreateAgentBodySchema` request
+  gone from `@app-vitals/agent-admin/agents-api`, and its now-unreferenced `CreateAgentBodySchema` request
   body — along with the `AgentSchema` response shape it returned — is gone from
-  `admin/src/openapi-schemas.ts`.
+  `@app-vitals/agent-admin/openapi-schemas`.
 - `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
   regenerated `@app-vitals/agent-lib/admin-types` drops the matching
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
   from that package. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
-  the generated types in sync going forward.
+  the generated types in sync going forward (AGR-4.2: the test now verifies against the platform package's bundled schema).
 - `AdminDeps.specialtyRegistry` is now unused by `agents-api.ts` and is retained only as an
   optional field for backward-compatible construction; the admin UI carries its own
   `specialtyRegistry` dependency for manifest-driven seeding.
@@ -267,7 +267,7 @@ currently needed by any live deployment).
 chart database, nothing changes.
 
 Prisma 7 removed the bundled Rust query engine. The admin service now connects through a
-`PrismaPg` driver adapter over a `pg.Pool` (`admin/src/prisma-client.ts`), so
+`PrismaPg` driver adapter over a `pg.Pool` (`@app-vitals/agent-admin/prisma-client`), so
 `DATABASE_URL_SHIPWRIGHT_ADMIN` is parsed at runtime by
 [`pg-connection-string`](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string)
 instead of by Prisma's engine. Two connection-string behaviors change as a result.
