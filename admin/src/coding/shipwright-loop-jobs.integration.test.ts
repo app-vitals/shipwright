@@ -7,9 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../../prisma/client/client.ts";
-import { AgentCronJobService } from "../agent-cron-jobs.ts";
-import { createAdminPrismaClient } from "../prisma-client.ts";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
 import { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;

@@ -11,9 +11,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
 import {
   registerSessionsListRoutes,
   type Session,

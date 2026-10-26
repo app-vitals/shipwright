@@ -23,6 +23,11 @@ const PLATFORM_TYPES = Bun.resolveSync(
   ADMIN_DIR,
 );
 const CODING_TYPES = join(CODING_DIR, "admin-types.ts");
+// The platform spec ships with the platform admin package (AGR-4.2).
+const PLATFORM_SPEC = Bun.resolveSync(
+  "@app-vitals/agent-admin/openapi.platform.json",
+  ADMIN_DIR,
+);
 
 // Any module specifier: `from "x"`, `import "x"`, `import("x")`, `require("x")`.
 const SPECIFIER = /\b(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g;
@@ -54,8 +59,8 @@ describe("generated admin types split (platform | coding)", () => {
     expect(moduleSpecifiers(platformSource)).toEqual([]);
   });
 
-  it("the registry platform types declare every path of the local platform spec", () => {
-    const platformSpec = readJson(join(ADMIN_DIR, "openapi.platform.json"));
+  it("the registry platform types declare every path of the platform spec", () => {
+    const platformSpec = readJson(PLATFORM_SPEC);
     const declared = new Set(pathKeys(platformSource));
     expect(
       Object.keys(platformSpec.paths).filter((p) => !declared.has(p)),

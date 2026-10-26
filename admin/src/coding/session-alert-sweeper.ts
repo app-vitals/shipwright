@@ -51,10 +51,13 @@
  * `autoFollowSessions` off.
  */
 
-import type { CallerScopeResolver } from "../caller-scope.ts";
-import { type Clock, SystemClock } from "../clock.ts";
-import { type PushDetailLevel, resolveDetailLevel } from "../push-content.ts";
-import type { PushService } from "../push-service.ts";
+import type { CallerScopeResolver } from "@app-vitals/agent-admin/caller-scope";
+import { type Clock, SystemClock } from "@app-vitals/agent-admin/clock";
+import {
+  type PushDetailLevel,
+  resolveDetailLevel,
+} from "@app-vitals/agent-admin/push-content";
+import type { PushService } from "@app-vitals/agent-admin/push-service";
 import type {
   SessionFollowRow,
   UserNotificationPrefsRow,

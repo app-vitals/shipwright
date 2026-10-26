@@ -5,7 +5,7 @@
  * Moved out of admin-ui-pages.ts (AEP-3.2).
  */
 
-import { escapeHtml } from "../admin-ui-styles.ts";
+import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 
 // Inline type mirroring VerificationCheck fields (LVB-5.1,
 // task-store/src/openapi-schemas.ts's VerificationCheckSchema) without

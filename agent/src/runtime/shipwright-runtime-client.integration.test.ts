@@ -6,7 +6,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type {
+  AgentConfigResponse,
+  AgentCronJob,
+} from "@app-vitals/agent-admin";
 import {
   HttpShipwrightRuntimeClient,
   ShipwrightClientError,
@@ -50,6 +53,8 @@ const SAMPLE_CRONS: AgentCronJob[] = [
     system: false,
     parentCronId: null,
     lockdownDisabledAt: null,
+    runRequestedAt: null,
+    runRequestedBy: null,
     createdAt: new Date("2025-01-01T00:00:00Z"),
     updatedAt: new Date("2025-01-01T00:00:00Z"),
   },

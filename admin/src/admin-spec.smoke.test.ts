@@ -17,14 +17,17 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
-} from "./admin-extension.ts";
-import { NoopAgentProvisioner } from "./agent-provisioner.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
-import { createAgentRuntimeApp } from "./api.ts";
+} from "@app-vitals/agent-admin/admin-extension";
+import { NoopAgentProvisioner } from "@app-vitals/agent-admin/agent-provisioner";
+import {
+  createAdminApp,
+  parseAdminApiKeys,
+} from "@app-vitals/agent-admin/agents-api";
+import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { adminExtensions } from "./main.ts";
 
 const SESSION_SECRET = "spec-test-session-secret-32bytes!";
@@ -134,6 +137,8 @@ function buildSpecApp() {
         system: false,
         parentCronId: null,
         lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -151,6 +156,8 @@ function buildSpecApp() {
         system: false,
         parentCronId: null,
         lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -169,6 +176,8 @@ function buildSpecApp() {
         system: false,
         parentCronId: null,
         lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -186,6 +195,8 @@ function buildSpecApp() {
         system: false,
         parentCronId: null,
         lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -203,6 +214,8 @@ function buildSpecApp() {
         system: false,
         parentCronId: null,
         lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),

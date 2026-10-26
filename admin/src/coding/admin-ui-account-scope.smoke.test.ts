@@ -14,13 +14,13 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { sign } from "hono/jwt";
 import type {
   AdminUIGithubAppClient,
   AdminUISlackClient,
-} from "../admin-ui.ts";
-import type { CallerScopeResolver } from "../caller-scope.ts";
-import type { GoogleAuthClient } from "../google-auth-client.ts";
+} from "@app-vitals/agent-admin/admin-ui";
+import type { CallerScopeResolver } from "@app-vitals/agent-admin/caller-scope";
+import type { GoogleAuthClient } from "@app-vitals/agent-admin/google-auth-client";
+import { sign } from "hono/jwt";
 import {
   type CodingMockDeps,
   createCodingTestApp,

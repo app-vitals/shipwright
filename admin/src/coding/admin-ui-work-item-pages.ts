@@ -7,10 +7,16 @@
  * coding AdminExtension's admin UI routes (admin-ui-coding.ts).
  */
 
+import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
+import {
+  relativeTime,
+  renderMarkdown,
+} from "@app-vitals/agent-admin/admin-ui-pages";
+import {
+  escapeHtml,
+  renderAdminToolbar,
+} from "@app-vitals/agent-admin/admin-ui-styles";
 import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
-import { renderAdminPage } from "../admin-ui-layout.ts";
-import { relativeTime, renderMarkdown } from "../admin-ui-pages.ts";
-import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
 import {
   renderVerificationChecksCard,
   type VerificationCheckItem,

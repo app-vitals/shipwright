@@ -8,12 +8,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { AgentMemberService } from "@app-vitals/agent-admin/agent-members";
+import { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
+import { AgentService } from "@app-vitals/agent-admin/agents";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
 import { sign } from "hono/jwt";
-import type { PrismaClient } from "../../prisma/client/client.ts";
-import { AgentMemberService } from "../agent-members.ts";
-import { AgentTokenService } from "../agent-tokens.ts";
-import { AgentService } from "../agents.ts";
-import { createAdminPrismaClient } from "../prisma-client.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import {

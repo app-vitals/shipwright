@@ -17,14 +17,18 @@ import { createHash } from "node:crypto";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
-} from "./admin-extension.ts";
-import { buildPlatformAdminSpec } from "./admin-spec.ts";
-import { AGENT_ID, makeSessionCookie } from "./admin-ui.fixtures.ts";
+} from "@app-vitals/agent-admin/admin-extension";
+import { buildPlatformAdminSpec } from "@app-vitals/agent-admin/admin-spec";
+import {
+  AGENT_ID,
+  makeSessionCookie,
+} from "@app-vitals/agent-admin/admin-ui.fixtures";
+import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
 import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./coding/admin-ui-coding.fixtures.ts";
-import { adminExtensions } from "./main.ts";
+import { adminExtensions, SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
 
 /** Fingerprints of the composed admin surface, each value a short sha256. */
 export interface ComposedSurface {
@@ -118,13 +122,24 @@ export const SURFACE_PAGES: ReadonlyArray<{
   { label: "service worker", path: "/admin/sw.js" },
 ];
 
-/** Renders SURFACE_PAGES as an admin and fingerprints each response body. */
-export async function fingerprintPages(): Promise<ComposedSurface["pages"]> {
+/**
+ * Renders SURFACE_PAGES as an admin and fingerprints each response body.
+ * `onBody` receives each raw body, for inspecting a fingerprint change.
+ */
+export async function fingerprintPages(
+  onBody?: (label: string, body: string) => void,
+): Promise<ComposedSurface["pages"]> {
   const cookie = `admin_session=${await makeSessionCookie()}`;
+  // The specialties startAdmin() reads once main.ts has applied Shipwright's
+  // defaults (the "new agent" page lists them).
+  const specialtyRegistry = new SpecialtyRegistry({
+    typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
+  });
   const pages: Record<string, string> = {};
   for (const page of SURFACE_PAGES) {
-    const deps = makeCodingMockDeps(
-      page.env
+    const deps = makeCodingMockDeps({
+      specialtyRegistry,
+      ...(page.env
         ? {
             agentEnvService: {
               ...makeCodingMockDeps().agentEnvService,
@@ -134,12 +149,14 @@ export async function fingerprintPages(): Promise<ComposedSurface["pages"]> {
               }),
             },
           }
-        : undefined,
-    );
+        : {}),
+    });
     const res = await createCodingTestApp(deps).request(page.path, {
       headers: { Cookie: cookie },
     });
-    pages[page.label] = `${res.status} ${hash(await res.text())}`;
+    const body = await res.text();
+    onBody?.(page.label, body);
+    pages[page.label] = `${res.status} ${hash(body)}`;
   }
   return pages;
 }

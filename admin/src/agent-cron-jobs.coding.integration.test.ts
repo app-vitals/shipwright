@@ -9,9 +9,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
-import { AgentCronJobService } from "./agent-cron-jobs.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import { SystemClock } from "@app-vitals/agent-admin/clock";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
+import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
+import { SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
@@ -194,7 +197,12 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
     await prisma.agentTool.deleteMany();
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
-    service = new AgentCronJobService(prisma);
+    // Shipwright's specialties, as main.ts points startAdmin() at them.
+    service = new AgentCronJobService(
+      prisma,
+      SystemClock(),
+      new SpecialtyRegistry({ typesDir: SHIPWRIGHT_SPECIALTIES_DIR }),
+    );
   });
 
   afterEach(async () => {

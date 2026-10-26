@@ -10,12 +10,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { CallerScopeResolver } from "../caller-scope.ts";
-import { FixedClock } from "../clock.ts";
+import type { CallerScopeResolver } from "@app-vitals/agent-admin/caller-scope";
+import { FixedClock } from "@app-vitals/agent-admin/clock";
 import type {
   PushDetailLevel,
   SessionNotificationKind,
-} from "../push-content.ts";
+} from "@app-vitals/agent-admin/push-content";
 import {
   autoFollowBoundary,
   localDateKey,

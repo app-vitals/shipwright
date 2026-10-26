@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { FixedClock } from "../clock.ts";
+import { FixedClock } from "@app-vitals/agent-admin/clock";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,

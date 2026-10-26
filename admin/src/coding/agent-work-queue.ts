@@ -11,7 +11,7 @@ import type {
   AgentWorkQueueSnapshot,
   Prisma,
   PrismaClient,
-} from "../../prisma/client/client.ts";
+} from "@app-vitals/agent-admin/prisma/client/client.ts";
 
 export type { AgentWorkQueueSnapshot };
 

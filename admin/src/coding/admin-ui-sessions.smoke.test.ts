@@ -12,11 +12,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
+import { PUSH_TEST_PATH } from "@app-vitals/agent-admin/admin-ui-push-test";
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AdminUIEnv } from "../admin-ui.ts";
-import { PUSH_TEST_PATH } from "../admin-ui-push-test.ts";
-import { BadRequestError } from "../errors.ts";
 import {
   NOTIFICATION_SETTINGS_PATH,
   registerSessionSettingsRoutes,

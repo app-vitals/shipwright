@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { buildProvisioner } from "../admin-boot-config.ts";
-import { collectServiceIntegrations } from "../admin-extension.ts";
+import { buildProvisioner } from "@app-vitals/agent-admin/admin-boot-config";
+import { collectServiceIntegrations } from "@app-vitals/agent-admin/admin-extension";
 import type {
   AgentProvisioner,
   KubernetesAgentProvisionerConfig,
-} from "../agent-provisioner.ts";
-import type { AgentTokenService } from "../agent-tokens.ts";
+} from "@app-vitals/agent-admin/agent-provisioner";
+import type { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
 import { adminExtensions } from "../main.ts";
 
 /** Stub token service — buildProvisioner only threads it through, never calls it. */

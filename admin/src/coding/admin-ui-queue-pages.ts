@@ -5,15 +5,18 @@
  * (AAV-2.1). Moved out of admin-ui-pages.ts (AEP-3.2).
  */
 
-import { renderAdminPage } from "../admin-ui-layout.ts";
+import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
 import {
   type AgentOption,
   cronOutcomeStyle,
   cronRunOutcomeLabel,
   relativeTime,
-} from "../admin-ui-pages.ts";
-import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
-import type { ModelBreakdownEntry } from "../openapi-schemas.ts";
+} from "@app-vitals/agent-admin/admin-ui-pages";
+import {
+  escapeHtml,
+  renderAdminToolbar,
+} from "@app-vitals/agent-admin/admin-ui-styles";
+import type { ModelBreakdownEntry } from "@app-vitals/agent-admin/openapi-schemas";
 import { agentLink, taskLink } from "./admin-ui-work-item-pages.ts";
 import {
   annotateEligibility,

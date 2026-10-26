@@ -20,7 +20,13 @@
     "agent/src/runtime/setup.layered.integration.test.ts",
     "admin/src/specialty-manifest-loader.integration.test.ts",
     "specialties/specialist/manifest.content.test.ts",
-    "admin/src/agent-cron-jobs.coding.integration.test.ts"
+    "admin/src/agent-cron-jobs.coding.integration.test.ts",
+    "admin/e2e/**",
+    "admin/src/composed-surface.fixtures.ts",
+    "admin/src/composed-surface.smoke.test.ts",
+    "admin/src/fixtures/composed-surface.baseline.json",
+    "admin/src/platform-flags.unit.test.ts",
+    "admin/src/platform-migrations.unit.test.ts"
   ],
   "generated": ["admin/prisma/client/**"],
   "compositionRoots": [

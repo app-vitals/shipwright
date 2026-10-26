@@ -14,16 +14,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../../prisma/client/client.ts";
-import { AgentCronJobService } from "../agent-cron-jobs.ts";
-import { AgentEnvService } from "../agent-envs.ts";
-import { AgentPluginService } from "../agent-plugins.ts";
-import { AgentTokenService } from "../agent-tokens.ts";
-import { AgentService } from "../agents.ts";
-import { parseAdminApiKeys } from "../agents-api.ts";
-import { createAgentRuntimeApp } from "../api.ts";
-import { createAdminPrismaClient } from "../prisma-client.ts";
-import { makeTokenCrypto } from "../token-crypto.ts";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import { AgentEnvService } from "@app-vitals/agent-admin/agent-envs";
+import { AgentPluginService } from "@app-vitals/agent-admin/agent-plugins";
+import { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
+import { AgentService } from "@app-vitals/agent-admin/agents";
+import { parseAdminApiKeys } from "@app-vitals/agent-admin/agents-api";
+import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
+import { makeTokenCrypto } from "@app-vitals/agent-admin/token-crypto";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { createCodingAdminApiApp } from "./agents-api-coding.ts";
 

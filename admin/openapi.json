@@ -406,6 +406,23 @@
           }
         }
       },
+      "AddAgentReposBody": {
+        "type": "object",
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "my-org/my-repo"
+            ]
+          }
+        },
+        "required": [
+          "repos"
+        ]
+      },
       "DeleteAgentResult": {
         "type": "object",
         "properties": {
@@ -713,6 +730,15 @@
             ],
             "example": null
           },
+          "runRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null,
+            "description": "Set by POST .../run-now; the runtime honours it once while fresh (15 minutes) and run creation with commandVariant run-now clears it."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -737,6 +763,7 @@
           "name",
           "system",
           "parentCronId",
+          "runRequestedAt",
           "createdAt",
           "updatedAt"
         ]
@@ -1722,6 +1749,380 @@
         },
         "required": [
           "tokens"
+        ]
+      },
+      "CreateChatCredentialResponse": {
+        "type": "object",
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "rawToken": {
+            "type": "string",
+            "example": "ct_xxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "label": {
+            "type": "string",
+            "example": "ask-caller"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          }
+        },
+        "required": [
+          "tokenId",
+          "rawToken",
+          "label",
+          "agentId"
+        ]
+      },
+      "CreateChatCredentialBody": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "example": "ask-caller"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "ChatCredentialsWrapper": {
+        "type": "object",
+        "properties": {
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatCredential"
+            }
+          }
+        },
+        "required": [
+          "credentials"
+        ]
+      },
+      "ChatCredential": {
+        "type": "object",
+        "properties": {
+          "tokenId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ask-caller"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          }
+        },
+        "required": [
+          "tokenId",
+          "label",
+          "agentId"
+        ]
+      },
+      "AgentAskResponse": {
+        "type": "object",
+        "properties": {
+          "askId": {
+            "type": "string",
+            "example": "clx1111111111"
+          },
+          "threadId": {
+            "type": "string",
+            "example": "clx2222222222"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "replied",
+              "pending"
+            ],
+            "example": "pending"
+          },
+          "reply": {
+            "type": "string",
+            "description": "The agent's reply body; present only when status is `replied`.",
+            "example": "acme/web is deployed and green."
+          }
+        },
+        "required": [
+          "askId",
+          "threadId",
+          "status"
+        ]
+      },
+      "AgentAskBody": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Id of the asking agent. An agent key may only ask as itself (`from` must equal its own id).",
+            "example": "clx0987654321"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "The question, posted as the thread's user message. Never stored or logged by admin.",
+            "example": "What is the deploy status of acme/web?"
+          },
+          "waitMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000,
+            "default": 0,
+            "description": "How long to wait for the reply, polling once per second. 0 (default) returns `pending` immediately.",
+            "example": 0
+          },
+          "depth": {
+            "type": "integer",
+            "default": 1,
+            "description": "Ask chain depth. Capped at 1: any other value is a 400.",
+            "example": 1
+          },
+          "ttlSeconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600,
+            "default": 600,
+            "description": "How long the ask stays relevant, in seconds. Recorded on the audit row.",
+            "example": 600
+          }
+        },
+        "required": [
+          "from",
+          "question"
+        ]
+      },
+      "AgentAskList": {
+        "type": "object",
+        "properties": {
+          "asks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentAskRecord"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "asks",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "AgentAskRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1111111111"
+          },
+          "fromAgentId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "toAgentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "threadId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx2222222222"
+          },
+          "depth": {
+            "type": "integer",
+            "example": 1
+          },
+          "waitMs": {
+            "type": "integer",
+            "example": 0
+          },
+          "ttlSeconds": {
+            "type": "integer",
+            "example": 600
+          },
+          "status": {
+            "type": "string",
+            "description": "created | pending | replied | failed",
+            "example": "pending"
+          },
+          "callerLabel": {
+            "type": "string",
+            "example": "ops (platform.ops) [platform-ops]"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "repliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "fromAgentId",
+          "toAgentId",
+          "threadId",
+          "depth",
+          "waitMs",
+          "ttlSeconds",
+          "status",
+          "callerLabel",
+          "createdAt",
+          "repliedAt"
+        ]
+      },
+      "CronRunNowResponse": {
+        "type": "object",
+        "properties": {
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-26T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "requestedAt"
+        ]
+      },
+      "CronRunTranscriptUploadResult": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "example": "clx1111111111"
+          },
+          "bytes": {
+            "type": "integer",
+            "example": 2048
+          },
+          "truncated": {
+            "type": "boolean",
+            "example": false
+          },
+          "redactions": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "runId",
+          "bytes",
+          "truncated",
+          "redactions"
+        ]
+      },
+      "UploadCronRunTranscriptBody": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Claude session id the transcript was read from.",
+            "example": "7c1c8d1e-0000-4000-8000-000000000000"
+          },
+          "body": {
+            "type": "string",
+            "description": "The already-redacted transcript (JSONL text). Over 1 MiB (UTF-8 bytes) is a 413. Never logged."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the runtime dropped earlier lines to fit.",
+            "example": false
+          },
+          "redactions": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many secrets the runtime redacted.",
+            "example": 0
+          }
+        },
+        "required": [
+          "body",
+          "truncated",
+          "redactions"
+        ]
+      },
+      "CronRunTranscript": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "example": "clx1111111111"
+          },
+          "cronId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "bytes": {
+            "type": "integer",
+            "example": 2048
+          },
+          "truncated": {
+            "type": "boolean",
+            "example": false
+          },
+          "redactions": {
+            "type": "integer",
+            "example": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-26T12:00:00.000Z"
+          },
+          "body": {
+            "type": "string",
+            "description": "Redacted JSONL transcript."
+          }
+        },
+        "required": [
+          "runId",
+          "cronId",
+          "sessionId",
+          "bytes",
+          "truncated",
+          "redactions",
+          "createdAt",
+          "body"
         ]
       },
       "PluginWrapper": {
@@ -2820,6 +3221,9 @@
               "deploy": null,
               "dev-task": null
             }
+          },
+          "features": {
+            "$ref": "#/components/schemas/AgentConfigFeatures"
           }
         },
         "required": [
@@ -2855,6 +3259,25 @@
         "required": [
           "marketplace",
           "plugin"
+        ]
+      },
+      "AgentConfigFeatures": {
+        "type": "object",
+        "properties": {
+          "transcriptUpload": {
+            "type": "boolean",
+            "description": "True when SHIPWRIGHT_TRANSCRIPT_API_ENABLED is on: the runtime uploads a redacted transcript after each cron run.",
+            "example": false
+          },
+          "repoAccessCheck": {
+            "type": "boolean",
+            "description": "Reserved for the repo-access check (COS-44.1).",
+            "example": false
+          }
+        },
+        "required": [
+          "transcriptUpload",
+          "repoAccessCheck"
         ]
       },
       "RuntimeError": {
@@ -3079,7 +3502,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -3190,6 +3613,141 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/repos": {
+      "post": {
+        "summary": "Add repos to an agent",
+        "description": "Admin, the agent's own key, or platform.ops. Additive alternative to `PATCH /agents/{id}` (which replaces the whole `repos` array): unions the given `org/repo` entries into the agent's current list, preserving the order of existing entries and appending new ones. Idempotent — adding a repo the agent already has is a no-op. 400 when the resulting list has two repos sharing a basename. Returns the full updated agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAgentReposBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repos added (or already present)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/repos/{owner}/{name}": {
+      "delete": {
+        "summary": "Remove a repo from an agent",
+        "description": "Admin, the agent's own key, or platform.ops. Removes one `owner/name` repo from the agent's `repos`, preserving the order of the rest. 404 when the agent does not have that repo. Returns the full updated agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-org"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-repo"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repo removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or repo not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -4178,6 +4736,604 @@
         "responses": {
           "204": {
             "description": "Token revoked"
+          }
+        }
+      }
+    },
+    "/agents/{id}/chat-credentials": {
+      "post": {
+        "summary": "Mint a chat credential",
+        "description": "Mints a chat-service token scoped to the agent in the path. `*` or `platform.ops` callers only — never the agent's own key. The body is closed: an `agentId` field is rejected with 400, so an unrestricted chat admin token cannot be minted here. The raw token is returned once and is never logged or stored by admin. 404 unless SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED is `enabled`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatCredentialBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credential minted (raw token returned once)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateChatCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or chat-credential minting disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat service not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List chat credentials",
+        "description": "Lists the chat-service tokens scoped to the agent (id and label only — raw values are never returned). `*` or `platform.ops` callers only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chat credential metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCredentialsWrapper"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or chat-credential minting disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat service not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/chat-credentials/{tokenId}": {
+      "delete": {
+        "summary": "Revoke a chat credential",
+        "description": "Revokes a chat-service token. 404 when the token is not scoped to the agent in the path. `*` or `platform.ops` callers only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "tokenId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Credential revoked"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or chat-credential minting disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat service not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/ask": {
+      "post": {
+        "summary": "Ask another agent a question",
+        "description": "Posts `question` from agent `from` into a new `kind: ask` chat thread of agent `{id}` (always created with `askDepth: 1`), then, when `waitMs > 0`, polls once per second until the agent replies or the budget ends. Callers: `*`, `platform.ops`, or the agent key whose id equals `from` (never impersonation). The `from>{id}` pair must be on SHIPWRIGHT_AGENT_ASK_ALLOWLIST. Every ask writes an AgentAsk audit row (no question text). 404 unless SHIPWRIGHT_AGENT_ASK_ENABLED is `enabled`; 503 when the chat service is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAskBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ask posted; `replied` with the reply, or `pending`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (including depth other than 1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller not allowed, or the pair is not allowlisted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found, or agent ask disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Chat service not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/asks": {
+      "get": {
+        "summary": "List agent asks",
+        "description": "Lists the AgentAsk audit rows the agent sent or received, newest first. `*`, `platform.read` and `platform.ops` callers only. 404 unless SHIPWRIGHT_AGENT_ASK_ENABLED is `enabled`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0,
+              "example": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAskList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent ask disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}/run-now": {
+      "post": {
+        "summary": "Request an immediate run of a cron job",
+        "description": "Asks the agent's runtime to run the cron job once, now, with the job's own stored prompt. Takes no request body (any body is 400). Stamps `runRequestedAt` on the job and writes an AgentCronRunRequest audit row before returning 202; the runtime honours a fresh request (under 15 minutes old) once on its next cron sync. Callers: `*`, `platform.ops`, or the agent's own key. 404 unless SHIPWRIGHT_CRON_RUN_NOW_ENABLED is `enabled`; 409 when the trial-expiry lockdown disabled the cron.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Run requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunNowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A request body was sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cron not found, or cron run-now disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cron disabled by lockdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}/runs/{runId}/transcript": {
+      "put": {
+        "summary": "Upload a cron run transcript",
+        "description": "Stores (upserts) the runtime's already-redacted session transcript for a cron run, then keeps only the agent's newest 200 transcripts. Callers: the agent's own key, or `*`. `body` over 1 MiB (UTF-8 bytes) is a 413. 404 unless SHIPWRIGHT_TRANSCRIPT_API_ENABLED is `enabled`, or when the run is not owned by the cron/agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1111111111"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCronRunTranscriptBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transcript stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunTranscriptUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found, or transcript API disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Transcript body over 1 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get a cron run transcript",
+        "description": "Returns the stored redacted transcript. `*`, `platform.read` and `platform.ops` callers only: an agent key is 403 even for its own runs. Every read writes an AgentTranscriptRead audit row before the response. 404 when SHIPWRIGHT_TRANSCRIPT_API_ENABLED is not `enabled` or no transcript exists.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1111111111"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transcript",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunTranscript"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No transcript, or transcript API disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

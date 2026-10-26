@@ -28,17 +28,17 @@ import {
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   SESSION_ALERT_FETCH_TIMEOUT_MS,
-} from "../admin-boot-config.ts";
+} from "@app-vitals/agent-admin/admin-boot-config";
 import type {
   AdminBackgroundPass,
   AdminExtension,
   AdminExtensionContext,
-} from "../admin-extension.ts";
+} from "@app-vitals/agent-admin/admin-extension";
 import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
-} from "../coding-task-store-provisioning-client.ts";
-import type { ServiceIntegration } from "../service-integration.ts";
+} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
+import type { ServiceIntegration } from "@app-vitals/agent-admin/service-integration";
 import { codingAgentDetailCards } from "./admin-ui-agent-cards.ts";
 import {
   CODING_AGENT_DETAIL_ERROR_MESSAGES,

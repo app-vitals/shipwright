@@ -17,14 +17,20 @@
  *   GET /admin/agents/:id     → agent detail (requires admin_session cookie)
  */
 
-import { Hono } from "hono";
-import { createAdminUIApp } from "../src/admin-ui.ts";
-import type { AdminUIDeps } from "../src/admin-ui.ts";
+import type { AdminUIDeps } from "@app-vitals/agent-admin/admin-ui";
+import { createAdminUIApp } from "@app-vitals/agent-admin/admin-ui";
 import type {
   ChatClient,
   ChatMessage,
   ChatThread,
-} from "../src/http-chat-client.ts";
+} from "@app-vitals/agent-admin/http-chat-client";
+import { Hono } from "hono";
+import { applyShipwrightDefaults } from "../src/main.ts";
+
+// The platform admin resolves its default specialties dir inside
+// node_modules; point it at Shipwright's, the way main.ts does at boot (the
+// "new agent" page lists them).
+applyShipwrightDefaults(process.env);
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 

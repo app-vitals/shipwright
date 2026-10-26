@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type {
+  AgentConfigResponse,
+  AgentCronJob,
+} from "@app-vitals/agent-admin";
 import {
   type ShipwrightConfigClient,
   validateCutover,
@@ -32,6 +35,8 @@ function makeCron(id: string): AgentCronJob {
     system: false,
     parentCronId: null,
     lockdownDisabledAt: null,
+    runRequestedAt: null,
+    runRequestedBy: null,
   };
 }
 

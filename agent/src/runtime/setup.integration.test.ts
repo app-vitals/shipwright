@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { AgentPlugin } from "@shipwright/admin";
+import type { AgentPlugin } from "@app-vitals/agent-admin";
 import {
   discoverBakedMarketplaces,
   ensureAgentHome,

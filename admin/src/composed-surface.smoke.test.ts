@@ -18,7 +18,8 @@
  *   - cron-run transcript upload/read routes and the config bundle's
  *     `features` block (flag SHIPWRIGHT_TRANSCRIPT_API_ENABLED)
  *   - the "Signed commits" checkbox on the agent page of an agent with a
- *     GitHub App
+ *     GitHub App (SHIPWRIGHT_SIGNED_COMMITS env row; no flag), and one
+ *     blank line in its place on every other agent page
  *
  * The platform-doc route (GET /doc, flag SHIPWRIGHT_ADMIN_DOC_ENABLED) and the
  * per-agent pod ServiceAccount (flag
@@ -90,7 +91,10 @@ const EXPECTED_DIFF: {
     added: {},
     removed: [],
     changed: {
-      "agent detail (GitHub App)": "pending",
+      // One blank line where the (hidden) signed-commits box renders.
+      "agent detail": "200 f4b7cbeb503eb2ba",
+      // The "Signed commits" checkbox, shown only with GH_APP_ID set.
+      "agent detail (GitHub App)": "200 1d9f68995fc9e2b4",
     },
   },
 };

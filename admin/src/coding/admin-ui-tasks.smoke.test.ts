@@ -8,7 +8,10 @@
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
-import { AGENT_ID, makeSessionCookie } from "../admin-ui.fixtures.ts";
+import {
+  AGENT_ID,
+  makeSessionCookie,
+} from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
   createCodingTestApp,
   makeCodingMockDeps,

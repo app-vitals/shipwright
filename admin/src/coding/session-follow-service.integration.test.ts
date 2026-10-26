@@ -6,9 +6,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../../prisma/client/client.ts";
-import { BadRequestError } from "../errors.ts";
-import { createAdminPrismaClient } from "../prisma-client.ts";
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
 import { SessionFollowService } from "./session-follow-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;

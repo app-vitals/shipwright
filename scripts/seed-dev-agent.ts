@@ -22,8 +22,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { SpecialtyManifestResolver } from "@app-vitals/agent-admin/specialty-manifest-loader";
 import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
-import type { SpecialtyManifestResolver } from "@shipwright/admin/specialty-manifest-loader";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -226,11 +226,12 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
 
 if (import.meta.main) {
   const { createAdminPrismaClient } = await import(
-    "@shipwright/admin/prisma-client"
+    "@app-vitals/agent-admin/prisma-client"
   );
   const { SpecialtyRegistry } = await import(
-    "@shipwright/admin/specialty-manifest-loader"
+    "@app-vitals/agent-admin/specialty-manifest-loader"
   );
+  const { SHIPWRIGHT_SPECIALTIES_DIR } = await import("@shipwright/admin/main");
 
   const argv = process.argv.slice(2);
   const dbUrl =
@@ -252,7 +253,9 @@ if (import.meta.main) {
     await seedDevAgent({
       prisma,
       readEnvFile: () => fs.readFileSync(envFilePath, "utf8"),
-      specialtyRegistry: new SpecialtyRegistry(),
+      specialtyRegistry: new SpecialtyRegistry({
+        typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
+      }),
       exit: (code, message) => {
         console.error(message);
         process.exit(code);

@@ -3,9 +3,9 @@
  *
  * The committed admin spec artifacts are exactly what generate-admin-spec.ts
  * writes: byte-identical, so a route change that skipped
- * `bun run generate:admin-spec` fails here. In particular the composed
- * admin/openapi.json is unchanged by the platform/coding split (AGR-1.4): it
- * is still the platform document with the coding contributions folded in.
+ * `bun run generate:admin-spec` fails here. The composed admin/openapi.json is
+ * the platform document with the coding contributions folded in; the platform
+ * document itself is the one @app-vitals/agent-admin ships (AGR-4.2).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -19,7 +19,7 @@ import {
 const artifacts = buildAdminSpecArtifacts();
 
 describe("generate-admin-spec artifacts", () => {
-  for (const key of ["composed", "platform", "coding"] as const) {
+  for (const key of ["composed", "coding"] as const) {
     it(`committed ${key} spec is byte-identical to the generated one`, () => {
       // If this fails, run `bun run generate:admin-spec && bun run generate:admin-types`.
       expect(readFileSync(ADMIN_SPEC_OUTPUTS[key], "utf8")).toBe(
@@ -27,6 +27,18 @@ describe("generate-admin-spec artifacts", () => {
       );
     });
   }
+
+  it("the platform spec is the one @app-vitals/agent-admin ships", () => {
+    expect(
+      readFileSync(
+        Bun.resolveSync(
+          "@app-vitals/agent-admin/openapi.platform.json",
+          import.meta.dir,
+        ),
+        "utf8",
+      ),
+    ).toBe(serializeSpec(artifacts.platform));
+  });
 
   it("the platform spec carries no coding path or schema", () => {
     const platformPaths = Object.keys(artifacts.platform.paths);

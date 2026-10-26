@@ -7,9 +7,15 @@
  * (AEP-3.2).
  */
 
+import {
+  type AdminUIDeps,
+  createAdminUIApp,
+} from "@app-vitals/agent-admin/admin-ui";
+import {
+  MOCK_CRON,
+  makeMockDeps,
+} from "@app-vitals/agent-admin/admin-ui.fixtures";
 import { Hono } from "hono";
-import { MOCK_CRON, makeMockDeps } from "../admin-ui.fixtures.ts";
-import { type AdminUIDeps, createAdminUIApp } from "../admin-ui.ts";
 import {
   type CodingAgentDetailCardDeps,
   codingAgentDetailCards,
