@@ -23,7 +23,10 @@ import {
   AGENT_ID,
   makeSessionCookie,
 } from "@app-vitals/agent-admin/admin-ui.fixtures";
-import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
+import {
+  defaultTypeDirLister,
+  SpecialtyRegistry,
+} from "@app-vitals/agent-admin/specialty-manifest-loader";
 import {
   createCodingTestApp,
   makeCodingMockDeps,
@@ -131,9 +134,12 @@ export async function fingerprintPages(
 ): Promise<ComposedSurface["pages"]> {
   const cookie = `admin_session=${await makeSessionCookie()}`;
   // The specialties startAdmin() reads once main.ts has applied Shipwright's
-  // defaults (the "new agent" page lists them).
+  // defaults (the "new agent" page lists them). Listed in sorted order: the
+  // registry's default lister returns readdir order, which differs between
+  // filesystems (local vs CI), so the page fingerprint would too.
   const specialtyRegistry = new SpecialtyRegistry({
     typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
+    list: () => defaultTypeDirLister(SHIPWRIGHT_SPECIALTIES_DIR).sort(),
   });
   const pages: Record<string, string> = {};
   for (const page of SURFACE_PAGES) {
