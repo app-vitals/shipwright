@@ -118,7 +118,7 @@ The rewrite only sees module specifiers and JSON path values, plus the absolute 
 | Composition roots | `index.ts` (`startAgent([])`, the process `runtime/entrypoint.ts` spawns) and `admin/src/main.ts` (`startAdmin([])`), replacing the excluded Shipwright roots |
 | Scripts | `scripts/check-import-boundary.ts` (the gate ported from `platform-gate.ts`, run by `bun run check:boundary`), `scripts/test-env-preload.ts` (points tests at the fixture specialty), `scripts/verify-browser-launch.ts`, `scripts/bin/git-credential-shipwright.sh` |
 
-A template file ending in `.tmpl` is copied without the suffix. `biome.json` is stored as `biome.json.tmpl` because Biome rejects a nested root configuration. The template directory is excluded from Renovate in this repository, and it holds no `*.test.ts` files, so root `bun test` does not pick it up. `scripts/extract-platform/template.unit.test.ts` pins the file set, bans internal strings from it, checks every `COPY` source of both Dockerfiles against a real extraction and runs the boundary gate on that tree.
+A template file ending in `.tmpl` is copied without the suffix. `biome.json` is stored as `biome.json.tmpl` because Biome rejects a nested root configuration. The template directory is excluded from Renovate in this repository, and it holds no `*.test.ts` files, so root `bun test` does not pick it up. `scripts/extract-platform/template.unit.test.ts` pins the file set and bans internal strings from it. Its checks against a real extraction of this repository were retired with AGR-4.2, because the platform admin source no longer lives here.
 
 ### Dev dependency
 

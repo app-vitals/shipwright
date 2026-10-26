@@ -9,7 +9,6 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -19,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { extractPlatform, TEMPLATE_DIR } from "../extract-platform";
+import { TEMPLATE_DIR } from "../extract-platform";
 import { checkBoundary } from "./template/scripts/check-import-boundary";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
@@ -269,58 +268,8 @@ describe("import-boundary gate", () => {
   });
 });
 
-describe("extraction output", () => {
-  let out: string;
-  beforeAll(() => {
-    out = mkdtempSync(join(tmpdir(), "template-extract-"));
-    extractPlatform({
-      source: REPO_ROOT,
-      ref: "HEAD",
-      out,
-      history: false,
-      clean: true,
-    });
-  }, 120_000);
-  afterAll(() => rmSync(out, { recursive: true, force: true }));
-
-  test("includes every template file", () => {
-    for (const file of EXPECTED_FILES) {
-      expect(existsSync(join(out, file.replace(/\.tmpl$/, "")))).toBe(true);
-    }
-  });
-
-  test("the standalone Dockerfiles replace the renamed monorepo ones", () => {
-    expect(readFileSync(join(out, "runtime/Dockerfile"), "utf8")).toBe(
-      read("runtime/Dockerfile"),
-    );
-    expect(readFileSync(join(out, "admin/Dockerfile"), "utf8")).toBe(
-      read("admin/Dockerfile"),
-    );
-  });
-
-  test.each(["runtime/Dockerfile", "admin/Dockerfile"])(
-    "every COPY source in %s exists in the extracted tree",
-    (file) => {
-      const missing = contextCopySources(read(file)).filter((src) => {
-        const path = src.replace(/\/$/, "");
-        if (path.includes("*")) return false; // optional globs (bun.lock*)
-        return !existsSync(join(out, path));
-      });
-      expect(missing).toEqual([]);
-    },
-  );
-
-  test("the ported import-boundary gate is clean on the extracted tree", () => {
-    expect(checkBoundary(out)).toEqual([]);
-  });
-
-  test("the base-image contract smoke test addresses the extracted paths", () => {
-    const smoke = readFileSync(
-      join(out, "runtime/base-image-contract.smoke.test.ts"),
-      "utf8",
-    );
-    expect(smoke).toContain('"/app/runtime/entrypoint-main.ts"');
-    expect(smoke).toContain("/app/runtime/setup.ts");
-    expect(smoke).not.toContain('"/app/agent/src');
-  });
-});
+// The "extraction output" suite ran a real extraction of this repository
+// and checked the result. It was retired with AGR-4.2: the platform admin
+// source now lives only in app-vitals/agent (consumed here as
+// @app-vitals/agent-admin), so an extraction from this repository no longer
+// contains a buildable admin.
