@@ -58,8 +58,12 @@ function canonical(value: unknown): string {
   );
 }
 
+/**
+ * A short sha256 fingerprint, prefixed "sha256:" so a bare hex value next to
+ * a key like "TokenAggregate" does not read as an API key to secret scanners.
+ */
 function hash(text: string): string {
-  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+  return `sha256:${createHash("sha256").update(text).digest("hex").slice(0, 16)}`;
 }
 
 /** The composed admin OpenAPI document (what admin/openapi.json holds). */
