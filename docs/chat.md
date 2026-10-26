@@ -72,6 +72,8 @@ Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusivel
 | `createdAt` | `DateTime` | |
 | `updatedAt` | `DateTime` | Bumped on `PATCH /threads/:id` |
 
+`kind`, `askFromAgentId` and `askDepth` are set only by the admin service when it creates an ask thread (`POST /agents/{id}/ask`, flag-gated); they are read-only to chat clients, which cannot set or change them through the thread routes.
+
 Indexes: `[agentId, updatedAt desc]` (list-by-agent ordering), `[memberId]`.
 
 ### Message

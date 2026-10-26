@@ -419,18 +419,83 @@ quality metrics — with charts and trend lines, use the server-rendered dashboa
 
 ---
 
+## Repos, Ask, Chat Credentials and /doc
+
+Platform routes gated by scope and, for three of them, by a feature flag. Scopes come from the
+key's `name:token:scope` entry in `SHIPWRIGHT_ADMIN_API_KEYS`: `platform.read` may only `GET`;
+`platform.ops` may also call the mutating routes below; `*` may call everything. A disabled
+flag makes the route return `404`. In the Helm chart the flags are set by `admin.ask.enabled`
+(plus `admin.ask.allowlist`), `admin.chatCredentialMint.enabled` and `admin.doc.enabled`.
+
+### Repos add / remove
+
+Scope: `platform.ops` or `*`. No flag.
+
+```bash
+# Add repos (union into the existing list; idempotent)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/{agentId}/repos" \
+  -d '{"repos": ["my-org/my-repo"]}' | jq .
+
+# Remove one repo (404 if the agent does not have it)
+curl -sf -X DELETE \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/{agentId}/repos/my-org/my-repo" | jq .
+```
+
+### Ask another agent
+
+Flag: `SHIPWRIGHT_AGENT_ASK_ENABLED=enabled` (chart: `admin.ask.enabled`). The `from>to` pair must
+be on `SHIPWRIGHT_AGENT_ASK_ALLOWLIST` (chart: `admin.ask.allowlist`). Scope: `platform.ops`, `*`,
+or the agent key whose id equals `from`. `GET /agents/{id}/asks` (audit rows) needs `platform.read`.
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/{targetAgentId}/ask" \
+  -d '{"from": "'"$SHIPWRIGHT_AGENT_ID"'", "question": "Which repos do you cover?", "waitMs": 30000}' | jq .
+# Returns: { askId, threadId, status: "replied" | "pending", reply? }
+```
+
+### Chat credentials mint / revoke
+
+Flag: `SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED=enabled` (chart: `admin.chatCredentialMint.enabled`).
+Scope: `platform.ops` or `*` only, never the agent's own key. The raw token is returned once.
+
+```bash
+# Mint (the body is closed: do not send agentId)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents/{agentId}/chat-credentials" \
+  -d '{"label": "web-client"}' | jq .
+# Returns: { tokenId, rawToken, label, agentId }
+
+# Revoke
+curl -sf -X DELETE \
+  -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/{agentId}/chat-credentials/{tokenId}"
+```
+
+### Platform OpenAPI document (/doc)
+
+Flag: `SHIPWRIGHT_ADMIN_DOC_ENABLED=enabled` (chart: `admin.doc.enabled`). Scope: `platform.read`
+or higher. When the flag is off the route is absent (404).
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" "$SHIPWRIGHT_API_URL/doc" | jq .
+```
+
+---
+
 ## API Reference
 
 The full admin API schema is committed to the repository at `admin/openapi.json`. For
-interactive schema exploration (endpoints, request/response shapes, validation rules), access
-the live `/doc` endpoint on a running admin service:
-
-```bash
-open "$SHIPWRIGHT_API_URL/doc"
-```
-
-> **Note:** The `/doc` endpoint is not yet wired in the production admin service — it is a
-> planned follow-up. Use `admin/openapi.json` as the schema reference in the meantime.
+interactive schema exploration, call the `/doc` endpoint described above on an admin service
+that has `SHIPWRIGHT_ADMIN_DOC_ENABLED=enabled`.
 
 ---
 
