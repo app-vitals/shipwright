@@ -18,6 +18,14 @@ name: Chart Drift Check
 #      GITHUB_TOKEN read scope (contents: read) already used elsewhere in
 #      this repo's workflows.
 #
+# It also checks the agent-platform library chart pin (CHM-3.5): the version
+# in Chart.yaml and Chart.lock must not trail the latest version published in
+# the library's Helm repo index (https://app-vitals.github.io/agent). An
+# unreadable index fails the job too, so a broken check never reads as green.
+# A failed run opens (or comments on) a "chart drift check failed" issue and
+# closes it again once a run passes, because a red run on a schedule alone went
+# unnoticed for days (the 2026-10-02 poller stall).
+#
 # Reuses the SAME service_for_tag / values_paths_for_service /
 # highest_semver_tag logic that auto-bump-chart.yml uses to pin tags in the
 # first place — extracted to .github/workflows/lib/chart-tag-utils.sh so both
@@ -47,6 +55,9 @@ jobs:
     name: check chart pins against latest release tags
     timeout-minutes: 10
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # open / close the drift failure issue
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,3 +112,56 @@ jobs:
 
           echo ""
           echo "No chart drift detected — all pinned tags match their latest release tags."
+
+      # The library pin (agent-platform) is bumped by library-chart-release.yml
+      # on the library's chart-release dispatch. A pin behind the published
+      # index means a dispatch was missed or its bump PR is stuck.
+      - name: Compare the library chart pin against the published index
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          source .github/workflows/lib/library-pin.sh
+
+          INDEX=$(mktemp)
+          if ! curl -fsS --retry 3 --retry-delay 5 -o "$INDEX" https://app-vitals.github.io/agent/index.yaml; then
+            echo "::error::could not fetch https://app-vitals.github.io/agent/index.yaml; the library chart pin was NOT checked."
+            exit 1
+          fi
+
+          MISMATCHES=$(compute_library_drift charts/shipwright/Chart.yaml charts/shipwright/Chart.lock "$INDEX") || exit 1
+          LATEST=$(latest_library_version "$INDEX")
+          echo "Latest published agent-platform: ${LATEST}; pinned in Chart.yaml: $(library_pin_from_chart charts/shipwright/Chart.yaml), Chart.lock: $(library_pin_from_lock charts/shipwright/Chart.lock)"
+
+          if [ -n "$MISMATCHES" ]; then
+            echo "$MISMATCHES"
+            echo "::error title=Library chart pin is stale::agent-platform is behind the latest published version ${LATEST}. A chart-release dispatch was missed or the bump PR (chore/library-chart-release) is stuck: re-run 'Library Chart Release Bump' with version ${LATEST}."
+            exit 1
+          fi
+          echo "Library chart pin is current."
+
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="chart drift check failed"
+          BODY="The chart drift check failed: ${RUN_URL}"
+          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: Close the failure issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="chart drift check failed"
+          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
+          [ -z "$ISSUE" ] && exit 0
+          gh issue comment "$ISSUE" --body "The chart drift check passed again: ${RUN_URL}"
+          gh issue close "$ISSUE"

@@ -1657,6 +1657,119 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Library chart pin bump (CHM-3.5): the chart-release dispatch from
+# app-vitals/agent re-pins the agent-platform dependency and bumps the chart.
+# Logic lives in lib/library-pin.sh (sourced by library-chart-release.yml).
+# ---------------------------------------------------------------------------
+
+# shellcheck source=lib/library-pin.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/library-pin.sh"
+
+echo ""
+echo "=== library pin bump tests ==="
+
+make_chart_dir() {
+  local lib_version="${1:-0.3.0}" chart_version="${2:-1.30.0}"
+  local dir
+  dir="$(mktemp -d)"
+  cat > "$dir/Chart.yaml" <<EOF
+apiVersion: v2
+name: shipwright
+version: ${chart_version}
+appVersion: "0.1.0"
+annotations:
+  licenses: MIT
+  artifacthub.io/changes: |
+    - kind: changed
+      description: "previous change"
+dependencies:
+  - name: agent-platform
+    version: "${lib_version}"
+    repository: https://app-vitals.github.io/agent
+  - name: postgresql
+    version: "18.12.4"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+EOF
+  cat > "$dir/Chart.lock" <<EOF
+dependencies:
+- name: agent-platform
+  repository: https://app-vitals.github.io/agent
+  version: ${lib_version}
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 18.12.4
+digest: sha256:abc
+generated: "2026-10-27T00:00:00Z"
+EOF
+  cat > "$dir/CHANGELOG.md" <<EOF
+# Changelog
+
+Preamble.
+
+## [${chart_version}] - 2026-10-26
+
+### Changed
+
+- previous change
+EOF
+  echo "$dir"
+}
+
+d=$(make_chart_dir 0.3.0 1.30.0)
+bump_library_pin "$d" "0.4.0" "2026-10-28"
+assert_eq "library bump: Chart.yaml dependency pin" "0.4.0" "$(library_pin_from_chart "$d/Chart.yaml")"
+assert_eq "library bump: Chart.lock pin" "0.4.0" "$(library_pin_from_lock "$d/Chart.lock")"
+assert_eq "library bump: chart version patch-bumped" "1.30.1" "$(read_chart_version "$d/Chart.yaml")"
+assert_eq "library bump: postgresql pin untouched in Chart.yaml" "1" "$(grep -c '"18.12.4"' "$d/Chart.yaml")"
+assert_eq "library bump: postgresql pin untouched in Chart.lock" "1" "$(grep -c 'version: 18.12.4' "$d/Chart.lock")"
+assert_eq "library bump: artifacthub entry replaced" "1" "$(grep -c 'agent-platform library chart to 0.4.0' "$d/Chart.yaml")"
+assert_eq "library bump: old artifacthub entry dropped" "0" "$(grep -c 'previous change' "$d/Chart.yaml")"
+assert_eq "library bump: dependencies key intact after annotation rewrite" "1" "$(grep -c '^dependencies:' "$d/Chart.yaml")"
+assert_eq "library bump: changelog entry inserted for new version" "1" "$(grep -c '^## \[1.30.1\] - 2026-10-28' "$d/CHANGELOG.md")"
+assert_eq "library bump: changelog keeps old entry" "1" "$(grep -c '^## \[1.30.0\]' "$d/CHANGELOG.md")"
+assert_eq "library bump: new changelog entry precedes old" "[1.30.1]" "$(awk '/^## \[/{print $2; exit}' "$d/CHANGELOG.md")"
+CL_DESC=$(grep 'agent-platform library chart to' "$d/CHANGELOG.md" | sed 's/^- //')
+AH_DESC=$(grep 'agent-platform library chart to' "$d/Chart.yaml" | sed 's/^ *description: "//; s/"$//')
+assert_eq "library bump: changelog mirrors artifacthub annotation" "$CL_DESC" "$AH_DESC"
+printf 'entries:\n  agent-platform:\n  - version: 0.4.0\n' > "$d/index.yaml"
+assert_eq "library bump: no drift against the version just pinned" "" \
+  "$(compute_library_drift "$d/Chart.yaml" "$d/Chart.lock" "$d/index.yaml")"
+
+# Idempotent: re-bumping to the pinned version changes nothing.
+d2=$(make_chart_dir 0.4.0 1.30.1)
+cp "$d2/Chart.yaml" "$d2/Chart.yaml.orig"
+bump_library_pin "$d2" "0.4.0" "2026-10-28"
+assert_eq "library bump: same version is a no-op (Chart.yaml)" "" "$(diff "$d2/Chart.yaml" "$d2/Chart.yaml.orig")"
+assert_eq "library bump: same version is a no-op (chart version)" "1.30.1" "$(read_chart_version "$d2/Chart.yaml")"
+
+# A stale (older) dispatch must not downgrade the pin.
+d3=$(make_chart_dir 0.5.0 1.31.0)
+bump_library_pin "$d3" "0.4.0" "2026-10-28" 2>/dev/null
+assert_eq "library bump: older version does not downgrade" "0.5.0" "$(library_pin_from_chart "$d3/Chart.yaml")"
+assert_eq "library bump: older version does not bump chart" "1.31.0" "$(read_chart_version "$d3/Chart.yaml")"
+
+# Version arrives from an external event: strict X.Y.Z only.
+for bad in "" "1.2" "v1.2.3" "1.2.3-rc1" '1.2.3"; rm -rf /' "1.2.3 "; do
+  d4=$(make_chart_dir 0.3.0 1.30.0)
+  if bump_library_pin "$d4" "$bad" "2026-10-28" 2>/dev/null; then
+    fail "library bump: rejects invalid version '$bad'" "non-zero exit" "exit 0"
+  else
+    pass "library bump: rejects invalid version '$bad'"
+  fi
+  assert_eq "library bump: invalid version '$bad' leaves Chart.yaml untouched" "1.30.0" "$(read_chart_version "$d4/Chart.yaml")"
+done
+
+# Missing dependency is an error, not a silent no-op.
+d5=$(make_chart_dir 0.3.0 1.30.0)
+sed -i 's/name: agent-platform/name: other/' "$d5/Chart.yaml"
+if bump_library_pin "$d5" "0.4.0" "2026-10-28" 2>/dev/null; then
+  fail "library bump: errors when agent-platform dependency is missing" "non-zero exit" "exit 0"
+else
+  pass "library bump: errors when agent-platform dependency is missing"
+fi
+
+# ---------------------------------------------------------------------------
 # Results
 # ---------------------------------------------------------------------------
 

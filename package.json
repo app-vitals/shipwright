@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.439.1",
+  "version": "1.439.3",
   "private": true,
   "workspaces": [
     "plugins/shipwright",
@@ -38,9 +38,9 @@
   },
   "dependencies": {
     "@shipwright/admin": "workspace:*",
-    "@app-vitals/agent-admin": "0.12.0",
-    "@app-vitals/agent-lib": "0.12.0",
-    "@app-vitals/agent-runtime": "0.12.0",
+    "@app-vitals/agent-admin": "0.13.0",
+    "@app-vitals/agent-lib": "0.13.0",
+    "@app-vitals/agent-runtime": "0.13.0",
     "@prisma/client": "^7.0.0"
   },
   "overrides": {
@@ -55,7 +55,7 @@
     "http-cache-semantics": "^4.3.0",
     "js-yaml": "^5.0.0",
     "@redocly/openapi-core": {
-      "js-yaml": "4.3.1"
+      "js-yaml": "4.3.2"
     },
     "mysql2": "^3.23.1",
     "tar": "^7.5.21",

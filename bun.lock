@@ -5,9 +5,9 @@
     "": {
       "name": "shipwright-monorepo",
       "dependencies": {
-        "@app-vitals/agent-admin": "0.12.0",
-        "@app-vitals/agent-lib": "0.12.0",
-        "@app-vitals/agent-runtime": "0.12.0",
+        "@app-vitals/agent-admin": "0.13.0",
+        "@app-vitals/agent-lib": "0.13.0",
+        "@app-vitals/agent-runtime": "0.13.0",
         "@prisma/client": "^7.0.0",
         "@shipwright/admin": "workspace:*",
       },
@@ -31,8 +31,8 @@
       "name": "@shipwright/admin",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-admin": "0.12.0",
-        "@app-vitals/agent-lib": "0.12.0",
+        "@app-vitals/agent-admin": "0.13.0",
+        "@app-vitals/agent-lib": "0.13.0",
         "@hono/zod-openapi": "^1.0.0",
         "hono": "^4.13.1",
       },
@@ -45,11 +45,11 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.439.0",
+      "version": "1.439.2",
       "dependencies": {
-        "@app-vitals/agent-admin": "0.12.0",
-        "@app-vitals/agent-lib": "0.12.0",
-        "@app-vitals/agent-runtime": "0.12.0",
+        "@app-vitals/agent-admin": "0.13.0",
+        "@app-vitals/agent-lib": "0.13.0",
+        "@app-vitals/agent-runtime": "0.13.0",
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
         "@slack/bolt": "^5.0.0",
@@ -84,9 +84,9 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.439.0",
+      "version": "1.439.2",
       "dependencies": {
-        "@app-vitals/agent-lib": "0.12.0",
+        "@app-vitals/agent-lib": "0.13.0",
         "@hono/zod-openapi": "^1.0.0",
         "@sentry/bun": "^10.63.0",
         "@sentry/hono": "^10.63.0",
@@ -102,9 +102,9 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.439.0",
+      "version": "1.439.2",
       "dependencies": {
-        "@app-vitals/agent-runtime": "0.12.0",
+        "@app-vitals/agent-runtime": "0.13.0",
         "js-yaml": "^5.0.0",
       },
       "devDependencies": {
@@ -117,7 +117,7 @@
       "name": "@shipwright/task-store",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "0.12.0",
+        "@app-vitals/agent-lib": "0.13.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -142,7 +142,7 @@
   "overrides": {
     "@hono/node-server": "^2.0.12",
     "@redocly/openapi-core": {
-      "js-yaml": "4.3.1",
+      "js-yaml": "4.3.2",
     },
     "brace-expansion": "^5.0.12",
     "deepmerge-ts": "^8.0.2",
@@ -172,11 +172,11 @@
 
     "@apm-js-collab/code-transformer-bundler-plugins": ["@apm-js-collab/code-transformer-bundler-plugins@0.7.4", "", { "dependencies": { "@apm-js-collab/code-transformer": "^0.18.1", "es-module-lexer": "^2.1.0", "magic-string": "^0.30.21", "module-details-from-path": "^1.0.4" } }, "sha512-nAfOeZPSUAQvJa1iFT/5oCrTm5YQhMMrfCNthNnaXHZiOQhu1KGuLoIx7HtbAi3wfwaBYLaICPIeenIaEwcXIg=="],
 
-    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@0.12.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.135.0", "@app-vitals/agent-lib": "0.12.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "yaml": "^2.9.0", "zod": "^4" } }, "sha512-+ciiXS1Hx4yKPyrEr+JGEKexB7r4Ensv8RH6OdrIuX8AHJoQAqkjS8el5o+jAPIQ9+SXDiFraZl+30qdpVdrQQ=="],
+    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@0.13.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.135.0", "@app-vitals/agent-lib": "0.13.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "yaml": "^2.9.0", "zod": "^4" } }, "sha512-942x/gIb5+yvIp/Ewv/fuUq+pDU54DymdD4Beno2iRlajMko+u3+Bd6++SH/LPS2GQvPmX724JT0juVFCZ4sDA=="],
 
-    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.12.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-pJEsAhTovn+bGk/vNOyM0rmfdCKJkQKpfp9BxxQKJBbqZDoBud4soJCQN0jhh/OtkwEx4pKhboQ4KT0hL6+3DQ=="],
+    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@0.13.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-lp4pj6Y7PtbZODBJwHMCGCJ9UgJKARyTSR+9zNW0xsWiR/Y3mwe7G2EVJXuHM77W95u0gm9WrPm+27pRCMKrgw=="],
 
-    "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@0.12.0", "", { "dependencies": { "@app-vitals/agent-admin": "0.12.0", "@app-vitals/agent-lib": "0.12.0", "@octokit/auth-app": "^8.2.0", "@sentry/bun": "^10.63.0", "@slack/bolt": "^5.0.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "node-cron": "^4.6.0", "openapi-fetch": "^0.17.0", "playwright": "1.64.1" } }, "sha512-dLyTTmHxpQc4X+ARjlCwkunmvk1QsnyqOqJQxWLDqtTHyq2hPPb7TWEQg46eJmAOfxQyI8x1XYG6abWSYVafAQ=="],
+    "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@0.13.0", "", { "dependencies": { "@app-vitals/agent-admin": "0.13.0", "@app-vitals/agent-lib": "0.13.0", "@octokit/auth-app": "^8.2.0", "@sentry/bun": "^10.63.0", "@slack/bolt": "^5.0.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "node-cron": "^4.6.0", "openapi-fetch": "^0.17.0", "playwright": "1.64.1" } }, "sha512-Dw3pd8YrOG4RDlYJ+e/FNVdbKhLIrgAnjQBqFZdJKe6L9RckCkAWI9MNrS+A/jq6QXmbQcDsUT2fWzvsmTSJ4w=="],
 
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@9.1.0", "", { "dependencies": { "openapi3-ts": "^4.6.0" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-pLMeRgRYS7/vZIgAAkOe2P6+XGTifR1MT9pqDoxZ11EmcJJ+DPmdPqLN8ZZF4U8R9KHCCQCS9c2wtuE8wSrfkw=="],
 
@@ -1394,7 +1394,7 @@
 
     "@redocly/openapi-core/https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
 
-    "@redocly/openapi-core/js-yaml": ["js-yaml@4.3.1", "", { "dependencies": { "argparse": "^2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ=="],
+    "@redocly/openapi-core/js-yaml": ["js-yaml@4.3.2", "", { "dependencies": { "argparse": "^2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA=="],
 
     "@semantic-release/exec/aggregate-error": ["aggregate-error@3.1.0", "", { "dependencies": { "clean-stack": "^2.0.0", "indent-string": "^4.0.0" } }, "sha512-4I7Td01quW/RpocfNayFdFVk1qSuoh0E7JrbRJ16nH01HhKFQ88INq9Sd+nd72zqRySlr9BmDA8xlEJ6vJMrYA=="],
 

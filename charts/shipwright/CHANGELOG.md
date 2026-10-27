@@ -16,6 +16,18 @@ independent of `appVersion`. CI enforces this with
 
 - chat, whisper and voice-secret templates are now one-line includes of the agent-platform library (no rendered change)
 
+## [1.30.4] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.4 triggered by release tag(s): `agent-chat-v0.13.0`
+
+## [1.30.3] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.3 triggered by release tag(s): `admin-v1.306.5`, `agent-v1.439.2`, `metrics-v1.165.1`, `task-store-v1.213.3`
+
 ## [1.30.2] - 2026-10-27
 
 ### Changed
