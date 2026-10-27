@@ -105,6 +105,47 @@ release tag(s) that could not be pinned, rather than silently exiting
 success and dropping those tags. This ensures no release tags ever disappear
 from the chart version bump without surfacing the failure.
 
+## Automating library chart releases
+
+When the **agent-platform library chart** (`app-vitals/agent`'s published
+`shipwright` chart dependency) publishes a new version, the Shipwright repo
+**automatically** picks it up via the
+[`library-chart-release.yml`](./.github/workflows/library-chart-release.yml)
+workflow.
+
+The app-vitals/agent `chart-release` workflow dispatches to Shipwright with the
+new version (CHM-2.7 design):
+
+```bash
+gh api POST repos/app-vitals/shipwright/dispatches \
+  -f event_type=chart-release -f client_payload[version]=$VERSION
+```
+
+On receipt, `library-chart-release.yml`:
+
+1. Validates the version is strict `X.Y.Z` format.
+2. Waits for the version to appear in the agent-platform's published Helm index.
+3. Runs `lib/library-pin.sh` to re-pin the dependency in `charts/shipwright/Chart.yaml` and `Chart.lock`.
+4. Bumps the Shipwright chart patch version in `Chart.yaml`.
+5. Updates `CHANGELOG.md` with an `artifacthub.io/changes` annotation.
+6. Swaps the vendored agent-platform chart tarballs in `charts/shipwright/charts/`.
+7. Opens (or updates) a PR on the fixed branch `chore/library-chart-release`.
+
+The PR runs the full CI suite, including the `helm.yml` render-parity check.
+Once checks pass, the workflow auto-merges the PR using the platform release
+merge gate (`scripts/platform-bump-gate.sh`). When the PR merges, `chart-release.yml`
+publishes the bumped chart version to the `gh-pages` branch as usual.
+
+**Drift detection:** [`check-chart-drift.yml`](./.github/workflows/check-chart-drift.yml)
+runs daily to verify the agent-platform pin in `charts/shipwright` is not
+stale relative to the published index. It fails loudly if a newer version is
+available, signaling either a missed dispatch or a Renovate fallback that needs
+attention.
+
+**Manual runs:** Developers can trigger `library-chart-release.yml` manually
+via **Actions → Library Chart Release Bump → Run workflow**, entering the
+library version to pin.
+
 ## How downstream consumers pick up new versions
 
 Consumption is **pull-based**, not push. `chart-release.yml` does not notify
