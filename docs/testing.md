@@ -20,7 +20,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (the merge-blocking gate)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (local command; GitHub CI runs different checks)
 task test         # bun test (all packages)
 task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 90/89 lines/functions (scripts/check-coverage.ts)
 ```
@@ -80,7 +80,7 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
+GitHub CI gates run: **lint → check-strings → typecheck → check-config-docs → check-admin-spec-and-types → test:coverage → secret-scan**, with layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+. (Note: the local `task ci` command includes `check-version-sync` in place of `check-admin-spec-and-types`, so running `task ci` locally does not fully replicate the CI gate.)
 
 The coverage gate is an absolute threshold:
 
