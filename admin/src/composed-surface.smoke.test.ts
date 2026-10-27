@@ -22,14 +22,18 @@
  *     its PUT body; the runtime reports it only when the config bundle's
  *     `features.repoAccessCheck` is on, flag
  *     SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED) — added in 0.5.0
+ *   - the per-agent `podServiceAccountName` field (`GetAgentResult`,
+ *     `PatchAgentBody`; PATCH /agents/{id} also gains 409/422 responses and a
+ *     description for it; the PATCH is flag-gated at runtime by
+ *     SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED) — added in 0.7.0
+ *   - the chat page's voice-first composer (auto-play voice replies toggle,
+ *     56px round mic button; client-side only, no new route) — added in 0.7.x
  *   - the "Signed commits" checkbox on the agent page of an agent with a
  *     GitHub App (SHIPWRIGHT_SIGNED_COMMITS env row; no flag), and one
  *     blank line in its place on every other agent page
  *
- * The platform-doc route (GET /doc, flag SHIPWRIGHT_ADMIN_DOC_ENABLED) and the
- * per-agent pod ServiceAccount (flag
- * SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED) do not appear in the
- * composed document or the rendered pages.
+ * The platform-doc route (GET /doc, flag SHIPWRIGHT_ADMIN_DOC_ENABLED) does
+ * not appear in the composed document or the rendered pages.
  *
  * Any other change fails here. When a platform bump changes the surface on
  * purpose, update EXPECTED_DIFF from the failure output and record why.
@@ -67,7 +71,7 @@ const EXPECTED_DIFF: {
     },
     removed: [],
     changed: {
-      "PATCH /agents/{id}": "sha256:d97e5ce3e9c7ca26",
+      "PATCH /agents/{id}": "sha256:d404734610c161c3",
     },
   },
   schemas: {
@@ -94,6 +98,8 @@ const EXPECTED_DIFF: {
       AgentGitHubInstallationsSnapshot: "sha256:077baac77418053c",
       PutGitHubInstallationsBody: "sha256:902b6963f090cc52",
       AgentConfigResponse: "sha256:4c3abf6fea0cc33c",
+      GetAgentResult: "sha256:53933825ec2129ea",
+      PatchAgentBody: "sha256:f0c07f6f8808cde8",
     },
   },
   pages: {
@@ -104,6 +110,8 @@ const EXPECTED_DIFF: {
       "agent detail": "200 sha256:f4b7cbeb503eb2ba",
       // The "Signed commits" checkbox, shown only with GH_APP_ID set.
       "agent detail (GitHub App)": "200 sha256:1d9f68995fc9e2b4",
+      // The voice-first composer: auto-play toggle and 56px mic (0.7.x).
+      chat: "200 sha256:dd75c6ad9c821246",
     },
   },
 };
