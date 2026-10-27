@@ -6,13 +6,14 @@
  * externally supplied version never appears as a `${{ }}` expression inside a
  * run script), SHA-pinned actions, a pr-title-lint-clean title, the
  * loud failure path. The bump logic itself is unit-tested
- * in scripts/platform-release-bump.unit.test.ts.
+ * in scripts/platform-release-bump.unit.test.ts, and the merge gate in
+ * scripts/platform-bump-gate.unit.test.ts.
  *
  * Lives at the repo root (not under .github/) because `bun test` never walks
  * dot-directories.
  */
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir);
@@ -210,48 +211,13 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
     expect(merge.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
   });
 
-  it("waits for required checks, reruns failures and admin-squash-merges", () => {
-    const run = merge.run ?? "";
-    expect(run).toContain("gh pr checks");
-    expect(run).toContain("--watch");
-    expect(run).toContain("--required");
-    expect(run).toContain("gh run rerun");
-    expect(run).toContain("Base branch was modified");
-    expect(run).toContain("gh pr merge");
-    expect(run).toContain("--squash --admin");
-    expect(run).toContain("exit 1");
-  });
-
-  it("waits for the CI run on the PR head commit before checking required checks or merging", () => {
-    const run = merge.run ?? "";
-    const headSha = run.indexOf("headRefOid");
-    const list = run.indexOf('gh run list --commit "$HEAD_SHA" --workflow CI');
-    const watchRun = run.indexOf('gh run watch "$CI_RUN_ID"');
-    const watchChecks = run.indexOf('gh pr checks "$PR_URL" --required');
-    const mergeCmd = run.indexOf("gh pr merge");
-    expect(headSha).toBeGreaterThan(-1);
-    expect(list).toBeGreaterThan(headSha);
-    expect(watchRun).toBeGreaterThan(list);
-    expect(watchChecks).toBeGreaterThan(watchRun);
-    expect(mergeCmd).toBeGreaterThan(watchChecks);
-  });
-
-  it("fails without merging when CI or the required checks never register", () => {
-    const run = merge.run ?? "";
-    expect(run).toContain('[ -z "$CI_RUN_ID" ]');
-    expect(run).toContain('[ "$CHECK_COUNT" -eq 0 ]');
-    const ciGuard = run.indexOf('[ -z "$CI_RUN_ID" ]');
-    expect(run.indexOf("exit 1", ciGuard)).toBeLessThan(
-      run.indexOf("gh pr merge"),
-    );
-  });
-
-  it("only admin-merges after the required-checks loop has passed", () => {
-    const run = merge.run ?? "";
-    const loopEnd = run.indexOf("Checks passed");
-    expect(loopEnd).toBeGreaterThan(run.indexOf("--watch"));
-    expect(run.indexOf("--squash --admin")).toBeGreaterThan(loopEnd);
-    expect(run).toContain("exhausted");
+  it("delegates the gate to scripts/platform-bump-gate.sh with the PR url, not an inline loop", () => {
+    // The wait / evaluate / merge decision is behavior-tested against recorded
+    // check timelines in scripts/platform-bump-gate.unit.test.ts.
+    expect(merge.run?.trim()).toBe('bash scripts/platform-bump-gate.sh "$PR_URL"');
+    expect(existsSync(join(ROOT, "scripts/platform-bump-gate.sh"))).toBe(true);
+    // Neither the version nor the PR url is templated into the script call.
+    expect(merge.run).not.toContain("${{");
   });
 
   it("runs after the PR step and before the failure step", () => {
