@@ -112,7 +112,7 @@ const PRE_SWAP: ReadonlyArray<readonly [string, string]> = [
   ["20261019000000_add_agent_anthropic_identity", "sha256:f40c0ce269d823e1"],
 ];
 
-/** The migrations @app-vitals/agent-admin 0.5.0 adds; all additive. */
+/** The migrations the pinned @app-vitals/agent-admin adds; all additive. */
 const PLATFORM_ADDITIONS: ReadonlyArray<readonly [string, string]> = [
   ["20261025000000_add_agent_ask", "sha256:c13175f9380b563b"],
   ["20261026000000_add_agent_pod_service_account", "sha256:d7cf68fd3e0bf309"],
@@ -142,11 +142,16 @@ const shipped = readdirSync(MIGRATIONS_DIR)
   .sort();
 
 describe("admin migration history (AGR-4.2)", () => {
-  it("pins @app-vitals/agent-admin 0.5.0", () => {
-    const pkg = JSON.parse(
+  it("installs the @app-vitals/agent-admin version admin/package.json declares", () => {
+    const installed = JSON.parse(
       readFileSync(join(PACKAGE_DIR, "package.json"), "utf8"),
     ) as { version: string };
-    expect(pkg.version).toBe("0.5.0");
+    const declared = JSON.parse(
+      readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    expect(installed.version).toBe(
+      declared.dependencies["@app-vitals/agent-admin"],
+    );
   });
 
   it("is exactly the pre-swap history plus the pinned platform additions", () => {
