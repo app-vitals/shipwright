@@ -340,7 +340,7 @@ calling out to the GitHub API, never GitHub calling in.</p>
 OAuth token), <code>SLACK_APP_TOKEN</code> (Socket Mode app-level token), and <code>SLACK_SIGNING_SECRET</code> (verifies
 inbound request signatures) — plus optional vars (<code>SLACK_ADMIN_TOKEN</code> for privileged operations,
 <code>SLACK_ALERT_CHANNEL</code>, <code>SLACK_OWNER_USER</code>).</p>
-<p>Shipwright’s Slack app manifest is <strong>centrally codified</strong> in the codebase at <code>admin/src/slack-provisioning-client.ts</code>.
+<p>Shipwright’s Slack app manifest is <strong>centrally codified</strong> in the <code>@app-vitals/agent-admin</code> platform package (<code>slack-provisioning-client.ts</code>).
 The <code>buildAgentManifest()</code> function constructs a Slack App Manifest object with configured
 display_information, bot_user, app_home, and assistant_view. Bot permissions are centrally defined
 in the exported <code>AGENT_BOT_SCOPES</code> array, which is embedded into the manifest’s <code>oauth_config.scopes.bot</code>.
