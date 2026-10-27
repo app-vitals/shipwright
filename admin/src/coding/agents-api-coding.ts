@@ -11,6 +11,7 @@
  *   GET  /agents/{id}/dev-task-adherence         — one agent's dev-task adherence
  *   POST /agents/{id}/work-queue                 — push a work-queue snapshot
  *   GET  /agents/{id}/work-queue                 — latest work-queue snapshot
+ *   GET  /session-follows                        — the signed-in user's non-muted followed session slugs
  *
  * Auth and errors match the platform API exactly: the same combined auth
  * middleware (admin key | per-agent bearer | session cookie) and the same
@@ -50,6 +51,8 @@ import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
 import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import type { MiddlewareHandler } from "hono";
+import { getCookie } from "hono/cookie";
+import { verify } from "hono/jwt";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
@@ -60,6 +63,10 @@ import {
   PushWorkQueueSnapshotBodySchema,
   PutAgentPhaseMethodologyBodySchema,
 } from "./openapi-schemas-coding.ts";
+import {
+  nonMutedSessionSlugs,
+  type SessionFollowService,
+} from "./session-follow-service.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +79,8 @@ export interface CodingAdminApiDeps {
   agentWorkQueueService: Pick<AgentWorkQueueService, "push" | "get">;
   /** DTA-1.2 — optional; the adherence routes 404 when absent. */
   devTaskAdherenceService?: Pick<DevTaskAdherenceService, "report">;
+  /** SIT-1.1 — optional; GET /session-follows 404s when absent. */
+  sessionFollowService?: Pick<SessionFollowService, "listByUser">;
   // Auth — the same deps the platform API's middleware is built from.
   agentTokenService: Pick<AgentTokenService, "validate">;
   agentMemberService: Pick<AgentMemberService, "listByEmail">;
@@ -239,6 +248,34 @@ const selfDevTaskAdherenceRoute = createRoute({
   },
 });
 
+const SessionFollowsResponseSchema = z
+  .object({
+    sessionSlugs: z
+      .array(z.string())
+      .describe("Slugs of the sessions the caller follows and has not muted"),
+  })
+  .openapi("SessionFollowsResponse");
+
+const listSessionFollowsRoute = createRoute({
+  method: "get",
+  path: "/session-follows",
+  summary: "List the caller's followed sessions",
+  description:
+    "Returns the session slugs of the non-muted SessionFollow rows belonging to the signed-in user. The user is taken from the verified session token (`admin_session` cookie) — never from the request — so a caller can only read their own follows. Bearer credentials (agent tokens, admin API keys) carry no user identity and are rejected with 403.",
+  responses: {
+    200: {
+      description: "Non-muted followed session slugs",
+      content: { "application/json": { schema: SessionFollowsResponseSchema } },
+    },
+    401: { description: "Missing or invalid token", ...jsonError },
+    403: {
+      description: "Credential is not bound to a user (bearer token)",
+      ...jsonError,
+    },
+    404: { description: "Session follows not configured", ...jsonError },
+  },
+});
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createCodingAdminApiApp(
@@ -249,6 +286,7 @@ export function createCodingAdminApiApp(
     agentPhaseMethodologyService,
     agentWorkQueueService,
     devTaskAdherenceService,
+    sessionFollowService,
     agentTokenService,
     agentMemberService,
     sessionSecret,
@@ -281,6 +319,42 @@ export function createCodingAdminApiApp(
   app.use("/agents/all/cron-runs/dev-task-adherence", auth);
   app.use("/agents/:id/dev-task-adherence", auth);
   app.use("/agents/:id/work-queue", auth);
+
+  // /session-follows is user-scoped, not agent-scoped. The shared middleware
+  // 403s non-admin session cookies on any non-/agents path, which would lock
+  // out ordinary members from their own follows — so a session cookie is
+  // verified here directly (same cookie, secret and claims as the shared
+  // middleware). Any Authorization header goes through the shared middleware
+  // (401 if invalid); a valid bearer has no callerEmail and the handler 403s.
+  const userAuth: MiddlewareHandler<AdminAuthEnv> = async (c, next) => {
+    if (c.get("caller") !== undefined || c.req.header("Authorization")) {
+      return auth(c, next);
+    }
+    const token = getCookie(c, "admin_session");
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+    try {
+      const payload = (await verify(token, sessionSecret, "HS256")) as Record<
+        string,
+        unknown
+      >;
+      if (
+        typeof payload.userId !== "string" ||
+        !payload.userId ||
+        typeof payload.email !== "string" ||
+        !payload.email
+      ) {
+        return c.json({ error: "Unauthorized" }, 401);
+      }
+      const email = payload.email.toLowerCase();
+      c.set("isAdmin", payload.isAdmin === true);
+      c.set("caller", { name: email, scope: "session" });
+      c.set("callerEmail", email);
+    } catch {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    return next();
+  };
+  app.use("/session-follows", userAuth);
 
   // ─── Phase Methodology ───────────────────────────────────────────────────────
 
@@ -367,6 +441,24 @@ export function createCodingAdminApiApp(
     return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
   });
 
+  // ─── Session follows ───────────────────────────────────────────────────────
+
+  // GET /session-follows — the signed-in user's non-muted followed slugs
+  app.openapi(listSessionFollowsRoute, async (c) => {
+    // Identity comes only from the verified token, never from the request.
+    const email = c.get("callerEmail");
+    if (!email) {
+      throw new ForbiddenError(
+        "Session follows are per-user; this credential is not bound to a user",
+      );
+    }
+    if (!sessionFollowService) {
+      return c.json({ error: "Session follows not configured" }, 404);
+    }
+    const rows = await sessionFollowService.listByUser(email);
+    return c.json({ sessionSlugs: nonMutedSessionSlugs(rows) }, 200);
+  });
+
   return app;
 }
 
@@ -444,6 +536,7 @@ export function codingAdminOpenApi(): AdminOpenApiContribution {
         "/agents/{id}/dev-task-adherence":
           "/agents/all/cron-runs/dev-task-adherence",
         "/agents/{id}/work-queue": "/agents/{id}/chat-tokens/daily",
+        "/session-follows": "/agents/{id}/work-queue",
       },
       schemas: {
         PhaseMethodologyListWrapper: "PatchAgentPluginBody",
@@ -454,6 +547,7 @@ export function codingAdminOpenApi(): AdminOpenApiContribution {
         AgentWorkQueueSnapshot: "WorkQueueSnapshotWrapper",
         RankedWorkItem: "AgentWorkQueueSnapshot",
         PushWorkQueueSnapshotBody: "RankedWorkItem",
+        SessionFollowsResponse: "PushWorkQueueSnapshotBody",
       },
     },
   };

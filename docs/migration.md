@@ -4,7 +4,7 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## Breaking: the admin is built on `@app-vitals/agent-admin` 0.5.0 _(AGR-4.2)_
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.7.1 _(AGR-4.2)_
 
 **Version**: next (AGR-4.2)
 

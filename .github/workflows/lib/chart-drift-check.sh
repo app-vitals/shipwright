@@ -36,15 +36,16 @@ set -uo pipefail
 compute_drift() {
   local values_yaml="$1"
   local latest_by_service="$2"
-  local service latest_tag path pinned_tag
+  local service latest_tag path pinned_tag expected_tag
 
   while IFS='=' read -r service latest_tag; do
     [ -z "$service" ] && continue
     while IFS= read -r path; do
       [ -z "$path" ] && continue
       pinned_tag=$(read_pinned_tag "$values_yaml" "$path")
-      if [ "$pinned_tag" != "$latest_tag" ]; then
-        echo "MISMATCH: service=${service} path=${path} expected=${latest_tag} actual=${pinned_tag}"
+      expected_tag=$(pin_value_for_tag "$latest_tag")
+      if [ "$pinned_tag" != "$expected_tag" ]; then
+        echo "MISMATCH: service=${service} path=${path} expected=${expected_tag} actual=${pinned_tag}"
       fi
     done < <(values_paths_for_service "$service")
   done <<< "$latest_by_service"

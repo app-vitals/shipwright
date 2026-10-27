@@ -55,6 +55,10 @@ import {
   SessionAlertSweeper,
   type SessionForAlert,
 } from "./session-alert-sweeper.ts";
+import {
+  type SessionFollowPrismaLike,
+  SessionFollowService,
+} from "./session-follow-service.ts";
 import { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
 import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 
@@ -196,6 +200,9 @@ export const codingAdminExtension: AdminExtension = {
           ctx.prisma,
           undefined,
           taskStoreFetchers(ctx.env),
+        ),
+        sessionFollowService: new SessionFollowService(
+          ctx.prisma as unknown as SessionFollowPrismaLike,
         ),
         agentTokenService: ctx.services.agentTokenService,
         agentMemberService: ctx.services.agentMemberService,
