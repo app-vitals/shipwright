@@ -355,6 +355,54 @@
           }
         }
       }
+    },
+    "/session-follows": {
+      "get": {
+        "summary": "List the caller's followed sessions",
+        "description": "Returns the session slugs of the non-muted SessionFollow rows belonging to the signed-in user. The user is taken from the verified session token (`admin_session` cookie) — never from the request — so a caller can only read their own follows. Bearer credentials (agent tokens, admin API keys) carry no user identity and are rejected with 403.",
+        "responses": {
+          "200": {
+            "description": "Non-muted followed session slugs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionFollowsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential is not bound to a user (bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session follows not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -564,6 +612,21 @@
         "required": [
           "computedAt",
           "items"
+        ]
+      },
+      "SessionFollowsResponse": {
+        "type": "object",
+        "properties": {
+          "sessionSlugs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Slugs of the sessions the caller follows and has not muted"
+          }
+        },
+        "required": [
+          "sessionSlugs"
         ]
       }
     }

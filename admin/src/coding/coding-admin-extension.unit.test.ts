@@ -67,6 +67,7 @@ describe("codingAdminExtension", () => {
       "/agents/{id}/phase-methodology",
       "/agents/{id}/phase-methodology/{phase}",
       "/agents/{id}/work-queue",
+      "/session-follows",
     ]);
     // Every contributed path has a placement, so the composed document keeps
     // the pre-split path order.
