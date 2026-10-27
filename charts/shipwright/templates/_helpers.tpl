@@ -2,7 +2,7 @@
 Expand the name of the chart.
 */}}
 {{- define "shipwright.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.name" . }}
 {{- end }}
 
 {{/*
@@ -12,43 +12,28 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this
 full name.
 */}}
 {{- define "shipwright.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
+{{- include "agent-platform.fullname" . }}
 {{- end }}
 
 {{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "shipwright.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.chart" . }}
 {{- end }}
 
 {{/*
 Common labels.
 */}}
 {{- define "shipwright.labels" -}}
-helm.sh/chart: {{ include "shipwright.chart" . }}
-{{ include "shipwright.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- include "agent-platform.labels" . }}
 {{- end }}
 
 {{/*
 Selector labels.
 */}}
 {{- define "shipwright.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "shipwright.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+{{- include "agent-platform.selectorLabels" . }}
 {{- end }}
 
 {{/*
@@ -70,27 +55,14 @@ Usage:
   {{- end }}
 */}}
 {{- define "shipwright.podLabels" -}}
-{{- $reserved := keys (fromYaml .selectorLabels) -}}
-{{- $extra := dict -}}
-{{- range $key, $value := (.podLabels | default dict) -}}
-{{- if not (has $key $reserved) -}}
-{{- $_ := set $extra $key (toString $value) -}}
-{{- end -}}
-{{- end -}}
-{{- if $extra -}}
-{{- toYaml $extra -}}
-{{- end -}}
+{{- include "agent-platform.podLabels" . }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use.
 */}}
 {{- define "shipwright.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "shipwright.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
+{{- include "agent-platform.serviceAccountName" . }}
 {{- end }}
 
 {{/*
@@ -117,54 +89,35 @@ verbatim; only BARE repository names (e.g. a user-overridden "shipwright-admin")
 receive the global.imageRegistry prefix.
 */}}
 {{- define "shipwright.imageRef" -}}
-{{- $registry := .context.Values.global.imageRegistry -}}
-{{- $repository := .repository -}}
-{{- $separator := ":" -}}
-{{- $termination := .tag -}}
-{{- if .digest -}}
-{{- $separator = "@" -}}
-{{- $termination = .digest -}}
-{{- end -}}
-{{- $firstSegment := $repository | splitList "/" | first -}}
-{{- if and $registry (not (or (contains "." $firstSegment) (contains ":" $firstSegment))) -}}
-{{- printf "%s/%s%s%s" $registry $repository $separator $termination -}}
-{{- else -}}
-{{- printf "%s%s%s" $repository $separator $termination -}}
-{{- end -}}
+{{- include "agent-platform.imageRef" . }}
 {{- end }}
 
 {{/*
 Admin component fullname: "<fullname>-admin".
 */}}
 {{- define "shipwright.admin.fullname" -}}
-{{- printf "%s-admin" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.admin.fullname" . }}
 {{- end }}
 
 {{/*
 Admin selector labels — fullname selector labels plus the component label.
 */}}
 {{- define "shipwright.admin.selectorLabels" -}}
-{{ include "shipwright.selectorLabels" . }}
-app.kubernetes.io/component: admin
+{{- include "agent-platform.admin.selectorLabels" . }}
 {{- end }}
 
 {{/*
 Admin labels — common labels plus the component label.
 */}}
 {{- define "shipwright.admin.labels" -}}
-{{ include "shipwright.labels" . }}
-app.kubernetes.io/component: admin
+{{- include "agent-platform.admin.labels" . }}
 {{- end }}
 
 {{/*
 Name of the ServiceAccount the admin workload uses.
 */}}
 {{- define "shipwright.admin.serviceAccountName" -}}
-{{- if .Values.admin.serviceAccount.create }}
-{{- default (include "shipwright.admin.fullname" .) .Values.admin.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.admin.serviceAccount.name }}
-{{- end }}
+{{- include "agent-platform.admin.serviceAccountName" . }}
 {{- end }}
 
 {{/*
@@ -172,22 +125,21 @@ Name of the chart-managed admin Secret (session + encryption keys, and the
 assembled DATABASE_URL when the bundled PostgreSQL subchart is used).
 */}}
 {{- define "shipwright.admin.secretName" -}}
-{{- printf "%s-admin" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.admin.secretName" . }}
 {{- end }}
 
 {{/*
 Agent component fullname: "<fullname>-agent".
 */}}
 {{- define "shipwright.agent.fullname" -}}
-{{- printf "%s-agent" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.agent.fullname" . }}
 {{- end }}
 
 {{/*
 Agent labels — common labels plus the component label.
 */}}
 {{- define "shipwright.agent.labels" -}}
-{{ include "shipwright.labels" . }}
-app.kubernetes.io/component: agent
+{{- include "agent-platform.agent.labels" . }}
 {{- end }}
 
 {{/*
@@ -195,11 +147,7 @@ Name of the ServiceAccount provisioned agent pods run as (SEPARATE from the admi
 SA). Defaults to "<fullname>-agent" when create=true and no name override.
 */}}
 {{- define "shipwright.agent.serviceAccountName" -}}
-{{- if .Values.agent.provisioning.serviceAccount.create }}
-{{- default (include "shipwright.agent.fullname" .) .Values.agent.provisioning.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.agent.provisioning.serviceAccount.name }}
-{{- end }}
+{{- include "agent-platform.agent.serviceAccountName" . }}
 {{- end }}
 
 {{/*
@@ -208,23 +156,21 @@ pod (onerahmet/openai-whisper-asr-webservice) rendered only when
 agent.voice.enabled and agent.voice.provider == "whisper".
 */}}
 {{- define "shipwright.whisper.fullname" -}}
-{{- printf "%s-whisper" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.whisper.fullname" . }}
 {{- end }}
 
 {{/*
 Whisper selector labels — fullname selector labels plus the component label.
 */}}
 {{- define "shipwright.whisper.selectorLabels" -}}
-{{ include "shipwright.selectorLabels" . }}
-app.kubernetes.io/component: whisper
+{{- include "agent-platform.whisper.selectorLabels" . }}
 {{- end }}
 
 {{/*
 Whisper labels — common labels plus the component label.
 */}}
 {{- define "shipwright.whisper.labels" -}}
-{{ include "shipwright.labels" . }}
-app.kubernetes.io/component: whisper
+{{- include "agent-platform.whisper.labels" . }}
 {{- end }}
 
 {{/*
@@ -233,7 +179,7 @@ This is the WHISPER_SERVICE_URL injected into the admin (and via the provisioner
 provisioned agents) when agent.voice.provider == "whisper".
 */}}
 {{- define "shipwright.whisper.serviceUrl" -}}
-{{- printf "http://%s:%v" (include "shipwright.whisper.fullname" .) .Values.agent.voice.whisper.service.port }}
+{{- include "agent-platform.whisper.serviceUrl" . }}
 {{- end }}
 
 {{/*
@@ -241,7 +187,7 @@ Name of the chart-managed voice Secret holding the STT/TTS API keys
 (ELEVENLABS_API_KEY, and GROQ_API_KEY when provider=groq).
 */}}
 {{- define "shipwright.voice.secretName" -}}
-{{- printf "%s-voice" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "agent-platform.voice.secretName" . }}
 {{- end }}
 
 {{/*

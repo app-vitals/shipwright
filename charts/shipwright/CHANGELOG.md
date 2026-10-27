@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.30.0] - 2026-10-27
+
+### Changed
+
+- depend on the agent-platform library chart; shipwright.* name/label/image helpers now delegate to it (no rendered change)
+
 ## [1.29.13] - 2026-10-27
 
 ### Changed
