@@ -45,8 +45,12 @@ packaged a `.tgz` is allowed to finish rather than being cancelled mid-publish.
 Chart version bumps are **automated** by the
 [`auto-bump-chart.yml`](../.github/workflows/auto-bump-chart.yml) workflow.
 Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, `metrics-v*`,
-`task-store-v*`, or `chat-v*` (created by the service build workflows on
-successful image push), the automation detects the tag, increments the chart
+or `task-store-v*` (created by the service build workflows on successful image
+push), or `PLATFORM_VERSION` in `agent/Dockerfile` changes on `main` (the
+`platform-release` dispatch from app-vitals/agent, which also publishes the
+`ghcr.io/app-vitals/agent-chat` image the `chat` block defaults to; the pin is
+credited as `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`),
+the automation detects the tag, increments the chart
 patch version in `Chart.yaml`, pins each released tag into the matching
 `values.yaml` image defaults, opens a PR (targeting `main`), and merges it
 once checks pass. Once the PR merges, `chart-release.yml` fires and publishes

@@ -350,6 +350,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/session-follows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's followed sessions
+         * @description Returns the session slugs of the non-muted SessionFollow rows belonging to the signed-in user. The user is taken from the verified session token (`admin_session` cookie) — never from the request — so a caller can only read their own follows. Bearer credentials (agent tokens, admin API keys) carry no user identity and are rejected with 403.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Non-muted followed session slugs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionFollowsResponse"];
+                    };
+                };
+                /** @description Missing or invalid token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Credential is not bound to a user (bearer token) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Session follows not configured */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -434,6 +500,10 @@ export interface components {
              */
             computedAt: string;
             items: components["schemas"]["RankedWorkItem"][];
+        };
+        SessionFollowsResponse: {
+            /** @description Slugs of the sessions the caller follows and has not muted */
+            sessionSlugs: string[];
         };
     };
     responses: never;
