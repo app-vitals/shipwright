@@ -16,7 +16,7 @@
     "format": "bunx biome format --write .",
     "typecheck": "bun run --filter='*' --sequential typecheck",
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
-    "generate:admin-types": "bunx openapi-typescript ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
+    "generate:admin-types": "bunx openapi-typescript@7.13.0 ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
     "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",
     "generate:mcp-tools": "bun run scripts/generate-mcp-tools.ts",
     "generate:mcp-docs": "bun run scripts/generate-mcp-docs.ts"
@@ -54,6 +54,9 @@
     "undici": "^8.0.0",
     "http-cache-semantics": "^4.3.0",
     "js-yaml": "^5.0.0",
+    "@redocly/openapi-core": {
+      "js-yaml": "4.3.1"
+    },
     "mysql2": "^3.23.1",
     "tar": "^7.5.21",
     "deepmerge-ts": "^8.0.2"
