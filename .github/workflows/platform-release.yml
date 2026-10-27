@@ -13,7 +13,16 @@ name: Platform Release Bump
 # open one, on the fixed branch chore/platform-release. It then waits for the
 # PR's required checks (rerunning failed ones, up to 3 attempts) and admin-
 # merges its own PR (the bot cannot self-approve it). If a required check
-# keeps failing, the job fails and the PR is left open. Renovate's
+# keeps failing, the job fails and the PR is left open. If main moves while
+# the bump is being generated, the PR opens CONFLICTING and its required
+# checks never run; before waiting on checks the job polls the PR's
+# `mergeable` state (until it leaves UNKNOWN) and, on CONFLICTING, logs a
+# distinct ::error:: and re-dispatches this workflow once (workflow_dispatch,
+# `attempt` input: default 1, cap 2) so the branch is regenerated from fresh
+# main. The re-dispatching run exits 0 with a ::warning:: (the PR stays open
+# and is force-pushed by the new run, which queues behind this one in the
+# non-cancelling concurrency group); a second conflict fails the job loudly
+# and the failure issue step fires. Renovate's
 # "app-vitals agent platform" group (renovate.json) is the fallback if a
 # dispatch is missed.
 #
@@ -45,6 +54,11 @@ on:
       version:
         description: "Platform version to pin (strict X.Y.Z)"
         required: true
+        type: string
+      attempt:
+        description: "Rebuild attempt (1 = first run, 2 = regenerated after a main conflict; capped at 2)"
+        required: false
+        default: "1"
         type: string
 
 permissions:
@@ -212,7 +226,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
+          ATTEMPT: ${{ inputs.attempt || '1' }}
         run: |
+          # GitHub computes `mergeable` lazily: UNKNOWN right after the PR is
+          # opened or the branch is pushed. Poll until it settles.
+          MAX_REBUILD_ATTEMPTS=2
+          MERGEABLE=UNKNOWN
+          for _ in $(seq 1 30); do
+            MERGEABLE=$(gh pr view "$PR_URL" --json mergeable -q .mergeable 2>/dev/null || echo UNKNOWN)
+            [ "$MERGEABLE" != "UNKNOWN" ] && break
+            sleep 5
+          done
+
+          # main moved while the bump was generated: required checks never
+          # run on a CONFLICTING PR, so waiting would end in a generic
+          # failure. Regenerate the branch from fresh main once (a new run
+          # re-pins, re-snapshots and force-pushes), then stop this run.
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            echo "::error::${PR_URL} conflicts with main (mergeable=CONFLICTING); required checks cannot run (attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS})."
+            if [ "$ATTEMPT" -lt "$MAX_REBUILD_ATTEMPTS" ]; then
+              NEXT_ATTEMPT=$((ATTEMPT + 1))
+              gh workflow run platform-release.yml --ref main \
+                -f version="$VERSION" \
+                -f attempt="$NEXT_ATTEMPT"
+              echo "::warning::Re-dispatched platform-release.yml (attempt ${NEXT_ATTEMPT}/${MAX_REBUILD_ATTEMPTS}) to regenerate the bump branch from fresh main; ${PR_URL} stays open and the new run force-pushes it. This run stops here."
+              exit 0
+            fi
+            echo "::error::${PR_URL} still conflicts with main after the attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS} rebuild; giving up, resolve by hand."
+            exit 1
+          fi
+
           # The Conventional-Commit PR title check registers within seconds,
           # long before the CI workflow (lint / typecheck / test) exists, so
           # waiting for "a required check" let `gh pr checks --watch
