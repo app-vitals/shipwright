@@ -10,9 +10,9 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@sentry/bun": "^10.63.0",
-    "@app-vitals/agent-admin": "0.7.1",
-    "@app-vitals/agent-lib": "0.7.1",
-    "@app-vitals/agent-runtime": "0.7.1",
+    "@app-vitals/agent-admin": "0.9.0",
+    "@app-vitals/agent-lib": "0.9.0",
+    "@app-vitals/agent-runtime": "0.9.0",
     "@slack/bolt": "^5.0.0",
     "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",

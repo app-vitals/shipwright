@@ -11,7 +11,9 @@
 import { describe, expect, it } from "bun:test";
 import { FixedClock } from "@app-vitals/agent-admin/clock";
 import {
+  nonMutedSessionSlugs,
   type SessionFollowPrismaLike,
+  type SessionFollowRow,
   SessionFollowService,
   type UserNotificationPrefsRow,
 } from "./session-follow-service.ts";
@@ -129,5 +131,27 @@ describe("SessionFollowService.updatePrefs — autoFollowSince", () => {
 
     expect(prefs.autoFollowSince).toBeNull();
     expect(prefs.reminderHourLocal).toBe(7);
+  });
+});
+
+describe("nonMutedSessionSlugs", () => {
+  const row = (sessionSlug: string, muted: boolean): SessionFollowRow => ({
+    id: `id-${sessionSlug}`,
+    userEmail: "u@example.com",
+    sessionSlug,
+    muted,
+    createdAt: EPOCH,
+    updatedAt: EPOCH,
+  });
+
+  it("keeps only non-muted follows, in input order", () => {
+    expect(
+      nonMutedSessionSlugs([row("a", false), row("b", true), row("c", false)]),
+    ).toEqual(["a", "c"]);
+  });
+
+  it("returns [] for no rows or all-muted rows", () => {
+    expect(nonMutedSessionSlugs([])).toEqual([]);
+    expect(nonMutedSessionSlugs([row("a", true)])).toEqual([]);
   });
 });
