@@ -31,7 +31,10 @@ type Workflow = {
   on: {
     repository_dispatch?: { types?: string[] };
     workflow_dispatch?: {
-      inputs?: Record<string, { required?: boolean; type?: string }>;
+      inputs?: Record<
+        string,
+        { required?: boolean; type?: string; default?: string }
+      >;
     };
   };
   permissions?: Record<string, string>;
@@ -127,7 +130,9 @@ describe("platform-release.yml bump", () => {
     // The version reaches the step through env only, never a template expression.
     expect(wait.run).not.toContain("${{");
     // The step precedes every `bun install` in the job.
-    const firstInstall = steps.findIndex((s) => /bun install/.test(s.run ?? ""));
+    const firstInstall = steps.findIndex((s) =>
+      /bun install/.test(s.run ?? ""),
+    );
     expect(idx).toBeLessThan(firstInstall);
   });
 
@@ -224,6 +229,68 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
 
   it("allows 30 minutes for the job", () => {
     expect(job["timeout-minutes"]).toBe(30);
+  });
+});
+
+describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
+  const merge = steps.find((s) => s.name === "Wait for checks and merge");
+  const run = merge?.run ?? "";
+
+  it("has an optional attempt input defaulting to 1", () => {
+    const input = wf.on.workflow_dispatch?.inputs?.attempt;
+    expect(input?.required).toBe(false);
+    expect(input?.type).toBe("string");
+    expect(String(input?.default)).toBe("1");
+  });
+
+  it("reads attempt via env, defaulting to 1 for repository_dispatch", () => {
+    expect(merge?.env?.ATTEMPT).toBe(gha("inputs.attempt || '1'"));
+    expect(merge?.env?.VERSION ?? job.env?.VERSION).toBeTruthy();
+  });
+
+  it("polls mergeable until it leaves UNKNOWN, before waiting on checks", () => {
+    const poll = run.indexOf("gh pr view");
+    expect(poll).toBeGreaterThanOrEqual(0);
+    expect(run).toContain("--json mergeable");
+    expect(run).toContain("UNKNOWN");
+    expect(poll).toBeLessThan(run.indexOf("gh pr checks"));
+    expect(poll).toBeLessThan(run.indexOf("--watch"));
+  });
+
+  it("logs a distinct ::error:: naming the conflict with main", () => {
+    expect(run).toContain("CONFLICTING");
+    expect(run).toMatch(/::error::[^\n]*conflict[^\n]*main/i);
+  });
+
+  it("re-dispatches once via workflow_dispatch with attempt+1, capped at 2", () => {
+    expect(run).toContain("gh workflow run platform-release.yml");
+    expect(run).toContain('-f version="$VERSION"');
+    expect(run).toMatch(/-f attempt="\$\{?NEXT_ATTEMPT\}?"/);
+    expect(run).toMatch(/MAX_REBUILD_ATTEMPTS=2/);
+    expect(run).toMatch(
+      /ATTEMPT" -lt "\$MAX_REBUILD_ATTEMPTS"|ATTEMPT" -ge "\$MAX_REBUILD_ATTEMPTS"/,
+    );
+  });
+
+  it("exits 0 with a ::warning:: after re-dispatching, and fails loudly on the second conflict", () => {
+    const dispatch = run.indexOf("gh workflow run");
+    const afterDispatch = run.slice(dispatch);
+    expect(afterDispatch).toMatch(/::warning::[^\n]*[Rr]egenerat/);
+    expect(afterDispatch.indexOf("exit 0")).toBeGreaterThan(-1);
+    // The cap branch fails with exit 1 and its own error text.
+    expect(run).toMatch(/::error::[^\n]*still conflicts[^\n]*attempt/i);
+  });
+
+  it("keeps the generic check-failure path and never interpolates expressions", () => {
+    expect(run).toContain("Required check(s) failed");
+    expect(run).not.toContain("${{");
+    expect(merge?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
+  });
+
+  it("documents the rebuild behaviour in the header", () => {
+    const header = text.slice(0, text.indexOf("\non:"));
+    expect(header).toMatch(/CONFLICTING/);
+    expect(header).toMatch(/attempt/);
   });
 });
 
