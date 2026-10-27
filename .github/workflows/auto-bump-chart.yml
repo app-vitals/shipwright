@@ -2,9 +2,15 @@ name: Auto-Bump Chart Version
 
 # Triggers whenever an image-build tag is pushed for any of the Shipwright
 # services. Each build workflow (build-agent.yml, build-admin.yml,
-# build-metrics.yml, build-task-store.yml, build-chat.yml) creates a tag like
-# agent-v*, admin-v*, metrics-v*, task-store-v*, or chat-v* on main after a
-# successful image push. This workflow detects those tags, pins each
+# build-metrics.yml, build-task-store.yml) creates a tag like agent-v*,
+# admin-v*, metrics-v*, or task-store-v* on main after a successful image push.
+# The chat image (ghcr.io/app-vitals/agent-chat) is released by app-vitals/agent
+# instead: the platform-release dispatch re-pins PLATFORM_VERSION in
+# agent/Dockerfile (platform-release.yml), and that merge to main triggers this
+# workflow too (see `on.push.paths`), which treats the pinned platform version
+# as the synthesized release tag agent-chat-vX.Y.Z and writes the bare X.Y.Z
+# into chat.image.tag. build-chat.yml still runs (rollback path until CHX-4.1)
+# but its chat-v* tags no longer drive the chart. For tagged services this workflow detects those tags, pins each
 # released tag into the matching charts/shipwright/values.yaml image
 # default(s), and opens a chart-version bump PR so no manual bump-chart.sh
 # invocation is needed.
@@ -48,7 +54,8 @@ name: Auto-Bump Chart Version
 # of release tags.
 #
 # Flow:
-#   tag push (agent-v* / admin-v* / metrics-v* / task-store-v* / chat-v*)
+#   tag push (agent-v* / admin-v* / metrics-v* / task-store-v*) or a push to
+#   main that changes agent/Dockerfile (platform release → agent-chat)
 #     → debounce job: sleep DEBOUNCE_SECONDS
 #       → superseded by a newer tag push? cancelled, bump-chart never runs.
 #       → quiet period elapsed? proceeds to bump-chart.
@@ -158,7 +165,14 @@ on:
       - "metrics-v*"
       - "agent-v*"
       - "task-store-v*"
-      - "chat-v*"
+    # A merged platform-release bump rewrites PLATFORM_VERSION in
+    # agent/Dockerfile: that is the agent-chat release signal. Any other edit
+    # to the file finds no drift and skips cheaply in "Resolve chart version
+    # bump". (paths never filters the tag pushes above.)
+    branches:
+      - main
+    paths:
+      - "agent/Dockerfile"
 
 # Least privilege at the workflow level; the bump-chart job widens to
 # contents:write / pull-requests:write.
@@ -439,7 +453,7 @@ jobs:
               metrics-v*) echo "metrics" ;;
               agent-v*) echo "agent" ;;
               task-store-v*) echo "task-store" ;;
-              chat-v*) echo "chat" ;;
+              agent-chat-v*) echo "chat" ;;
               *) echo "" ;;
             esac
           }
@@ -468,6 +482,16 @@ jobs:
             for tag in "$@"; do
               printf '%s %s\n' "${tag##*-v}" "$tag"
             done | sort -V | tail -n1 | cut -d' ' -f2-
+          }
+
+          # Maps a release tag to the value written into values.yaml: the tag
+          # itself, except agent-chat-vX.Y.Z whose image tag is the bare X.Y.Z.
+          pin_value_for_tag() {
+            local tag="$1"
+            case "$tag" in
+              agent-chat-v*) echo "${tag#agent-chat-v}" ;;
+              *) echo "$tag" ;;
+            esac
           }
 
           # Groups a comma-separated tag batch by service and picks the
@@ -570,10 +594,11 @@ jobs:
           PINNED_LINES=""
           while IFS='=' read -r service tag; do
             [ -z "$service" ] && continue
+            value=$(pin_value_for_tag "$tag")
             while IFS= read -r path; do
-              update_values_tag charts/shipwright/values.yaml "$path" "$tag"
-              echo "Pinned ${path} = ${tag}"
-              PINNED_LINES="${PINNED_LINES}- \`${path}\`: \`${tag}\`
+              update_values_tag charts/shipwright/values.yaml "$path" "$value"
+              echo "Pinned ${path} = ${value}"
+              PINNED_LINES="${PINNED_LINES}- \`${path}\`: \`${value}\`
           "
             done < <(values_paths_for_service "$service")
           done <<< "$PINNED"

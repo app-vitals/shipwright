@@ -14,7 +14,7 @@ tests:
           of: Deployment
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^ghcr\\.io/app-vitals/shipwright-chat:chat-v\\d+\\.\\d+\\.\\d+$"
+          pattern: "^ghcr\\.io/app-vitals/agent-chat:\\d+\\.\\d+\\.\\d+$"
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3000
@@ -170,6 +170,44 @@ tests:
       - equal:
           path: spec.selector["app.kubernetes.io/component"]
           value: chat
+
+  - it: keeps the in-cluster Service name <release>-shipwright-chat across the agent-chat image switch (CHX-3.1)
+    template: templates/chat-service.yaml
+    set:
+      chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: metadata.name
+          value: r-shipwright-chat
+
+  - it: keeps the chat container env wiring unchanged across the agent-chat image switch (CHX-3.1)
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/agent-chat:"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_CHAT
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: DATABASE_URL_SHIPWRIGHT_CHAT
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-chat
+                key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
 
   - it: renders no chat workloads when chat.enabled=false
     set:

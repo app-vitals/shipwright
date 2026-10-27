@@ -1138,14 +1138,14 @@ mcpServer:
     # -- Name of the mcp-server ServiceAccount. Generated if empty and create=true.
     name: ""
 
-# -- Chat service (@shipwright/chat) — Thread/Message store + scoped tokens. Port 3000.
+# -- Chat service (ghcr.io/app-vitals/agent-chat, published by app-vitals/agent) — Thread/Message store + scoped tokens. Port 3000.
 # Disabled by default — purely additive, safe to deploy without this.
 chat:
   # -- Whether to render the chat Deployment and Service.
   enabled: false
   image:
-    repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.162.1
+    repository: ghcr.io/app-vitals/agent-chat
+    tag: 0.7.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.
