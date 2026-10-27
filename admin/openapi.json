@@ -204,6 +204,12 @@
           "typeName": {
             "type": "string"
           },
+          "podServiceAccountName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "accountId": {
             "type": [
               "string",
@@ -303,6 +309,7 @@
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "typeName",
+          "podServiceAccountName",
           "accountId",
           "createdAt",
           "updatedAt",
@@ -371,6 +378,15 @@
             ],
             "minLength": 1,
             "example": "acct_123"
+          },
+          "podServiceAccountName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 63,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "example": "agent-pod-sa"
           },
           "trialExpiresAt": {
             "type": [
@@ -3569,7 +3585,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows), and/or `podServiceAccountName` (platform admin only — 403 otherwise; `null` clears it; 409 unless SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED is on; 422 for agents with a per-agent federated identity; reconciles the workload so the pod is recreated under the new ServiceAccount). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -3623,6 +3639,26 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "podServiceAccountName supplied while the pod ServiceAccount flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "podServiceAccountName supplied for an agent with a per-agent federated identity",
             "content": {
               "application/json": {
                 "schema": {
