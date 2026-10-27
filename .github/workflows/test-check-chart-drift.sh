@@ -340,6 +340,98 @@ assert_eq "chat follows PLATFORM_VERSION in agent/Dockerfile" "agent-chat-v0.7.1
 assert_eq "retired chat-v* git tags are ignored" "agent-chat-v0.7.1" "$(cd "$GIT_TEST_DIR" && latest_tag_for_service chat)"
 
 # ---------------------------------------------------------------------------
+# Library chart pin drift (CHM-3.5): the agent-platform pin in Chart.yaml /
+# Chart.lock must not trail the latest version published in the library's
+# Helm repo index.
+# ---------------------------------------------------------------------------
+
+# shellcheck source=lib/library-pin.sh
+source "$SCRIPT_DIR/lib/library-pin.sh"
+
+echo ""
+echo "=== library chart pin drift tests ==="
+
+LIB_DIR="$TMPDIR_TEST/library"
+mkdir -p "$LIB_DIR"
+write_lib_fixtures() {
+  local chart_pin="$1" lock_pin="$2"
+  cat > "$LIB_DIR/Chart.yaml" <<EOF
+version: 1.30.0
+dependencies:
+  - name: agent-platform
+    version: "${chart_pin}"
+    repository: https://app-vitals.github.io/agent
+  - name: postgresql
+    version: "18.12.4"
+    repository: oci://registry-1.docker.io/bitnamicharts
+EOF
+  cat > "$LIB_DIR/Chart.lock" <<EOF
+dependencies:
+- name: agent-platform
+  repository: https://app-vitals.github.io/agent
+  version: ${lock_pin}
+- name: postgresql
+  version: 18.12.4
+digest: sha256:abc
+EOF
+}
+cat > "$LIB_DIR/index.yaml" <<'EOF'
+apiVersion: v1
+entries:
+  agent-platform:
+  - apiVersion: v2
+    created: "2026-10-27T00:00:00Z"
+    name: agent-platform
+    type: library
+    urls:
+    - https://app-vitals.github.io/agent/agent-platform-0.10.0.tgz
+    version: 0.10.0
+  - apiVersion: v2
+    name: agent-platform
+    version: 0.9.2
+  - apiVersion: v2
+    name: agent-platform
+    version: 0.3.0
+  other-chart:
+  - apiVersion: v2
+    name: other-chart
+    version: 9.9.9
+generated: "2026-10-27T00:00:00Z"
+EOF
+
+write_lib_fixtures 0.3.0 0.3.0
+assert_eq "library_pin_from_chart reads the agent-platform pin" "0.3.0" "$(library_pin_from_chart "$LIB_DIR/Chart.yaml")"
+assert_eq "library_pin_from_lock reads the agent-platform pin" "0.3.0" "$(library_pin_from_lock "$LIB_DIR/Chart.lock")"
+assert_eq "latest_library_version picks the highest semver (0.10.0 > 0.9.2), ignoring other charts" "0.10.0" "$(latest_library_version "$LIB_DIR/index.yaml")"
+
+OUT=$(compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/index.yaml")
+assert_eq "stale pin (0.3.0 vs 0.10.0) is reported" "MISMATCH: library=agent-platform path=Chart.yaml expected=0.10.0 actual=0.3.0
+MISMATCH: library=agent-platform path=Chart.lock expected=0.10.0 actual=0.3.0" "$OUT"
+
+write_lib_fixtures 0.10.0 0.10.0
+assert_eq "pin equal to latest published → no drift" "" "$(compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/index.yaml")"
+
+write_lib_fixtures 0.10.0 0.9.2
+assert_eq "Chart.lock behind latest is reported" "MISMATCH: library=agent-platform path=Chart.lock expected=0.10.0 actual=0.9.2" "$(compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/index.yaml")"
+
+write_lib_fixtures 0.11.0 0.11.0
+assert_eq "pin ahead of latest published (index lag) is not drift" "" "$(compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/index.yaml")"
+
+# An index with no agent-platform entries must fail loudly, not pass silently.
+printf 'apiVersion: v1\nentries:\n  other-chart:\n  - version: 1.0.0\n' > "$LIB_DIR/empty-index.yaml"
+write_lib_fixtures 0.3.0 0.3.0
+if compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/empty-index.yaml" >/dev/null 2>&1; then
+  fail "index without agent-platform versions fails" "non-zero exit" "exit 0"
+else
+  pass "index without agent-platform versions fails"
+fi
+if compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/does-not-exist.yaml" >/dev/null 2>&1; then
+  fail "missing index file fails" "non-zero exit" "exit 0"
+else
+  pass "missing index file fails"
+fi
+
+# ---------------------------------------------------------------------------
 # Results
 # ---------------------------------------------------------------------------
 
