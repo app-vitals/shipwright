@@ -6,7 +6,7 @@
  *   0. metrics    — metrics dashboard, offline SQLite mode             (:3460)
  *   1. admin      — standalone admin service (CRUD API + UI)           (:3001)
  *   2. task-store — task-store service (Postgres-backed task queue)    (:3002)
- *   3. chat-svc   — chat service (threads/messages queue + tokens)     (:3003)
+ *   3. chat-svc   — platform-hosted chat service (app-vitals/agent)    (:3003)
  *   4. agent      — Shipwright agent in Docker (chat poll loop)
  *   5. logs       — a scratch shell pane
  *
@@ -46,6 +46,19 @@ export const METRICS_PORT = 3460;
 export const ADMIN_PORT = 3001;
 export const TASK_STORE_PORT = 3002;
 export const CHAT_SERVICE_PORT = 3003;
+/**
+ * The chat service lives in the platform repo (app-vitals/agent, CHX-3.3). The
+ * chat-svc pane runs it from a local platform checkout — the same cross-repo
+ * dev mechanism as docs/local-platform-development.md — located by this env
+ * var (default: a sibling `../agent` checkout), or from the published
+ * `ghcr.io/app-vitals/agent-chat` image when SHIPWRIGHT_CHAT_IMAGE is set.
+ */
+export const PLATFORM_DIR_VAR = "AGENT_PLATFORM_DIR";
+export const DEFAULT_PLATFORM_DIR = "../agent";
+export const CHAT_IMAGE_VAR = "SHIPWRIGHT_CHAT_IMAGE";
+const PLATFORM_DIR_EXPR = `\${${PLATFORM_DIR_VAR}:-${DEFAULT_PLATFORM_DIR}}`;
+const PLATFORM_CHAT_MAIN = `"${PLATFORM_DIR_EXPR}/chat/src/main.ts"`;
+const CHAT_CONTAINER = "shipwright-chat-dev";
 /** The metrics dashboard UI — a browser page (NOT a tmux pane). */
 export const DASHBOARD_URL = `http://localhost:${METRICS_PORT}/dashboard`;
 /** The admin dev-login page — auto-opened after stack launch. */
@@ -69,8 +82,8 @@ const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Bootstrap admin token seeded into the task-store on startup. Not a real
 // secret — used only against the local dev Postgres instance.
 const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
-// Bootstrap chat-service tokens, seeded (hashed) into the chat DB by a
-// preflight. The admin token enables the /admin/chat UI; the agent-scoped
+// Bootstrap chat-service tokens, seeded (hashed) into the chat DB by the
+// agent pane's script. The admin token enables the /admin/chat UI; the agent-scoped
 // token enables the agent's chat poll loop. NOT secrets — local DB only.
 export const DEV_CHAT_ADMIN_TOKEN = "dev-chat-admin-token";
 export const DEV_CHAT_AGENT_TOKEN = "dev-chat-agent-token";
@@ -96,10 +109,16 @@ const DEV_TASK_STORE_DATABASE_URL = `postgresql://${
   DEV_DB_USER ? `${DEV_DB_USER}@` : ""
 }localhost:5432/shipwright_task_store_dev`;
 // The chat service likewise owns a dedicated database (its schema warns against
-// a shared one). Same local Postgres server, distinct database name.
+// a shared one). Same local Postgres server, distinct database name. The
+// platform chat service runs its own `prisma migrate deploy` on boot.
 const DEV_CHAT_DATABASE_URL = `postgresql://${
   DEV_DB_USER ? `${DEV_DB_USER}@` : ""
 }localhost:5432/shipwright_chat_dev`;
+// Same database as seen from inside the chat container (image mode).
+const DEV_CHAT_DATABASE_URL_IN_DOCKER = DEV_CHAT_DATABASE_URL.replace(
+  "@localhost:",
+  "@host.docker.internal:",
+).replace("//localhost:", "//host.docker.internal:");
 /** Homebrew formula `task stack` provisions Postgres from on macOS. */
 const PG_FORMULA = "postgresql@16";
 /**
@@ -109,13 +128,7 @@ const PG_FORMULA = "postgresql@16";
  * `bun install` (as `admin` was) silently has none, and the pane crashes on a
  * missing package. The preflight installs deps when any of these is missing.
  */
-const STACK_WORKSPACE_DIRS = [
-  "metrics",
-  "agent",
-  "admin",
-  "task-store",
-  "chat",
-];
+const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin", "task-store"];
 const _DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -157,6 +170,12 @@ export type BuildOpts = {
    * deterministic assertions (no I/O in the pure builder).
    */
   repoPath?: string;
+  /**
+   * Published chat image (e.g. ghcr.io/app-vitals/agent-chat:<version>). When
+   * set, the chat-svc pane runs the container instead of the platform
+   * checkout. The entrypoint reads it from SHIPWRIGHT_CHAT_IMAGE.
+   */
+  chatImage?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -237,6 +256,27 @@ export function buildLogsBanner(): string {
   return `${printf}; exec "$SHELL"`;
 }
 
+/**
+ * The chat-svc pane's command when running from the published image: the
+ * container reaches the host Postgres via host.docker.internal and maps its
+ * default :3000 to CHAT_SERVICE_PORT. Boot-time migrations run inside it.
+ */
+function buildChatImageCommand(image: string): string {
+  return [
+    "docker",
+    "run",
+    "--rm",
+    "--name",
+    CHAT_CONTAINER,
+    "--add-host=host.docker.internal:host-gateway",
+    "-p",
+    `${CHAT_SERVICE_PORT}:3000`,
+    "-e",
+    `DATABASE_URL_SHIPWRIGHT_CHAT=${DEV_CHAT_DATABASE_URL_IN_DOCKER}`,
+    image,
+  ].join(" ");
+}
+
 export const STACK_PANES: Pane[] = [
   {
     label: "metrics",
@@ -307,7 +347,11 @@ export const STACK_PANES: Pane[] = [
   },
   {
     label: "chat-svc",
-    cmd: ["bun", "chat/src/main.ts"],
+    // Platform-hosted (CHX-3.3): run chat/src/main.ts out of the local
+    // app-vitals/agent checkout. Needs `bun install` there (its postinstall
+    // generates the Prisma client). buildStackCommands swaps in the image
+    // command when SHIPWRIGHT_CHAT_IMAGE is set.
+    cmd: ["bun", PLATFORM_CHAT_MAIN],
     env: {
       PORT: String(CHAT_SERVICE_PORT),
       // Dedicated database for the chat service — its Prisma schema reads
@@ -499,25 +543,35 @@ export function buildStackCommands(
       });
     }
     if (i === chatSvcIndex) {
-      // Preflight: generate the chat Prisma client then apply migrations
-      // against its dedicated database, so the service's schema is up to date
-      // before it starts. Mirrors the admin/task-store preflights.
-      cmds.push({
-        kind: "preflight",
-        argv: [
-          "sh",
-          "-c",
-          `cd chat && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_CHAT=${DEV_CHAT_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
-        ],
-      });
-      // Note: seeding the chat agent-scoped token used to run here as an
-      // upfront preflight hardcoded to "dev-agent" — no agent is created
-      // implicitly now (ATS-6.1), so that seed call moved into the agent
-      // pane's own script (buildAgentPaneScript), run AFTER the wait-loop
-      // resolves the real, developer-created agent id. The admin token seed
-      // stays out of scope here — see the chat-svc migrate-deploy preflight
-      // above, which still runs early so the ChatToken table exists in time
-      // for the agent pane's later seed call.
+      if (opts.chatImage) {
+        // Image mode: clear a stale container from a prior session (same
+        // reasoning as the agent container preflight below).
+        cmds.push({
+          kind: "preflight",
+          argv: [
+            "sh",
+            "-c",
+            `docker rm -f ${CHAT_CONTAINER} 2>/dev/null || true`,
+          ],
+        });
+      } else {
+        // Platform-checkout mode: fail fast with a pointer to the docs when
+        // the checkout is missing. No prisma generate/migrate here — the
+        // platform chat service migrates its own database on boot, and its
+        // client is generated by `bun install` in the checkout.
+        cmds.push({
+          kind: "preflight",
+          argv: [
+            "sh",
+            "-c",
+            `test -f ${PLATFORM_CHAT_MAIN} || { echo "[stack] platform checkout not found — set ${PLATFORM_DIR_VAR} to your app-vitals/agent checkout (or ${CHAT_IMAGE_VAR} to ghcr.io/app-vitals/agent-chat:<version>); see docs/local-platform-development.md" >&2; exit 1; }`,
+          ],
+        });
+      }
+      // Note: seeding the chat tokens happens in the agent pane's script
+      // (buildAgentPaneScript), run AFTER the wait-loop resolves the real,
+      // developer-created agent id (ATS-6.1). The seeder waits for the chat
+      // service's boot migration to create the ChatToken table.
     }
     if (i === agentIndex) {
       // Preflight: remove any leftover agent container from a prior session so
@@ -550,16 +604,18 @@ export function buildStackCommands(
     // (process.cwd()) in the real entrypoint, so it can't be baked into the
     // pure STACK_PANES definition; injected here instead.
     const resolvedPane: Pane =
-      pane.label === "agent"
-        ? {
-            ...pane,
-            cmd: pane.cmd.map((token) =>
-              token.includes("__REPO_VOLUME_PLACEHOLDER__")
-                ? token.replaceAll("__REPO_VOLUME_PLACEHOLDER__", repoPath)
-                : token,
-            ),
-          }
-        : pane;
+      pane.label === "chat-svc" && opts.chatImage
+        ? { label: pane.label, cmd: [buildChatImageCommand(opts.chatImage)] }
+        : pane.label === "agent"
+          ? {
+              ...pane,
+              cmd: pane.cmd.map((token) =>
+                token.includes("__REPO_VOLUME_PLACEHOLDER__")
+                  ? token.replaceAll("__REPO_VOLUME_PLACEHOLDER__", repoPath)
+                  : token,
+              ),
+            }
+          : pane;
 
     cmds.push({
       kind: "send-keys",
@@ -705,10 +761,13 @@ export function devAgentEnvPreflight(
 export function buildTeardownCommands(
   session: string = SESSION_NAME,
   container: string = DEV_DOCKER_IMAGE,
+  chatContainer: string = CHAT_CONTAINER,
 ): string[][] {
   return [
     ["tmux", "kill-session", "-t", session],
     ["docker", "rm", "-f", container],
+    // Only exists in image mode (SHIPWRIGHT_CHAT_IMAGE); a no-op otherwise.
+    ["docker", "rm", "-f", chatContainer],
   ];
 }
 
@@ -1029,7 +1088,10 @@ if (import.meta.main) {
     `[stack] launching tmux session "${SESSION_NAME}" — metrics :${METRICS_PORT}, admin :${ADMIN_PORT}, task-store :${TASK_STORE_PORT}, chat-svc :${CHAT_SERVICE_PORT}, agent, logs`,
   );
   try {
-    runStack(STACK_PANES, realExec, { repoPath: process.cwd() });
+    runStack(STACK_PANES, realExec, {
+      repoPath: process.cwd(),
+      chatImage: process.env[CHAT_IMAGE_VAR] || undefined,
+    });
   } catch (err) {
     console.error(`[stack] failed to launch: ${(err as Error).message}`);
     process.exit(1);

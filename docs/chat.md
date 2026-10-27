@@ -2,6 +2,8 @@
 
 The Shipwright chat service (`@shipwright/chat`) is a standalone Hono service that stores conversation threads between agents and their human members — the backing store for the admin console's Chat tab and the agent's chat poll loop. All routes are mounted at the service root (no base path), e.g. `http://localhost:3003`.
 
+> **Hosting:** the chat service now lives in the platform repo ([app-vitals/agent](https://github.com/app-vitals/agent), `chat/`, published as `ghcr.io/app-vitals/agent-chat`). `task stack` runs it from a local platform checkout or that image rather than from this repo's `chat/` workspace, and Shipwright CI no longer provisions a chat database — see [local platform development](local-platform-development.md#running-chat-task-stack). The `chat/` directory here is the pre-extraction copy; this document and `chat/openapi.json` still describe the (identical) API.
+
 **Full endpoint reference** — every route, parameter, request/response shape, and status code, including behavioral nuance like the claim/reply queue's precondition ordering and transactional atomicity — lives in the generated [`chat/openapi.json`](../chat/openapi.json) spec. Request/response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` (mirrors the pattern in `@app-vitals/agent-admin/openapi-schemas`); the spec is generated from those schemas via `chat/src/generate-spec.ts` and can be regenerated any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
 
 This page covers the conceptual auth model, the storage schema, environment config, and cross-cutting queue behavior that don't belong to any single endpoint.

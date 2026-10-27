@@ -130,7 +130,9 @@ jobs:
       # sync schema against the right databases.
       # DATABASE_URL_SHIPWRIGHT_CHAT is the exception to the
       # "nothing else reads these at runtime" rule: chat's integration suite
-      # reads it directly (it has no separate _TEST variant).
+      # reads it directly (it has no separate _TEST variant). chat/ is still in
+      # this repo until it is retired (CHX-1.1), so keep provisioning its DB —
+      # otherwise those suites skip silently.
       DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
       DATABASE_URL_SHIPWRIGHT_CHAT: postgres://shipwright:shipwright@localhost:5432/shipwright_chat_test

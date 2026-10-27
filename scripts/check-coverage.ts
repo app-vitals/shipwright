@@ -31,7 +31,6 @@ const EXCLUDE_PREFIXES = [
   // (server, startAdmin) ships in @app-vitals/agent-admin (node_modules/).
   "admin/src/main.ts",
   "task-store/src/main.ts",
-  "chat/src/main.ts",
   "mcp-server/src/serve.ts",
   "metrics/src/server.ts",
 
