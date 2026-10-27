@@ -5,12 +5,14 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dir, "../../../..");
 const skill = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
 const chatDoc = readFileSync(join(ROOT, "docs/platform/chat-service.md"), "utf8");
-const chartValues = readFileSync(join(ROOT, "charts/shipwright/templates/admin-deployment.yaml"), "utf8");
+// The admin Deployment now lives in the agent-platform library, so the flags are read from the
+// values.yaml docs that name the env var each toggle sets.
+const chartValues = readFileSync(join(ROOT, "charts/shipwright/values.yaml"), "utf8");
 
 // Feature flags the chart exposes for the ask, chat-credential and doc surfaces.
 const chartFlags = [
   ...new Set(
-    [...chartValues.matchAll(/name: (SHIPWRIGHT_(?:AGENT_ASK|CHAT_TOKEN_MINT|ADMIN_DOC)_[A-Z_]+)/g)].map((m) => m[1]),
+    [...chartValues.matchAll(/sets (SHIPWRIGHT_(?:AGENT_ASK|CHAT_TOKEN_MINT|ADMIN_DOC)_[A-Z_]+)/g)].map((m) => m[1]),
   ),
 ];
 
