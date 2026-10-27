@@ -19,7 +19,7 @@
  *      of the session (membership revoked / repo removed) — and sends them
  *      nothing.
  *
- * Structure mirrors chat/src/stall-reaper.ts: an injected Clock, a per-row
+ * Structure mirrors the platform chat service's stall-reaper: an injected Clock, a per-row
  * try/catch so one bad session or follower can never abort the sweep, a
  * counted return value, and registration via `setInterval` in main.ts (NEVER
  * inside an app factory, which must stay side-effect-free).

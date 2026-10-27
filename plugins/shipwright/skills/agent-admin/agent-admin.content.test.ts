@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "../../../..");
 const skill = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
-const chatDoc = readFileSync(join(ROOT, "docs/chat.md"), "utf8");
+const chatDoc = readFileSync(join(ROOT, "docs/platform/chat-service.md"), "utf8");
 const chartValues = readFileSync(join(ROOT, "charts/shipwright/templates/admin-deployment.yaml"), "utf8");
 
 // Feature flags the chart exposes for the ask, chat-credential and doc surfaces.
@@ -31,7 +31,7 @@ describe("agent-admin SKILL.md", () => {
   });
 });
 
-describe("docs/chat.md Thread fields", () => {
+describe("docs/platform/chat-service.md Thread fields", () => {
   it.each(["kind", "askFromAgentId", "askDepth"])("documents %s as admin-only", (field) => {
     const row = chatDoc.split("\n").find((l) => l.startsWith(`| \`${field}\``));
     expect(row).toBeDefined();

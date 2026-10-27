@@ -110,7 +110,7 @@ function logIdlePoolError(err: unknown): void {
  * 6's Rust engine absorbed connection loss internally, so the listener below
  * restores that behaviour: node-postgres already evicts the broken client from
  * the pool, so logging is enough and the next query re-connects. Mirrors
- * `createChatPool` in chat/src/prisma-client.ts.
+ * `createChatPool` in the platform chat service's prisma client.
  *
  * `logError` is injectable so the listener can be exercised without a real
  * Postgres failure.

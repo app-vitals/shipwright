@@ -1002,7 +1002,7 @@ assert_eq "metrics-v0.150.0 → metrics" "metrics" "$(service_for_tag 'metrics-v
 assert_eq "agent-v0.172.0 → agent" "agent" "$(service_for_tag 'agent-v0.172.0')"
 assert_eq "task-store-v0.86.0 → task-store" "task-store" "$(service_for_tag 'task-store-v0.86.0')"
 assert_eq "agent-chat-v0.38.0 → chat" "chat" "$(service_for_tag 'agent-chat-v0.38.0')"
-assert_eq "legacy chat-v0.38.0 no longer maps to a service (build-chat.yml is rollback-only)" "" "$(service_for_tag 'chat-v0.38.0')"
+assert_eq "legacy chat-v0.38.0 no longer maps to a service (build-chat.yml was removed)" "" "$(service_for_tag 'chat-v0.38.0')"
 assert_eq "unrecognized prefix → empty" "" "$(service_for_tag 'unknown-v1.0.0')"
 
 # ---------------------------------------------------------------------------
