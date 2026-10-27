@@ -25,6 +25,7 @@
         "ghcr.io/app-vitals/shipwright-agent",
         "ghcr.io/app-vitals/shipwright-metrics",
         "ghcr.io/app-vitals/shipwright-chat",
+        "ghcr.io/app-vitals/agent-chat",
         "ghcr.io/app-vitals/shipwright-task-store",
         "ghcr.io/app-vitals/shipwright-mcp-server"
       ],

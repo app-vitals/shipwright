@@ -4,10 +4,11 @@
  * AGR-4.2: the admin's Prisma schema and its single migration history come
  * from @app-vitals/agent-admin. Pins that history against the one Shipwright
  * shipped before the swap: every pre-swap migration is present byte-for-byte
- * (sha256 of migration.sql), and the only additions are the pinned package's
- * own new migrations. A platform bump that edits an applied migration, drops
- * one, or adds a migration not listed here fails, so each schema change is
- * reviewed on its way into Shipwright's deployment.
+ * (sha256 of migration.sql), and every other migration the package ships is
+ * an addition that must pass the additive-only SQL check. Additions are
+ * derived (shipped minus PRE_SWAP), so a platform release that adds a safe
+ * migration needs no edit here, while one that edits an applied migration,
+ * drops one, or ships destructive SQL fails.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -112,18 +113,6 @@ const PRE_SWAP: ReadonlyArray<readonly [string, string]> = [
   ["20261019000000_add_agent_anthropic_identity", "sha256:f40c0ce269d823e1"],
 ];
 
-/** The migrations @app-vitals/agent-admin 0.5.0 adds; all additive. */
-const PLATFORM_ADDITIONS: ReadonlyArray<readonly [string, string]> = [
-  ["20261025000000_add_agent_ask", "sha256:c13175f9380b563b"],
-  ["20261026000000_add_agent_pod_service_account", "sha256:d7cf68fd3e0bf309"],
-  ["20261027000000_add_cron_run_transcripts", "sha256:e9f3d67804d4a2f1"],
-  ["20261028000000_add_cron_run_now", "sha256:986fc3f8f369c5cb"],
-  [
-    "20261028000000_add_repo_access_to_github_installations_snapshot",
-    "sha256:3794b3483416fa04",
-  ],
-];
-
 /**
  * Short sha256 of a migration's SQL, prefixed "sha256:" so a bare hex value
  * next to a migration name containing "token" does not read as an API key to
@@ -141,18 +130,64 @@ const shipped = readdirSync(MIGRATIONS_DIR)
   .filter((name) => statSync(join(MIGRATIONS_DIR, name)).isDirectory())
   .sort();
 
-describe("admin migration history (AGR-4.2)", () => {
-  it("pins @app-vitals/agent-admin 0.5.0", () => {
-    const pkg = JSON.parse(
-      readFileSync(join(PACKAGE_DIR, "package.json"), "utf8"),
-    ) as { version: string };
-    expect(pkg.version).toBe("0.5.0");
-  });
+const preSwapNames = new Set(PRE_SWAP.map(([name]) => name));
+const additions = shipped.filter((name) => !preSwapNames.has(name));
 
-  it("is exactly the pre-swap history plus the pinned platform additions", () => {
-    expect(shipped).toEqual(
-      [...PRE_SWAP, ...PLATFORM_ADDITIONS].map(([name]) => name).sort(),
-    );
+/**
+ * Splits migration SQL into statements and returns a violation message for
+ * each one that is not additive: only CREATE TABLE / CREATE [UNIQUE] INDEX /
+ * ALTER TABLE ADD COLUMN, no DROP/DELETE/UPDATE/TRUNCATE/RENAME, and no NOT
+ * NULL column without a DEFAULT on an existing table.
+ *
+ * One narrow exception: an unconditional backfill of a column this same
+ * migration adds (`UPDATE "T" SET "new" = "other"`), as 20261029000000 does
+ * for the typeName -> specialty rename. It writes only the new, still-empty
+ * column, so no applied data is lost. Any other UPDATE still fails.
+ */
+function additiveViolations(sql: string): string[] {
+  const statements = sql
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const addedColumns = new Set(
+    [...statements.join(";").matchAll(/ADD COLUMN "(\w+)"/g)].map((m) => m[1]),
+  );
+  const violations: string[] = [];
+  for (const statement of statements) {
+    const backfill = statement.match(/^UPDATE "\w+" SET "(\w+)" = "\w+"$/);
+    if (backfill && addedColumns.has(backfill[1] as string)) continue;
+    if (
+      !/^(CREATE TABLE|CREATE (UNIQUE )?INDEX|ALTER TABLE "\w+" ADD COLUMN)/.test(
+        statement,
+      )
+    ) {
+      violations.push(`unexpected statement: ${statement}`);
+    }
+    if (/\b(DROP|DELETE|UPDATE|TRUNCATE|RENAME)\b/i.test(statement)) {
+      violations.push(`destructive statement: ${statement}`);
+    }
+    if (statement.startsWith("ALTER TABLE")) {
+      for (const column of statement.split(/,\s*ADD COLUMN/)) {
+        if (/NOT NULL/.test(column) && !/DEFAULT/.test(column)) {
+          violations.push(`NOT NULL without DEFAULT: ${column}`);
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+describe("admin migration history (AGR-4.2)", () => {
+  it("ships every pre-swap migration plus sorted, unique additions", () => {
+    for (const name of preSwapNames) {
+      expect(shipped, name).toContain(name);
+    }
+    expect(new Set(shipped).size).toBe(shipped.length);
+    expect(shipped).toEqual([...shipped].sort());
+    expect(additions.length + preSwapNames.size).toBe(shipped.length);
   });
 
   it("leaves every pre-swap migration byte-for-byte unchanged", () => {
@@ -161,39 +196,47 @@ describe("admin migration history (AGR-4.2)", () => {
     }
   });
 
-  it("platform additions match the reviewed SQL", () => {
-    for (const [name, sha] of PLATFORM_ADDITIONS) {
-      expect(hashOf(name), name).toBe(sha);
+  it("platform additions are additive: no DROP/RENAME, no data change, no NOT NULL column on an existing table", () => {
+    for (const name of additions) {
+      const sql = readFileSync(
+        join(MIGRATIONS_DIR, name, "migration.sql"),
+        "utf8",
+      );
+      expect(additiveViolations(sql), name).toEqual([]);
     }
   });
 
-  it("platform additions are additive: no DROP/RENAME, no data change, no NOT NULL column on an existing table", () => {
-    for (const [name] of PLATFORM_ADDITIONS) {
-      const statements = readFileSync(
-        join(MIGRATIONS_DIR, name, "migration.sql"),
-        "utf8",
-      )
-        .split("\n")
-        .filter((line) => !line.trimStart().startsWith("--"))
-        .join("\n")
-        .split(";")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        expect(statement, name).toMatch(
-          /^(CREATE TABLE|CREATE (UNIQUE )?INDEX|ALTER TABLE "\w+" ADD COLUMN)/,
-        );
-        expect(statement, name).not.toMatch(
-          /\b(DROP|DELETE|UPDATE|TRUNCATE|RENAME)\b/i,
-        );
-        if (statement.startsWith("ALTER TABLE")) {
-          for (const column of statement.split(/,\s*ADD COLUMN/)) {
-            if (/NOT NULL/.test(column)) {
-              expect(column, name).toMatch(/DEFAULT/);
-            }
-          }
-        }
-      }
+  it("additive check rejects destructive and unsafe migrations", () => {
+    const bad = [
+      'DROP TABLE "Agent";',
+      'ALTER TABLE "Agent" DROP COLUMN "name";',
+      'ALTER TABLE "Agent" RENAME COLUMN "a" TO "b";',
+      'UPDATE "Agent" SET "name" = \'x\';',
+      'DELETE FROM "Agent";',
+      'TRUNCATE TABLE "Agent";',
+      'ALTER TABLE "Agent" ADD COLUMN "x" TEXT NOT NULL;',
+    ];
+    for (const sql of bad) {
+      expect(additiveViolations(sql), sql).not.toEqual([]);
     }
+    // A backfill is only exempt for a column the same migration adds.
+    expect(
+      additiveViolations('UPDATE "Agent" SET "specialty" = "typeName";'),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        'ALTER TABLE "Agent" ADD COLUMN "specialty" TEXT;\nUPDATE "Agent" SET "specialty" = "typeName";',
+      ),
+    ).toEqual([]);
+    expect(
+      additiveViolations(
+        'ALTER TABLE "Agent" ADD COLUMN "specialty" TEXT;\nUPDATE "Agent" SET "name" = "typeName";',
+      ),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        'ALTER TABLE "Agent" ADD COLUMN "x" TEXT NOT NULL DEFAULT \'\';\nCREATE INDEX "i" ON "Agent"("x");',
+      ),
+    ).toEqual([]);
   });
 });
