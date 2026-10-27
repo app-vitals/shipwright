@@ -19,11 +19,18 @@
  * The version arrives from an external event, so it is validated as strict
  * `X.Y.Z` before it touches any file; anything else exits non-zero.
  *
+ * `--list-packages` prints the distinct registry `@app-vitals/agent-*` names
+ * the manifests declare, one per line, without writing anything. The workflow
+ * uses it to wait for those exact packages to appear on npm (which lags the
+ * publish by a few minutes) before `bun install` runs.
+ *
  * Usage:
  *   bun scripts/platform-release-bump.ts <version> [--root <dir>]
+ *   bun scripts/platform-release-bump.ts --list-packages [--root <dir>]
  *
  * Exit codes: 0 bumped or already current, 1 invalid version or no
  * manifest declares a registry @app-vitals/agent-* dependency, 2 usage.
+ * (`--list-packages` exits 1 likewise when nothing declares one.)
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -46,6 +53,24 @@ const DEPENDENCY_FIELDS = [
 /** `"@app-vitals/agent-x": "<value>"`, matched textually so formatting survives. */
 const PLATFORM_ENTRY = /("(@app-vitals\/agent-[a-z0-9-]+)"\s*:\s*")([^"]*)(")/g;
 
+/** Registry (non-`workspace:`) `@app-vitals/agent-*` names in a parsed package.json. */
+function registryPackages(
+  pkg: Record<string, Record<string, string> | undefined>,
+): Set<string> {
+  const registry = new Set<string>();
+  for (const field of DEPENDENCY_FIELDS) {
+    for (const [name, value] of Object.entries(pkg[field] ?? {})) {
+      if (
+        /^@app-vitals\/agent-/.test(name) &&
+        !value.startsWith("workspace:")
+      ) {
+        registry.add(name);
+      }
+    }
+  }
+  return registry;
+}
+
 export interface BumpResult {
   text: string;
   /** Registry packages declared in the manifest (bumped or already current). */
@@ -66,17 +91,7 @@ export function bumpManifest(text: string, version: string): BumpResult {
     string,
     Record<string, string> | undefined
   >;
-  const registry = new Set<string>();
-  for (const field of DEPENDENCY_FIELDS) {
-    for (const [name, value] of Object.entries(pkg[field] ?? {})) {
-      if (
-        /^@app-vitals\/agent-/.test(name) &&
-        !value.startsWith("workspace:")
-      ) {
-        registry.add(name);
-      }
-    }
-  }
+  const registry = registryPackages(pkg);
   const changed = new Set<string>();
   const next = text.replace(
     PLATFORM_ENTRY,
@@ -162,8 +177,22 @@ export function bumpRepo(root: string, version: string): RepoBump {
   return { declaring, updated };
 }
 
+/** Distinct registry `@app-vitals/agent-*` names declared across every manifest under `root`, sorted. */
+export function listPackages(root: string): string[] {
+  const names = new Set<string>();
+  for (const file of findManifests(root)) {
+    const pkg = JSON.parse(readFileSync(join(root, file), "utf8")) as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+    for (const name of registryPackages(pkg)) names.add(name);
+  }
+  return [...names].sort();
+}
+
 function main(argv: string[]): number {
   let root = process.cwd();
+  let list = false;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--root") {
@@ -173,9 +202,28 @@ function main(argv: string[]): number {
         return 2;
       }
       root = resolve(dir);
+    } else if (argv[i] === "--list-packages") {
+      list = true;
     } else {
       positional.push(argv[i]);
     }
+  }
+  const NO_DECLARATION =
+    "ERROR: no package.json declares a registry @app-vitals/agent-* dependency; nothing to bump";
+  if (list) {
+    if (positional.length !== 0) {
+      console.error(
+        "usage: platform-release-bump.ts --list-packages [--root <dir>]",
+      );
+      return 2;
+    }
+    const names = listPackages(root);
+    if (names.length === 0) {
+      console.error(NO_DECLARATION);
+      return 1;
+    }
+    console.log(names.join("\n"));
+    return 0;
   }
   if (positional.length !== 1) {
     console.error("usage: platform-release-bump.ts <version> [--root <dir>]");
@@ -190,9 +238,7 @@ function main(argv: string[]): number {
   }
   const { declaring, updated } = bumpRepo(root, version);
   if (declaring.length === 0) {
-    console.error(
-      "ERROR: no package.json declares a registry @app-vitals/agent-* dependency; nothing to bump",
-    );
+    console.error(NO_DECLARATION);
     return 1;
   }
   if (updated.length === 0) {

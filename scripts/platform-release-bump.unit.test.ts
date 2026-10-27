@@ -23,6 +23,7 @@ import {
   bumpRepo,
   findManifests,
   isStrictSemver,
+  listPackages,
 } from "./platform-release-bump.ts";
 
 const SCRIPT = join(import.meta.dir, "platform-release-bump.ts");
@@ -198,6 +199,17 @@ describe("bumpRepo / CLI", () => {
     expect(bumpRepo(root, "0.3.0").updated).toEqual([]);
   });
 
+  test("listPackages returns distinct registry names, excluding workspace: entries", () => {
+    put(
+      "lib/package.json",
+      `{"dependencies":{"@app-vitals/agent-lib":"workspace:*","@app-vitals/agent-local":"workspace:^"},"peerDependencies":{"@app-vitals/agent-runtime":"0.1.0"}}\n`,
+    );
+    expect(listPackages(root)).toEqual([
+      "@app-vitals/agent-lib",
+      "@app-vitals/agent-runtime",
+    ]);
+  });
+
   function cli(...args: string[]) {
     const p = Bun.spawnSync(["bun", SCRIPT, ...args, "--root", root]);
     return {
@@ -230,6 +242,22 @@ describe("bumpRepo / CLI", () => {
     const r = cli("0.4.0");
     expect(r.code).toBe(1);
     expect(r.err).toContain("nothing to bump");
+  });
+
+  test("CLI --list-packages prints one package per line and writes nothing", () => {
+    const before = read("package.json");
+    const r = cli("--list-packages");
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("@app-vitals/agent-lib\n@app-vitals/agent-runtime\n");
+    expect(read("package.json")).toBe(before);
+  });
+
+  test("CLI --list-packages fails when nothing declares a registry platform dependency", () => {
+    rmSync(join(root, "package.json"));
+    rmSync(join(root, "admin/package.json"));
+    const r = cli("--list-packages");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("no package.json declares");
   });
 
   test("CLI usage error without a version", () => {
