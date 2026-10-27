@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.31.0] - 2026-10-27
+
+### Changed
+
+- chat, whisper and voice-secret templates are now one-line includes of the agent-platform library (no rendered change)
+
 ## [1.30.0] - 2026-10-27
 
 ### Changed
