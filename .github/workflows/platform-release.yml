@@ -9,7 +9,8 @@ name: Platform Release Bump
 #
 # This workflow re-pins every registry @app-vitals/agent-* dependency to that
 # exact version (scripts/platform-release-bump.ts, in every package.json that
-# declares one), refreshes bun.lock, and opens the bump PR, or updates the
+# declares one), refreshes bun.lock, regenerates the committed admin spec and
+# types, and opens the bump PR, or updates the
 # open one, on the fixed branch chore/platform-release. It then waits for the
 # PR's required checks (rerunning failed ones, up to 3 attempts) and admin-
 # merges its own PR (the bot cannot self-approve it). If a required check
@@ -131,6 +132,18 @@ jobs:
       - name: Refresh bun.lock
         run: bun install
 
+      # A platform bump that changes the admin surface drifts the committed
+      # admin spec and types mechanically (the byte-identity tests fail for a
+      # reason no human needs to review), so regenerate them inside the bump.
+      # generate:admin-spec writes admin/openapi.json and the standalone
+      # admin/src/coding/openapi.coding.json that feeds the types. Only the
+      # hand-reviewed pins (migrations, composed-surface baseline) can fail a
+      # bump.
+      - name: Regenerate the committed admin spec and types
+        run: |
+          bun run generate:admin-spec
+          bun run generate:admin-types
+
       - name: Detect changes
         id: diff
         run: |
@@ -148,11 +161,13 @@ jobs:
         run: |
           git checkout -B "$BRANCH"
           git add -A -- docs/platform
-          git add -u -- bun.lock '*package.json' agent/Dockerfile
+          git add -u -- bun.lock '*package.json' agent/Dockerfile \
+            admin/openapi.json admin/src/coding/openapi.coding.json \
+            admin/src/coding/admin-types.ts
           # Anything else changing means the bump did more than re-pin and
           # re-snapshot: stop.
           if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
-            echo "ERROR: unexpected changes outside package.json/bun.lock/agent/Dockerfile/docs/platform:" >&2
+            echo "ERROR: unexpected changes outside package.json/bun.lock/agent/Dockerfile/docs/platform/admin openapi.json/openapi.coding.json/admin-types.ts:" >&2
             git status --porcelain >&2
             exit 1
           fi
@@ -170,7 +185,7 @@ jobs:
           BODY=$(cat <<EOF
           ## Platform release ${VERSION}
 
-          Re-pins every registry \`@app-vitals/agent-*\` dependency and the \`agent/Dockerfile\` platform image (\`PLATFORM_VERSION\`) to \`${VERSION}\`, refreshes \`bun.lock\` and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
+          Re-pins every registry \`@app-vitals/agent-*\` dependency and the \`agent/Dockerfile\` platform image (\`PLATFORM_VERSION\`) to \`${VERSION}\`, refreshes \`bun.lock\`, regenerates the committed admin spec and types (\`admin/openapi.json\`, \`admin/src/coding/openapi.coding.json\`, \`admin/src/coding/admin-types.ts\`) and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
 
           Triggered by the \`platform-release\` dispatch from app-vitals/agent (or a manual run).
 
