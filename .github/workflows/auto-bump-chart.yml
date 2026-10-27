@@ -9,8 +9,7 @@ name: Auto-Bump Chart Version
 # agent/Dockerfile (platform-release.yml), and that merge to main triggers this
 # workflow too (see `on.push.paths`), which treats the pinned platform version
 # as the synthesized release tag agent-chat-vX.Y.Z and writes the bare X.Y.Z
-# into chat.image.tag. build-chat.yml still runs (rollback path until CHX-4.1)
-# but its chat-v* tags no longer drive the chart. For tagged services this workflow detects those tags, pins each
+# into chat.image.tag. The retired build-chat.yml's chat-v* tags no longer drive the chart. For tagged services this workflow detects those tags, pins each
 # released tag into the matching charts/shipwright/values.yaml image
 # default(s), and opens a chart-version bump PR so no manual bump-chart.sh
 # invocation is needed.

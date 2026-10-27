@@ -8,7 +8,6 @@
     "agent",
     "admin",
     "task-store",
-    "chat",
     "mcp-server"
   ],
   "scripts": {
@@ -19,7 +18,6 @@
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
     "generate:admin-types": "bunx openapi-typescript ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
     "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",
-    "generate:chat-spec": "bun run scripts/generate-chat-spec.ts",
     "generate:mcp-tools": "bun run scripts/generate-mcp-tools.ts",
     "generate:mcp-docs": "bun run scripts/generate-mcp-docs.ts"
   },
