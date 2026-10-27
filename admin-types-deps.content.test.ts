@@ -1,7 +1,7 @@
 /**
  * Content guard for the `generate:admin-types` dependency resolution (AFB-1.1).
  *
- * @redocly/openapi-core (pulled in by openapi-typescript) pins js-yaml 4.3.1 and
+ * @redocly/openapi-core (pulled in by openapi-typescript) pins js-yaml 4.3.2 and
  * needs `types.merge`, which js-yaml 5 dropped. The root keeps js-yaml on v5 for
  * its own code, so redocly must resolve a nested 4.x copy.
  */
@@ -14,9 +14,9 @@ const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const lock = readFileSync(join(ROOT, "bun.lock"), "utf8");
 
 describe("generate:admin-types dependency resolution", () => {
-  it("scopes redocly's js-yaml to 4.3.1 via overrides", () => {
+  it("scopes redocly's js-yaml to 4.3.2 via overrides", () => {
     expect(pkg.overrides["@redocly/openapi-core"]).toEqual({
-      "js-yaml": "4.3.1",
+      "js-yaml": "4.3.2",
     });
   });
 
