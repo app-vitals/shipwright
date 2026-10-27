@@ -143,6 +143,40 @@ describe("platform-release.yml bump", () => {
     expect(allRuns).toContain('git push --force origin "$BRANCH"');
   });
 
+  it("regenerates the admin spec and types after bun install and before detecting changes", () => {
+    const regen = steps.findIndex(
+      (s) =>
+        /bun run generate:admin-spec/.test(s.run ?? "") &&
+        /bun run generate:admin-types/.test(s.run ?? ""),
+    );
+    const lockIdx = steps.findIndex((s) => s.name === "Refresh bun.lock");
+    const detectIdx = steps.findIndex((s) => s.name === "Detect changes");
+    expect(regen).toBeGreaterThan(lockIdx);
+    expect(regen).toBeLessThan(detectIdx);
+    const run = steps[regen].run ?? "";
+    expect(run.indexOf("generate:admin-spec")).toBeLessThan(
+      run.indexOf("generate:admin-types"),
+    );
+    expect(run).not.toContain("${{");
+  });
+
+  it("stages the generated admin files and still rejects any other change", () => {
+    const commit = steps.find((s) => /git commit/.test(s.run ?? ""))?.run ?? "";
+    const add = commit.slice(commit.indexOf("git add -u"), commit.indexOf("#"));
+    for (const f of [
+      "admin/openapi.json",
+      "admin/src/coding/openapi.coding.json",
+      "admin/src/coding/admin-types.ts",
+    ]) {
+      expect(add).toContain(f);
+    }
+    expect(commit.indexOf("git add -u")).toBeLessThan(
+      commit.indexOf("unexpected changes"),
+    );
+    expect(commit).toContain("grep -v '^[MADR] '");
+    expect(commit).toContain("admin-types.ts:");
+  });
+
   it("snapshots the platform docs from the release tag before committing", () => {
     const checkout = steps.find(
       (s) => s.with?.repository === "app-vitals/agent",
