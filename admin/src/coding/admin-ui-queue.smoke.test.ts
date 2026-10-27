@@ -23,9 +23,20 @@ import {
 describe("admin UI — unauthenticated redirects", () => {
   it("unauthenticated GET /admin/agents/:id/queue-activity redirects to /admin/login", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
+      headers: { "Sec-Fetch-Mode": "navigate" },
+    });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/login");
+    expect(res.headers.get("Location")).toBe(
+      `/admin/login?returnTo=${encodeURIComponent(`/admin/agents/${AGENT_ID}/queue-activity`)}`,
+    );
+  });
+
+  it("unauthenticated non-navigation request to /admin/agents/:id/queue-activity returns 401 signed_out", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "signed_out" });
   });
 });
 
@@ -514,9 +525,20 @@ describe("admin UI — authenticated pages", () => {
 describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () => {
   it("unauthenticated GET /admin/queue-activity redirects to /admin/login", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request("/admin/queue-activity");
+    const res = await app.request("/admin/queue-activity", {
+      headers: { "Sec-Fetch-Mode": "navigate" },
+    });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/login");
+    expect(res.headers.get("Location")).toBe(
+      `/admin/login?returnTo=${encodeURIComponent("/admin/queue-activity")}`,
+    );
+  });
+
+  it("unauthenticated non-navigation request to /admin/queue-activity returns 401 signed_out", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request("/admin/queue-activity");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "signed_out" });
   });
 
   it("admin sees the merged view rendered directly, not a redirect (full fleet)", async () => {

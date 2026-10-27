@@ -553,9 +553,20 @@ describe("admin UI — tasks page", () => {
 
   it("GET /admin/tasks unauthenticated redirects to /admin/login", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request("/admin/tasks");
+    const res = await app.request("/admin/tasks", {
+      headers: { "Sec-Fetch-Mode": "navigate" },
+    });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/login");
+    expect(res.headers.get("Location")).toBe(
+      `/admin/login?returnTo=${encodeURIComponent("/admin/tasks")}`,
+    );
+  });
+
+  it("unauthenticated non-navigation request to /admin/tasks returns 401 signed_out", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request("/admin/tasks");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "signed_out" });
   });
 
   it("GET /admin/tasks shows Release button only for in_progress tasks", async () => {

@@ -51,6 +51,20 @@ describe("normalize", () => {
   });
 });
 
+describe("normalize embedded manifests", () => {
+  test("blanks the chart label inside a YAML string value, keeping other lines", () => {
+    const doc = (v: string) => ({
+      data: { "i.yaml": `kind: Issuer\n  labels:\n    helm.sh/chart: ${v}\n    app: x\n` },
+    });
+    expect(normalize(doc("shipwright-1.29.12"))).toEqual(
+      normalize(doc("shipwright-1.30.0")),
+    );
+    expect(normalize(doc("a-1"))).not.toEqual(
+      normalize({ data: { "i.yaml": "kind: Issuer\n  labels:\n    app: y\n" } }),
+    );
+  });
+});
+
 describe("parseRendered", () => {
   test("keys objects by kind/namespace/name, empty namespace when unset", () => {
     expect([...parseRendered(render("a-1")).keys()]).toEqual([

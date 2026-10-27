@@ -37,8 +37,13 @@ type Doc = Record<string, Json>;
 
 const CHART_LABEL = "helm.sh/chart";
 
-/** Drop every `helm.sh/chart` key, at any depth. Nothing else is touched. */
+// Embedded manifests (e.g. a ConfigMap carrying a rendered Issuer) hold the label
+// as text inside a string value; blank only its value so the rest still diffs.
+const EMBEDDED_CHART_LABEL = /^(\s*helm\.sh\/chart:).*$/gm;
+
+/** Drop every `helm.sh/chart` key, at any depth, and blank it inside embedded YAML strings. */
 export function normalize(value: Json): Json {
+  if (typeof value === "string") return value.replace(EMBEDDED_CHART_LABEL, "$1");
   if (Array.isArray(value)) return value.map(normalize);
   if (value && typeof value === "object") {
     const out: Doc = {};

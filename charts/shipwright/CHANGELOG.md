@@ -10,6 +10,36 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.30.3] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.3 triggered by release tag(s): `admin-v1.306.5`, `agent-v1.439.2`, `metrics-v1.165.1`, `task-store-v1.213.3`
+
+## [1.30.2] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.2 triggered by release tag(s): `agent-v1.439.1`
+
+## [1.30.1] - 2026-10-27
+
+### Changed
+
+- admin and agent-provisioning templates replaced with agent-platform library stubs (no rendered change)
+
+## [1.30.0] - 2026-10-27
+
+### Changed
+
+- depend on the agent-platform library chart; shipwright.* name/label/image helpers now delegate to it (no rendered change)
+
+## [1.29.13] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.13 triggered by release tag(s): `admin-v1.306.4`
+
 ## [1.29.12] - 2026-10-27
 
 ### Changed
