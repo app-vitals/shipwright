@@ -174,7 +174,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 |----------|---------|--------|
 | `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `prisma/schema/` in `@app-vitals/agent-admin` (via `admin/prisma.config.ts`) |
 | `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
-| `DATABASE_URL_SHIPWRIGHT_CHAT` | `@shipwright/chat` | `chat/prisma/schema.prisma` |
+| `DATABASE_URL_SHIPWRIGHT_CHAT` | platform-hosted chat service (`agent-chat` image) | schema owned by `app-vitals/agent` |
 
 The schema uses `provider = "postgresql"`. All database connection strings must be Postgres connection strings: `postgresql://user:password@host:5432/database`.
 
@@ -205,7 +205,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/task-store-pr-tracking.md** — task store PR origin metrics, verification checks, skip tracking, same-branch exclusivity guard, and session archive sweep
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
-- **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver, outbound reply notifier), data model, environment, and claim/reply queue behavior — full endpoint reference lives in `chat/openapi.json`
+- **docs/chat.md** — pointer: the chat service now lives in the platform repo (`agent-chat` image); details in `docs/platform/chat-service.md`
 - **docs/session-notifications.md** — session-follow subsystem (C): the follow/mute + notification-prefs data model, the session-notification detail-level policy (operator ceiling × per-subscription opt-in × per-call ceiling), the `/admin/settings/notifications` page and follow/unfollow routes, and the `session-scope.ts` visibility model (not yet wired into most routes)
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: auth modes, plus pointers to the networking model, cloud provider guides, agent provisioning model, and optional add-ons
 - **docs/deploy-kubernetes-networking.md** — Kubernetes networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services — split out of docs/deploy-kubernetes.md to stay under the docs line-count threshold

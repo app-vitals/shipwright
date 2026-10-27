@@ -101,8 +101,7 @@ describe("renovate.json app-vitals agent platform group rule (AGR-4.1)", () => {
       "package.json",
       "admin/package.json",
       "agent/package.json",
-      "chat/package.json",
-      "metrics/package.json",
+          "metrics/package.json",
       "task-store/package.json",
     ]) {
       const pkg = JSON.parse(readFileSync(join(repoRoot, file), "utf8"));

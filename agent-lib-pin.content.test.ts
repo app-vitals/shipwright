@@ -17,7 +17,6 @@ const CONSUMERS = [
   "package.json",
   "admin/package.json",
   "agent/package.json",
-  "chat/package.json",
   "metrics/package.json",
   "task-store/package.json",
 ];

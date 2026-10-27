@@ -60,7 +60,7 @@ configurable via `taskStore.expose.pathPrefix`.
 
 ### Chat service (opt-in)
 
-The optional chat service (`@shipwright/chat`) manages web chat threads, messages, and
+The optional chat service (the platform-hosted `agent-chat` image) manages web chat threads, messages, and
 scoped agent tokens. By default it is **disabled** (`chat.enabled=false`) — purely
 additive and safe to deploy without. To enable it:
 

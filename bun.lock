@@ -70,25 +70,6 @@
         "ws": "^8.21.3",
       },
     },
-    "chat": {
-      "name": "@shipwright/chat",
-      "version": "0.1.0",
-      "dependencies": {
-        "@app-vitals/agent-lib": "0.9.0",
-        "@hono/zod-openapi": "^1.0.0",
-        "@prisma/adapter-pg": "^7.10.0",
-        "@prisma/client": "^7.10.0",
-        "hono": "^4.13.1",
-        "pg": "^8.16.3",
-        "zod": "^4",
-      },
-      "devDependencies": {
-        "@types/pg": "^8.15.5",
-        "bun-types": "^1.3.14",
-        "prisma": "^7.10.0",
-        "typescript": "*",
-      },
-    },
     "mcp-server": {
       "name": "@shipwright/mcp-server",
       "version": "0.1.0",
@@ -385,8 +366,6 @@
     "@shipwright/admin": ["@shipwright/admin@workspace:admin"],
 
     "@shipwright/agent": ["@shipwright/agent@workspace:agent"],
-
-    "@shipwright/chat": ["@shipwright/chat@workspace:chat"],
 
     "@shipwright/mcp-server": ["@shipwright/mcp-server@workspace:mcp-server"],
 

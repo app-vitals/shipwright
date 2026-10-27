@@ -85,9 +85,7 @@ The Hono app (`mcp-server/src/index.ts`) exposes a lightweight `GET /mcp/tools` 
 
 ## Chat Service
 
-Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD + attachment streaming) endpoints.
-
-**Ephemeral attachments:** Messages may carry file attachments (stored as binary `attachmentBytes` in Postgres, up to 10 MB). Attachments are **not** persisted long-term — the agent is expected to stream them via `GET /:id/attachment` (which returns the bytes and immediately clears them from the database). This pattern avoids disk bloat while supporting the agent's workflow of pulling files into its workspace. Attachment validation (size and MIME type) is performed in the admin upload route before the message reaches the chat service.
+The chat service (web chat threads, messages, and scoped agent tokens) is hosted in the platform repo (`app-vitals/agent`) and published as the `ghcr.io/app-vitals/agent-chat` image; this repo's Helm chart deploys it (opt-in, `chat.enabled`). It owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). See [chat.md](chat.md) and [platform/chat-service.md](platform/chat-service.md).
 
 ## Supporting surfaces
 
@@ -99,7 +97,7 @@ Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma 
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Seven workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat`, `mcp-server` — are wired into the root `package.json`. The platform (runtime, admin, shared lib) lives in `app-vitals/agent` as the published `@app-vitals/agent-runtime`, `@app-vitals/agent-admin` and `@app-vitals/agent-lib` packages, each pinned to an exact version in every `package.json` that uses it and bumped by `.github/workflows/platform-release.yml` when the platform releases (Renovate is the fallback). Code outside the platform (the coding extension, `agent/src/index.ts`, `agent/scripts`, root scripts, plugin scripts) imports platform modules only through their specifiers and `exports` maps, never relative paths (enforced by `agent/src/import-boundary.unit.test.ts`). `admin` is the `@shipwright/admin` workspace and holds only Shipwright's composition root (`main.ts`), the coding extension (`coding/*`), the composed OpenAPI spec and the Prisma CLI config; other workspaces import platform admin modules from `@app-vitals/agent-admin/*` and the Shipwright pieces from `@shipwright/admin/*`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Six workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `mcp-server` — are wired into the root `package.json`. The platform (runtime, admin, shared lib) lives in `app-vitals/agent` as the published `@app-vitals/agent-runtime`, `@app-vitals/agent-admin` and `@app-vitals/agent-lib` packages, each pinned to an exact version in every `package.json` that uses it and bumped by `.github/workflows/platform-release.yml` when the platform releases (Renovate is the fallback). Code outside the platform (the coding extension, `agent/src/index.ts`, `agent/scripts`, root scripts, plugin scripts) imports platform modules only through their specifiers and `exports` maps, never relative paths (enforced by `agent/src/import-boundary.unit.test.ts`). `admin` is the `@shipwright/admin` workspace and holds only Shipwright's composition root (`main.ts`), the coding extension (`coding/*`), the composed OpenAPI spec and the Prisma CLI config; other workspaces import platform admin modules from `@app-vitals/agent-admin/*` and the Shipwright pieces from `@shipwright/admin/*`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
@@ -109,7 +107,6 @@ shipwright/
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
 ├── mcp-server/           D — MCP server: exposes task-store API as Model Context Protocol tools (generated from OpenAPI spec)
-├── chat/                 Chat service: web conversation threads, Postgres + Prisma
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback

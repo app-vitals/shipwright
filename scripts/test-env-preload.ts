@@ -12,7 +12,7 @@
  * Bun does not apply a root bunfig.toml's preload to a `bun test` run whose
  * cwd is a subpackage directory (no local bunfig.toml there) — each
  * subpackage's own `test` script (mcp-server, task-store, agent, metrics,
- * admin, plugins/shipwright, chat) carries an explicit `NODE_ENV=test`
+ * admin, plugins/shipwright) carries an explicit `NODE_ENV=test`
  * prefix as a second guard for that invocation shape, until Bun supports
  * preload inheritance for nested/filtered runs.
  */
