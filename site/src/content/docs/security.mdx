@@ -198,7 +198,7 @@ OAuth token), `SLACK_APP_TOKEN` (Socket Mode app-level token), and `SLACK_SIGNIN
 inbound request signatures) — plus optional vars (`SLACK_ADMIN_TOKEN` for privileged operations,
 `SLACK_ALERT_CHANNEL`, `SLACK_OWNER_USER`).
 
-Shipwright's Slack app manifest is **centrally codified** in the codebase at `admin/src/slack-provisioning-client.ts`.
+Shipwright's Slack app manifest is **centrally codified** in the `@app-vitals/agent-admin` platform package (`slack-provisioning-client.ts`).
 The `buildAgentManifest()` function constructs a Slack App Manifest object with configured
 display_information, bot_user, app_home, and assistant_view. Bot permissions are centrally defined
 in the exported `AGENT_BOT_SCOPES` array, which is embedded into the manifest's `oauth_config.scopes.bot`.

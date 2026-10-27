@@ -9,7 +9,7 @@ next: "/docs/cron-jobs"
 
 # Admin Console
 
-The admin console (`admin/src/admin-ui.ts` and `admin/src/admin-ui-pages.ts`) is a server-rendered
+The admin console (provided by the `@app-vitals/agent-admin` platform package, which this repo's `admin/` composes with its coding extensions) is a server-rendered
 web UI for operating a Shipwright deployment day to day: managing agents, watching cron and work-queue
 activity, provisioning new Slack apps, browsing the task and PR queues, and chatting with an agent.
 Every route below is registered under `/admin/*` in `createAdminUIApp`.
