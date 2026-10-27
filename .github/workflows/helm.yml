@@ -8,12 +8,14 @@ on:
     paths:
       - "charts/**"
       - "ct.yaml"
+      - "scripts/chart-render-parity*"
       - ".github/workflows/helm.yml"
   push:
     branches: [main]
     paths:
       - "charts/**"
       - "ct.yaml"
+      - "scripts/chart-render-parity*"
       - ".github/workflows/helm.yml"
 
 permissions:
@@ -121,6 +123,41 @@ jobs:
                 -skip CustomResourceDefinition \
                 -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+  # Zero-rename gate (CHM-1.2): renders the chart at the PR base and at HEAD for
+  # every ci/ and examples values file and fails on any object name, namespace
+  # or field change (only the helm.sh/chart label is normalized away).
+  render-parity:
+    name: chart render parity vs base
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need the base ref to `git archive` the base chart
+          persist-credentials: false
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.x"
+
+      - name: Render parity (base vs HEAD, all ci/ and examples values)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          args=()
+          for f in charts/shipwright/ci/*.yaml charts/shipwright/examples/*.yaml; do
+            args+=(--values "$f")
+          done
+          bun run scripts/chart-render-parity.ts \
+            --base "origin/$BASE_REF" --head charts/shipwright \
+            --chart charts/shipwright "${args[@]}"
 
   # End-to-end gate: spin a kind cluster and `ct install` the chart per ci/ values
   # variant, running `helm test` against each install.
