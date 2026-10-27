@@ -204,6 +204,9 @@
           "typeName": {
             "type": "string"
           },
+          "specialty": {
+            "type": "string"
+          },
           "podServiceAccountName": {
             "type": [
               "string",
@@ -309,6 +312,7 @@
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "typeName",
+          "specialty",
           "podServiceAccountName",
           "accountId",
           "createdAt",
@@ -538,13 +542,18 @@
           "typeName": {
             "type": "string",
             "example": "coding"
+          },
+          "specialty": {
+            "type": "string",
+            "example": "coding"
           }
         },
         "required": [
           "id",
           "name",
           "selfHosted",
-          "typeName"
+          "typeName",
+          "specialty"
         ]
       },
       "CreateAgentBody": {
@@ -3300,6 +3309,10 @@
             "example": "active"
           },
           "typeName": {
+            "type": "string",
+            "example": "coding"
+          },
+          "specialty": {
             "type": "string",
             "example": "coding"
           },
