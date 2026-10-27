@@ -217,6 +217,38 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
     expect(run).toContain("exit 1");
   });
 
+  it("waits for the CI run on the PR head commit before checking required checks or merging", () => {
+    const run = merge.run ?? "";
+    const headSha = run.indexOf("headRefOid");
+    const list = run.indexOf('gh run list --commit "$HEAD_SHA" --workflow CI');
+    const watchRun = run.indexOf('gh run watch "$CI_RUN_ID"');
+    const watchChecks = run.indexOf('gh pr checks "$PR_URL" --required');
+    const mergeCmd = run.indexOf("gh pr merge");
+    expect(headSha).toBeGreaterThan(-1);
+    expect(list).toBeGreaterThan(headSha);
+    expect(watchRun).toBeGreaterThan(list);
+    expect(watchChecks).toBeGreaterThan(watchRun);
+    expect(mergeCmd).toBeGreaterThan(watchChecks);
+  });
+
+  it("fails without merging when CI or the required checks never register", () => {
+    const run = merge.run ?? "";
+    expect(run).toContain('[ -z "$CI_RUN_ID" ]');
+    expect(run).toContain('[ "$CHECK_COUNT" -eq 0 ]');
+    const ciGuard = run.indexOf('[ -z "$CI_RUN_ID" ]');
+    expect(run.indexOf("exit 1", ciGuard)).toBeLessThan(
+      run.indexOf("gh pr merge"),
+    );
+  });
+
+  it("only admin-merges after the required-checks loop has passed", () => {
+    const run = merge.run ?? "";
+    const loopEnd = run.indexOf("Checks passed");
+    expect(loopEnd).toBeGreaterThan(run.indexOf("--watch"));
+    expect(run.indexOf("--squash --admin")).toBeGreaterThan(loopEnd);
+    expect(run).toContain("exhausted");
+  });
+
   it("runs after the PR step and before the failure step", () => {
     expect(mergeIdx).toBeGreaterThan(prIdx);
     expect(mergeIdx).toBeLessThan(failIdx);
