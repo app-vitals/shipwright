@@ -19,11 +19,6 @@
 
 import type { AdminUIDeps } from "@app-vitals/agent-admin/admin-ui";
 import { createAdminUIApp } from "@app-vitals/agent-admin/admin-ui";
-import type {
-  ChatClient,
-  ChatMessage,
-  ChatThread,
-} from "@app-vitals/agent-admin/http-chat-client";
 import { Hono } from "hono";
 import { applyShipwrightDefaults } from "../src/main.ts";
 
@@ -80,121 +75,9 @@ const MOCK_TOKEN = {
   revokedAt: null,
 };
 
-// ─── Chat fixtures (CFB-1.3 — chat thread page e2e) ──────────────────────────
-
-const MOCK_CHAT_THREAD: ChatThread = {
-  id: "thread-e2e-1",
-  agentId: ADMIN_E2E_AGENT.id,
-  title: "E2E Test Thread",
-  memberId: null,
-  createdAt: "2024-01-01T00:00:00.000Z",
-  updatedAt: "2024-01-01T00:00:00.000Z",
-};
-
-const MOCK_CHAT_MESSAGES: ChatMessage[] = [
-  {
-    id: "msg-e2e-1",
-    threadId: MOCK_CHAT_THREAD.id,
-    role: "user",
-    // Long enough to overflow any width well under the 70% max-width cap, so
-    // the e2e computed-width assertion (chat-thread-page.e2e.ts) exercises
-    // the CSS-driven cap rather than content-driven shrink-to-fit.
-    body: "Hello from the e2e test suite — this message body is intentionally long so that its rendered width is capped by the chat-bubble-inner max-width rule rather than shrinking to fit its own content, which lets the e2e test assert a stable 70% width ratio against the messages container.",
-    createdAt: "2024-01-01T00:00:00.000Z",
-    claimedBy: null,
-    repliedAt: null,
-    tokens: null,
-    costUsd: null,
-    errorKind: null,
-    attachmentFilename: null,
-    attachmentSize: null,
-  },
-];
-
-// ─── Live-progress fixture (CFB-2.3) ─────────────────────────────────────────
-// When ADMIN_E2E_CHAT_PENDING=1, the mock thread's last message is an
-// UNREPLIED user message whose progressSeq stays frozen — so the server
-// renders the live status bubble and the client ticker + stall state can be
-// asserted by chat-progress.e2e.ts without any real agent. createdAt is
-// computed at boot so the elapsed value starts near 0 and visibly increments.
-const MOCK_CHAT_PENDING_MESSAGES: ChatMessage[] = [
-  {
-    id: "msg-pending-e2e-1",
-    threadId: MOCK_CHAT_THREAD.id,
-    role: "user",
-    body: "Kick off a long-running task, please.",
-    // Anchored at boot so elapsed starts small and climbs across DOM reads.
-    createdAt: new Date().toISOString(),
-    claimedBy: "agent-e2e-1",
-    claimedAt: new Date().toISOString(),
-    heartbeatAt: new Date().toISOString(),
-    repliedAt: null,
-    tokens: null,
-    costUsd: null,
-    errorKind: null,
-    attachmentFilename: null,
-    attachmentSize: null,
-    // progressPhase set so a milestone label renders; progressSeq is FROZEN
-    // (never advances across polls) so the stall state trips once the
-    // (test-shortened) STALL_WARN_AFTER_MS elapses.
-    progressPhase: "reading",
-    progressSeq: 1,
-    cancelRequestedAt: null,
-  },
-];
-
-const CHAT_PENDING_MODE = process.env.ADMIN_E2E_CHAT_PENDING === "1";
-
-function chatMessages(): ChatMessage[] {
-  return CHAT_PENDING_MODE ? MOCK_CHAT_PENDING_MESSAGES : MOCK_CHAT_MESSAGES;
-}
-
-function buildMockChatClient(): ChatClient {
-  return {
-    listThreads: async () => ({
-      threads: [MOCK_CHAT_THREAD],
-      total: 1,
-      limit: 50,
-      offset: 0,
-    }),
-    getThread: async () => MOCK_CHAT_THREAD,
-    createThread: async () => MOCK_CHAT_THREAD,
-    updateThread: async () => MOCK_CHAT_THREAD,
-    deleteThread: async () => {},
-    listMessages: async () => {
-      const messages = chatMessages();
-      return {
-        messages,
-        total: messages.length,
-        limit: 50,
-        offset: 0,
-      };
-    },
-    createMessage: async () => chatMessages()[0],
-    getThreadStats: async () => {
-      const messages = chatMessages();
-      return {
-        messageCount: messages.length,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        totalCostUsd: 0,
-      };
-    },
-  };
-}
-
-// ─── Degraded-mode switch (CFB-2.3) ──────────────────────────────────────────
-// When ADMIN_E2E_CHAT_CLIENT_ABSENT=1, buildTestApp() omits chatClient
-// entirely — mirroring production when SHIPWRIGHT_CHAT_SERVICE_URL /
-// SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are unset — so the /admin/chat* routes
-// fall back to the degraded alert instead of the real chat UI. This proves
-// chatClient is a genuine injection point and that the other chat e2e suites
-// are exercising the real UI, not a silently-degraded fallback.
-const CHAT_CLIENT_ABSENT = process.env.ADMIN_E2E_CHAT_CLIENT_ABSENT === "1";
-
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
+function buildMockDeps(): AdminUIDeps {
   return {
     prisma: {
       agent: {
@@ -395,7 +278,6 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       }),
     },
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
-    chatClient,
   };
 }
 
@@ -408,8 +290,7 @@ function buildTestApp(): Hono {
   app.get("/health", (c) => c.text("ok"));
 
   // Mount the admin UI
-  const chatClient = CHAT_CLIENT_ABSENT ? undefined : buildMockChatClient();
-  const adminApp = createAdminUIApp(buildMockDeps(chatClient));
+  const adminApp = createAdminUIApp(buildMockDeps());
   app.route("/", adminApp);
 
   return app;
