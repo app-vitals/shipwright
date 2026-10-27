@@ -229,6 +229,59 @@ function assertKnownTaskFields(body: Record<string, unknown>): void {
   }
 }
 
+// Non-string Task columns the passthrough body schemas don't type. A mistyped
+// value (e.g. `complexity: "S"` for an Int?) would reach prisma.task.create()
+// and throw a PrismaClientValidationError -> raw 500 (VITALS-OS-6K). Reject
+// with a 400 naming the field instead; no string->int coercion.
+const TASK_INT_FIELDS = [
+  "ciFixAttempts",
+  "complexity",
+  "skipCount",
+  "simplifyTotal",
+  "simplifyDry",
+  "simplifyDeadCode",
+  "simplifyNaming",
+  "simplifyComplexity",
+  "simplifyConsistency",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+] as const;
+const TASK_FLOAT_FIELDS = ["hours", "coverageDelta", "costUsd"] as const;
+const TASK_STRING_ARRAY_FIELDS = [
+  "acceptanceCriteria",
+  "dependencies",
+] as const;
+
+function assertTaskFieldTypes(body: Record<string, unknown>): void {
+  const bad = (field: string, expected: string): never => {
+    throw new BadRequestError(`'${field}' must be ${expected}`);
+  };
+  for (const f of TASK_INT_FIELDS) {
+    const v = body[f];
+    if (v != null && !Number.isInteger(v)) bad(f, "an integer or null");
+  }
+  for (const f of TASK_FLOAT_FIELDS) {
+    const v = body[f];
+    if (v != null && !(typeof v === "number" && Number.isFinite(v))) {
+      bad(f, "a number or null");
+    }
+  }
+  if (body.hitl != null && typeof body.hitl !== "boolean") {
+    bad("hitl", "a boolean or null");
+  }
+  for (const f of TASK_STRING_ARRAY_FIELDS) {
+    const v = body[f];
+    if (
+      v !== undefined &&
+      !(Array.isArray(v) && v.every((x) => typeof x === "string"))
+    ) {
+      bad(f, "an array of strings");
+    }
+  }
+}
+
 // Task.pr is Int? — normalize integer / integer string / github PR URL to the
 // number in place; anything else is a 400 rather than a Prisma 500.
 function normalizePrField(body: Record<string, unknown>): void {
@@ -992,6 +1045,7 @@ export function createTasksRoutes(
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
     normalizePrField(body);
+    assertTaskFieldTypes(body);
     body.accountId = accountIdForCreate(c);
     const created = await withGenericIdConflict(c, () =>
       taskService.create(body as Prisma.TaskCreateInput),
@@ -1030,6 +1084,7 @@ export function createTasksRoutes(
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
       normalizePrField(task);
+      assertTaskFieldTypes(task);
       task.accountId = accountId;
     }
     const result = await withGenericIdConflict(c, () =>
@@ -1091,6 +1146,7 @@ export function createTasksRoutes(
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
     normalizePrField(body);
+    assertTaskFieldTypes(body);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
     // Skip force-assign when access is purely via repo scope — the task may belong
