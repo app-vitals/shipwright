@@ -46,7 +46,8 @@ name: Platform Release Bump
 # Manual / rehearsal run: Actions -> Platform Release Bump -> Run workflow,
 # with the version to pin.
 #
-# Logic tests: scripts/platform-release-bump.unit.test.ts. Content test:
+# Logic tests: scripts/platform-release-bump.unit.test.ts; merge gate:
+# scripts/platform-bump-gate.unit.test.ts. Content test:
 # platform-release.content.test.ts (repo root).
 
 on:
@@ -226,18 +227,16 @@ jobs:
           fi
 
       # Required checks must pass before the bump lands, and the bump PR cannot
-      # be self-approved (it sits BLOCKED), so the workflow waits for the
-      # required checks (rerunning failed ones up to 3 attempts) and
-      # admin-merges its own PR. Logic mirrors the "Wait for checks and merge"
-      # step in auto-bump-chart.yml and the helpers in
-      # .github/workflows/test-auto-bump-chart.sh — keep both copies in sync.
-      # A failing required check exits 1: the job goes red, the failure() step
-      # below opens an issue, and the PR is left open for a human.
-      # The step first waits for the CI workflow run on the PR head commit to
-      # complete, so the fast title check cannot stand in for lint / test.
-      # Stale-base retry: "Base branch was modified" is a transient GraphQL
-      # error when main moves between the checks passing and the merge; retry a
-      # few times, never retry any other merge failure.
+      # be self-approved (it sits BLOCKED), so scripts/platform-bump-gate.sh
+      # waits for the CI workflow run on the PR head commit (the fast title
+      # check cannot stand in for lint / test), then for the required checks
+      # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
+      # A failing or missing check exits 1: the job goes red, the failure()
+      # step below opens an issue, and the PR is left open for a human. The
+      # gate is behavior-tested against recorded check timelines in
+      # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
+      # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
+      # copies in sync.
       - name: Wait for checks and merge
         id: merge
         if: steps.diff.outputs.changed == 'true'
@@ -274,131 +273,7 @@ jobs:
             exit 1
           fi
 
-          # The Conventional-Commit PR title check registers within seconds,
-          # long before the CI workflow (lint / typecheck / test) exists, so
-          # waiting for "a required check" let `gh pr checks --watch
-          # --required` see only that one fast check and this job admin-merged
-          # a red bump (#4580). Wait for the CI workflow run on the PR head
-          # commit to exist and complete first; only then evaluate required
-          # checks. A run that never appears within the timeout fails the job
-          # without merging.
-          HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid -q '.headRefOid')
-          echo "Waiting for the CI workflow run on ${HEAD_SHA}..."
-          CI_RUN_ID=""
-          for _ in $(seq 1 60); do
-            CI_RUN_ID=$(gh run list --commit "$HEAD_SHA" --workflow CI --json databaseId -q '.[0].databaseId // empty' 2>/dev/null || true)
-            [ -n "$CI_RUN_ID" ] && break
-            sleep 5
-          done
-          if [ -z "$CI_RUN_ID" ]; then
-            echo "ERROR: no CI workflow run appeared for ${HEAD_SHA} on ${PR_URL}; not merging." >&2
-            exit 1
-          fi
-          # The exit status is ignored: failures are evaluated (and failed
-          # jobs rerun) by the required-checks loop below.
-          gh run watch "$CI_RUN_ID" --interval 15 >/dev/null || true
-
-          # `gh pr checks --watch --required` fails fast with "no required
-          # checks reported" if no required check is registered. Once CI has
-          # completed they all are; still guard so a missing set never merges.
-          echo "Waiting for required checks to register on ${PR_URL}..."
-          CHECK_COUNT=0
-          for _ in $(seq 1 30); do
-            CHECK_COUNT=$(gh pr checks "$PR_URL" --required --json name -q 'length' 2>/dev/null || echo 0)
-            [ "$CHECK_COUNT" -gt 0 ] && break
-            sleep 2
-          done
-          if [ "$CHECK_COUNT" -eq 0 ]; then
-            echo "ERROR: no required checks registered on ${PR_URL}; not merging." >&2
-            exit 1
-          fi
-
-          # Extracts the numeric run id from a `gh pr checks --json link`
-          # URL, e.g. ".../actions/runs/31518876841/job/93871505296" →
-          # "31518876841". Mirrors
-          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
-          # sync.
-          extract_run_id_from_link() {
-            local link="$1"
-            echo "$link" | sed -n 's#.*/actions/runs/\([0-9]\+\).*#\1#p'
-          }
-
-          # Prints the unique set of run ids (one per line) behind every
-          # required check whose state is not SUCCESS, from the JSON array
-          # produced by `gh pr checks --required --json name,state,link`.
-          # `state` values from `gh pr checks --json` are uppercase
-          # (SUCCESS, FAILURE, ...). Mirrors
-          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
-          # sync.
-          failed_required_check_run_ids() {
-            local checks_json="$1"
-            echo "$checks_json" \
-              | python3 -c 'import json, sys; data = json.load(sys.stdin); [print(c["link"]) for c in data if c.get("state") != "SUCCESS"]' \
-              | while IFS= read -r link; do
-                  extract_run_id_from_link "$link"
-                done \
-              | sort -u
-          }
-
-          echo "Waiting for required checks on ${PR_URL}..."
-          CHECKS_MAX_ATTEMPTS=3
-          for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
-            gh pr checks "$PR_URL" --watch --interval 15 --required && break
-
-            echo "Required check(s) failed on attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS}." >&2
-
-            if [ "$checks_attempt" -ge "$CHECKS_MAX_ATTEMPTS" ]; then
-              echo "ERROR: exhausted ${CHECKS_MAX_ATTEMPTS} attempts waiting for required checks to pass on ${PR_URL}." >&2
-              exit 1
-            fi
-
-            CHECKS_JSON=$(gh pr checks "$PR_URL" --required --json name,state,link)
-            RUN_IDS=$(failed_required_check_run_ids "$CHECKS_JSON")
-
-            if [ -z "$RUN_IDS" ]; then
-              echo "No failed required check run ids found to rerun — not retrying." >&2
-              exit 1
-            fi
-
-            echo "Rerunning failed job(s) behind: $(echo "$RUN_IDS" | paste -sd, -)"
-            while IFS= read -r run_id; do
-              [ -z "$run_id" ] && continue
-              gh run rerun "$run_id" --failed
-            done <<< "$RUN_IDS"
-          done
-          echo "Checks passed — merging ${PR_URL}."
-
-          # Detects the transient stale-base GraphQL error (see comment
-          # above). Mirrors .github/workflows/test-auto-bump-chart.sh — keep
-          # both copies in sync.
-          is_stale_base_error() {
-            local output="$1"
-            if echo "$output" | grep -qi "Base branch was modified"; then
-              return 0
-            fi
-            return 1
-          }
-
-          MAX_ATTEMPTS=3
-          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-            MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
-              echo "$MERGE_OUTPUT"
-              echo "Merged ${PR_URL}."
-              echo "merged=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            }
-
-            echo "$MERGE_OUTPUT" >&2
-
-            if is_stale_base_error "$MERGE_OUTPUT" && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-              echo "Stale-base race detected (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in 5s..."
-              sleep 5
-              continue
-            fi
-
-            echo "Merge failed on attempt ${attempt}/${MAX_ATTEMPTS} — not retrying (either not a stale-base error, or retries exhausted)."
-            exit 1
-          done
+          bash scripts/platform-bump-gate.sh "$PR_URL"
 
       - name: Open an issue on failure
         if: failure()
