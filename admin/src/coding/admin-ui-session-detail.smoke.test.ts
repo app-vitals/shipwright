@@ -375,9 +375,20 @@ describe("admin UI — session detail page", () => {
 
   it("GET /admin/sessions/:id unauthenticated redirects to /admin/login", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request("/admin/sessions/session-abc");
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { "Sec-Fetch-Mode": "navigate" },
+    });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/login");
+    expect(res.headers.get("Location")).toBe(
+      `/admin/login?returnTo=${encodeURIComponent("/admin/sessions/session-abc")}`,
+    );
+  });
+
+  it("unauthenticated non-navigation request to /admin/sessions/session-abc returns 401 signed_out", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request("/admin/sessions/session-abc");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "signed_out" });
   });
 
   it("GET /admin/sessions/:id degrades gracefully when fetchTaskStoreTasks is not configured", async () => {
