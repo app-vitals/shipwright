@@ -144,6 +144,40 @@ describe("platform-release.yml bump", () => {
     expect(allRuns).toContain('git push --force origin "$BRANCH"');
   });
 
+  it("regenerates the admin spec and types after bun install and before detecting changes", () => {
+    const regen = steps.findIndex(
+      (s) =>
+        /bun run generate:admin-spec/.test(s.run ?? "") &&
+        /bun run generate:admin-types/.test(s.run ?? ""),
+    );
+    const lockIdx = steps.findIndex((s) => s.name === "Refresh bun.lock");
+    const detectIdx = steps.findIndex((s) => s.name === "Detect changes");
+    expect(regen).toBeGreaterThan(lockIdx);
+    expect(regen).toBeLessThan(detectIdx);
+    const run = steps[regen].run ?? "";
+    expect(run.indexOf("generate:admin-spec")).toBeLessThan(
+      run.indexOf("generate:admin-types"),
+    );
+    expect(run).not.toContain("${{");
+  });
+
+  it("stages the generated admin files and still rejects any other change", () => {
+    const commit = steps.find((s) => /git commit/.test(s.run ?? ""))?.run ?? "";
+    const add = commit.slice(commit.indexOf("git add -u"), commit.indexOf("#"));
+    for (const f of [
+      "admin/openapi.json",
+      "admin/src/coding/openapi.coding.json",
+      "admin/src/coding/admin-types.ts",
+    ]) {
+      expect(add).toContain(f);
+    }
+    expect(commit.indexOf("git add -u")).toBeLessThan(
+      commit.indexOf("unexpected changes"),
+    );
+    expect(commit).toContain("grep -v '^[MADR] '");
+    expect(commit).toContain("admin-types.ts:");
+  });
+
   it("snapshots the platform docs from the release tag before committing", () => {
     const checkout = steps.find(
       (s) => s.with?.repository === "app-vitals/agent",
@@ -288,10 +322,102 @@ describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
     expect(merge?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
   });
 
+  it("gives the merge step id merge and the gate script writes merged=true to GITHUB_OUTPUT on success", () => {
+    expect(merge?.id).toBe("merge");
+    const script = readFileSync(
+      join(ROOT, "scripts/platform-bump-gate.sh"),
+      "utf8",
+    );
+    // The output must be written after the merge message, right before the exit 0 in the successful merge path.
+    const mergedOutputIdx = script.indexOf('echo "merged=true"');
+    const prUrl = ["$", "{", "PR_URL", "}"].join("");
+    const mergedPrintIdx = script.indexOf(`Merged ${prUrl}`);
+    const exitAfterMergeIdx = script.indexOf("exit 0", mergedOutputIdx);
+    expect(mergedOutputIdx).toBeGreaterThan(-1);
+    expect(mergedPrintIdx).toBeGreaterThan(-1);
+    expect(mergedOutputIdx).toBeGreaterThan(mergedPrintIdx);
+    expect(exitAfterMergeIdx).toBeGreaterThan(mergedOutputIdx);
+  });
+
   it("documents the rebuild behaviour in the header", () => {
     const header = text.slice(0, text.indexOf("\non:"));
     expect(header).toMatch(/CONFLICTING/);
     expect(header).toMatch(/attempt/);
+  });
+});
+
+describe("platform-release.yml close failure issue (PBP-1.3)", () => {
+  const failureIdx = steps.findIndex((s) => s.if === "failure()");
+  const closeIdx = steps.findIndex(
+    (s) => s.name === "Close success issue" || s.name?.includes("close"),
+  );
+  const closeStep = steps.find(
+    (s) => s.name === "Close success issue" || s.name?.includes("close"),
+  );
+
+  it("exists and runs after the failure step", () => {
+    expect(closeIdx).toBeGreaterThan(failureIdx);
+    expect(closeStep).toBeDefined();
+  });
+
+  it("runs only on success and when either no change was needed or the merge succeeded", () => {
+    const expectedIf = `success() && (steps.diff.outputs.changed == 'false' || steps.merge.outputs.merged == 'true')`;
+    expect(closeStep?.if).toBe(expectedIf);
+  });
+
+  it("uses the exact same issue title as the failure step", () => {
+    const failureStep = steps[failureIdx];
+    const failureRun = failureStep.run ?? "";
+    const closeRun = closeStep?.run ?? "";
+
+    // Both should reference "platform release bump failed"
+    expect(failureRun).toContain("platform release bump failed");
+    expect(closeRun).toContain("platform release bump failed");
+
+    // Extract the title strings to verify they are identical
+    const failureTitleMatch = failureRun.match(/TITLE="([^"]+)"/);
+    const closeTitleMatch = closeRun.match(/TITLE="([^"]+)"/);
+    expect(failureTitleMatch).not.toBeNull();
+    expect(closeTitleMatch).not.toBeNull();
+    expect(failureTitleMatch?.[1]).toBe(closeTitleMatch?.[1]);
+  });
+
+  it("searches for the open issue using gh issue list", () => {
+    const run = closeStep?.run ?? "";
+    expect(run).toContain("gh issue list");
+    expect(run).toContain("--state open");
+    expect(run).toContain('--search "');
+    expect(run).toContain("in:title");
+  });
+
+  it("closes the issue and comments with a link to the run", () => {
+    const run = closeStep?.run ?? "";
+    expect(run).toContain("gh issue close");
+    expect(run).toContain("gh issue comment");
+    expect(run).toContain("RUN_URL");
+  });
+
+  it("uses GITHUB_TOKEN and env for the run URL", () => {
+    expect(closeStep?.env?.GH_TOKEN).toBe(gha("secrets.GITHUB_TOKEN"));
+    expect(closeStep?.env?.RUN_URL).toBe(
+      gha("github.server_url") +
+        "/" +
+        gha("github.repository") +
+        "/actions/runs/" +
+        gha("github.run_id"),
+    );
+  });
+
+  it("has a no-op when no issue is open", () => {
+    const run = closeStep?.run ?? "";
+    expect(run).toContain("[ -z");
+    expect(run).toContain("ISSUE");
+  });
+
+  it("mentions the success in its comment body", () => {
+    const run = closeStep?.run ?? "";
+    expect(run).toContain("$" + "{VERSION}");
+    expect(run).toMatch(/close|closed|success/i);
   });
 });
 

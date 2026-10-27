@@ -127,6 +127,8 @@ for attempt in $(seq 1 "$MERGE_MAX_ATTEMPTS"); do
   MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
     echo "$MERGE_OUTPUT"
     echo "Merged ${PR_URL}."
+    # Read by the workflow's "Close success issue" step.
+    [ -n "${GITHUB_OUTPUT:-}" ] && echo "merged=true" >> "$GITHUB_OUTPUT"
     exit 0
   }
 
