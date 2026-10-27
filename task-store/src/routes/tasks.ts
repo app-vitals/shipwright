@@ -153,6 +153,82 @@ function stripRemovedFields(body: Record<string, unknown>): void {
   }
 }
 
+// Every Task scalar column a PATCH body may carry. Any other key (e.g. `notes`
+// for the real `note` field) would reach prisma.task.update() and throw a
+// PrismaClientValidationError, which is not an ApiError and surfaces as a raw
+// 500 plus a Sentry exception (VITALS-OS-5W). Reject it with a 400 instead —
+// not aliased or silently stripped, so the caller learns the field is wrong.
+// Kept in lockstep with Prisma.TaskScalarFieldEnum by a parity unit test.
+export const TASK_PATCH_FIELDS: ReadonlySet<string> = new Set([
+  "id",
+  "accountId",
+  "title",
+  "status",
+  "source",
+  "session",
+  "repo",
+  "description",
+  "acceptanceCriteria",
+  "layer",
+  "branch",
+  "dependencies",
+  "pr",
+  "hours",
+  "startedAt",
+  "prCreatedAt",
+  "mergedAt",
+  "blockedAt",
+  "blockedReason",
+  "note",
+  "type",
+  "priority",
+  "cancelledAt",
+  "completedAt",
+  "deployingAt",
+  "deployedAt",
+  "ciFixAttempts",
+  "mergeCommit",
+  "prUrl",
+  "assignee",
+  "issue",
+  "model",
+  "complexity",
+  "hitl",
+  "kind",
+  "skipCount",
+  "lastSkippedAt",
+  "lastSkipReason",
+  "claimedBy",
+  "agentHint",
+  "claimedAt",
+  "heartbeatAt",
+  "simplifyTotal",
+  "simplifyDry",
+  "simplifyDeadCode",
+  "simplifyNaming",
+  "simplifyComplexity",
+  "simplifyConsistency",
+  "coverageDelta",
+  "effortLevel",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "costUsd",
+  "metadata",
+  "createdAt",
+  "updatedAt",
+]);
+
+function assertKnownTaskFields(body: Record<string, unknown>): void {
+  const unknown = Object.keys(body).filter((k) => !TASK_PATCH_FIELDS.has(k));
+  if (unknown.length > 0) {
+    throw new BadRequestError(
+      `unknown task field(s): ${unknown.map((k) => `'${k}'`).join(", ")}`,
+    );
+  }
+}
+
 // Task.pr is Int? — normalize integer / integer string / github PR URL to the
 // number in place; anything else is a 400 rather than a Prisma 500.
 function normalizePrField(body: Record<string, unknown>): void {
@@ -1007,6 +1083,7 @@ export function createTasksRoutes(
     );
     const body = await readJson(c);
     stripRemovedFields(body);
+    assertKnownTaskFields(body);
     assertNoLifecycleFieldWrite(body, agentId);
     // Only admin tokens may move a task between accounts.
     if (agentId !== null && "accountId" in body) {
