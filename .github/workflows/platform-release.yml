@@ -34,7 +34,9 @@ name: Platform Release Bump
 #
 # Failures are loud: the job fails (leaving the PR open), and a failure step
 # opens (or comments on) a "platform release bump failed" issue, because a
-# stalled release chain otherwise goes unnoticed for days.
+# stalled release chain otherwise goes unnoticed for days. On success (or when
+# no change is needed), a success-only step closes any open issue with that
+# title.
 #
 # The version comes from an external event, so it is never interpolated into
 # a script: it reaches every step through env and is validated as strict
@@ -222,6 +224,7 @@ jobs:
       # error when main moves between the checks passing and the merge; retry a
       # few times, never retry any other merge failure.
       - name: Wait for checks and merge
+        id: merge
         if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -366,6 +369,7 @@ jobs:
             MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
               echo "$MERGE_OUTPUT"
               echo "Merged ${PR_URL}."
+              echo "merged=true" >> "$GITHUB_OUTPUT"
               exit 0
             }
 
@@ -395,3 +399,18 @@ jobs:
           else
             gh issue create --title "$TITLE" --body "$BODY"
           fi
+
+      - name: Close success issue
+        if: success() && (steps.diff.outputs.changed == 'false' || steps.merge.outputs.merged == 'true')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="platform release bump failed"
+          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
+          if [ -z "$ISSUE" ]; then
+            exit 0
+          fi
+          BODY="The platform release bump for version \`${VERSION}\` succeeded: ${RUN_URL}"
+          gh issue comment "$ISSUE" --body "$BODY"
+          gh issue close "$ISSUE"
