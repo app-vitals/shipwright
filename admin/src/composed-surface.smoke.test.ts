@@ -68,6 +68,8 @@ const EXPECTED_DIFF: {
         "sha256:939307470867a15d",
       "GET /agents/{id}/crons/{cronId}/runs/{runId}/transcript":
         "sha256:8eab32b41a43f522",
+      // SIT-1.1 — coding extension route, not a platform addition
+      "GET /session-follows": "sha256:e6f25f809ed15824",
     },
     removed: [],
     changed: {
@@ -88,6 +90,7 @@ const EXPECTED_DIFF: {
       CronRunNowResponse: "sha256:573587ce13f06f60",
       CronRunTranscriptUploadResult: "sha256:4a1283819cff255f",
       RepoAccessEntry: "sha256:e42976826762413d",
+      SessionFollowsResponse: "sha256:1c6ab124d88074a8",
       UploadCronRunTranscriptBody: "sha256:fb2d6c0c8f6ee427",
       CronRunTranscript: "sha256:f601d1c19563cc32",
       AgentConfigFeatures: "sha256:f28be53dfab28eb3",
