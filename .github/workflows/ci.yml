@@ -164,6 +164,16 @@ jobs:
       - name: Check config docs
         run: task check-config-docs
 
+      # The generate step used to run only inside the platform-release bump, so
+      # a dependency change that broke it went unnoticed until release time.
+      # Run it on every PR and fail on a nonzero exit or on drift from the
+      # committed admin spec and types.
+      - name: Check admin spec and types generation
+        run: |
+          bun run generate:admin-spec
+          bun run generate:admin-types
+          git diff --exit-code -- admin/openapi.json admin/src/coding/openapi.coding.json admin/src/coding/admin-types.ts
+
       - name: Create test databases
         run: |
           PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
