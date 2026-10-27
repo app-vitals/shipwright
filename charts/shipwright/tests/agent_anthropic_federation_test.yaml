@@ -3,8 +3,8 @@ suite: agent Anthropic workload identity federation admin env
 # and the SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_* env that the admin
 # provisioner (admin/src/main.ts parseAnthropicFederation) reads to wire a
 # projected service-account token into provisioned agent pods. Off by default.
-# shipwright.validate.anthropicFederation is included from admin-deployment.yaml
-# so its guards fire on every manifest render.
+# The anthropicFederation guards (agent-platform.validate.anthropicFederation, run
+# via the admin-deployment library stub) fire on every manifest render.
 templates:
   - templates/admin-deployment.yaml
 tests:
