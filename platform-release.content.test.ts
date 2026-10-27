@@ -214,7 +214,9 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
   it("delegates the gate to scripts/platform-bump-gate.sh with the PR url, not an inline loop", () => {
     // The wait / evaluate / merge decision is behavior-tested against recorded
     // check timelines in scripts/platform-bump-gate.unit.test.ts.
-    expect(merge.run?.trim()).toBe('bash scripts/platform-bump-gate.sh "$PR_URL"');
+    expect(merge.run).toContain('bash scripts/platform-bump-gate.sh "$PR_URL"');
+    expect(merge.run).not.toContain("gh pr merge");
+    expect(merge.run).not.toContain("gh run list");
     expect(existsSync(join(ROOT, "scripts/platform-bump-gate.sh"))).toBe(true);
     // Neither the version nor the PR url is templated into the script call.
     expect(merge.run).not.toContain("${{");
@@ -251,8 +253,7 @@ describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
     expect(poll).toBeGreaterThanOrEqual(0);
     expect(run).toContain("--json mergeable");
     expect(run).toContain("UNKNOWN");
-    expect(poll).toBeLessThan(run.indexOf("gh pr checks"));
-    expect(poll).toBeLessThan(run.indexOf("--watch"));
+    expect(poll).toBeLessThan(run.indexOf("platform-bump-gate.sh"));
   });
 
   it("logs a distinct ::error:: naming the conflict with main", () => {
@@ -279,8 +280,10 @@ describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
     expect(run).toMatch(/::error::[^\n]*still conflicts[^\n]*attempt/i);
   });
 
-  it("keeps the generic check-failure path and never interpolates expressions", () => {
-    expect(run).toContain("Required check(s) failed");
+  it("hands off to the gate script after the conflict check and never interpolates expressions", () => {
+    expect(run.indexOf("platform-bump-gate.sh")).toBeGreaterThan(
+      run.indexOf("CONFLICTING"),
+    );
     expect(run).not.toContain("${{");
     expect(merge?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
   });
