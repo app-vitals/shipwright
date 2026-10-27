@@ -16,6 +16,12 @@ independent of `appVersion`. CI enforces this with
 
 - depend on the agent-platform library chart; shipwright.* name/label/image helpers now delegate to it (no rendered change)
 
+## [1.29.13] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.13 triggered by release tag(s): `admin-v1.306.4`
+
 ## [1.29.12] - 2026-10-27
 
 ### Changed
