@@ -55,6 +55,21 @@ failed_required_check_run_ids() {
     | sort -u
 }
 
+# Succeeds only when `gh pr checks --required --json name,state` (or the
+# name,state,link variant) lists at least MIN_COUNT checks and every one is
+# SUCCESS or SKIPPED. A watch that exits 0 is not trusted on its own: right
+# after `gh run rerun --failed` the CI checks drop out of the rollup while the
+# run re-queues, and the watch then sees only the fast title check as "all
+# green" (#4639 merged a red lint / typecheck / test this way).
+required_checks_all_green() {
+  local checks_json="$1" min_count="$2"
+  echo "$checks_json" \
+    | python3 -c 'import json, sys
+data = json.load(sys.stdin)
+ok = len(data) >= int(sys.argv[1]) and all(c.get("state") in ("SUCCESS", "SKIPPED") for c in data)
+sys.exit(0 if ok else 1)' "$min_count"
+}
+
 # Detects the transient stale-base GraphQL error raised when main moves
 # between the checks passing and the merge.
 is_stale_base_error() {
@@ -98,7 +113,20 @@ fi
 
 echo "Waiting for required checks on ${PR_URL}..."
 for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
-  gh pr checks "$PR_URL" --watch --interval "$WATCH_INTERVAL" --required && break
+  if gh pr checks "$PR_URL" --watch --interval "$WATCH_INTERVAL" --required; then
+    # Re-read the full required set: only a complete, all-green set merges.
+    CHECKS_JSON=$(gh pr checks "$PR_URL" --required --json name,state,link 2>/dev/null || echo "[]")
+    if required_checks_all_green "$CHECKS_JSON" "$CHECK_COUNT"; then
+      break
+    fi
+    echo "Watch passed but the required set is not complete and green (attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS})." >&2
+    if [ "$checks_attempt" -ge "$CHECKS_MAX_ATTEMPTS" ]; then
+      echo "ERROR: required checks on ${PR_URL} are not all green after ${CHECKS_MAX_ATTEMPTS} attempts; not merging." >&2
+      exit 1
+    fi
+    sleep "$WATCH_INTERVAL"
+    continue
+  fi
 
   echo "Required check(s) failed on attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS}." >&2
 
@@ -119,6 +147,8 @@ for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
   while IFS= read -r run_id; do
     [ -z "$run_id" ] && continue
     gh run rerun "$run_id" --failed
+    # Let the rerun re-queue and finish before the required set is read again.
+    gh run watch "$run_id" --interval "$WATCH_INTERVAL" >/dev/null || true
   done <<< "$RUN_IDS"
 done
 echo "Checks passed — merging ${PR_URL}."
