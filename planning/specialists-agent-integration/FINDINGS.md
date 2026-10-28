@@ -7,7 +7,7 @@ Status: draft for owner review. Read-only audit; no tasks queued. Step 3 of `wor
 | Repo | SHA |
 |---|---|
 | `app-vitals/specialists` | `6ba55b945461d42c151bce80b54d0e58d8a78a0b` |
-| `app-vitals/agent` | `ac199196f249fa5ba9b841fa4a8717e3fb7d6902` |
+| `app-vitals/agent` | `ac199196f249fa5ba9b841fa4a8717e3fb7d6902` (re-checked against `6f63bfc`: only AGR-6.3 and docs changed) |
 | `app-vitals/shipwright` | `3753b6bbd150558c123882fccec2defeb61948ef` |
 
 Specialists is still moving; findings describe the SHA above.
@@ -21,7 +21,7 @@ Tags: **duplicate** (retire by integrating), **nicety** (candidate to move into 
 ## What the agent module offers
 
 - **Specialty manifest** (`agent-types/<name>/manifest.yaml`, `.strict()` Zod schema): `crons[]` (`name`, `schedule`, `prompt`, `preCheck`, `silent`, `enabled`, `parentCron`), `plugins[]`, `tools[]`, `env.required/optional` (keys only, `secret` flag), `identity.templatesDir`, `members`, `repos`, `chat`, `voice`, `resources`.
-- **Resolution:** the agent row's `specialty ?? typeName` (AGR-6.1) selects one manifest from `SHIPWRIGHT_SPECIALTIES_DIR`. Manifest crons are system crons reconciled by `AgentCronJobService.reconcileSystemCrons()`.
+- **Resolution:** the agent row's `specialty` (AGR-6.3 removed the legacy `typeName`) selects one manifest from `SHIPWRIGHT_SPECIALTIES_DIR`. Manifest crons are system crons reconciled by `AgentCronJobService.reconcileSystemCrons()`.
 - **Workspace layering** (`runtime/setup.ts`): `RUNTIME.md` (runtime-owned) and `SPECIALTY.md` (from the specialty's template dir) are rewritten on every boot; `SOUL.md`, `IDENTITY.md`, `CLAUDE.md` are seeded once and agent-owned.
 - **Runtime code seam:** `AgentExtension` (`onConfigSync`, `periodicPasses`, `onCronJobs`, `classifyCronJobs`, `dispatchLoop`).
 
