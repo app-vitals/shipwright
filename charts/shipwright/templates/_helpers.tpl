@@ -886,3 +886,38 @@ pretty JSON). Shared by the ConfigMap data and the admin policy hash env.
 {{- define "shipwright.agent.claudePolicy.json" -}}
 {{- .Values.agent.provisioning.claudePolicy.settings | toPrettyJson }}
 {{- end }}
+
+{{/*
+shipwright.platformExtensions — Shipwright's entries for the agent-platform
+library's extension lists (routes, healthChecks, networkPolicyEgress,
+databases). Rendered as YAML and passed to the shared networking and database
+templates as `(include "shipwright.platformExtensions" . | fromYaml)`.
+*/}}
+{{- define "shipwright.platformExtensions" -}}
+routes:
+  {{- if .Values.metrics.enabled }}
+  - component: metrics
+    pathPrefix: /dashboard
+    port: {{ .Values.metrics.service.port }}
+  {{- end }}
+  {{- if and .Values.taskStore.enabled .Values.taskStore.expose.enabled }}
+  - component: task-store
+    pathPrefix: {{ .Values.taskStore.expose.pathPrefix | quote }}
+    port: {{ .Values.taskStore.service.port }}
+    stripPrefix: true
+  {{- end }}
+healthChecks:
+  {{- if .Values.metrics.enabled }}
+  - component: metrics
+  {{- end }}
+  {{- if .Values.taskStore.enabled }}
+  - component: task-store
+  {{- end }}
+networkPolicyEgress:
+  - component: task-store
+databases:
+  - file: 00-create-metrics-db.sql
+    name: {{ include "shipwright.metrics.databaseName" . }}
+  - file: 01-create-task-store-db.sql
+    name: {{ include "shipwright.taskStore.databaseName" . }}
+{{- end }}

@@ -9,6 +9,7 @@ import {
 import {
   cpSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -54,6 +55,15 @@ beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "parity-it-"));
   copy = join(tmp, "chart");
   cpSync(CHART, copy, { recursive: true });
+  // The cert-manager Issuer body now lives in the agent-platform library chart
+  // (CHM-3.4). Unpack the vendored tarball in the copy so tests can edit its
+  // templates; helm renders an unpacked charts/<name>/ dir identically.
+  const charts = join(copy, "charts");
+  const lib = readdirSync(charts).find((f) => /^agent-platform-.*\.tgz$/.test(f));
+  if (!lib) throw new Error("agent-platform library tarball missing from charts/");
+  const untar = Bun.spawnSync(["tar", "-xzf", join(charts, lib), "-C", charts]);
+  if (untar.exitCode !== 0) throw new Error(untar.stderr.toString());
+  rmSync(join(charts, lib));
   names = join(tmp, "names.txt");
   writeFileSync(names, "ServiceAccount//shipwright-admin\n");
   // Enables the cert-manager bootstrap ConfigMap, which embeds a rendered Issuer
@@ -114,7 +124,10 @@ describe("chart-render-parity (real chart)", () => {
   describe("embedded-manifest chart label", () => {
     const withChartEdit = (edit: (orig: string) => string, run: () => void) => {
       const chartYaml = join(copy, "Chart.yaml");
-      const helpers = join(copy, "templates/_helpers.tpl");
+      const helpers = join(
+        copy,
+        "charts/agent-platform/templates/_certmanager.tpl",
+      );
       const origChart = readFileSync(chartYaml, "utf8");
       const origHelpers = readFileSync(helpers, "utf8");
       writeFileSync(
