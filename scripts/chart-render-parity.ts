@@ -1,8 +1,9 @@
 // Render-parity gate for Helm chart moves/renames (CHM-1.2).
 //
 // Renders a chart at two refs (git ref or directory) with the same values file,
-// normalizes only the `helm.sh/chart` label (it embeds the chart name/version),
-// and diffs the resulting object sets and fields. Exits non-zero on any name,
+// normalizes only the `helm.sh/chart` label (it embeds the chart name/version) —
+// both as an object key and as text inside embedded-manifest string values, e.g.
+// the Issuer carried by the cert-manager bootstrap ConfigMap — and diffs the resulting object sets and fields. Exits non-zero on any name,
 // namespace, or field change; zero when only the chart label differs.
 //
 // CLI:
@@ -43,7 +44,8 @@ const EMBEDDED_CHART_LABEL = /^(\s*helm\.sh\/chart:).*$/gm;
 
 /** Drop every `helm.sh/chart` key, at any depth, and blank it inside embedded YAML strings. */
 export function normalize(value: Json): Json {
-  if (typeof value === "string") return value.replace(EMBEDDED_CHART_LABEL, "$1");
+  if (typeof value === "string")
+    return value.replace(EMBEDDED_CHART_LABEL, "$1");
   if (Array.isArray(value)) return value.map(normalize);
   if (value && typeof value === "object") {
     const out: Doc = {};
