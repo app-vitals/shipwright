@@ -64,7 +64,7 @@ the same values and fails on any object, name, namespace or field difference
 opening one:
 
 ```bash
-args=(); for f in ci/*.yaml examples/*.yaml; do args+=(--values "charts/shipwright/$f"); done
+args=(); for f in charts/shipwright/ci/*.yaml charts/shipwright/examples/*.yaml; do args+=(--values "$f"); done
 bun run scripts/chart-render-parity.ts --base origin/main --head charts/shipwright \
   --chart charts/shipwright "${args[@]}"
 ```
