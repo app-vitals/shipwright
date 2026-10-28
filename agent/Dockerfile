@@ -22,7 +22,7 @@
 # Platform release to build on. Keep equal to the @app-vitals/agent-lib pin in
 # agent/package.json (guarded by agent-platform-image.content.test.ts): the
 # coding extension is compiled against that package set.
-ARG PLATFORM_VERSION=0.13.0
+ARG PLATFORM_VERSION=0.13.1
 
 # ─── Version stamp stage ──────────────────────────────────────────────────────
 # Stamps AGENT_VERSION into the plugin version files inside the image only (no
