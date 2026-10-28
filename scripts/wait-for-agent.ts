@@ -27,7 +27,7 @@ import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 export interface FoundAgent {
   id: string;
   name: string;
-  typeName: string;
+  specialty: string;
 }
 
 /** Minimal Prisma interface needed by the poll function — injected for testability. */
@@ -76,7 +76,7 @@ export async function waitForAgent(deps: WaitDeps): Promise<string> {
   }
 
   logStatus(
-    `[wait-for-agent] found agent "${found.name}" (${found.id}, type: ${found.typeName}) — proceeding.`,
+    `[wait-for-agent] found agent "${found.name}" (${found.id}, specialty: ${found.specialty}) — proceeding.`,
   );
   writeResult(found.id);
   return found.id;
