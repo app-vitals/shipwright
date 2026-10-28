@@ -421,6 +421,18 @@
                   },
                   "required": ["repository"]
                 },
+                "images": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "repository": { "type": "string" },
+                      "tag": { "type": "string" }
+                    },
+                    "required": ["repository"]
+                  }
+                },
                 "replicas": { "type": "integer", "minimum": 0 },
                 "serviceAccount": {
                   "type": "object",

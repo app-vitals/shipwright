@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.32.5] - 2026-10-28
+
+### Added
+
+- allow `agent.provisioning.images` (per-specialty agent images) in the values schema, with a documented empty default
+
 ## [1.32.4] - 2026-10-28
 
 ### Changed
