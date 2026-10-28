@@ -16,6 +16,12 @@ independent of `appVersion`. CI enforces this with
 
 - shared networking and database templates are now library includes driven by Shipwright extension lists (no rendered change)
 
+## [1.31.2] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.2 triggered by release tag(s): `agent-chat-v0.13.2`
+
 ## [1.31.1] - 2026-10-28
 
 ### Changed
