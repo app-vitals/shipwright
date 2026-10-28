@@ -131,10 +131,13 @@ On receipt, `library-chart-release.yml`:
 6. Swaps the vendored agent-platform chart tarballs in `charts/shipwright/charts/`.
 7. Opens (or updates) a PR on the fixed branch `chore/library-chart-release`.
 
-The PR runs the full CI suite, including the `helm.yml` render-parity check.
-Once checks pass, the workflow auto-merges the PR using the platform release
-merge gate (`scripts/platform-bump-gate.sh`). When the PR merges, `chart-release.yml`
-publishes the bumped chart version to the `gh-pages` branch as usual.
+The PR runs the full CI suite, but skips the `helm.yml` render-parity check
+(refactor-only gate — library-chart-release PRs have `chore(deps):` titles and
+do not run this check). Intentional library chart changes affect the renders and
+are expected. Once checks pass, the workflow auto-merges the PR using the
+platform release merge gate (`scripts/platform-bump-gate.sh`). When the PR
+merges, `chart-release.yml` publishes the bumped chart version to the
+`gh-pages` branch as usual.
 
 **Drift detection:** [`check-chart-drift.yml`](./.github/workflows/check-chart-drift.yml)
 runs daily to verify the agent-platform pin in `charts/shipwright` is not
