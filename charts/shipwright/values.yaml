@@ -511,6 +511,13 @@ agent:
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
       tag: agent-v1.439.6
+    # -- Per-specialty agent images, keyed by specialty name (e.g. `coding`). Each
+    # entry takes `repository` (required) and `tag`, same shape as `image`. The
+    # admin Deployment receives the map as JSON in SHIPWRIGHT_AGENT_IMAGES; agents of
+    # a listed specialty are provisioned with that image instead of `image`.
+    # Empty (default) → env var omitted and every agent uses `image`.
+    # Example: { coding: { repository: ghcr.io/acme/agent-coding, tag: v1 } }
+    images: {}
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
