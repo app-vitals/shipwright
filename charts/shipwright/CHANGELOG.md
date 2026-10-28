@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.32.1] - 2026-10-28
+
+### Changed
+
+- document the agent-platform library dependency, the library-release bump flow and the render-parity check (docs only)
+
 ## [1.32.0] - 2026-10-28
 
 ### Changed

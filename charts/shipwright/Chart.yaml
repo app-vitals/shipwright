@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.32.0
+version: 1.32.1
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,6 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
+    - kind: changed
+      description: "document the agent-platform library dependency, the library-release bump flow and the render-parity check (docs only)"
     - kind: changed
       description: "shared networking and database templates are now library includes driven by Shipwright extension lists (no rendered change)"
 dependencies:

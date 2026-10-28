@@ -38,6 +38,40 @@ ct lint --config ct.yaml --check-version-increment --target-branch main
 `ct lint` also runs `yamllint` and `yamale` schema validation; install them with
 `brew install yamllint yamale` (or `pip install yamllint yamale`) if missing.
 
+## Editing platform templates (library chart)
+
+Platform templates (admin, chat, whisper, agent provisioning and the shared
+networking and database templates) are named templates in the `agent-platform`
+library chart from `app-vitals/agent`; the files in `templates/` are one-line
+includes. To change platform behaviour, change the library and release it —
+the dispatch to this repo re-pins `Chart.yaml` / `Chart.lock`, bumps the chart
+version and publishes (see
+[`docs/helm-repo.md`](../../docs/helm-repo.md#how-a-library-release-reaches-a-chart-bump)).
+Shipwright-specific entries for the shared templates go in
+`shipwright.platformExtensions`; task-store, metrics and mcp-server templates
+are edited here directly.
+
+The chart name, release name, `values.yaml` keys and rendered resource names are
+a **compatibility contract** with downstream wrappers (Argo CD prunes anything
+that renders under a new name). Don't change them in a refactor.
+
+## Render-parity check
+
+`scripts/chart-render-parity.ts` renders the chart at a base and at HEAD with
+the same values and fails on any object, name, namespace or field difference
+(only the `helm.sh/chart` label is normalized). CI runs it for every `ci/` and
+`examples/` values file on PRs titled `refactor…`; run it locally before
+opening one:
+
+```bash
+args=(); for f in ci/*.yaml examples/*.yaml; do args+=(--values "charts/shipwright/$f"); done
+bun run scripts/chart-render-parity.ts --base origin/main --head charts/shipwright \
+  --chart charts/shipwright "${args[@]}"
+```
+
+Run it from the repo root. See
+[`docs/helm-repo.md`](../../docs/helm-repo.md#render-parity-check) for details.
+
 ## Bumping a vendored subchart pin
 
 This chart vendors four subcharts as `Chart.yaml` dependencies —
