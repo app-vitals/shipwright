@@ -10,6 +10,48 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.31.3] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.3 triggered by release tag(s): `admin-v1.306.7`, `agent-v1.439.4`
+
+## [1.31.2] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.2 triggered by release tag(s): `agent-chat-v0.13.2`
+
+## [1.31.1] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.1 triggered by release tag(s): `agent-chat-v0.13.1`
+
+## [1.31.0] - 2026-10-28
+
+### Changed
+
+- chat, whisper and voice-secret templates are now one-line includes of the agent-platform library (no rendered change)
+
+## [1.30.6] - 2026-10-28
+
+### Changed
+
+- bump the agent-platform library chart to 0.4.0
+
+## [1.30.5] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.5 triggered by release tag(s): `admin-v1.306.6`, `agent-v1.439.3`, `metrics-v1.165.2`, `task-store-v1.213.4`
+
+## [1.30.4] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.4 triggered by release tag(s): `agent-chat-v0.13.0`
+
 ## [1.30.3] - 2026-10-27
 
 ### Changed

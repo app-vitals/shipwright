@@ -28,7 +28,7 @@ const AGENT: AgentDetail = {
   authorAllowlist: [],
   patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
-  typeName: "coding",
+  specialty: "coding",
   missingRequiredEnv: [],
   autoPostReviews: true,
   allowSelfReview: false,

@@ -180,7 +180,7 @@ only thing that no longer exists is a mode where the command scans for its own c
 
 ## System Cron Changes
 
-System crons are the crons declared in a specialty manifest's `crons` array (`specialties/{typeName}/manifest.yaml` — the `coding` type is the default) — they cover both the core shipwright loop (dev-task, plan, review, patch, deploy) and maintenance tasks (entropy patrol, docs freshness, etc.). The manifest is the source of truth: `AgentCronJobService.reconcileSystemCrons()` resolves an agent's `typeName` to its manifest via the `SpecialtyRegistry` and seeds/updates each agent's system crons from it. When a shipwright change adds, removes, or restructures any system cron, flag two questions during planning:
+System crons are the crons declared in a specialty manifest's `crons` array (`specialties/{specialty}/manifest.yaml` — the `coding` type is the default) — they cover both the core shipwright loop (dev-task, plan, review, patch, deploy) and maintenance tasks (entropy patrol, docs freshness, etc.). The manifest is the source of truth: `AgentCronJobService.reconcileSystemCrons()` resolves an agent's `specialty` to its manifest via the `SpecialtyRegistry` and seeds/updates each agent's system crons from it. When a shipwright change adds, removes, or restructures any system cron, flag two questions during planning:
 
 1. **Backward compatibility.** Will existing agents break when the new code ships but before their crons are updated? If yes, the PR needs a migration path baked in (flag, fallback, graceful no-op) so agents degrade cleanly rather than silently error.
 

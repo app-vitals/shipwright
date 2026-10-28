@@ -201,9 +201,6 @@
           "restrictSlackToMembers": {
             "type": "boolean"
           },
-          "typeName": {
-            "type": "string"
-          },
           "specialty": {
             "type": "string"
           },
@@ -311,7 +308,6 @@
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
-          "typeName",
           "specialty",
           "podServiceAccountName",
           "accountId",
@@ -539,10 +535,6 @@
             "type": "boolean",
             "example": false
           },
-          "typeName": {
-            "type": "string",
-            "example": "coding"
-          },
           "specialty": {
             "type": "string",
             "example": "coding"
@@ -552,7 +544,6 @@
           "id",
           "name",
           "selfHosted",
-          "typeName",
           "specialty"
         ]
       },
@@ -564,7 +555,7 @@
             "minLength": 1,
             "example": "Bodhi"
           },
-          "typeName": {
+          "specialty": {
             "type": "string",
             "minLength": 1,
             "example": "coding"
@@ -602,7 +593,7 @@
         },
         "required": [
           "name",
-          "typeName"
+          "specialty"
         ]
       },
       "Ok": {
@@ -3308,13 +3299,14 @@
             ],
             "example": "active"
           },
-          "typeName": {
-            "type": "string",
-            "example": "coding"
-          },
           "specialty": {
             "type": "string",
             "example": "coding"
+          },
+          "typeName": {
+            "type": "string",
+            "example": "coding",
+            "deprecated": true
           },
           "phaseMethodology": {
             "type": "object",
@@ -3352,6 +3344,7 @@
           "cleanupAfterDays",
           "restrictSlackToMembers",
           "memberEmails",
+          "specialty",
           "phaseMethodology"
         ]
       },
@@ -3566,7 +3559,7 @@
     "/agents/{id}": {
       "get": {
         "summary": "Get an agent",
-        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `specialty`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
         "parameters": [
           {
             "schema": {
@@ -3613,7 +3606,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows), and/or `podServiceAccountName` (platform admin only — 403 otherwise; `null` clears it; 409 unless SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED is on; 422 for agents with a per-agent federated identity; reconciles the workload so the pod is recreated under the new ServiceAccount). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows), and/or `podServiceAccountName` (platform admin only — 403 otherwise; `null` clears it; 409 unless SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED is on; 422 for agents with a per-agent federated identity; reconciles the workload so the pod is recreated under the new ServiceAccount). `specialty` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -3893,7 +3886,7 @@
     "/agents": {
       "get": {
         "summary": "List all agents",
-        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
+        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `specialty` — used for metrics name resolution.",
         "responses": {
           "200": {
             "description": "List of agents",
@@ -3922,7 +3915,7 @@
       },
       "post": {
         "summary": "Create an agent",
-        "description": "Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
+        "description": "Admin-only. Validates name/specialty, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
         "requestBody": {
           "content": {
             "application/json": {
