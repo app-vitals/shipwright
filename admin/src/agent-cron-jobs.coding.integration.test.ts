@@ -28,14 +28,14 @@ function makePrisma(): PrismaClient {
 async function createAgent(
   prisma: PrismaClient,
   name: string,
-  typeName: string,
+  specialty: string,
 ): Promise<string> {
-  const agent = await prisma.agent.create({ data: { name, typeName } });
+  const agent = await prisma.agent.create({ data: { name, specialty } });
   return agent.id;
 }
 
 /**
- * Golden expected row set for a typeName="coding" agent, hardcoded here (per
+ * Golden expected row set for a specialty="coding" agent, hardcoded here (per
  * ATS-3.2 acceptance criterion 1) rather than derived from the manifest at
  * runtime — so this test catches a regression in EITHER the manifest content
  * OR the reconcile logic that maps it into rows. This is the exact set that
@@ -211,7 +211,7 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
 
   // ─── Golden equivalence (ATS-3.2) ─────────────────────────────────────────
   //
-  // t10 — critical boot path. Reconcile for a typeName="coding" agent must
+  // t10 — critical boot path. Reconcile for a specialty="coding" agent must
   // produce the EXACT row set that the (now-deleted) SYSTEM_CRONS array
   // produced: names, schedules, prompts, preChecks, silent flags, enabled
   // defaults, and parentCron links. Expected values are hardcoded in

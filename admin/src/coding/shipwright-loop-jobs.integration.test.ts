@@ -24,9 +24,9 @@ function makePrisma(): PrismaClient {
 async function createAgent(
   prisma: PrismaClient,
   name = "Test Agent",
-  typeName = "coding",
+  specialty = "coding",
 ): Promise<string> {
-  const agent = await prisma.agent.create({ data: { name, typeName } });
+  const agent = await prisma.agent.create({ data: { name, specialty } });
   return agent.id;
 }
 

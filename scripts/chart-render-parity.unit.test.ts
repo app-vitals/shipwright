@@ -54,14 +54,43 @@ describe("normalize", () => {
 describe("normalize embedded manifests", () => {
   test("blanks the chart label inside a YAML string value, keeping other lines", () => {
     const doc = (v: string) => ({
-      data: { "i.yaml": `kind: Issuer\n  labels:\n    helm.sh/chart: ${v}\n    app: x\n` },
+      data: {
+        "i.yaml": `kind: Issuer\n  labels:\n    helm.sh/chart: ${v}\n    app: x\n`,
+      },
     });
     expect(normalize(doc("shipwright-1.29.12"))).toEqual(
       normalize(doc("shipwright-1.30.0")),
     );
     expect(normalize(doc("a-1"))).not.toEqual(
-      normalize({ data: { "i.yaml": "kind: Issuer\n  labels:\n    app: y\n" } }),
+      normalize({
+        data: { "i.yaml": "kind: Issuer\n  labels:\n    app: y\n" },
+      }),
     );
+  });
+});
+
+describe("normalize embedded manifests (same-string changes)", () => {
+  const embedded = (label: string, image: string) => ({
+    spec: {
+      items: [
+        {
+          "bootstrap.yaml": `labels:\n  helm.sh/chart: ${label}\nimage: ${image}\n`,
+        },
+      ],
+    },
+  });
+  test("version-only change inside a nested embedded string is ignored", () => {
+    expect(normalize(embedded("shipwright-1.2.3", "img:1"))).toEqual(
+      normalize(embedded("shipwright-1.3.0-rc.1", "img:1")),
+    );
+  });
+  test("an image tag change in the same embedded string still diffs", () => {
+    const diff = diffValues(
+      normalize(embedded("shipwright-1.2.3", "img:1")),
+      normalize(embedded("shipwright-1.3.0", "img:2")),
+    );
+    expect(diff).toHaveLength(1);
+    expect(diff[0]?.text).toContain("img:2");
   });
 });
 

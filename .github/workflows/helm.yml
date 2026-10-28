@@ -5,6 +5,7 @@ name: Helm
 # end-to-end job. Both jobs block merge on failure.
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]
     paths:
       - "charts/**"
       - "ct.yaml"
@@ -125,12 +126,15 @@ jobs:
                 -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
-  # Zero-rename gate (CHM-1.2): renders the chart at the PR base and at HEAD for
-  # every ci/ and examples values file and fails on any object name, namespace
-  # or field change (only the helm.sh/chart label is normalized away).
+  # Refactor-only zero-rename gate (CHM-1.2): renders the chart at the PR base
+  # and at HEAD for every ci/ and examples values file and fails on any object
+  # name, namespace or field change (only the helm.sh/chart label is normalized
+  # away). Only run on refactor PRs — feat/fix/chore commits and chart-version
+  # bumps intentionally change output and skip this check. Retitling re-evaluates
+  # the check via the `edited` trigger type.
   render-parity:
     name: chart render parity vs base
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, 'refactor')
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:

@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.439.3",
+  "version": "1.439.4",
   "private": true,
   "workspaces": [
     "plugins/shipwright",
@@ -38,9 +38,9 @@
   },
   "dependencies": {
     "@shipwright/admin": "workspace:*",
-    "@app-vitals/agent-admin": "0.13.1",
-    "@app-vitals/agent-lib": "0.13.1",
-    "@app-vitals/agent-runtime": "0.13.1",
+    "@app-vitals/agent-admin": "0.13.2",
+    "@app-vitals/agent-lib": "0.13.2",
+    "@app-vitals/agent-runtime": "0.13.2",
     "@prisma/client": "^7.0.0"
   },
   "overrides": {
