@@ -76,7 +76,7 @@ take effect without a restart.
 ### System crons vs. custom crons
 
 System crons (`"system": true` in the list output) are seeded from the specialty manifest's
-`crons` array (`specialties/{typeName}/manifest.yaml`, resolved via the `SpecialtyRegistry`).
+`crons` array (`specialties/{specialty}/manifest.yaml`, resolved via the `SpecialtyRegistry`).
 Important rules:
 
 - **Cannot be deleted via the API** — the server returns 403. They are recreated on the
@@ -84,7 +84,7 @@ Important rules:
 - **Can be enabled/disabled via `PATCH {"enabled": bool}`** — the enabled-only toggle works
   for both custom and system crons. The enabled state persists across reconcile calls.
 - **Content updates go through code** — submit a PR to change the manifest's `crons` array
-  (`specialties/{typeName}/manifest.yaml`), then call `POST .../crons/reconcile` to apply the
+  (`specialties/{specialty}/manifest.yaml`), then call `POST .../crons/reconcile` to apply the
   new definition.
 
 Custom crons (user-created, `"system": false`) can be freely created, updated, and deleted.
@@ -363,7 +363,7 @@ curl -sf -X DELETE \
 
 Two callers, one implementation: `POST /agents` (JSON admin API) and the web UI form at
 `/admin/agents/new` (`POST /admin/agents`, an HTML form endpoint) both delegate to the same
-`createAgent()` function — validate name/typeName, create the Agent row, seed
+`createAgent()` function — validate name/specialty, create the Agent row, seed
 AgentTool/AgentPlugin from the selected Specialty manifest, attach repos/allowlists/members,
 patch Claude credentials, and (for `runtime: "in-cluster"`) provision the Kubernetes workload.
 Creation is transactional: any failure leaves zero rows behind, never a partial-success 200.
@@ -377,13 +377,13 @@ curl -sf -X POST \
   "$SHIPWRIGHT_API_URL/agents" \
   -d '{
     "name": "My New Agent",
-    "typeName": "coding",
+    "specialty": "coding",
     "runtime": "in-cluster",
     "reposRaw": "my-org/my-repo\nmy-org/another-repo"
   }' | jq .
 ```
 
-Every field besides `name`/`typeName` is optional and raw/unparsed — `reposRaw`,
+Every field besides `name`/`specialty` is optional and raw/unparsed — `reposRaw`,
 `authorAllowlistRaw`, `patchAuthorAllowlistRaw`, and `memberEmailsRaw` are newline-separated
 lists (mirroring the form's textareas); `restrictSlackToMembersRaw` is only truthy for the
 literal string `"true"`. On success the response is the created agent, same shape as
