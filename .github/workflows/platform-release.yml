@@ -233,7 +233,10 @@ jobs:
       # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
       # A failing or missing check exits 1: the job goes red, the failure()
       # step below opens an issue, and the PR is left open for a human. The
-      # gate is behavior-tested against recorded check timelines in
+      # gate re-reads the full required set after the watch (and awaits every
+# rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
+# merged red when a rerun dropped the CI checks from the rollup). The
+# gate is behavior-tested against recorded check timelines in
       # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
       # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
       # copies in sync.
