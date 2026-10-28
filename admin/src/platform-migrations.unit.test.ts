@@ -126,6 +126,14 @@ function hashOf(name: string): string {
   return `sha256:${hex}`;
 }
 
+/**
+ * Reviewed destructive platform migrations exempt from the additive check.
+ * 20261030000000 is the AGR-6.3 REMOVE step of the typeName -> specialty
+ * rename (backfill, SET NOT NULL, DROP COLUMN "typeName"); the dev-task and
+ * coding code no longer read typeName (AXG-1.1), so dropping it is safe.
+ */
+const REVIEWED_REMOVALS = new Set(["20261030000000_drop_agent_type_name"]);
+
 const shipped = readdirSync(MIGRATIONS_DIR)
   .filter((name) => statSync(join(MIGRATIONS_DIR, name)).isDirectory())
   .sort();
@@ -198,6 +206,7 @@ describe("admin migration history (AGR-4.2)", () => {
 
   it("platform additions are additive: no DROP/RENAME, no data change, no NOT NULL column on an existing table", () => {
     for (const name of additions) {
+      if (REVIEWED_REMOVALS.has(name)) continue;
       const sql = readFileSync(
         join(MIGRATIONS_DIR, name, "migration.sql"),
         "utf8",

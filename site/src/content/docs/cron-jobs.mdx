@@ -59,7 +59,7 @@ A `preCheck` value is resolved either as a file path (relative to the agent's wo
 System crons — the ones seeded automatically for every agent — are created and kept in sync by a
 reconcile pass (`POST /agents/:id/crons/reconcile`), which runs at agent startup and can also be
 triggered on demand. Reconcile is a two-pass strategy over the cron list declared by the agent's
-type manifest (`specialties/{typeName}/manifest.yaml`):
+type manifest (`specialties/{specialty}/manifest.yaml`):
 
 1. **Pass 1** creates or updates each manifest cron entry by name. If a matching row already
    exists, it's updated in place — schedule, prompt, `silent`, and `preCheck` are refreshed, but
