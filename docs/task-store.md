@@ -56,6 +56,8 @@ A `Session` row is upserted automatically whenever a task write sets a non-blank
 
 `PATCH /tasks/:id` rejects any body key that is not a valid Task column with a `400` error, naming the unknown field(s). This prevents typos (e.g., `notes` instead of `note`) and malformed requests from reaching Prisma's validation layer, which would otherwise surface as a `500` error. The set of valid fields (`TASK_PATCH_FIELDS` in `task-store/src/routes/tasks.ts`) is kept in sync with `Prisma.TaskScalarFieldEnum` via a unit test — mismatch is a build-time failure, not a deployment surprise.
 
+`POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` also type-check the non-string columns that the passthrough body schemas leave untyped (`assertTaskFieldTypes` in `task-store/src/routes/tasks.ts`): integer fields such as `complexity`, `skipCount` and the token counters must be an integer or `null`; `hours`, `coverageDelta` and `costUsd` a finite number or `null`; `hitl` a boolean or `null`; `acceptanceCriteria` and `dependencies` an array of strings. A mistyped value (e.g. `complexity: "S"`) is a `400` naming the field — there is no string-to-number coercion — rather than a Prisma `500`.
+
 ### Task status lifecycle
 
 ```

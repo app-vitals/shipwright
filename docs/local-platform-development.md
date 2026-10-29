@@ -75,7 +75,7 @@ The admin image does not use the platform admin image: `admin/Dockerfile` instal
 ## 4. Shipping the change
 
 1. Land the platform change in `app-vitals/agent`; its release workflow publishes the packages and image and dispatches `platform-release` to this repo.
-2. `.github/workflows/platform-release.yml` opens (or updates) the `chore/platform-release` PR that re-pins every `@app-vitals/agent-*` dependency, `ARG PLATFORM_VERSION` in `agent/Dockerfile`, `bun.lock` and the `docs/platform/` snapshot. Renovate's `app-vitals agent platform` group is the fallback.
+2. `.github/workflows/platform-release.yml` opens (or updates) the `chore/platform-release` PR that re-pins every `@app-vitals/agent-*` dependency, `ARG PLATFORM_VERSION` in `agent/Dockerfile`, `bun.lock` and the `docs/platform/` snapshot. Before `bun install` runs, the workflow waits (up to ~10 minutes) for those exact packages to appear on npm, which lags the publish; `bun scripts/platform-release-bump.ts --list-packages` prints the package names it waits on. Renovate's `app-vitals agent platform` group is the fallback.
 3. After that PR merges, `build-agent.yml` tags and pushes a new `shipwright-agent` `agent-vX.Y.Z` image (the pin files are in its path filter).
 
 Platform docs under `docs/platform/` are a read-only snapshot refreshed only by the bump PR (`platform-docs-guard.yml`); edit them upstream.
