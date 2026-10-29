@@ -289,13 +289,13 @@ jobs:
             --entrypoint bun shipwright-agent:ci \
             run agent/scripts/verify-browser-launch.ts
 
-      # PLD-1.1: the gh wrapper must shadow the real gh, and under GitHub App
+      # PLD-1.1: the platform gh wrapper must shadow the real gh, and under GitHub App
       # auth (GH_TOKEN_FILE points at an existing file) it must refuse to run
       # without SHIPWRIGHT_GH_OWNER instead of falling back to another org's token.
       - name: Verify gh wrapper requires SHIPWRIGHT_GH_OWNER under App auth
         run: |
           docker run --rm --entrypoint bash shipwright-agent:ci -c '
-            test "$(command -v gh)" = /app/agent/scripts/bin/gh
+            test "$(command -v gh)" = /app/scripts/bin/gh
             echo dummy > /tmp/gh-token
             if out=$(GH_TOKEN_FILE=/tmp/gh-token gh --version 2>&1); then
               echo "gh ran without SHIPWRIGHT_GH_OWNER"; exit 1
