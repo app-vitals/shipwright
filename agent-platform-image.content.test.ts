@@ -67,10 +67,10 @@ describe("platform-based shipwright-agent image (AGR-4.3b)", () => {
     expect(df).toContain("ENV SHIPWRIGHT_REPO_ROOT=/app\n");
   });
 
-  it("puts the gh wrapper ahead of the real gh on PATH (PLD-1.1)", () => {
+  it("uses the platform gh wrapper instead of overriding PATH (PLD-1.1)", () => {
     const df = read("agent/Dockerfile");
-    expect(df).toContain('ENV PATH="/app/agent/scripts/bin:${PATH}"');
-    expect(df).toContain("chmod +x /app/agent/scripts/bin/gh");
+    expect(df).not.toMatch(/^ENV PATH=/m);
+    expect(df).not.toContain("scripts/bin");
   });
 
   it("CI builds one agent image and runs every contract check on it", () => {

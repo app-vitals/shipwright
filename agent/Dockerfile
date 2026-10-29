@@ -68,11 +68,8 @@ COPY --chown=1000:1000 agent/workspace/CLAUDE-HITL.md.template ./runtime/workspa
 # `/` in this layout. Point it at the root that holds plugins/ and .claude-plugin/.
 ENV SHIPWRIGHT_REPO_ROOT=/app
 
-# The gh wrapper (PLD-1.1) injects the per-org GitHub App token and requires
-# SHIPWRIGHT_GH_OWNER; the platform image only ships the git credential helper.
-# Put the wrapper ahead of the real gh on PATH.
-ENV PATH="/app/agent/scripts/bin:${PATH}"
-RUN chmod +x /app/agent/scripts/bin/gh /app/agent/scripts/bin/git-credential-shipwright.sh
+# The gh owner-routing wrapper and git credential helper come from the platform
+# image (/app/scripts/bin is already on PATH there), so nothing is overridden here.
 
 # js-yaml is only an override in the platform's package.json, not a dependency, so
 # it is not resolvable from /app. The plugin scripts (suppressions.ts,
