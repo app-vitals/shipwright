@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.32.13
+version: 1.32.14
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,7 +30,13 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.32.13 triggered by release tag agent-chat-v0.16.1"
+      description: "auto-bump to chart v1.32.14 triggered by release tag admin-v1.309.1"
+    - kind: changed
+      description: "auto-bump to chart v1.32.14 triggered by release tag agent-v1.442.0"
+    - kind: changed
+      description: "auto-bump to chart v1.32.14 triggered by release tag metrics-v1.167.0"
+    - kind: changed
+      description: "auto-bump to chart v1.32.14 triggered by release tag task-store-v1.215.0"
 dependencies:
   # Shared platform helpers (CHM-3.1): the agent-platform library chart owns the
   # name/label/image helpers this chart's `shipwright.*` helpers delegate to.
