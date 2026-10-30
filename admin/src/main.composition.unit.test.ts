@@ -37,6 +37,23 @@ describe("applyShipwrightDefaults (AGR-4.2)", () => {
     expect(env.SHIPWRIGHT_SPECIALTIES_DIR).toBe("/custom/specialties");
   });
 
+  it("defaults the default and self-serve agent types to coding", () => {
+    const env: Record<string, string | undefined> = {};
+    applyShipwrightDefaults(env);
+    expect(env.SHIPWRIGHT_DEFAULT_AGENT_TYPE).toBe("coding");
+    expect(env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE).toBe("coding");
+  });
+
+  it("keeps operator-set default and self-serve agent types", () => {
+    const env: Record<string, string | undefined> = {
+      SHIPWRIGHT_DEFAULT_AGENT_TYPE: "specialist",
+      SHIPWRIGHT_SELF_SERVE_AGENT_TYPE: "specialist",
+    };
+    applyShipwrightDefaults(env);
+    expect(env.SHIPWRIGHT_DEFAULT_AGENT_TYPE).toBe("specialist");
+    expect(env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE).toBe("specialist");
+  });
+
   it("runs before startAdmin() in the entrypoint", () => {
     expect(
       entrySource.indexOf("applyShipwrightDefaults(process.env);"),
