@@ -40,13 +40,13 @@ describe("platform-based shipwright-agent image (AGR-4.3b)", () => {
     expect(df).toContain("bun add js-yaml@");
   });
 
-  it("layers the coding extension, plugins, marketplace and specialties", () => {
+  it("layers the coding extension, plugins, marketplace and workspace templates", () => {
     const df = read("agent/Dockerfile");
     for (const needle of [
       "agent/src/coding ./agent/src/coding",
       "/app/plugins ./plugins",
       "/app/.claude-plugin ./.claude-plugin",
-      "specialties ./specialties",
+      "agent/workspace ./agent/workspace",
       'import "./agent/src/index.ts";',
     ]) {
       expect(df).toContain(needle);

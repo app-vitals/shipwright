@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { applyShipwrightDefaults, SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
+import { applyShipwrightDefaults } from "./main.ts";
 
 // Shipwright's composition root wires the coding admin extension into the
 // platform boot. This tests that composition, so it stays with main.ts (Shipwright's
@@ -20,21 +19,10 @@ describe("main.ts composition root (coding)", () => {
 });
 
 describe("applyShipwrightDefaults (AGR-4.2)", () => {
-  it("points the platform at Shipwright's repo-root specialties", () => {
-    expect(
-      existsSync(join(SHIPWRIGHT_SPECIALTIES_DIR, "coding", "manifest.yaml")),
-    ).toBe(true);
+  it("does not set a specialties dir (the coding specialty is code defaults)", () => {
     const env: Record<string, string | undefined> = {};
     applyShipwrightDefaults(env);
-    expect(env.SHIPWRIGHT_SPECIALTIES_DIR).toBe(SHIPWRIGHT_SPECIALTIES_DIR);
-  });
-
-  it("keeps an operator-set specialties dir", () => {
-    const env: Record<string, string | undefined> = {
-      SHIPWRIGHT_SPECIALTIES_DIR: "/custom/specialties",
-    };
-    applyShipwrightDefaults(env);
-    expect(env.SHIPWRIGHT_SPECIALTIES_DIR).toBe("/custom/specialties");
+    expect(env.SHIPWRIGHT_SPECIALTIES_DIR).toBeUndefined();
   });
 
   it("defaults the default and self-serve agent types to coding", () => {

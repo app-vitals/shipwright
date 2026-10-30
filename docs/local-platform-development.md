@@ -30,7 +30,7 @@ Rules of thumb:
 |---|---|---|
 | `task dev` (metrics supervisor) | `@app-vitals/agent-lib` | Edits are live. |
 | `task hitl` (`scripts/hitl.ts`) | `agent-runtime` (`claude`, `setup`), `agent-admin` (Prisma client, `prisma.config.ts`), `agent-lib` | Edits are live; the admin it boots is `admin/src/main.ts` on top of the linked `agent-admin`. |
-| `scripts/seed-dev-agent.ts` | `agent-admin` (`prisma-client`, `specialty-manifest-loader`), `agent-lib` | Edits are live; regenerate the Prisma client first if the schema changed. |
+| `scripts/seed-dev-agent.ts` | `agent-admin` (`prisma-client`), `agent-lib` | Edits are live; regenerate the Prisma client first if the schema changed. |
 | `task stack` (tmux; agent in Docker) | Host processes use the link. The agent container is built from `agent/Dockerfile`, which starts `FROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}`. The `chat-svc` pane runs the platform's `chat/src/main.ts` (or the `agent-chat` image). | The container does **not** see the link. Build the platform image locally first (below). The chat pane reads the platform checkout directly (next section). |
 | `task minikube:*` | Images pulled by the chart (`ghcr.io/app-vitals/shipwright-*`) | The link does not apply. Load locally built images (below). |
 

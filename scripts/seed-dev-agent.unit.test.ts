@@ -7,16 +7,17 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import type { SpecialtyManifestResolver } from "@app-vitals/agent-admin/specialty-manifest-loader";
-import type { SpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
+import {
+  CODING_SPECIALTY_DEFAULTS,
+  codingSpecialtyDefaults,
+} from "@shipwright/admin/coding/coding-specialty-defaults";
 import { parseEnvFile, type SeedDeps, seedDevAgent } from "./seed-dev-agent.ts";
 
-// ─── Fake SpecialtyManifestResolver ────────────────────────────────────────
+// ─── Fake specialty defaults ─────────────────────────────────────────────────
 //
-// Resolves a fixed "coding" manifest — mirrors the fakes used in
-// agent-cron-jobs.unit.test.ts and agents-api.integration.test.ts. Keeps this
-// suite's manifest-driven tool/plugin list independent of the real
-// specialties/coding/manifest.yaml file on disk.
+// Resolves a fixed "coding" tool/plugin set, keeping this suite independent of
+// the real defaults in admin/src/coding/coding-specialty-defaults.ts (the
+// last test pins the two together).
 
 const CODING_TOOLS = [
   "Read",
@@ -31,35 +32,8 @@ const CODING_TOOLS = [
   "Agent",
 ];
 
-function fakeCodingManifest(): SpecialtyManifest {
-  return {
-    apiVersion: "shipwright.dev/v1alpha1",
-    kind: "Specialty",
-    metadata: {
-      name: "coding",
-      displayName: "Coding Agent",
-      description: "test manifest",
-      version: "1.0.0",
-      skills: [],
-    },
-    identity: { templatesDir: "agent/workspace/" },
-    crons: [],
-    plugins: ["shipwright"],
-    tools: CODING_TOOLS,
-    env: { required: [], optional: [] },
-    members: [],
-    repos: [],
-    chat: true,
-    voice: true,
-  };
-}
-
-function fakeSpecialtyRegistry(): SpecialtyManifestResolver {
-  const manifest = fakeCodingManifest();
-  return {
-    getManifest: () => manifest,
-    tryGetManifest: () => manifest,
-  };
+function fakeSpecialtyDefaults(): SeedDeps["specialtyDefaults"] {
+  return () => ({ tools: CODING_TOOLS, plugins: ["shipwright"] });
 }
 
 // ─── Prisma double factory ────────────────────────────────────────────────────
@@ -139,7 +113,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
-      specialtyRegistry: fakeSpecialtyRegistry(),
+      specialtyDefaults: fakeSpecialtyDefaults(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -172,7 +146,7 @@ describe("seedDevAgent", () => {
     };
     expect(pluginCreate.name).toBe("shipwright");
 
-    // AgentTool upserts — the full manifest-resolved tool set
+    // AgentTool upserts — the full defaults-resolved tool set
     expect(double.agentToolUpserts).toHaveLength(CODING_TOOLS.length);
     const toolPatterns = double.agentToolUpserts.map(
       (u) =>
@@ -184,27 +158,19 @@ describe("seedDevAgent", () => {
     }
   });
 
-  // ─── Registry-driven parity (ATS-3.3) ───────────────────────────────────
+  // ─── Code-defaults parity ───────────────────────────────────
 
-  it("resolves its tool set from the injected SpecialtyManifestResolver rather than a hardcoded constant", async () => {
+  it("resolves its tool set from the injected specialty defaults rather than a hardcoded constant", async () => {
     const customTools = ["Read", "Bash"];
-    const customRegistry: SpecialtyManifestResolver = {
-      getManifest: () => ({
-        ...fakeCodingManifest(),
-        tools: customTools,
-        plugins: ["shipwright"],
-      }),
-      tryGetManifest: () => ({
-        ...fakeCodingManifest(),
-        tools: customTools,
-        plugins: ["shipwright"],
-      }),
-    };
+    const customDefaults: SeedDeps["specialtyDefaults"] = () => ({
+      tools: customTools,
+      plugins: ["shipwright"],
+    });
 
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token",
-      specialtyRegistry: customRegistry,
+      specialtyDefaults: customDefaults,
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -220,22 +186,13 @@ describe("seedDevAgent", () => {
     expect(toolPatterns.sort()).toEqual([...customTools].sort());
   });
 
-  it("produces the same tool/plugin set as a manifest-created coding agent (parity assert against the real registry)", async () => {
-    const { SpecialtyRegistry } = await import(
-      "@app-vitals/agent-admin/specialty-manifest-loader"
-    );
-    const { SHIPWRIGHT_SPECIALTIES_DIR } = await import(
-      "@shipwright/admin/main"
-    );
-    const realRegistry = new SpecialtyRegistry({
-      typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
-    });
-    const codingManifest = realRegistry.getManifest("coding");
+  it("produces the same tool/plugin set as the real coding code defaults (what POST /admin/agents seeds)", async () => {
+    const codingDefaults = CODING_SPECIALTY_DEFAULTS;
 
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token",
-      specialtyRegistry: realRegistry,
+      specialtyDefaults: codingSpecialtyDefaults,
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -243,21 +200,23 @@ describe("seedDevAgent", () => {
 
     await seedDevAgent(deps);
 
-    // Tool set matches the real coding manifest exactly (parity with the
-    // admin POST /admin/agents seeding path, which resolves the same manifest).
+    // Tool set matches the real coding defaults exactly (parity with the
+    // admin POST /admin/agents seeding path, which resolves the same defaults).
     const toolPatterns = double.agentToolUpserts.map(
       (u) =>
         (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
           .pattern,
     );
-    expect(toolPatterns.sort()).toEqual([...codingManifest.tools].sort());
+    expect(toolPatterns.sort()).toEqual(
+      [...(codingDefaults.tools ?? [])].sort(),
+    );
 
-    // Plugin set matches too — the script's hardcoded "shipwright" upsert is
-    // now backed by (and equal to) the manifest's plugins[] array.
+    // Plugin set matches too — the seeded plugins
+    // is backed by (and equal to) the defaults' plugins array.
     const pluginNames = double.agentPluginUpserts.map(
       (u) => (u.create as { name: string }).name,
     );
-    expect(pluginNames).toEqual(codingManifest.plugins);
+    expect(pluginNames).toEqual(codingDefaults.plugins);
   });
 
   it("seeds CLAUDE_CODE_OAUTH_TOKEN without GH_TOKEN when GH_TOKEN is absent", async () => {
@@ -266,7 +225,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
-      specialtyRegistry: fakeSpecialtyRegistry(),
+      specialtyDefaults: fakeSpecialtyDefaults(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -290,7 +249,7 @@ describe("seedDevAgent", () => {
       readEnvFile: () => {
         throw new Error("ENOENT: no such file or directory");
       },
-      specialtyRegistry: fakeSpecialtyRegistry(),
+      specialtyDefaults: fakeSpecialtyDefaults(),
       exit: (code: number, msg: string): never => {
         exitCode = code;
         exitMessage = msg;
@@ -312,7 +271,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => "GH_TOKEN=ghp_test123\n# just a comment",
-      specialtyRegistry: fakeSpecialtyRegistry(),
+      specialtyDefaults: fakeSpecialtyDefaults(),
       exit: (code: number, msg: string): never => {
         exitCode = code;
         exitMessage = msg;
@@ -333,7 +292,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
-      specialtyRegistry: fakeSpecialtyRegistry(),
+      specialtyDefaults: fakeSpecialtyDefaults(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
