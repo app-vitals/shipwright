@@ -4,8 +4,8 @@
 # registry package @app-vitals/agent-admin, installed from bun.lock at the
 # version admin/package.json pins. This image adds only Shipwright's
 # composition root (admin/src/main.ts) and coding extension (admin/src/coding)
-# on top of it, plus the repo files they read at runtime (specialties/,
-# plugins/shipwright/references/).
+# on top of it, plus the repo files they read at runtime
+# (plugins/shipwright/references/).
 #
 # It is not layered FROM ghcr.io/app-vitals/agent-admin: that image is a
 # runnable platform admin with its own workspace layout and its own

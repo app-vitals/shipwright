@@ -304,7 +304,7 @@ test("crons section documents the default scheduled jobs", async ({
   await page.locator('label[for="sw-tab-crons"]').click();
   const section = page.locator("#crons");
   await expect(section).toBeVisible();
-  // The system crons shown on the homepage (specialties/coding/manifest.yaml) are named.
+  // The system crons shown on the homepage (admin/src/coding/coding-specialty-defaults.ts) are named.
   for (const name of [
     "dev-task",
     "review",

@@ -11,7 +11,6 @@
  * tests and scripts/generate-admin-spec.ts can import from it.
  */
 
-import { join } from "node:path";
 import { startAdmin } from "@app-vitals/agent-admin/admin-boot";
 import type { AdminExtension } from "@app-vitals/agent-admin/admin-extension";
 import { codingAdminExtension } from "./coding/coding-admin-extension.ts";
@@ -37,27 +36,12 @@ export const adminExtensions: readonly AdminExtension[] = [
 ];
 
 /**
- * Shipwright's specialties (coding, specialist) at the repo root. The platform
- * resolves its default specialties dir relative to its own install location,
- * which is inside node_modules now that it comes from @app-vitals/agent-admin,
- * so the composition root supplies Shipwright's.
- */
-export const SHIPWRIGHT_SPECIALTIES_DIR = join(
-  import.meta.dir,
-  "..",
-  "..",
-  "specialties",
-);
-
-/**
- * Defaults SHIPWRIGHT_SPECIALTIES_DIR to Shipwright's specialties, and the
- * default and self-serve agent types to "coding" (the platform's own fallback
- * is "specialist"); an operator-set value wins. Applied once at startup, before startAdmin().
+ * Defaults the default and self-serve agent types to "coding" (the
+ * platform's own fallback is "specialist"); an operator-set value wins. Applied once at startup, before startAdmin().
  */
 export function applyShipwrightDefaults(
   env: Record<string, string | undefined>,
 ): void {
-  env.SHIPWRIGHT_SPECIALTIES_DIR ||= SHIPWRIGHT_SPECIALTIES_DIR;
   env.SHIPWRIGHT_DEFAULT_AGENT_TYPE ||= "coding";
   env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE ||= "coding";
 }
