@@ -41,7 +41,7 @@ All tasks are safe to deploy standalone when run in dependency order.
 | PCD-1.2 | agent | ci: add a coding-vs-platform boundary gate with a shrinking allowlist | — | 3 | sonnet |  |
 | PCD-2.1 | agent | refactor: remove the task-store client, task-store types, claim-ttl and default-account from the platform | PCD-1.2, CET-1.1, CET-1.2 | 2 | haiku |  |
 | PCD-2.2 | agent | refactor: make the platform workspace fallback generic and stop special-casing coding | PCD-1.2, CET-1.3 | 3 | sonnet |  |
-| PCD-3.1 | agent | refactor: default the agent type to specialist and the specialties dir to the shipped agent-types | PCD-2.2, CET-1.4 | 4 | sonnet |  |
+| PCD-3.1 | agent | refactor: default the agent type to specialist and the specialties dir to the shipped agent-types | PCD-2.2, CET-1.4, PCD-3.2 | 4 | sonnet |  |
 | PCD-3.2 | agent | chore: verify live specialty values, pod specialties env and coding agents' plugin rows | — | 1 | haiku | ⚠ HITL |
 | PCD-3.3 | agent | refactor: install plugins from the agent's own rows instead of a hardcoded shipwright default | PCD-3.2 | 3 | sonnet |  |
 | PCD-3.4 | agent | chore: change the Agent.specialty column default to specialist | PCD-3.1, PCD-3.2 | 3 | sonnet |  |
@@ -67,7 +67,7 @@ All tasks are safe to deploy standalone when run in dependency order.
   |- CET-1.2 own claim-ttl +-> PCD-2.1 delete moved files (needs PCD-1.2)
   |- CET-1.3 coding templates -> PCD-2.2 generic fallback (needs PCD-1.2)
   |- CET-1.4 explicit defaults                \
-  |                                            +-> PCD-3.1 specialist default (needs PCD-2.2, CET-1.4)
+  |                                            +-> PCD-3.1 specialist default (needs PCD-2.2, CET-1.4, PCD-3.2)
   |                                                   +-> PCD-3.4 Prisma default (also needs PCD-3.2)
   |- PCD-4.1 -> CET-4.1 coding defaults as code -> CET-4.2 delete manifests
   \- PCD-5.1 shrink loader (needs PCD-3.1, PCD-4.1, CET-4.2)
