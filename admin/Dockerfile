@@ -36,6 +36,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
 COPY task-store/package.json ./task-store/
+COPY lib/package.json ./lib/
 COPY task-store/prisma ./task-store/prisma/
 COPY agent/package.json ./agent/
 COPY metrics/package.json ./metrics/

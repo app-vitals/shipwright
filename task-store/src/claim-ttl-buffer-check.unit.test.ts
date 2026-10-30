@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CLAIM_TTL_BUFFER_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { CLAIM_TTL_BUFFER_MS } from "@shipwright/lib/claim-ttl";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 
 describe("checkClaimTtlBuffer", () => {

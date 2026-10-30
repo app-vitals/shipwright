@@ -19,6 +19,7 @@
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
     "@app-vitals/agent-lib": "0.15.0",
+    "@shipwright/lib": "workspace:*",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
     "zod": "^4"

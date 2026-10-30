@@ -19,7 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { createTaskStoreFetchers } from "@shipwright/admin/coding/task-store-fetchers";
 import { createTaskStoreApp } from "./app.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";

@@ -3,6 +3,7 @@
   "version": "1.440.0",
   "private": true,
   "workspaces": [
+    "lib",
     "plugins/shipwright",
     "metrics",
     "agent",

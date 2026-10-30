@@ -30,7 +30,7 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "@app-vitals/agent-admin/caller-scope";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
 import {
   renderRepoOrgFilterFields,

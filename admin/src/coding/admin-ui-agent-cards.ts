@@ -11,7 +11,7 @@ import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
 import type { AgentGitHubInstallationsService } from "@app-vitals/agent-admin/agent-github-installations";
 import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import {
   renderVerificationActivityCard,
   type VerificationCheckItem,

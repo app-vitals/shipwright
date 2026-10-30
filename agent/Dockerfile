@@ -51,6 +51,10 @@ WORKDIR /app
 COPY --chown=1000:1000 agent/src/coding ./agent/src/coding
 COPY --chown=1000:1000 agent/src/index.ts ./agent/src/index.ts
 COPY --chown=1000:1000 agent/scripts ./agent/scripts
+# Shipwright-owned shared modules (@shipwright/lib), linked into node_modules so
+# the specifier resolves from agent/src.
+COPY --chown=1000:1000 lib ./lib
+RUN mkdir -p /app/node_modules/@shipwright && ln -s /app/lib /app/node_modules/@shipwright/lib
 # Plugin source + marketplace manifest, version-stamped. The coding extension
 # imports plugins/shipwright/scripts/* by relative path from agent/src/coding.
 COPY --from=stamp --chown=1000:1000 /app/plugins ./plugins

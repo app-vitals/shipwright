@@ -21,6 +21,7 @@
   "dependencies": {
     "@app-vitals/agent-admin": "0.15.0",
     "@app-vitals/agent-lib": "0.15.0",
+    "@shipwright/lib": "workspace:*",
     "@hono/zod-openapi": "^1.0.0",
     "hono": "^4.13.1"
   },
