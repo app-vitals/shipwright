@@ -24,9 +24,9 @@
  * only createdAt/updatedAt are DateTime columns.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
   type PrFinding,
@@ -1020,7 +1020,7 @@ export class PullRequestService implements PullRequestServiceLike {
     const now = this.clock.now();
     const nowIso = now.toISOString();
     // Cutoff for "fresh" heartbeat — mirrors the reaper's own default
-    // (DEFAULT_CLAIM_TTL_MS in @app-vitals/agent-lib/claim-ttl).
+    // (DEFAULT_CLAIM_TTL_MS in task-store/src/claim-ttl.ts).
     const cutoffMs = Number(
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
     );

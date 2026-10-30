@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { FixedClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { BadRequestError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { deriveOrigin } from "./pr-origin-derivation.ts";

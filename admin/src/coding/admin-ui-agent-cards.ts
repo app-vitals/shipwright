@@ -11,13 +11,13 @@ import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
 import type { AgentGitHubInstallationsService } from "@app-vitals/agent-admin/agent-github-installations";
 import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import {
   renderVerificationActivityCard,
   type VerificationCheckItem,
 } from "./admin-ui-verification-cards.ts";
 import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { buildVerificationActivityRollup } from "./verification-checks.ts";
 
 export interface GitHubInstallationsCardData {

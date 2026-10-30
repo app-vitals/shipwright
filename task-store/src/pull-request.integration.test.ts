@@ -8,9 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
