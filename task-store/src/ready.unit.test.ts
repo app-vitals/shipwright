@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import { type ReadyTaskLike, resolveReadyTasks } from "./ready.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
