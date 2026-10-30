@@ -18,6 +18,8 @@
  *   openApi             — the coding API routes' fragment of admin/openapi.json,
  *                         placed where they sat before the split
  *   backgroundPasses    — the session alert sweeper
+ *   specialtyDefaults   — the coding specialty's default crons, tools and
+ *                         plugin (coding/coding-specialty-defaults.ts)
  *
  * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
  * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
@@ -46,6 +48,7 @@ import {
   codingAdminOpenApi,
   createCodingAdminApiApp,
 } from "./agents-api-coding.ts";
+import { codingSpecialtyDefaults } from "./coding-specialty-defaults.ts";
 import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
@@ -258,6 +261,7 @@ export const codingAdminExtension: AdminExtension = {
     });
   },
   openApi: codingAdminOpenApi,
+  specialtyDefaults: codingSpecialtyDefaults,
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);
     return pass ? [pass] : [];
