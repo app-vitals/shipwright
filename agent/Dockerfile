@@ -63,6 +63,11 @@ COPY --chown=1000:1000 specialties ./specialties
 # /app/runtime/workspace; copy only these two so its own templates stay intact.
 COPY --chown=1000:1000 agent/workspace/CLAUDE.md.template ./runtime/workspace/CLAUDE.md.template
 COPY --chown=1000:1000 agent/workspace/CLAUDE-HITL.md.template ./runtime/workspace/CLAUDE-HITL.md.template
+# The full coding template set, at the path the coding manifest's
+# identity.templatesDir (agent/workspace/) names relative to SHIPWRIGHT_REPO_ROOT,
+# so the platform's specialty-templates lookup resolves it once it stops
+# short-circuiting `coding` to its built-in templates (PCD-2.2).
+COPY --chown=1000:1000 agent/workspace ./agent/workspace
 
 # The runtime derives its repo root from its own module path, which resolves to
 # `/` in this layout. Point it at the root that holds plugins/ and .claude-plugin/.
