@@ -13,6 +13,13 @@
   <em>Plan → build → review → ship — one task through the pipeline. (Illustrative.)</em>
 </p>
 
+**Coming from _How to Build Your Own Software Factory_?** This is the factory the lessons are built on:
+
+- [Lesson 1: Plan, Execute, Loop](https://www.youtube.com/watch?v=c4qi_zu3vZI) → [`/shipwright:plan-session`](./plugins/shipwright/commands/plan-session.md) + [`/shipwright:dev-task`](./plugins/shipwright/commands/dev-task.md), the loop the agent runs on a schedule.
+- [Lesson 2: A Plan That Looks First](https://www.youtube.com/watch?v=dr-JNCWH0Yc) → [`/shipwright:plan-session`](./plugins/shipwright/commands/plan-session.md), which reads the codebase before it writes tasks.
+
+All lessons: [the playlist](https://www.youtube.com/playlist?list=PLEtnpY4_ARns) · lesson code: [app-vitals/how-to-factory](https://github.com/app-vitals/how-to-factory)
+
 ### It builds itself, and the numbers are public
 
 Shipwright's own delivery pipeline runs on Shipwright. Cycle time, CI first-pass rate,
@@ -20,8 +27,8 @@ review verdicts and estimation accuracy for this repository are public:
 
 **[→ proof.shipwrightharness.com](https://proof.shipwrightharness.com/public/dashboard)**
 
-As of 2026-09-25, trailing 30 days: **336 tasks completed, 60 PRs merged, 85.7% CI
-first-pass rate, ~4.4h median cycle time.** No other autonomous coding agent publishes its
+As of 2026-10-30, trailing 30 days: **300 tasks completed, 85.8% CI
+first-pass rate, ~1.4h average cycle time.** No other autonomous coding agent publishes its
 own delivery metrics — you can check our work before installing anything.
 
 ## What is Shipwright Harness?
