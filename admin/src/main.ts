@@ -50,13 +50,16 @@ export const SHIPWRIGHT_SPECIALTIES_DIR = join(
 );
 
 /**
- * Defaults SHIPWRIGHT_SPECIALTIES_DIR to Shipwright's specialties; an
- * operator-set value wins. Applied once at startup, before startAdmin().
+ * Defaults SHIPWRIGHT_SPECIALTIES_DIR to Shipwright's specialties, and the
+ * default and self-serve agent types to "coding" (the platform's own fallback
+ * is "specialist"); an operator-set value wins. Applied once at startup, before startAdmin().
  */
 export function applyShipwrightDefaults(
   env: Record<string, string | undefined>,
 ): void {
   env.SHIPWRIGHT_SPECIALTIES_DIR ||= SHIPWRIGHT_SPECIALTIES_DIR;
+  env.SHIPWRIGHT_DEFAULT_AGENT_TYPE ||= "coding";
+  env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE ||= "coding";
 }
 
 // Run directly when invoked as main entry
