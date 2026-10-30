@@ -6,14 +6,14 @@ import {
   resolveAdminExtensions,
 } from "@app-vitals/agent-admin/admin-extension";
 import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
-import {
   codingAdminExtension,
   taskStoreFetchers,
   taskStoreServiceIntegration,
 } from "./coding-admin-extension.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "./coding-task-store-provisioning-client.ts";
 
 const ctx = {
   env: {},

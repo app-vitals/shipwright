@@ -34,10 +34,6 @@ import type {
   AdminExtension,
   AdminExtensionContext,
 } from "@app-vitals/agent-admin/admin-extension";
-import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
 import type { ServiceIntegration } from "@app-vitals/agent-admin/service-integration";
 import { codingAgentDetailCards } from "./admin-ui-agent-cards.ts";
 import {
@@ -50,6 +46,10 @@ import {
   codingAdminOpenApi,
   createCodingAdminApiApp,
 } from "./agents-api-coding.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "./coding-task-store-provisioning-client.ts";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import {
   SessionAlertSweeper,

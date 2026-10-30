@@ -13,7 +13,7 @@
  *   const tasks = await client.listTasks({ from, to });
  */
 
-import type { components } from "@app-vitals/agent-lib/task-store-types";
+import type { components } from "../../../admin/src/coding/task-store-types.ts";
 
 // ─── Record types derived from the generated task-store schema ───────────────
 //
