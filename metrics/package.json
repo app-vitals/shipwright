@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/metrics",
-  "version": "1.441.0",
+  "version": "1.442.0",
   "private": true,
   "type": "module",
   "description": "Shipwright metrics dashboard — stateless Hono service with task-store-backed endpoints",
@@ -12,7 +12,7 @@
     "@hono/zod-openapi": "^1.0.0",
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
-    "@app-vitals/agent-lib": "0.16.0",
+    "@app-vitals/agent-lib": "0.16.1",
     "hono": "^4.13.1",
     "openapi-fetch": "^0.17.0",
     "zod": "^4"

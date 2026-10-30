@@ -1,10 +1,12 @@
 /**
  * agent-lib-pin.content.test.ts
  *
- * AGR-4.5: the chat-notify, claim-ttl, default-account and http modules live in
+ * AGR-4.5: the chat-notify and http modules (plus claude-timeout) live in
  * the registry package @app-vitals/agent-lib (>= 0.1.1), not in a local lib/
- * workspace. Pins the root package.json and every consumer to that floor and
- * guards against the local copies or `@shipwright/lib` imports coming back.
+ * workspace. CET-1.2: claim-ttl and default-account are task-store concepts,
+ * now owned by task-store/ and admin/ rather than imported from agent-lib.
+ * Pins the root package.json and every consumer to that floor and guards
+ * against the local copies or `@shipwright/lib` imports coming back.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -12,7 +14,7 @@ import { join, relative } from "node:path";
 
 const ROOT = import.meta.dir;
 const MIN = [0, 1, 1];
-const MODULES = ["chat-notify", "claim-ttl", "default-account", "http"];
+const MODULES = ["chat-notify", "http"];
 const CONSUMERS = [
   "package.json",
   "admin/package.json",
@@ -89,6 +91,17 @@ describe("@app-vitals/agent-lib pin (AGR-4.5)", () => {
     const self = join(ROOT, "agent-lib-pin.content.test.ts");
     const offenders = sourceFiles(ROOT)
       .filter((f) => f !== self && re.test(readFileSync(f, "utf8")))
+      .map((f) => relative(ROOT, f));
+    expect(offenders).toEqual([]);
+  });
+
+  it("CET-1.2: task-store and admin own claim-ttl and default-account", () => {
+    const re = /@app-vitals\/agent-lib\/(?:claim-ttl|default-account)\b/;
+    const offenders = [
+      ...sourceFiles(join(ROOT, "task-store")),
+      ...sourceFiles(join(ROOT, "admin")),
+    ]
+      .filter((f) => re.test(readFileSync(f, "utf8")))
       .map((f) => relative(ROOT, f));
     expect(offenders).toEqual([]);
   });
