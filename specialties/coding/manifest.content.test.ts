@@ -288,7 +288,11 @@ describe("specialties/coding/manifest.yaml — identity.templatesDir template se
   );
   // The platform's REQUIRED_TEMPLATES (runtime/setup.ts) plus the coding-owned
   // optional ones: SPECIALTY (pipeline text) and BOOTSTRAP (dev-loop ritual).
-  const REQUIRED = ["CLAUDE.md.template", "SOUL.md.template", "IDENTITY.md.template"];
+  const REQUIRED = [
+    "CLAUDE.md.template",
+    "SOUL.md.template",
+    "IDENTITY.md.template",
+  ];
   const CODING_OWNED = ["SPECIALTY.md.template", "BOOTSTRAP.md.template"];
 
   it("resolves to an existing directory", () => {
@@ -305,7 +309,10 @@ describe("specialties/coding/manifest.yaml — identity.templatesDir template se
   );
 
   it("SPECIALTY.md.template carries the full shipwright pipeline text", () => {
-    const body = readFileSync(join(templatesDir, "SPECIALTY.md.template"), "utf-8");
+    const body = readFileSync(
+      join(templatesDir, "SPECIALTY.md.template"),
+      "utf-8",
+    );
     for (const needle of [
       "/shipwright:plan-session",
       "/shipwright:dev-task",
@@ -318,7 +325,12 @@ describe("specialties/coding/manifest.yaml — identity.templatesDir template se
   });
 
   it("the Dockerfile ships the whole templatesDir into the image", () => {
-    const df = readFileSync(join(import.meta.dir, "..", "..", "agent", "Dockerfile"), "utf-8");
-    expect(df).toContain("COPY --chown=1000:1000 agent/workspace ./agent/workspace");
+    const df = readFileSync(
+      join(import.meta.dir, "..", "..", "agent", "Dockerfile"),
+      "utf-8",
+    );
+    expect(df).toContain(
+      "COPY --chown=1000:1000 agent/workspace ./agent/workspace",
+    );
   });
 });
