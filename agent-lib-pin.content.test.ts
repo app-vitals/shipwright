@@ -82,4 +82,14 @@ describe("@app-vitals/agent-lib pin (AGR-4.5)", () => {
       .map((f) => relative(ROOT, f));
     expect(offenders).toEqual([]);
   });
+
+  it("CET-1.1: task-store provisioning client and types are owned locally", () => {
+    const re =
+      /@app-vitals\/agent-(?:admin\/coding-task-store-provisioning-client|lib\/task-store-types)/;
+    const self = join(ROOT, "agent-lib-pin.content.test.ts");
+    const offenders = sourceFiles(ROOT)
+      .filter((f) => f !== self && re.test(readFileSync(f, "utf8")))
+      .map((f) => relative(ROOT, f));
+    expect(offenders).toEqual([]);
+  });
 });
