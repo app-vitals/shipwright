@@ -222,7 +222,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.306.9
+    tag: admin-v1.307.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -359,7 +359,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.165.4
+    tag: metrics-v1.166.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -487,7 +487,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.440.0
+    tag: agent-v1.440.1
     pullPolicy: ""
   service:
     port: 3000
@@ -510,7 +510,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.440.0
+      tag: agent-v1.440.1
     # -- Per-specialty agent images, keyed by specialty name (e.g. `coding`). Each
     # entry takes `repository` (required) and `tag`, same shape as `image`. The
     # admin Deployment receives the map as JSON in SHIPWRIGHT_AGENT_IMAGES; agents of
@@ -970,7 +970,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.213.6
+    tag: task-store-v1.214.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
