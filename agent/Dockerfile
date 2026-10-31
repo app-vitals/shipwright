@@ -22,7 +22,7 @@
 # Platform release to build on. Keep equal to the @app-vitals/agent-lib pin in
 # agent/package.json (guarded by agent-platform-image.content.test.ts): the
 # coding extension is compiled against that package set.
-ARG PLATFORM_VERSION=0.13.2
+ARG PLATFORM_VERSION=0.16.1
 
 # ─── Version stamp stage ──────────────────────────────────────────────────────
 # Stamps AGENT_VERSION into the plugin version files inside the image only (no
@@ -63,16 +63,18 @@ COPY --chown=1000:1000 specialties ./specialties
 # /app/runtime/workspace; copy only these two so its own templates stay intact.
 COPY --chown=1000:1000 agent/workspace/CLAUDE.md.template ./runtime/workspace/CLAUDE.md.template
 COPY --chown=1000:1000 agent/workspace/CLAUDE-HITL.md.template ./runtime/workspace/CLAUDE-HITL.md.template
+# The full coding template set, at the path the coding manifest's
+# identity.templatesDir (agent/workspace/) names relative to SHIPWRIGHT_REPO_ROOT,
+# so the platform's specialty-templates lookup resolves it once it stops
+# short-circuiting `coding` to its built-in templates (PCD-2.2).
+COPY --chown=1000:1000 agent/workspace ./agent/workspace
 
 # The runtime derives its repo root from its own module path, which resolves to
 # `/` in this layout. Point it at the root that holds plugins/ and .claude-plugin/.
 ENV SHIPWRIGHT_REPO_ROOT=/app
 
-# The gh wrapper (PLD-1.1) injects the per-org GitHub App token and requires
-# SHIPWRIGHT_GH_OWNER; the platform image only ships the git credential helper.
-# Put the wrapper ahead of the real gh on PATH.
-ENV PATH="/app/agent/scripts/bin:${PATH}"
-RUN chmod +x /app/agent/scripts/bin/gh /app/agent/scripts/bin/git-credential-shipwright.sh
+# The gh owner-routing wrapper and git credential helper come from the platform
+# image (/app/scripts/bin is already on PATH there), so nothing is overridden here.
 
 # js-yaml is only an override in the platform's package.json, not a dependency, so
 # it is not resolvable from /app. The plugin scripts (suppressions.ts,

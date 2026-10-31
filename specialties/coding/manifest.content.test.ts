@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
 
@@ -273,5 +273,64 @@ describe("specialties/coding/manifest.yaml — prompt-audit-maintenance cron", (
 
   it("ships disabled", () => {
     expect(cron?.enabled).toBe(false);
+  });
+});
+
+// ─── CET-1.3 — Shipwright owns the full coding workspace template set ──────
+
+describe("specialties/coding/manifest.yaml — identity.templatesDir template set", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
+  const templatesDir = join(
+    import.meta.dir,
+    "..",
+    "..",
+    manifest.identity.templatesDir,
+  );
+  // The platform's REQUIRED_TEMPLATES (runtime/setup.ts) plus the coding-owned
+  // optional ones: SPECIALTY (pipeline text) and BOOTSTRAP (dev-loop ritual).
+  const REQUIRED = [
+    "CLAUDE.md.template",
+    "SOUL.md.template",
+    "IDENTITY.md.template",
+  ];
+  const CODING_OWNED = ["SPECIALTY.md.template", "BOOTSTRAP.md.template"];
+
+  it("resolves to an existing directory", () => {
+    expect(existsSync(templatesDir)).toBe(true);
+  });
+
+  it.each([...REQUIRED, ...CODING_OWNED, "CLAUDE-HITL.md.template"])(
+    "provides a non-empty %s",
+    (name) => {
+      const path = join(templatesDir, name);
+      expect(existsSync(path)).toBe(true);
+      expect(readFileSync(path, "utf-8").trim().length).toBeGreaterThan(0);
+    },
+  );
+
+  it("SPECIALTY.md.template carries the full shipwright pipeline text", () => {
+    const body = readFileSync(
+      join(templatesDir, "SPECIALTY.md.template"),
+      "utf-8",
+    );
+    for (const needle of [
+      "/shipwright:plan-session",
+      "/shipwright:dev-task",
+      "/shipwright:review",
+      "shipwright-loop",
+      "SHIPWRIGHT_TASK_STORE_URL",
+    ]) {
+      expect(body).toContain(needle);
+    }
+  });
+
+  it("the Dockerfile ships the whole templatesDir into the image", () => {
+    const df = readFileSync(
+      join(import.meta.dir, "..", "..", "agent", "Dockerfile"),
+      "utf-8",
+    );
+    expect(df).toContain(
+      "COPY --chown=1000:1000 agent/workspace ./agent/workspace",
+    );
   });
 });

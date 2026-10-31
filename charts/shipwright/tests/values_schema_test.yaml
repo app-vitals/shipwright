@@ -312,6 +312,29 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
+  - it: accepts agent.provisioning.images specialty entries with repository and tag
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.tag: v1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an agent.provisioning.images entry without repository
+    set:
+      agent.provisioning.images.coding.tag: v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "repository"
+
+  - it: rejects an unknown key inside an agent.provisioning.images entry
+    set:
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "bogus"
+
   - it: rejects an unknown key under agent.provisioning.claudePolicy
     set:
       agent.provisioning.claudePolicy.bogus: true

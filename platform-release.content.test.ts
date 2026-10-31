@@ -256,6 +256,23 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
     expect(merge.run).not.toContain("${{");
   });
 
+  it("gates the merge on every required check being green (AXG-1.2)", () => {
+    // Root cause of #4639 (run 40610130677): after `gh run rerun --failed` the
+    // CI checks dropped out of the rollup, the watch saw only the title check
+    // and exited 0, and the gate admin-merged a red lint / typecheck / test.
+    // The merge command must sit after a full re-read of the required set,
+    // and the admin merge may not run in any other step.
+    const gate = readFileSync(join(ROOT, "scripts/platform-bump-gate.sh"), "utf8");
+    const verify = gate.indexOf("required_checks_all_green");
+    const callSite = gate.indexOf('required_checks_all_green "$CHECKS_JSON"');
+    const mergeCmd = gate.indexOf("gh pr merge");
+    expect(verify).toBeGreaterThanOrEqual(0);
+    expect(callSite).toBeGreaterThan(verify);
+    expect(mergeCmd).toBeGreaterThan(callSite);
+    expect(gate).toContain("not merging");
+    expect(allRuns).not.toContain("--admin");
+  });
+
   it("runs after the PR step and before the failure step", () => {
     expect(mergeIdx).toBeGreaterThan(prIdx);
     expect(mergeIdx).toBeLessThan(failIdx);

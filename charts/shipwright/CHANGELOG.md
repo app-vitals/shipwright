@@ -10,6 +10,102 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.32.15] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.15 triggered by release tag(s): `admin-v1.309.2`, `task-store-v1.215.1`
+
+## [1.32.14] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.14 triggered by release tag(s): `admin-v1.309.1`, `agent-v1.442.0`, `metrics-v1.167.0`, `task-store-v1.215.0`
+
+## [1.32.13] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.13 triggered by release tag(s): `agent-chat-v0.16.1`
+
+## [1.32.12] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.12 triggered by release tag(s): `admin-v1.309.0`
+
+## [1.32.11] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.11 triggered by release tag(s): `agent-v1.441.0`
+
+## [1.32.10] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.10 triggered by release tag(s): `admin-v1.308.0`
+
+## [1.32.9] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.9 triggered by release tag(s): `admin-v1.307.1`, `metrics-v1.166.1`
+
+## [1.32.8] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.8 triggered by release tag(s): `admin-v1.307.0`, `agent-v1.440.1`, `metrics-v1.166.0`, `task-store-v1.214.0`
+
+## [1.32.7] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.7 triggered by release tag(s): `agent-chat-v0.16.0`
+
+## [1.32.6] - 2026-10-29
+
+### Changed
+
+- auto-bump to chart v1.32.6 triggered by release tag(s): `agent-v1.440.0`
+
+## [1.32.5] - 2026-10-28
+
+### Added
+
+- allow `agent.provisioning.images` (per-specialty agent images) in the values schema, with a documented empty default
+
+## [1.32.4] - 2026-10-28
+
+### Changed
+
+- document the agent-platform library dependency, the library-release bump flow and the render-parity check (docs only)
+
+## [1.32.3] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.3 triggered by release tag(s): `admin-v1.306.9`, `agent-v1.439.6`, `metrics-v1.165.4`, `task-store-v1.213.6`
+
+## [1.32.2] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.2 triggered by release tag(s): `agent-chat-v0.15.0`
+
+## [1.32.1] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.1 triggered by release tag(s): `admin-v1.306.8`, `agent-chat-v0.14.0`, `agent-v1.439.5`, `metrics-v1.165.3`, `task-store-v1.213.5`
+
+## [1.32.0] - 2026-10-28
+
+### Changed
+
+- shared networking and database templates are now library includes driven by Shipwright extension lists (no rendered change)
+
 ## [1.31.3] - 2026-10-28
 
 ### Changed

@@ -1,0 +1,82 @@
+suite: Shipwright platform extension lists (CHM-3.4)
+# The shared networking and database templates come from the agent-platform
+# library; these cases pin the entries Shipwright supplies via
+# shipwright.platformExtensions (task-store, metrics).
+tests:
+  - it: routes metrics at /dashboard and the task-store at its exposed prefix, ahead of admin
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      networking.gateway.host: shipwright.example.com
+      metrics.enabled: true
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /task-store
+    release:
+      name: r
+    asserts:
+      - hasDocuments:
+          count: 3
+      - equal:
+          path: metadata.name
+          value: r-shipwright-metrics
+        documentIndex: 0
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /dashboard
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: r-shipwright-task-store
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].filters[0].urlRewrite.path.replacePrefixMatch
+          value: /
+        documentIndex: 1
+
+  - it: omits the metrics and task-store routes when both are off
+    template: templates/httproute.yaml
+    set:
+      networking.type: gateway
+      networking.gateway.host: shipwright.example.com
+      metrics.enabled: false
+      taskStore.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: adds metrics and task-store health checks after admin's
+    template: templates/healthcheckpolicy.yaml
+    set:
+      networking.type: gateway
+      networking.gateway.host: shipwright.example.com
+      networking.gateway.healthCheckPolicy.enabled: true
+      metrics.enabled: true
+      taskStore.enabled: true
+    release:
+      name: r
+    asserts:
+      - hasDocuments:
+          count: 3
+      - equal:
+          path: spec.targetRef.name
+          value: r-shipwright-metrics
+        documentIndex: 1
+      - equal:
+          path: spec.targetRef.name
+          value: r-shipwright-task-store
+        documentIndex: 2
+
+  - it: creates the metrics and task-store databases in the initdb ConfigMap
+    template: templates/postgres-initdb-configmap.yaml
+    set:
+      postgresql.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: CREATE DATABASE
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: CREATE DATABASE
+      - isNotNull:
+          path: data["02-create-chat-db.sql"]

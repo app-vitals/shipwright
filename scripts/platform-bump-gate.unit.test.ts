@@ -87,8 +87,17 @@ function record(timeline: Timeline) {
   }
 }
 
+const allGreen = JSON.stringify(
+  ["a", "b", "c"].map((name) => ({ name, state: "SUCCESS", link: "" })),
+);
+
 function runGate(timeline: Timeline, env: Record<string, string> = {}) {
-  record({ "pr-view": [{ out: `${SHA}\n` }], ...timeline });
+  record({
+    "pr-view": [{ out: `${SHA}\n` }],
+    // Default: the full required set reads green on the final re-check.
+    "checks-json": [{ out: allGreen }],
+    ...timeline,
+  });
   const proc = Bun.spawnSync(["bash", SCRIPT, PR_URL], {
     env: {
       PATH: `${dir}:${process.env.PATH}`,
@@ -183,11 +192,70 @@ describe("platform-bump-gate.sh", () => {
       "run-list": [{ out: "777\n" }],
       "checks-count": [{ out: "1\n" }],
       "checks-watch": [{ rc: 1 }, { rc: 0 }],
-      "checks-json": [{ out: checksJson(["test", "FAILURE", 778]) }],
+      "checks-json": [
+        { out: checksJson(["test", "FAILURE", 778]) },
+        { out: checksJson(["test", "SUCCESS", 778]) },
+      ],
       "pr-merge": [{ out: "merged\n" }],
     });
     expect(r.code).toBe(0);
     expect(r.count("run rerun")).toBe(1);
+    // The rerun is awaited before the required set is read again.
+    expect(r.calls.filter((c) => c.startsWith("run watch"))).toContain(
+      "run watch 778 --interval 15",
+    );
+    expect(r.merged).toBe(true);
+  });
+
+  test("#4639: after a rerun the watch sees only the title check green: does not merge", () => {
+    // 7 required checks registered; the rerun drops the CI checks out of the
+    // rollup, so the second watch exits 0 with a single green check.
+    const r = runGate(
+      {
+        "run-list": [{ out: "777\n" }],
+        "checks-count": [{ out: "7\n" }],
+        "checks-watch": [{ rc: 1 }, { rc: 0 }, { rc: 0 }, { rc: 0 }],
+        "checks-json": [
+          { out: checksJson(["lint", "FAILURE", 778]) },
+          { out: checksJson(["title", "SUCCESS", 779]) },
+        ],
+      },
+      { WATCH_INTERVAL: "0" },
+    );
+    expect(r.code).toBe(1);
+    expect(r.merged).toBe(false);
+    expect(r.err).toContain("not all green");
+  });
+
+  test("a required check still failing or pending at the final re-check: does not merge", () => {
+    const r = runGate(
+      {
+        "run-list": [{ out: "777\n" }],
+        "checks-count": [{ out: "2\n" }],
+        "checks-watch": [{ rc: 0 }],
+        "checks-json": [
+          {
+            out: checksJson(["title", "SUCCESS", 779], ["lint", "PENDING", 778]),
+          },
+        ],
+      },
+      { WATCH_INTERVAL: "0" },
+    );
+    expect(r.code).toBe(1);
+    expect(r.merged).toBe(false);
+  });
+
+  test("skipped required checks do not block the merge", () => {
+    const r = runGate({
+      "run-list": [{ out: "777\n" }],
+      "checks-count": [{ out: "2\n" }],
+      "checks-watch": [{ rc: 0 }],
+      "checks-json": [
+        { out: checksJson(["lint", "SUCCESS", 778], ["e2e", "SKIPPED", 778]) },
+      ],
+      "pr-merge": [{ out: "merged\n" }],
+    });
+    expect(r.code).toBe(0);
     expect(r.merged).toBe(true);
   });
 

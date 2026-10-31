@@ -30,12 +30,12 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "@app-vitals/agent-admin/caller-scope";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
 import {
   renderRepoOrgFilterFields,
   resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-work-item-pages.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,
