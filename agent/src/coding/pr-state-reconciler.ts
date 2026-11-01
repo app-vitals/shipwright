@@ -141,7 +141,6 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import type { Clock } from "@app-vitals/agent-runtime/clock";
 import { SystemClock } from "@app-vitals/agent-runtime/clock";
 import {
@@ -155,6 +154,7 @@ import {
   splitOrgRepo,
 } from "./check-helpers.ts";
 import type { PrReviewData } from "./check-patch.ts";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -97,11 +97,13 @@ describe("@app-vitals/agent-lib pin (AGR-4.5)", () => {
 
   it("CET-1.2: task-store and admin own claim-ttl and default-account", () => {
     const re = /@app-vitals\/agent-lib\/(?:claim-ttl|default-account)\b/;
+    const self = join(ROOT, "agent-lib-pin.content.test.ts");
     const offenders = [
       ...sourceFiles(join(ROOT, "task-store")),
       ...sourceFiles(join(ROOT, "admin")),
+      ...sourceFiles(join(ROOT, "agent")),
     ]
-      .filter((f) => re.test(readFileSync(f, "utf8")))
+      .filter((f) => f !== self && re.test(readFileSync(f, "utf8")))
       .map((f) => relative(ROOT, f));
     expect(offenders).toEqual([]);
   });
