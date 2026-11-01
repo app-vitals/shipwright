@@ -39,7 +39,7 @@ interface SeedPrisma {
   agent: {
     upsert(args: {
       where: { id: string };
-      create: { id: string; name: string };
+      create: { id: string; name: string; specialty: string };
       update: Record<string, never>;
     }): Promise<unknown>;
   };
@@ -160,7 +160,11 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
   // 3. Upsert the agent record
   await prisma.agent.upsert({
     where: { id: DEV_AGENT_ID },
-    create: { id: DEV_AGENT_ID, name: DEV_AGENT_NAME },
+    create: {
+      id: DEV_AGENT_ID,
+      name: DEV_AGENT_NAME,
+      specialty: DEV_AGENT_TYPE,
+    },
     update: {},
   });
   console.log(`[seed-dev-agent] upserted agent: ${DEV_AGENT_ID}`);
