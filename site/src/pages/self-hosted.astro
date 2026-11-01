@@ -43,7 +43,7 @@ const faqs = [
   },
   {
     q: "Can several agents run at once, isolated from each other?",
-    a: "Yes. On Kubernetes each agent gets its own Deployment, persistent volume, Secret and scoped token. An optional NetworkPolicy limits each agent pod to DNS, the Shipwright services and the public internet, and blocks private address ranges.",
+    a: "Yes. On Kubernetes each agent gets its own Deployment, persistent volume, Secret and scoped token. Self-serve tenant agent pods can be isolated with an opt-in NetworkPolicy (off by default, and enforced only if your CNI supports NetworkPolicy) that allows DNS, the Shipwright services and the public internet. For other agents, egress restriction is your own NetworkPolicy or firewall rules.",
   },
   {
     q: "Is Shipwright SOC 2 certified?",
