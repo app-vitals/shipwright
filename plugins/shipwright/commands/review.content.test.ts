@@ -2468,3 +2468,37 @@ describe("review.md — Step 9.5 passes the findings ledger so patch-source reje
     expect(window).toContain("findings: $findings");
   });
 });
+
+describe("review.md — jq -Rs fix for headRefOid and body newline (JNL-1.1)", () => {
+  it("does not use jq -Rs . <<< for headRefOid anywhere", () => {
+    expect(content).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("uses --arg headRefOid for passing HEAD_REF_OID to jq in Step 9.5", () => {
+    const step9_5Idx = content.indexOf("## Step 9.5: Unaddressed-Findings Hard Gate");
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step9_5Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(-1);
+    const section = content.slice(step9_5Idx, step10Idx);
+
+    expect(section).toContain('--arg headRefOid "$HEAD_REF_OID"');
+    expect(section).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("does not use jq -Rs . <<< for body in Step 10.5", () => {
+    expect(content).not.toContain('$(jq -Rs . <<< "$BODY")');
+  });
+
+  it("uses jq -n --arg body in Step 10.5 to construct the verdict validation JSON", () => {
+    const step10_5Idx = content.indexOf("### Step 10.5: Hard-Gate Validation (Before Posting)");
+    const step11Idx = content.indexOf("## Step 11: Post or Stage");
+    expect(step10_5Idx).toBeGreaterThan(-1);
+    expect(step11Idx).toBeGreaterThan(-1);
+    const section = content.slice(step10_5Idx, step11Idx);
+
+    expect(section).toContain('jq -n --arg body "$BODY"');
+    expect(section).toContain('--argjson selfReview "$SELF_REVIEW"');
+    expect(section).toContain('--argjson unaddressedFindings "$UNADDRESSED_FINDINGS"');
+    expect(section).toContain('--argjson currentPassHasBlockingFindings "$CURRENT_PASS_HAS_BLOCKING_FINDINGS"');
+  });
+});
