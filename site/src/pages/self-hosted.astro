@@ -8,6 +8,8 @@
 // Re-verify before any future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under. OpenCode is
 // deliberately not named (unverified — never-print list).
+// The compliance FAQ (SAUL-SHF-1.1) is sourced from
+// site/src/content/docs/security.mdx and must stay consistent with it.
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
@@ -26,6 +28,37 @@ const src = {
   factoryDeployment: "https://docs.factory.com/enterprise/network-and-deployment",
   factoryPrivate: "https://factory.com/news/factory-private",
   factoryPricing: "https://factory.com/pricing",
+};
+
+// Compliance FAQ — rendered as HTML and as FAQPage JSON-LD from this one
+// array so the two can't drift. No certification claims beyond "SOC 2: no".
+const faqs = [
+  {
+    q: "Can Shipwright run inside our private VPC?",
+    a: "Yes. The admin service, task store, metrics and agent runtime deploy to infrastructure you own, with Docker or the Helm chart on your own Kubernetes cluster. Your repository and the agent's working copy stay there. By default every service is reachable only inside the cluster.",
+  },
+  {
+    q: "Does any data leave our infrastructure?",
+    a: "Yes, the model calls. Shipwright runs Claude Code, which sends prompts and the code context it needs to Anthropic's API on your own API key or Claude account. Agents also reach the services you connect, such as GitHub and Slack. Nothing goes to Shipwright or App Vitals, because there is no Shipwright-hosted service in the path.",
+  },
+  {
+    q: "Can several agents run at once, isolated from each other?",
+    a: "Yes. On Kubernetes each agent gets its own Deployment, persistent volume, Secret and scoped token. Self-serve tenant agent pods can be isolated with an opt-in NetworkPolicy (off by default, and enforced only if your CNI supports NetworkPolicy) that allows DNS, the Shipwright services and the public internet. For other agents, egress restriction is your own NetworkPolicy or firewall rules.",
+  },
+  {
+    q: "Is Shipwright SOC 2 certified?",
+    a: "No, not currently. Shipwright is MIT-licensed software you run, not a hosted service, so it runs under your own controls. A fully egress-locked or air-gapped deployment isn't supported out of the box, because agents need to reach the model API.",
+  },
+];
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
 };
 
 const architectureRows = [
@@ -136,7 +169,7 @@ const architectureTableRows = architectureRows.map((row) => {
 
 <BaseLayout
   title="Self-hosted AI coding agent — Shipwright Harness"
-  description="Shipwright is a self-hosted AI coding agent that runs entirely in your own cloud, control plane included — not a hybrid architecture with inference in someone else's cloud."
+  description="Shipwright is a self-hosted AI coding agent: the control plane, agent runtime and your code all run in your own cloud. Model calls go to Anthropic on your own key."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -185,6 +218,22 @@ const architectureTableRows = architectureRows.map((row) => {
       gated tier of it. Everyone else in the table above: see each vendor's
       own site for current terms, which change over time.
     </p>
+  </section>
+
+  <!-- Compliance FAQ (SAUL-SHF-1.1) — consistent with /docs/security. -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Questions security and compliance teams ask</h2>
+    {faqs.map(({ q, a }) => (
+      <>
+        <h3 class="mt-8">{q}</h3>
+        <p class="mt-3 max-w-2xl">{a}</p>
+      </>
+    ))}
+    <p class="mt-6 max-w-2xl">
+      Deployment model, egress, RBAC, secrets and logging, claim by claim:
+      <a href="/docs/security">Security architecture →</a>
+    </p>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
   </section>
 
   <!-- CTA -->
