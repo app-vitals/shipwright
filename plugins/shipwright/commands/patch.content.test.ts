@@ -3161,3 +3161,19 @@ describe("patch.md — BEHIND PRs handled via update-branch (SBU-1.1)", () => {
     expect(section).not.toMatch(/mergeStateStatus.*"BEHIND".*→ add to \*\*List C/);
   });
 });
+
+describe("patch.md — jq -Rs fix for headRefOid newline (JNL-1.1)", () => {
+  it("does not use jq -Rs . <<< for headRefOid anywhere", () => {
+    expect(content).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("uses --arg headRefOid for passing HEAD_REF_OID to jq", () => {
+    const step3aIdx = content.indexOf("### Step 3a: Check for Unaddressed Review Findings");
+    const step3bIdx = content.indexOf("### Step 3b:");
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3bIdx).toBeGreaterThan(-1);
+    const section = content.slice(step3aIdx, step3bIdx);
+
+    expect(section).toContain('--arg headRefOid "$HEAD_REF_OID"');
+  });
+});
