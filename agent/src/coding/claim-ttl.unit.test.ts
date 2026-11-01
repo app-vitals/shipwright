@@ -8,11 +8,8 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  CLAIM_TTL_BUFFER_MS,
-  DEFAULT_CLAIM_TTL_MS,
-} from "./claim-ttl.ts";
 import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@app-vitals/agent-lib/claude-timeout";
+import { CLAIM_TTL_BUFFER_MS, DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 
 describe("claim-ttl constants", () => {
   it("CLAIM_TTL_BUFFER_MS is 300_000 (5 minutes)", () => {
@@ -25,7 +22,7 @@ describe("claim-ttl constants", () => {
     );
   });
 
-  it("DEFAULT_CLAIM_TTL_MS is approximately 3900_000 (65 minutes)", () => {
+  it("DEFAULT_CLAIM_TTL_MS is 3_900_000 (65 minutes)", () => {
     // DEFAULT_CLAUDE_TIMEOUT_MS is 3600_000 (60 minutes), plus 300_000 (5 minutes) = 3900_000
     expect(DEFAULT_CLAIM_TTL_MS).toBe(3_900_000);
   });
@@ -43,8 +40,8 @@ describe("claim-ttl constants", () => {
       taskStoreContent,
     );
     expect(bufferMatch).not.toBeNull();
-    const taskStorBuffer = Number((bufferMatch?.[1] || "0").replace(/_/g, ""));
-    expect(CLAIM_TTL_BUFFER_MS).toBe(taskStorBuffer);
+    const taskStoreBuffer = Number((bufferMatch?.[1] || "0").replace(/_/g, ""));
+    expect(CLAIM_TTL_BUFFER_MS).toBe(taskStoreBuffer);
 
     // Verify the formula: DEFAULT_CLAIM_TTL_MS = DEFAULT_CLAUDE_TIMEOUT_MS + CLAIM_TTL_BUFFER_MS
     // is present in both files (as a comment or code pattern)
