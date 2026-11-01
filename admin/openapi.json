@@ -537,7 +537,7 @@
           },
           "specialty": {
             "type": "string",
-            "example": "coding"
+            "example": "specialist"
           }
         },
         "required": [
@@ -558,7 +558,7 @@
           "specialty": {
             "type": "string",
             "minLength": 1,
-            "example": "coding"
+            "example": "specialist"
           },
           "runtime": {
             "type": "string",
@@ -3301,11 +3301,11 @@
           },
           "specialty": {
             "type": "string",
-            "example": "coding"
+            "example": "specialist"
           },
           "typeName": {
             "type": "string",
-            "example": "coding",
+            "example": "specialist",
             "deprecated": true
           },
           "phaseMethodology": {
