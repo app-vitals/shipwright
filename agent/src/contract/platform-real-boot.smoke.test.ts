@@ -102,6 +102,8 @@ describe.skipIf(!BASE_IMAGE)("platform image real coding boot", () => {
   test("the built-in marketplace registers and shipwright@shipwright installs with the image's own environment", () => {
     // Real `claude` through the runtime's own installPlugins(): its default
     // repo root is the image's own resolution, so a wrong root fails the add.
+    // installPlugins installs only the agent's own AgentPlugin rows (none by
+    // default), so pass the shipwright row explicitly.
     const script = `
       import { mkdirSync } from "node:fs";
       import { installPlugins } from "${SETUP_MODULE}";
@@ -114,7 +116,7 @@ describe.skipIf(!BASE_IMAGE)("platform image real coding boot", () => {
         calls.push({ args: args.join(" "), exitCode, output: (out + err).slice(-500) });
         return { stdout: out + err, exitCode };
       };
-      await installPlugins(exec, "${SCRATCH_HOME}");
+      await installPlugins(exec, "${SCRATCH_HOME}", [{ marketplace: "shipwright", plugin: "shipwright" }]);
       console.log("RESULT:" + JSON.stringify({ calls }));
     `;
     const run = runInImage(script);
