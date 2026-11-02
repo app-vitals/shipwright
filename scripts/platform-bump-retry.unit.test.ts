@@ -96,6 +96,18 @@ describe("decide", () => {
   test("none is a no-op", () => {
     expect(decide([], 0).action).toBe("noop");
   });
+  test("red PR with non-bot commits is exhausted without spending retries", () => {
+    const d = decide([pr({ statusCheckRollup: red })], 0, MAX_RETRIES, false, true);
+    expect(d).toMatchObject({ action: "exhausted", version: "0.16.3" });
+  });
+  test("conflicting PR with non-bot commits is exhausted", () => {
+    const d = decide([pr({ mergeable: "CONFLICTING" })], 0, MAX_RETRIES, false, true);
+    expect(d.action).toBe("exhausted");
+  });
+  test("green PR with non-bot commits still merges", () => {
+    const d = decide([pr()], 0, MAX_RETRIES, false, true);
+    expect(d.action).toBe("merge");
+  });
   test("attempts-exhausted stops retrying", () => {
     const d = decide([pr({ statusCheckRollup: red })], MAX_RETRIES);
     expect(d).toMatchObject({ action: "exhausted", version: "0.16.3" });
