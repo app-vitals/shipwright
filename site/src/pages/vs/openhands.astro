@@ -16,15 +16,22 @@
 // OSS-vs-commercial comparison table and 2026-09-24 commercial release post;
 // no drift found. The September additions landed on the commercial side,
 // which the existing rows already say. Date bump only.
+//
+// 2026-11-02 re-verification: two rows under-credited OpenHands. Policy
+// controls now credits the open-source Agent Canvas' scoped Agent Profiles
+// (RBAC and multi-user stay commercial); Tests-first now says "not a merge
+// gate by default" instead of "never". An uncited Software Factory merge-hold
+// claim was dropped; add it back only with a primary source in `src`.
+// The QA page's "tests are CI's job" still holds.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import TryItCta from "../../components/TryItCta.astro";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "October 2, 2026";
+const verifiedDate = "November 2, 2026";
 
-// Sources — the 7 primary URLs fetched and verified for this page.
+// Sources — the 8 primary URLs fetched and verified for this page.
 const src = {
   repo: "https://github.com/OpenHands/OpenHands",
   site: "https://www.openhands.dev/",
@@ -33,6 +40,8 @@ const src = {
   ossVsCommercial: "https://docs.openhands.dev/enterprise/enterprise-vs-oss",
   acp: "https://docs.openhands.dev/openhands/usage/agent-canvas/acp-agents",
   canvas: "https://www.openhands.dev/blog/introducing-agent-canvas",
+  agentProfiles:
+    "https://docs.openhands.dev/openhands/usage/agent-canvas/agent-profiles",
 };
 
 const comparisonRows = [
@@ -78,15 +87,19 @@ const comparisonRows = [
     dimension: "Policy controls",
     shipwright: "Per-repo, per-skill.",
     openhands:
-      "None in the open-source core. Role-based access control (RBAC) and Keycloak-based multi-user management are part of their commercial offering only.",
-    citation: src.ossVsCommercial,
+      "Per-agent profiles in the open-source core scope each agent's tools, MCP servers and secrets. Role-based access control (RBAC) and Keycloak-based multi-user management are part of their commercial offering only.",
+    citation: null,
+    citations: [
+      { label: "agent profiles", url: src.agentProfiles },
+      { label: "commercial", url: src.ossVsCommercial },
+    ],
   },
   {
     dimension: "Tests-first",
     shipwright:
       "Enforced: tests land in the same PR, written first, CI-green to merge.",
     openhands:
-      "Opt-in QA agent, invoked manually via a slash command or an optional CI automation you wire up yourself. It explicitly does not run the test suite, linters, formatters, or type-checkers — a supplementary check, never a merge-blocking gate.",
+      "Opt-in QA agent, invoked manually via a slash command or an optional CI automation you wire up yourself. It explicitly does not run the test suite, linters, formatters, or type-checkers — a supplementary check, not a merge gate by default.",
     citation: src.qa,
   },
   {
