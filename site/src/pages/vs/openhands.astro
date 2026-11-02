@@ -19,9 +19,10 @@
 //
 // 2026-11-02 re-verification: two rows under-credited OpenHands. Policy
 // controls now credits the open-source Agent Canvas' scoped Agent Profiles
-// (RBAC and multi-user stay commercial); Tests-first no longer says "never"
-// a merge gate, since the opt-in Software Factory template can hold a merge
-// on passing checks. The QA page's "tests are CI's job" still holds.
+// (RBAC and multi-user stay commercial); Tests-first now says "not a merge
+// gate by default" instead of "never". An uncited Software Factory merge-hold
+// claim was dropped; add it back only with a primary source in `src`.
+// The QA page's "tests are CI's job" still holds.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
@@ -98,7 +99,7 @@ const comparisonRows = [
     shipwright:
       "Enforced: tests land in the same PR, written first, CI-green to merge.",
     openhands:
-      "Opt-in QA agent, invoked manually via a slash command or an optional CI automation you wire up yourself. It explicitly does not run the test suite, linters, formatters, or type-checkers — a supplementary check, not a merge gate by default; their Software Factory template can hold an automated merge on passing checks if you assemble it.",
+      "Opt-in QA agent, invoked manually via a slash command or an optional CI automation you wire up yourself. It explicitly does not run the test suite, linters, formatters, or type-checkers — a supplementary check, not a merge gate by default.",
     citation: src.qa,
   },
   {
