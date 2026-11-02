@@ -402,9 +402,7 @@ describe("deploy.md — validate workflow names before Step 5b watch (DWV-1.1)",
   it("Step 5b performs a one-time validation of resolved stage names against live repo workflows via gh api actions/workflows", () => {
     const step5bSection = extractStep5bSection(content);
     expect(step5bSection).toContain("actions/workflows");
-    expect(step5bSection).toContain(
-      "gh api repos/{org}/{repo}/actions/workflows",
-    );
+    expect(step5bSection).toContain("gh api repos/{org}/{repo}/actions/workflows");
   });
 
   it("positions the workflow-name validation after the Stage-names resolution/table and before the progress-print line", () => {
@@ -855,14 +853,23 @@ describe("deploy.md — clears stale Post-merge CI failed blocks (XPF-5.1)", () 
   let section: string;
 
   beforeAll(() => {
-    idx = content.indexOf("#### 5c-i. Clear a Stale");
-    end = content.indexOf("### 5b. Monitor Pipeline");
+    idx = content.indexOf("### 2-pre. Clear Stale");
+    end = content.indexOf("### 2a. Own-PRs-Only Check");
     section = content.slice(idx, end);
   });
 
-  it("has the step between 5c and 5b", () => {
-    expect(idx).toBeGreaterThan(-1);
+  it("runs early in Step 2 — after the task lookup, before Step 2a and Step 5", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    expect(step2Idx).toBeGreaterThan(-1);
+    expect(idx).toBeGreaterThan(step2Idx);
     expect(end).toBeGreaterThan(idx);
+    expect(idx).toBeLessThan(content.indexOf("## Step 5: Poll Deploy"));
+    expect(content).not.toContain("#### 5c-i. Clear a Stale");
+  });
+
+  it("scopes the blocked-task query to the target repo", () => {
+    expect(section).toContain('REPO="{org}/{repo}"');
+    expect(section).toContain("/tasks?status=blocked&repo=$REPO");
   });
 
   it("only touches blocks whose note starts with 'Post-merge CI failed'", () => {
@@ -870,9 +877,12 @@ describe("deploy.md — clears stale Post-merge CI failed blocks (XPF-5.1)", () 
     expect(section).toContain("never any other block");
   });
 
-  it("calls the unblock endpoint and records a note", () => {
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid/unblock");
+  it("marks the task deployed (not unblock → pending) and records a note", () => {
+    expect(section).toContain('$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid"');
+    expect(section).toContain('\\"status\\": \\"deployed\\"');
+    expect(section).toContain('\\"deployedAt\\"');
     expect(section).toContain("Cleared stale Post-merge CI block");
+    expect(section).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid/unblock");
   });
 
   it("clears only when the latest run is completed and successful", () => {
@@ -1005,11 +1015,11 @@ describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures
 describe("deploy.md — Step 6 stamps origin=shipwright on the revert PR via /prs/census (POF-3.1)", () => {
   it("captures the revert PR's URL/number from gh pr create before the census call", () => {
     const section = extractStep6Section(content);
-    expect(section).toContain("REVERT_PR_URL=$(gh pr create");
+    expect(section).toContain('REVERT_PR_URL=$(gh pr create');
     expect(section).toContain('REVERT_PR_NUMBER=$(basename "$REVERT_PR_URL")');
   });
 
-  it('calls POST /prs/census with origin: "shipwright" and state: "open" immediately after gh pr create succeeds', () => {
+  it("calls POST /prs/census with origin: \"shipwright\" and state: \"open\" immediately after gh pr create succeeds", () => {
     const section = extractStep6Section(content);
     const censusIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/census");
     expect(censusIdx).toBeGreaterThan(-1);
@@ -1089,7 +1099,9 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
     // text without breaking [silent] detection (see markers.unit.test.ts's
     // order-independence cases).
     const step2bSection = extractStep2bSection(content);
-    expect(step2bSection).not.toContain("must come first");
+    expect(step2bSection).not.toContain(
+      "must come first",
+    );
     expect(step2bSection).toContain("does not matter");
   });
 });
@@ -1100,7 +1112,7 @@ describe("deploy.md — self-review approval fallback (RHA-1.1)", () => {
     // The self-review fallback must sit directly under the not-APPROVED branch, no
     // longer gated behind any prior conditional branch.
     expect(step3aSection).toContain(
-      '**If `reviewDecision` is not `"APPROVED"`**',
+      "**If `reviewDecision` is not `\"APPROVED\"`**",
     );
     expect(step3aSection).toContain("allow_self_review");
     expect(step3aSection).toContain('sub("^\\\\*+";"")');
@@ -1167,12 +1179,9 @@ describe("deploy.md — Step 3a policy read-path is DB-first with hardcoded fall
       '**If `reviewDecision` is not `"APPROVED"`**',
     );
     expect(notApprovedIdx).toBeGreaterThan(-1);
-    const fallbackIdx = section.indexOf(
-      "Fall back to the self-review approval path",
-    );
+    const fallbackIdx = section.indexOf("Fall back to the self-review approval path");
     expect(fallbackIdx).toBeGreaterThan(notApprovedIdx);
-    const headerEndIdx =
-      notApprovedIdx + '**If `reviewDecision` is not `"APPROVED"`**'.length;
+    const headerEndIdx = notApprovedIdx + '**If `reviewDecision` is not `"APPROVED"`**'.length;
     const between = section.slice(headerEndIdx, fallbackIdx);
     // No other bolded branch header should appear between the not-APPROVED
     // header and the self-review fallback sentence.
@@ -1294,27 +1303,18 @@ describe("deploy.md — /prs/claim threads authorLogin/headRef/title for server-
   it("Step 2a captures PR_TITLE/PR_HEAD_REF alongside PR_AUTHOR from a single widened gh pr view call (no new gh call)", () => {
     const step2aSection = extractStep2aSection(content);
 
-    const ghPrViewCalls =
-      step2aSection.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
+    const ghPrViewCalls = step2aSection.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
     expect(ghPrViewCalls).toHaveLength(1);
     expect(step2aSection).toContain(
       "gh pr view {pr} --repo {org}/{repo} --json author,title,headRefName",
     );
-    expect(step2aSection).toContain(
-      "PR_AUTHOR=$(jq -r '.author.login' <<< \"$PR_META\")",
-    );
-    expect(step2aSection).toContain(
-      "PR_TITLE=$(jq -r '.title' <<< \"$PR_META\")",
-    );
-    expect(step2aSection).toContain(
-      "PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$PR_META\")",
-    );
+    expect(step2aSection).toContain("PR_AUTHOR=$(jq -r '.author.login' <<< \"$PR_META\")");
+    expect(step2aSection).toContain("PR_TITLE=$(jq -r '.title' <<< \"$PR_META\")");
+    expect(step2aSection).toContain("PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$PR_META\")");
   });
 
   it("Step 4a's /prs/claim call threads authorLogin/headRef/title from the Step 2a captures", () => {
-    const step4aIdx = content.indexOf(
-      "### 4a. Claim PR Record (pre-merge lock)",
-    );
+    const step4aIdx = content.indexOf("### 4a. Claim PR Record (pre-merge lock)");
     const step4bIdx = content.indexOf("### 4b. Squash Merge");
     expect(step4aIdx).toBeGreaterThan(-1);
     expect(step4bIdx).toBeGreaterThan(step4aIdx);
