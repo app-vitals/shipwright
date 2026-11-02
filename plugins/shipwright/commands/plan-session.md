@@ -191,6 +191,7 @@ This is likely **HITL** — see the conditional judgment step in Step 5.5.
 - **DB**: adding a `NOT NULL`, foreign key, or other constraint to a column on a table that already has rows — has the existing data been backfilled to satisfy it? Adding the constraint before the backfill is complete will fail on (or corrupt) existing rows.
 - **API**: removing or renaming an endpoint or response field — who calls it?
 - **Client/types**: removing or renaming a method or interface — who imports it?
+- **Published package contract** — rename, removal, or constraint change to exports of `@app-vitals/agent-*`; consumers in other repos are invisible to grep.
 - **Release/deployment pipeline**: the pipeline itself is an interface with external consumers. Changes to how artifacts are built, packaged, or published; where they land; what events or signals are emitted during the process; or what triggers downstream workflows — any of these can silently break systems in other repos that depend on the current behavior. Those consumers won't appear in a local grep and won't error loudly; they'll just stop running. Before designing any task that modifies the build, release, or deploy pipeline, identify what depends on its current behavior and how the change affects each dependency.
 
 List every consumer found. A task that drops the old interface while leaving consumers on the old code creates a broken intermediate state that cannot be deployed safely.
@@ -347,7 +348,26 @@ A task that drops or renames something while a later task updates the consumers 
 
 If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
-**Cross-repo producer → consumer work.** When a shipwright task consumes a change released from `app-vitals/agent`, insert a RELEASE GATE task between the producer and consumer tasks (the consumer depends on the gate). The gate's description must link [docs/release-gate.md](../../../docs/release-gate.md) and repeat in short form: run `scripts/check-platform-pin.sh <package> <minVersion>`; exit 0 → mark the gate done; otherwise report the printed stage and leave it pending (never done/blocked); stuck > 2h after the producer merged → set hitl naming the stage.
+**Cross-repo producer → consumer work.** Exports from `@app-vitals/agent-*` packages are a published contract: the producer lives in `app-vitals/agent`, consumers live in other repos (shipwright and others) that pin a released version. A consumer task that needs a new export cannot merge until the producer task ships and the package is released. These changes MUST be split into sequential tasks across repos:
+
+1. **Expand** (producer repo) — additive changes to the package contract (new exports, new optional parameters). This task must be additive so the bump PR stays green on its own: its PR stays green on its own with no external dependencies.
+2. **Migrate** (consumer repo) — update consumers to use the new contract. Each migrate task depends on a RELEASE GATE task (see below) that waits for the producer's expand task to be deployed.
+3. **Contract** (producer repo, later) — removal or narrowing of the contract. This task depends on the consumer's migrate task being deployed (not just merged), ensuring zero consumers are still on the old interface.
+
+For any consumer task needing an unreleased producer version, insert a RELEASE GATE task (title: `chore: wait for @app-vitals/agent >= X in shipwright`) between the producer and consumer:
+
+```
+chore: wait for @app-vitals/agent >= {minVersion} in shipwright
+
+Producer task: {PRODUCER-TASK-ID}; min version: {minVersion}.
+Completion check: run `scripts/check-platform-pin.sh @app-vitals/agent-{package} {minVersion}`.
+Exit 0 → mark gate done; exit non-zero → report the printed stage and leave pending (never done/blocked).
+Stuck > 2h after {PRODUCER-TASK-ID} merged → set hitl naming the stuck stage.
+
+[docs/release-gate.md](../../../docs/release-gate.md) for the chain, what to watch, and how to re-dispatch.
+```
+
+The gate's `dependencies` field includes the producer task; the consumer task's `dependencies` include the gate.
 
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
 
