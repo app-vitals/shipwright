@@ -18,8 +18,11 @@ const FAKE_GH = `#!/usr/bin/env bash
 dir="$GH_FAKE_DIR"
 case "$*" in
   "api -H"*) cat "$dir/package.json" ;;
-  "api repos/"*"/releases/tags/"*) [ -f "$dir/release" ] && echo '{}' || exit 1 ;;
-  "pr list"*) cat "$dir/prs.json" ;;
+  "api repos/"*"/releases/tags/"*)
+    if [ -f "$dir/release" ]; then echo '{}'
+    elif [ -f "$dir/release-error" ]; then echo "gh: HTTP 401: Bad credentials" >&2; exit 1
+    else echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi ;;
+  "pr list"*) [ -f "$dir/prs-error" ] && exit 1; cat "$dir/prs.json" ;;
   *) echo "unexpected gh $*" >&2; exit 99 ;;
 esac
 `;
@@ -116,5 +119,23 @@ describe("check-platform-pin.sh", () => {
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_FAKE_DIR: dir },
     });
     expect(p.exitCode).toBe(2);
+  });
+
+  test("missing argument exits 2", () => {
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, GH_FAKE_DIR: dir };
+    expect(Bun.spawnSync(["bash", SCRIPT], { env }).exitCode).toBe(2);
+    expect(Bun.spawnSync(["bash", SCRIPT, PKG], { env }).exitCode).toBe(2);
+  });
+
+  test("non-404 release lookup failure exits 2, not no-agent-release", () => {
+    writeFileSync(join(dir, "release-error"), "");
+    const r = run("0.16.2", "0.16.3");
+    expect(r.rc).toBe(2);
+    expect(r.out).not.toContain("STAGE:");
+  });
+
+  test("gh pr list failure exits 2", () => {
+    writeFileSync(join(dir, "prs-error"), "");
+    expect(run("0.16.2", "0.16.3", { release: true }).rc).toBe(2);
   });
 });

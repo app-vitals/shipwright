@@ -21,7 +21,7 @@ scripts/check-platform-pin.sh <package> <minVersion>
 
 - **Exit 0** — shipwright `main` pins the package at >= `minVersion`. Mark the gate task `done`; the consumer task becomes ready through its dependency.
 - **Exit 1** — not yet. The script prints the stuck stage (below). Leave the gate `pending` and report the stage; do **not** mark it `done` or `blocked`.
-- **Exit 2** — usage error or the package is not pinned; fix the invocation.
+- **Exit 2** — usage error, the package is not pinned, or a `gh` call failed (auth, network); fix the invocation or environment and retry.
 - **Stuck > 2h** after the producer merged: set `hitl` with a note naming the stage.
 
 | `STAGE:` | Meaning |

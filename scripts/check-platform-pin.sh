@@ -12,7 +12,8 @@
 #   STAGE: bump-pr-red            bump PR open and a check failed
 #   STAGE: bump-pr-pending        bump PR open, checks still running / merging
 #
-# Exit 2 means bad usage or an unreadable pin (not a stage). Read-only: only
+# Exit 2 means bad usage, an unreadable pin, or a gh failure other than a
+# missing release (not a stage). Read-only: only
 # `gh api` / `gh pr list` reads, no task-store calls. Needs gh authenticated.
 # Overrides: SHIPWRIGHT_REPO (app-vitals/shipwright), AGENT_REPO
 # (app-vitals/agent), BUMP_BRANCH (chore/platform-release).
@@ -20,8 +21,12 @@
 #
 set -euo pipefail
 
-PACKAGE="${1:?usage: check-platform-pin.sh <package> <minVersion>}"
-MIN="${2:?usage: check-platform-pin.sh <package> <minVersion>}"
+if [[ $# -ne 2 ]]; then
+  echo "usage: check-platform-pin.sh <package> <minVersion>" >&2
+  exit 2
+fi
+PACKAGE="$1"
+MIN="$2"
 MIN="${MIN#v}"
 SHIPWRIGHT_REPO="${SHIPWRIGHT_REPO:-app-vitals/shipwright}"
 AGENT_REPO="${AGENT_REPO:-app-vitals/agent}"
@@ -62,13 +67,20 @@ fi
 
 echo "NOT YET: ${SHIPWRIGHT_REPO} main pins ${PACKAGE}@${pinned}, need >= ${MIN}"
 
-if ! gh api "repos/${AGENT_REPO}/releases/tags/v${MIN}" >/dev/null 2>&1; then
+if ! release_err="$(gh api "repos/${AGENT_REPO}/releases/tags/v${MIN}" 2>&1 >/dev/null)"; then
+  if [[ "$release_err" != *"404"* && "$release_err" != *"Not Found"* ]]; then
+    echo "cannot look up ${AGENT_REPO} release v${MIN}: ${release_err}" >&2
+    exit 2
+  fi
   echo "STAGE: no-agent-release (${AGENT_REPO} has no v${MIN} release — check the Release workflow; a release is only cut for a feat:/fix:/perf: commit)"
   exit 1
 fi
 
 prs="$(gh pr list -R "$SHIPWRIGHT_REPO" --head "$BUMP_BRANCH" --state open \
-  --json number,url,mergeable,statusCheckRollup)"
+  --json number,url,mergeable,statusCheckRollup)" || {
+  echo "cannot list ${BUMP_BRANCH} PRs in ${SHIPWRIGHT_REPO}" >&2
+  exit 2
+}
 if [[ "$(echo "$prs" | jq 'length')" == "0" ]]; then
   echo "STAGE: no-bump-pr (v${MIN} is published but no open ${BUMP_BRANCH} PR — check the platform-release run in ${SHIPWRIGHT_REPO})"
   exit 1
