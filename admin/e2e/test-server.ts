@@ -22,9 +22,8 @@ import { createAdminUIApp } from "@app-vitals/agent-admin/admin-ui";
 import { Hono } from "hono";
 import { applyShipwrightDefaults } from "../src/main.ts";
 
-// The platform admin resolves its default specialties dir inside
-// node_modules; point it at Shipwright's, the way main.ts does at boot (the
-// "new agent" page lists them).
+// Apply the same env defaults main.ts does at boot (default and self-serve
+// agent types); the "new agent" page lists types from the coding extension.
 applyShipwrightDefaults(process.env);
 
 // ─── Config ───────────────────────────────────────────────────────────────────
