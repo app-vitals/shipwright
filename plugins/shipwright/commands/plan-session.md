@@ -348,9 +348,9 @@ A task that drops or renames something while a later task updates the consumers 
 
 If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
-**Cross-repo producer → consumer work.** Exports from `@app-vitals/agent-*` packages are the bridge between the Shipwright repository and consumer repos (including vitals-os and others). Changes to these contracts require special care: a consumer task that updates to a new package version cannot merge until the producer task ships and the package is released to npm. These changes MUST be split into sequential tasks across repos:
+**Cross-repo producer → consumer work.** Exports from `@app-vitals/agent-*` packages are a published contract: the producer lives in `app-vitals/agent`, consumers live in other repos (shipwright and others) that pin a released version. A consumer task that needs a new export cannot merge until the producer task ships and the package is released. These changes MUST be split into sequential tasks across repos:
 
-1. **Expand** (producer repo) — additive changes to the package contract (new exports, new optional parameters). This task is standalone: its PR stays green on its own with no external dependencies.
+1. **Expand** (producer repo) — additive changes to the package contract (new exports, new optional parameters). This task must be additive so the bump PR stays green on its own: its PR stays green on its own with no external dependencies.
 2. **Migrate** (consumer repo) — update consumers to use the new contract. Each migrate task depends on a RELEASE GATE task (see below) that waits for the producer's expand task to be deployed.
 3. **Contract** (producer repo, later) — removal or narrowing of the contract. This task depends on the consumer's migrate task being deployed (not just merged), ensuring zero consumers are still on the old interface.
 
@@ -359,9 +359,10 @@ For any consumer task needing an unreleased producer version, insert a RELEASE G
 ```
 chore: wait for @app-vitals/agent >= {minVersion} in shipwright
 
+Producer task: {PRODUCER-TASK-ID}; min version: {minVersion}.
 Completion check: run `scripts/check-platform-pin.sh @app-vitals/agent-{package} {minVersion}`.
 Exit 0 → mark gate done; exit non-zero → report the printed stage and leave pending (never done/blocked).
-Stuck > 2h after {PRODUCER-TASK-ID} deployed → set hitl naming the stuck stage.
+Stuck > 2h after {PRODUCER-TASK-ID} merged → set hitl naming the stuck stage.
 
 [docs/release-gate.md](../../../docs/release-gate.md) for the chain, what to watch, and how to re-dispatch.
 ```

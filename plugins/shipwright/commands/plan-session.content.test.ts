@@ -1307,10 +1307,10 @@ describe("plan-session.md — Cross-repo producer → consumer work (XPF-4.1)", 
     expect(lower).toContain("additive");
   });
 
-  it("states that Expand tasks are standalone — their PRs stay green on their own", () => {
+  it("states that Expand tasks must be additive so the bump PR stays green on its own", () => {
     const section = extractBreakingChangeSafetySection(content);
     const lower = section.toLowerCase();
-    expect(lower).toMatch(/expand.*standalone|standalone.*expand/);
+    expect(lower).toMatch(/expand.*additive|additive.*expand/);
     expect(lower).toMatch(/pr.*green|stays green/);
   });
 
