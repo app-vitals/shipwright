@@ -95,6 +95,57 @@ exception and stay single-`TASK_ID`: they fire before any bundle-mate has transi
 from `pr_open`, so blocking just the primary is sufficient — Step 2b's Bundle Completeness
 Gate will still catch it on any bundle-mate's next deploy attempt.
 
+### 2-pre. Clear Stale "Post-merge CI failed" Blocks (repo-wide sweep)
+
+Runs on **every** deploy invocation, right after the task lookup above and before Step 2a —
+ahead of every `Stop.` in Steps 2a–5c, so nothing downstream can skip it. It is a repo-wide
+sweep, independent of the target PR.
+
+A Step 5c failure leaves every task on the bundle `blocked` with `note` =
+`Post-merge CI failed — run ID: {id}`. If a later run of the same workflow on the same branch
+then goes green (e.g. a re-run or a follow-up commit fixed it), nothing else ever clears the
+block. For each `blocked` task in `{org}/{repo}`, run this check. It touches **only** tasks
+whose `note` starts with `Post-merge CI failed` — never any other block (`Deploy stage failed`,
+`canary_blocked`, `Squash merge failed`, etc.):
+
+```bash
+REPO="{org}/{repo}"
+BLOCKED=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=blocked&repo=$REPO" \
+  | jq -c '.tasks[] | select((.note // "") | startswith("Post-merge CI failed"))')
+echo "$BLOCKED" | while read -r T; do
+  [ -z "$T" ] && continue
+  tid=$(echo "$T" | jq -r .id)
+  FAILED_ID=$(echo "$T" | jq -r '.note | capture("run ID: (?<id>[0-9]+)").id // empty')
+  [ -z "$FAILED_ID" ] && continue
+  FAILED=$(gh api "repos/$REPO/actions/runs/$FAILED_ID" --jq '{workflow_id, head_branch, run_number}') || continue
+  # Latest run of that workflow on that branch (highest run_number)
+  LATEST=$(gh api "repos/$REPO/actions/workflows/$(echo "$FAILED" | jq -r .workflow_id)/runs?branch=$(echo "$FAILED" | jq -r .head_branch)&per_page=20" \
+    --jq '[.workflow_runs[]] | max_by(.run_number) | {id, status, conclusion, run_number}') || continue
+  # Clear ONLY when the latest run is a later run, completed, and conclusion == success.
+  # failed / cancelled / queued / in_progress / unknown → leave the block untouched.
+  if [ "$(echo "$LATEST" | jq -r '.status == "completed" and .conclusion == "success" and .run_number > '"$(echo "$FAILED" | jq .run_number)")" = "true" ]; then
+    LATEST_ID=$(echo "$LATEST" | jq -r .id)
+    # Same transition as Step 5c's success path: the PR is already squash-merged and CI is
+    # now green, so the task is deployed. Do NOT use POST /tasks/{id}/unblock — that returns
+    # the task to `pending`, and dev-task would re-pick and re-implement shipped work.
+    curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Cleared stale Post-merge CI block: run $FAILED_ID superseded by green run $LATEST_ID\"}" | jq .
+  fi
+done
+```
+
+Every bundle-mate was blocked with the same note by Step 5c, so each one is matched and moved
+to `deployed` by this loop on its own. Print
+`✓ Cleared stale Post-merge CI block on {tid} (green run {LATEST_ID}) → deployed` per cleared
+task. A failed lookup, a non-completed latest run, or a non-success conclusion leaves the block
+in place. The sweep never stops the deploy — continue to Step 2a either way.
+
+Deploy-only-mode Step 5c failures flag the PR record (`blocked`/`blockedReason` on
+`/prs/{id}`), not a task; this sweep does not clear those — they stay for `/shipwright:unblock`.
+
 ### 2a. Own-PRs-Only Check
 
 Get the current agent's own canonical GH login (via the login-identity helper — the REST `/user` endpoint 403s under installation tokens) and verify the PR was authored by the agent:
