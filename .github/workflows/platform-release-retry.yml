@@ -14,6 +14,13 @@ name: Platform Release Retry
 # platform-release.yml run is queued or in progress, nothing is retried or
 # reported: that bump may be about to fix the PR.
 #
+# XPF-1.3: an open bump PR that is green on its head commit (fixed by hand or by
+# a patch pass after the gate gave up) is merged by running
+# scripts/platform-bump-gate.sh on it. It never re-dispatches platform-release
+# for a green PR: that force-pushes the branch and would discard the fix
+# commits. One attempt per head SHA (a "platform-bump-merge:<sha>" marker
+# comment); skipped while a platform-release run is queued or in progress.
+#
 # Runs in its own concurrency group (runs are serialized, a newer push
 # supersedes a queued one). It must not share platform-release's group: a
 # queued retry would cancel a pending bump dispatch. The dispatched bump
@@ -56,14 +63,18 @@ jobs:
         id: select
         run: |
           gh pr list --head "$BRANCH" --state open \
-            --json number,title,mergeable,statusCheckRollup > "$RUNNER_TEMP/pr.json"
+            --json number,title,mergeable,headRefOid,statusCheckRollup > "$RUNNER_TEMP/pr.json"
           NUMBER=$(jq -r '.[0].number // empty' "$RUNNER_TEMP/pr.json")
           USED=0
+          MERGE_TRIED=0
           if [ -n "$NUMBER" ]; then
             USED=$(gh pr view "$NUMBER" --json comments \
               -q '[.comments[] | select(.body | contains("<!-- platform-bump-retry -->"))] | length')
+            HEAD_SHA=$(jq -r '.[0].headRefOid // empty' "$RUNNER_TEMP/pr.json")
+            MERGE_TRIED=$(gh pr view "$NUMBER" --json comments \
+              -q "[.comments[] | select(.body | contains(\"<!-- platform-bump-merge:${HEAD_SHA} -->\"))] | length")
           fi
-          bun scripts/platform-bump-retry.ts "$RUNNER_TEMP/pr.json" "$USED" | tee "$RUNNER_TEMP/select.out" >> "$GITHUB_OUTPUT"
+          bun scripts/platform-bump-retry.ts "$RUNNER_TEMP/pr.json" "$USED" "$MERGE_TRIED" | tee "$RUNNER_TEMP/select.out" >> "$GITHUB_OUTPUT"
           echo "number=${NUMBER}" >> "$GITHUB_OUTPUT"
           echo "used=${USED}" >> "$GITHUB_OUTPUT"
           ACTION=$(sed -n 's/^action=//p' "$RUNNER_TEMP/select.out" | tail -n 1)
@@ -71,7 +82,7 @@ jobs:
           # still looks red: retrying (or reporting exhaustion) now would
           # spend budget on a bump that may be about to fix it. Later
           # outputs win over earlier ones in $GITHUB_OUTPUT.
-          if [ "$ACTION" = "retry" ] || [ "$ACTION" = "exhausted" ]; then
+          if [ "$ACTION" = "retry" ] || [ "$ACTION" = "exhausted" ] || [ "$ACTION" = "merge" ]; then
             INFLIGHT=0
             for STATUS in queued in_progress; do
               N=$(gh run list --workflow platform-release.yml --status "$STATUS" \
@@ -101,6 +112,18 @@ jobs:
           gh pr comment "$NUMBER" --body "<!-- platform-bump-retry -->
           Retrying the platform bump for ${VERSION} ($((USED + 1)) of 3): ${REASON}. Triggered by a push to main."
           gh workflow run platform-release.yml --ref main -f version="$VERSION" -f attempt=1
+
+      - name: Merge the green bump
+        if: steps.select.outputs.action == 'merge'
+        env:
+          NUMBER: ${{ steps.select.outputs.number }}
+          VERSION: ${{ steps.select.outputs.version }}
+        run: |
+          PR_URL=$(gh pr view "$NUMBER" --json url -q '.url')
+          HEAD_SHA=$(gh pr view "$NUMBER" --json headRefOid -q '.headRefOid')
+          gh pr comment "$NUMBER" --body "<!-- platform-bump-merge:${HEAD_SHA} -->
+          Platform bump ${VERSION} is green on ${HEAD_SHA}; merging it as-is (no re-dispatch). Triggered by a push to main."
+          bash scripts/platform-bump-gate.sh "$PR_URL"
 
       - name: Report exhausted retries
         if: steps.select.outputs.action == 'exhausted' && steps.select.outputs.reported == '0'
