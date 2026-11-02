@@ -2,6 +2,20 @@
 
 Cross-repo work needs an explicit wait for a release. Instead of automation that mutates tasks, a plan inserts a **RELEASE GATE** task between the producer task (in `app-vitals/agent`) and the consumer task (in `app-vitals/shipwright`). Every gate task's description links here and repeats the short form below.
 
+## Task splitting for package contract changes
+
+Exports from `@app-vitals/agent-*` packages are a published contract: the producer lives in `app-vitals/agent`, consumers live in other repos (shipwright and others) that pin a released version. A consumer task that needs a new export cannot merge until the producer task ships and the package is released.
+
+**Required task pattern: Expand → Migrate → Contract**
+
+Changes to the package contract MUST be split into sequential tasks across repos:
+
+1. **Expand** (producer repo, `app-vitals/agent`) — additive changes to the package contract (new exports, new optional parameters). This task must be additive so the producer PR stays green on its own with no external dependencies.
+2. **Migrate** (consumer repo, e.g. `app-vitals/shipwright`) — update consumers to use the new contract. Each migrate task depends on a RELEASE GATE task (below) that waits for the producer's expand task to be deployed and released.
+3. **Contract** (producer repo, `app-vitals/agent`, later) — removal or narrowing of the contract. This task depends on the consumer's migrate task being deployed (not just merged), ensuring zero consumers remain on the old interface before breaking it.
+
+Insert a RELEASE GATE between the **Expand** (step 1) and **Migrate** (step 2) tasks. The gate's `dependencies` field includes the Expand task; the Migrate task's `dependencies` include the gate.
+
 ## The release chain the gate waits on
 
 1. The producer PR merges in `app-vitals/agent` (the task reaches `merged`/`deployed`).
