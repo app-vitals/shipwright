@@ -998,7 +998,7 @@ CURRENT_USER={the login resolved in Step 3}
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
   "$(jq -n --arg currentUser "$CURRENT_USER" \
     --arg prAuthor "$PR_AUTHOR" \
-    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --arg headRefOid "$HEAD_REF_OID" \
     --argjson reviews "$REVIEWS_JSON" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \
@@ -1253,7 +1253,7 @@ BODY={the "body" string built for pr_review_{pr}.json above}
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
-  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}, \"body\": $(jq -Rs . <<< "$BODY")}"
+  "$(jq -n --arg body "$BODY" --argjson selfReview "$SELF_REVIEW" --argjson unaddressedFindings "$UNADDRESSED_FINDINGS" --argjson currentPassHasBlockingFindings "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" '{selfReview: $selfReview, unaddressedFindings: $unaddressedFindings, currentPassHasBlockingFindings: $currentPassHasBlockingFindings, body: $body}')"
 ```
 
 - If the result's `valid` field is `true`, proceed to Step 11.

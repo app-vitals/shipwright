@@ -452,7 +452,7 @@ connection objects — `{ nodes: [...] }` — passed through unchanged), plus `C
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
   "$(jq -n --arg currentUser "$CURRENT_USER" \
     --arg prAuthor "$PR_AUTHOR" \
-    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --arg headRefOid "$HEAD_REF_OID" \
     --argjson reviews "$REVIEWS_JSON" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \

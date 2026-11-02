@@ -1355,7 +1355,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
   });
 
   test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
-    // Regression test for the third-round review finding: lib/claim-ttl.ts
+    // Regression test for the third-round review finding: agent/src/coding/claim-ttl.ts
     // sizes DEFAULT_CLAIM_TTL_MS as "one Claude session + 5min buffer", an
     // invariant that assumes a claim spans exactly one session. This loop can
     // hold one claim across up to 4 sequential runner() calls, and an attempt

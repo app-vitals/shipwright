@@ -37,6 +37,12 @@ describe("codingAdminExtension", () => {
     ).toBeUndefined();
   });
 
+  it("contributes the coding agent type", () => {
+    expect(codingAdminExtension.agentTypes?.()).toEqual([
+      { name: "coding", displayName: "Coding Agent" },
+    ]);
+  });
+
   it("is named coding", () => {
     expect(codingAdminExtension.name).toBe("coding");
   });

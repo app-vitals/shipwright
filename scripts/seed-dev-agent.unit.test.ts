@@ -130,6 +130,9 @@ describe("seedDevAgent", () => {
     expect((double.agentUpserts[0].create as { name: string }).name).toBe(
       "Dev Agent",
     );
+    expect(
+      (double.agentUpserts[0].create as { specialty: string }).specialty,
+    ).toBe("coding");
 
     // AgentEnv upserts — CLAUDE_CODE_OAUTH_TOKEN + GH_TOKEN
     expect(double.agentEnvUpserts.length).toBeGreaterThanOrEqual(2);

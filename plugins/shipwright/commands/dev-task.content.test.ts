@@ -285,7 +285,7 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(siblingCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
     expect(section).toContain("DEFAULT_CLAIM_TTL_MS");
-    expect(section).toContain("lib/claim-ttl.ts");
+    expect(section).toContain("agent/src/coding/claim-ttl.ts");
     expect(section).toMatch(/65.{0,10}minute/i);
     expect(section).toMatch(/heartbeatAt.{0,80}within the last 65 minutes/is);
     expect(section).toMatch(

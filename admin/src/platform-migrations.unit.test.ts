@@ -131,8 +131,15 @@ function hashOf(name: string): string {
  * 20261030000000 is the AGR-6.3 REMOVE step of the typeName -> specialty
  * rename (backfill, SET NOT NULL, DROP COLUMN "typeName"); the dev-task and
  * coding code no longer read typeName (AXG-1.1), so dropping it is safe.
+ * 20261030100000 (PCD-3.4) is default-only: ALTER COLUMN "specialty" SET
+ * DEFAULT 'specialist', no row rewrites. POST /admin/agents, the admin UI and
+ * self-serve all require/force specialty, and seed-dev-agent sets it
+ * explicitly, so no create path relies on the column default.
  */
-const REVIEWED_REMOVALS = new Set(["20261030000000_drop_agent_type_name"]);
+const REVIEWED_REMOVALS = new Set([
+  "20261030000000_drop_agent_type_name",
+  "20261030100000_set_agent_specialty_default_specialist",
+]);
 
 const shipped = readdirSync(MIGRATIONS_DIR)
   .filter((name) => statSync(join(MIGRATIONS_DIR, name)).isDirectory())

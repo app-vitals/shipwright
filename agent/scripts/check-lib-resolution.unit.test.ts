@@ -22,7 +22,7 @@ const files = [
     source: [
       'import { initSentry } from "@app-vitals/agent-lib/sentry";',
       'import type { paths } from "@app-vitals/agent-lib/admin-types";',
-      'import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";',
+      'import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@app-vitals/agent-lib/claude-timeout";',
       'const p = await import("@app-vitals/agent-lib/pricing");',
       'import { x } from "hono";',
       "// see @app-vitals/agent-lib/sentry for details",
@@ -46,7 +46,7 @@ describe("findLibImports", () => {
         from: "/app/agent/src/a.ts",
       },
       {
-        specifier: "@app-vitals/agent-lib/claim-ttl",
+        specifier: "@app-vitals/agent-lib/claude-timeout",
         from: "/app/agent/src/a.ts",
       },
       {
@@ -79,14 +79,14 @@ describe("checkLibResolution", () => {
 
   test("reports each import that fails to resolve (package missing from the image)", () => {
     const r = checkLibResolution(files, (spec) => {
-      if (spec === "@app-vitals/agent-lib/claim-ttl") {
+      if (spec === "@app-vitals/agent-lib/claude-timeout") {
         throw new Error("Cannot find package '@app-vitals/agent-lib'");
       }
       return "/ok.ts";
     });
     expect(r.failures).toEqual([
       {
-        specifier: "@app-vitals/agent-lib/claim-ttl",
+        specifier: "@app-vitals/agent-lib/claude-timeout",
         from: "/app/agent/src/a.ts",
         error: "Cannot find package '@app-vitals/agent-lib'",
       },

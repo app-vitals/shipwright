@@ -847,6 +847,52 @@ describe("deploy.md — bundle-mate sync on Step 5c budget-exhausted deployed ma
   });
 });
 
+describe("deploy.md — clears stale Post-merge CI failed blocks (XPF-5.1)", () => {
+  let idx: number;
+  let end: number;
+  let section: string;
+
+  beforeAll(() => {
+    idx = content.indexOf("### 2-pre. Clear Stale");
+    end = content.indexOf("### 2a. Own-PRs-Only Check");
+    section = content.slice(idx, end);
+  });
+
+  it("runs early in Step 2 — after the task lookup, before Step 2a and Step 5", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    expect(step2Idx).toBeGreaterThan(-1);
+    expect(idx).toBeGreaterThan(step2Idx);
+    expect(end).toBeGreaterThan(idx);
+    expect(idx).toBeLessThan(content.indexOf("## Step 5: Poll Deploy"));
+    expect(content).not.toContain("#### 5c-i. Clear a Stale");
+  });
+
+  it("scopes the blocked-task query to the target repo", () => {
+    expect(section).toContain('REPO="{org}/{repo}"');
+    expect(section).toContain("/tasks?status=blocked&repo=$REPO");
+  });
+
+  it("only touches blocks whose note starts with 'Post-merge CI failed'", () => {
+    expect(section).toContain('startswith("Post-merge CI failed")');
+    expect(section).toContain("never any other block");
+  });
+
+  it("marks the task deployed (not unblock → pending) and records a note", () => {
+    expect(section).toContain('$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid"');
+    expect(section).toContain('\\"status\\": \\"deployed\\"');
+    expect(section).toContain('\\"deployedAt\\"');
+    expect(section).toContain("Cleared stale Post-merge CI block");
+    expect(section).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid/unblock");
+  });
+
+  it("clears only when the latest run is completed and successful", () => {
+    expect(section).toContain(
+      '.status == "completed" and .conclusion == "success"',
+    );
+    expect(section).toContain("failed / cancelled / queued / in_progress");
+  });
+});
+
 describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures (PRB-3.2, extended to TASK_IDS)", () => {
   // The 5 post-merge failure/blocked escalation sites. Originally (PRB-3.2) these PATCHed
   // only the primary TASK_ID and fell back to /prs/$PR_RECORD_ID with blocked:true +
