@@ -17,10 +17,12 @@
  *   GET /admin/agents/:id     → agent detail (requires admin_session cookie)
  */
 
+import { withExtensionAgentTypes } from "@app-vitals/agent-admin/admin-extension";
 import type { AdminUIDeps } from "@app-vitals/agent-admin/admin-ui";
 import { createAdminUIApp } from "@app-vitals/agent-admin/admin-ui";
+import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
 import { Hono } from "hono";
-import { applyShipwrightDefaults } from "../src/main.ts";
+import { adminExtensions, applyShipwrightDefaults } from "../src/main.ts";
 
 // Apply the same env defaults main.ts does at boot (default and self-serve
 // agent types); the "new agent" page lists types from the coding extension.
@@ -289,7 +291,13 @@ function buildTestApp(): Hono {
   app.get("/health", (c) => c.text("ok"));
 
   // Mount the admin UI
-  const adminApp = createAdminUIApp(buildMockDeps());
+  const adminApp = createAdminUIApp({
+    ...buildMockDeps(),
+    specialtyRegistry: withExtensionAgentTypes(
+      new SpecialtyRegistry(),
+      adminExtensions,
+    ),
+  });
   app.route("/", adminApp);
 
   return app;
