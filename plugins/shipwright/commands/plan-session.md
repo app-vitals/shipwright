@@ -347,6 +347,8 @@ A task that drops or renames something while a later task updates the consumers 
 
 If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
+**Cross-repo producer → consumer work.** When a shipwright task consumes a change released from `app-vitals/agent`, insert a RELEASE GATE task between the producer and consumer tasks (the consumer depends on the gate). The gate's description must link [docs/release-gate.md](../../../docs/release-gate.md) and repeat in short form: run `scripts/check-platform-pin.sh <package> <minVersion>`; exit 0 → mark the gate done; otherwise report the printed stage and leave it pending (never done/blocked); stuck > 2h after the producer merged → set hitl naming the stage.
+
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
 
 ### `--autonomous` Mode
