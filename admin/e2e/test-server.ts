@@ -294,10 +294,10 @@ function buildTestApp(): Hono {
     ...buildMockDeps(),
     specialtyRegistry: withExtensionAgentTypes(
       {
-        getManifest: () => {
+        getType: () => {
           throw new Error("not implemented");
         },
-        tryGetManifest: () => undefined,
+        tryGetType: () => undefined,
         listTypes: () => [],
       },
       adminExtensions,

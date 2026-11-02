@@ -3559,7 +3559,7 @@
     "/agents/{id}": {
       "get": {
         "summary": "Get an agent",
-        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `specialty`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `specialty`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type with no corresponding AgentEnv row yet (informational only).",
         "parameters": [
           {
             "schema": {
@@ -3915,7 +3915,7 @@
       },
       "post": {
         "summary": "Create an agent",
-        "description": "Admin-only. Validates name/specialty, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
+        "description": "Admin-only. Validates name/specialty, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4220,7 +4220,7 @@
     "/agents/{id}/crons/reconcile": {
       "post": {
         "summary": "Reconcile system crons",
-        "description": "Reconciles the agent's system crons against the cron list declared by its Specialty manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
+        "description": "Reconciles the agent's system crons against the cron list supplied by the AdminExtension for its specialty. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the defaults. Called automatically on agent startup; returns created/updated/deleted counts.",
         "parameters": [
           {
             "schema": {
