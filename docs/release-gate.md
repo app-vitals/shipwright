@@ -57,6 +57,7 @@ scripts/check-platform-pin.sh <package> <minVersion>
   `gh workflow run platform-release.yml -R app-vitals/shipwright -f version=X.Y.Z`
 - **Bump PR `CONFLICTING`.** The workflow re-dispatches itself once; after that, re-dispatch by hand with the command above.
 - **No release cut.** The producer commit lacked a `feat:`/`fix:`/`perf:` prefix.
+- **Force-push refused (non-bot commits).** The bump branch holds commits not authored by the bump bot (from a patch pass or a human fix). The `platform-release` workflow refuses to force-push over them to prevent data loss. Merge or rebase the PR by hand, then re-dispatch.
 - **Never** use `POST /tasks/:id/unblock` on a task whose PR already merged — it resets the task to `pending` and it can be re-run. Set it to `deployed`/`done` instead.
 
 See also [Local cross-repo development](./local-platform-development.md) for how the platform bump works.
