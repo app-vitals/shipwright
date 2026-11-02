@@ -20,6 +20,7 @@
  *   backgroundPasses    — the session alert sweeper
  *   specialtyDefaults   — the coding specialty's default crons, tools and
  *                         plugin (coding/coding-specialty-defaults.ts)
+ *   agentTypes          — the `coding` type in the new-agent picker
  *
  * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
  * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
@@ -262,6 +263,7 @@ export const codingAdminExtension: AdminExtension = {
   },
   openApi: codingAdminOpenApi,
   specialtyDefaults: codingSpecialtyDefaults,
+  agentTypes: () => [{ name: "coding", displayName: "Coding Agent" }],
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);
     return pass ? [pass] : [];
