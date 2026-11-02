@@ -1,8 +1,8 @@
 /**
  * admin/src/agent-cron-jobs.coding.integration.test.ts
  * Golden-row-set tests for the "coding" specialty's system crons, against a
- * real PostgreSQL DB. They read the real specialties/coding manifest, so they
- * stay with that specialty and are excluded from the platform extraction (the
+ * real PostgreSQL DB. They resolve the real coding code defaults
+ * (coding/coding-specialty-defaults.ts), so they stay with that specialty and are excluded from the platform extraction (the
  * generic reconcile behaviour is covered in agent-cron-jobs.integration.test.ts).
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
@@ -13,8 +13,7 @@ import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
 import { SystemClock } from "@app-vitals/agent-admin/clock";
 import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
 import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
-import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
-import { SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
+import { codingSpecialtyDefaults } from "./coding/coding-specialty-defaults.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
@@ -36,9 +35,9 @@ async function createAgent(
 
 /**
  * Golden expected row set for a specialty="coding" agent, hardcoded here (per
- * ATS-3.2 acceptance criterion 1) rather than derived from the manifest at
- * runtime — so this test catches a regression in EITHER the manifest content
- * OR the reconcile logic that maps it into rows. This is the exact set that
+ * ATS-3.2 acceptance criterion 1) rather than derived from the code defaults at
+ * runtime — so this test catches a regression in EITHER the defaults
+ * OR the reconcile logic that maps them into rows. This is the exact set that
  * the deleted admin/src/system-crons.ts SYSTEM_CRONS array produced.
  */
 interface GoldenCron {
@@ -197,11 +196,12 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
     await prisma.agentTool.deleteMany();
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
-    // Shipwright's specialties, as main.ts points startAdmin() at them.
+    // The coding extension's code defaults, as startAdmin() wires them.
     service = new AgentCronJobService(
       prisma,
       SystemClock(),
-      new SpecialtyRegistry({ typesDir: SHIPWRIGHT_SPECIALTIES_DIR }),
+      undefined,
+      codingSpecialtyDefaults,
     );
   });
 
@@ -215,8 +215,8 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
   // produce the EXACT row set that the (now-deleted) SYSTEM_CRONS array
   // produced: names, schedules, prompts, preChecks, silent flags, enabled
   // defaults, and parentCron links. Expected values are hardcoded in
-  // GOLDEN_CODING_CRONS above (NOT derived from the manifest at runtime), so a
-  // regression in either the manifest content or the manifest→row mapping is
+  // GOLDEN_CODING_CRONS above (NOT derived from the code defaults at runtime), so a
+  // regression in either the defaults or the defaults→row mapping is
   // caught here rather than silently accepted.
 
   it("reconcileSystemCrons() for a coding agent produces the exact golden row set", async () => {

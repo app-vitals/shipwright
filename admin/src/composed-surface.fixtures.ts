@@ -17,14 +17,10 @@ import {
   makeSessionCookie,
 } from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
-  defaultTypeDirLister,
-  SpecialtyRegistry,
-} from "@app-vitals/agent-admin/specialty-manifest-loader";
-import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./coding/admin-ui-coding.fixtures.ts";
-import { adminExtensions, SHIPWRIGHT_SPECIALTIES_DIR } from "./main.ts";
+import { adminExtensions } from "./main.ts";
 
 /** The coding extension's static OpenAPI contribution. */
 export function codingContribution() {
@@ -67,11 +63,7 @@ export async function renderSurfacePages(): Promise<
   Record<string, { status: number; body: string }>
 > {
   const cookie = `admin_session=${await makeSessionCookie()}`;
-  const specialtyRegistry = new SpecialtyRegistry({
-    typesDir: SHIPWRIGHT_SPECIALTIES_DIR,
-    list: () => defaultTypeDirLister(SHIPWRIGHT_SPECIALTIES_DIR).sort(),
-  });
-  const app = createCodingTestApp(makeCodingMockDeps({ specialtyRegistry }));
+  const app = createCodingTestApp(makeCodingMockDeps());
   const pages: Record<string, { status: number; body: string }> = {};
   for (const page of SURFACE_PAGES) {
     const res = await app.request(page.path, { headers: { Cookie: cookie } });

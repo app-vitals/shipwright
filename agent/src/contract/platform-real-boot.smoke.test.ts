@@ -26,15 +26,13 @@ import { dirname, join } from "node:path";
 
 const BASE_IMAGE = process.env.SHIPWRIGHT_CONTRACT_BASE_IMAGE;
 const SETUP_MODULE =
-  process.env.SHIPWRIGHT_CONTRACT_SETUP_MODULE ??
-  "/app/runtime/setup.ts";
+  process.env.SHIPWRIGHT_CONTRACT_SETUP_MODULE ?? "/app/runtime/setup.ts";
 const TEMPLATES_DIR =
   process.env.SHIPWRIGHT_CONTRACT_TEMPLATES_DIR ??
   join(dirname(SETUP_MODULE), "workspace");
 const SCRATCH_HOME = "/tmp/real-boot-home";
 
-// Every template the coding specialty ships (specialties/coding/manifest.yaml
-// points identity.templatesDir at agent/workspace/).
+// Every template the coding specialty ships (agent/workspace/).
 const CODING_TEMPLATES = readdirSync(
   join(import.meta.dir, "..", "..", "workspace"),
 ).filter((name) => name.endsWith(".template"));

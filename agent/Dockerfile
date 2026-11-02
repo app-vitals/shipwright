@@ -2,7 +2,8 @@
 #
 # Builds the Shipwright coding agent FROM the published platform runtime image
 # (ghcr.io/app-vitals/agent) and layers only what is Shipwright's: the coding
-# extension, the plugins, the marketplace manifest and the specialties. System
+# extension, the plugins, the marketplace manifest and the coding workspace
+# templates. System
 # tooling, Node + Claude Code, Playwright chromium, Piper and the runtime/admin
 # sources all come from the platform image (the Claude Code pin and its Renovate
 # bump live there now).
@@ -55,18 +56,13 @@ COPY --chown=1000:1000 agent/scripts ./agent/scripts
 # imports plugins/shipwright/scripts/* by relative path from agent/src/coding.
 COPY --from=stamp --chown=1000:1000 /app/plugins ./plugins
 COPY --from=stamp --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
-# Specialty manifests: setup.ts reads identity.templatesDir from
-# $SHIPWRIGHT_SPECIALTIES_DIR or <repo root>/specialties (the `coding` specialty
-# lives here, not in the platform's agent-types).
-COPY --chown=1000:1000 specialties ./specialties
 # Coding-owned workspace templates. The platform owns the rest of
 # /app/runtime/workspace; copy only these two so its own templates stay intact.
 COPY --chown=1000:1000 agent/workspace/CLAUDE.md.template ./runtime/workspace/CLAUDE.md.template
 COPY --chown=1000:1000 agent/workspace/CLAUDE-HITL.md.template ./runtime/workspace/CLAUDE-HITL.md.template
-# The full coding template set, at the path the coding manifest's
-# identity.templatesDir (agent/workspace/) names relative to SHIPWRIGHT_REPO_ROOT,
-# so the platform's specialty-templates lookup resolves it once it stops
-# short-circuiting `coding` to its built-in templates (PCD-2.2).
+# The full coding template set, at agent/workspace/ relative to
+# SHIPWRIGHT_REPO_ROOT (the coding specialty's templates dir; the coding
+# specialty itself is code defaults in admin/src/coding, not a manifest).
 COPY --chown=1000:1000 agent/workspace ./agent/workspace
 
 # The runtime derives its repo root from its own module path, which resolves to

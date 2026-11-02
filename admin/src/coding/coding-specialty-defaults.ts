@@ -2,10 +2,9 @@
  * admin/src/coding/coding-specialty-defaults.ts
  *
  * The coding agent's default system crons, tools and plugin, supplied as code
- * through the AdminExtension specialtyDefaults() hook (CET-4.1). Mirrors
- * specialties/coding/manifest.yaml field-for-field; the manifest stays in
- * place until CET-4.2, and coding-specialty-defaults.unit.test.ts pins the two
- * together.
+ * through the AdminExtension specialtyDefaults() hook (CET-4.1). These are the
+ * source of truth now that specialties/coding/manifest.yaml is retired (CET-4.2);
+ * coding-specialty-defaults.unit.test.ts pins them.
  */
 
 import type { SpecialtyDefaults } from "@app-vitals/agent-admin/specialty-defaults";

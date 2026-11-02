@@ -54,11 +54,11 @@ unaffected — the new gate only runs when the cron ticks.
 and dispatched a bare prompt with no repo argument, leaving the agent to improvise which
 repo(s) under `repos/` to scan. Both now declare
 `preCheck: shipwright:check-patrol-scope.ts` in
-[`specialties/coding/manifest.yaml`](../specialties/coding/manifest.yaml), which resolves the
+[`admin/src/coding/coding-specialty-defaults.ts`](../admin/src/coding/coding-specialty-defaults.ts), which resolves the
 agent's configured repos and emits the in-scope repo list as the cron's actual prompt.
 
 **What changed on upgrade**: `reconcileSystemCrons()` runs on every agent boot and keeps system
-crons in sync with the manifest, including `preCheck`. It does not diff fields or preserve
+crons in sync with the specialty defaults, including `preCheck`. It does not diff fields or preserve
 operator state beyond `enabled` and the row id, so the first boot after upgrading past this
 version rewrites these two crons' `preCheck` from `null` to `check-patrol-scope.ts` with no
 prompt and no log line. There is nothing to run by hand — but there is also no signal that it

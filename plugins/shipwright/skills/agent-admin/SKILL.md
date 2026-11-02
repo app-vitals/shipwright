@@ -75,16 +75,16 @@ take effect without a restart.
 
 ### System crons vs. custom crons
 
-System crons (`"system": true` in the list output) are seeded from the specialty manifest's
-`crons` array (`specialties/{specialty}/manifest.yaml`, resolved via the `SpecialtyRegistry`).
+System crons (`"system": true` in the list output) are seeded from the specialty's default
+`crons` array (for `coding`, `admin/src/coding/coding-specialty-defaults.ts`, supplied via the coding extension's `specialtyDefaults()` hook).
 Important rules:
 
 - **Cannot be deleted via the API** — the server returns 403. They are recreated on the
   next `reconcile` call.
 - **Can be enabled/disabled via `PATCH {"enabled": bool}`** — the enabled-only toggle works
   for both custom and system crons. The enabled state persists across reconcile calls.
-- **Content updates go through code** — submit a PR to change the manifest's `crons` array
-  (`specialties/{specialty}/manifest.yaml`), then call `POST .../crons/reconcile` to apply the
+- **Content updates go through code** — submit a PR to change the defaults' `crons` array
+  (`admin/src/coding/coding-specialty-defaults.ts`), then call `POST .../crons/reconcile` to apply the
   new definition.
 
 Custom crons (user-created, `"system": false`) can be freely created, updated, and deleted.
@@ -186,7 +186,7 @@ curl -sf -X DELETE \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}"
 
-# Reconcile system crons — re-seeds from the specialty manifest, preserving per-agent enabled state
+# Reconcile system crons — re-seeds from the specialty defaults, preserving per-agent enabled state
 # Run after a shipwright plugin update that changes system cron definitions
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \

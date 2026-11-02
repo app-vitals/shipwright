@@ -47,7 +47,6 @@ jobs:
             changed:
               - "agent/**"
               - "plugins/**"
-              - "specialties/**"
               - ".claude-plugin/**"
               - "package.json"
               - "bun.lock"
