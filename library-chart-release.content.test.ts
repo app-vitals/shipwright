@@ -64,7 +64,9 @@ describe("library-chart-release.yml", () => {
   });
 
   it("pins actions to a SHA and keeps workflow permissions read-only", () => {
-    for (const line of text.split("\n").filter((l) => /\buses:/.test(l) && !/uses: \.\//.test(l))) {
+    for (const line of text
+      .split("\n")
+      .filter((l) => /\buses:/.test(l) && !/uses: \.\//.test(l))) {
       expect(line).toMatch(/@[0-9a-f]{40} # v\d/);
     }
     expect(wf.permissions).toEqual({ contents: "read" });
@@ -73,9 +75,7 @@ describe("library-chart-release.yml", () => {
   it("bumps through lib/library-pin.sh on one fixed branch and refreshes the lock and vendored tgz", () => {
     expect(job.env?.BRANCH).toBe("chore/library-chart-release");
     expect(runs).toContain("source .github/workflows/lib/library-pin.sh");
-    expect(runs).toContain(
-      'bump_library_pin charts/shipwright "$VERSION"',
-    );
+    expect(runs).toContain('bump_library_pin charts/shipwright "$VERSION"');
     expect(runs).toContain("helm dependency update");
     expect(runs).toContain("agent-platform-${VERSION}.tgz");
     expect(runs).toContain('git push --force origin "$BRANCH"');
@@ -103,7 +103,9 @@ describe("check-chart-drift.yml library pin check", () => {
   const step = job.steps.find((s) => /library-pin\.sh/.test(s.run ?? ""));
 
   it("compares the pin against the published index and fails the job on drift or an unreadable index", () => {
-    expect(step?.run).toContain("https://app-vitals.github.io/agent/index.yaml");
+    expect(step?.run).toContain(
+      "https://app-vitals.github.io/agent/index.yaml",
+    );
     expect(step?.run).toContain("compute_library_drift");
     expect(step?.run).toContain("::error");
     expect(step?.run).toContain("exit 1");
