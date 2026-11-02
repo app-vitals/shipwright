@@ -109,10 +109,10 @@ function buildSpecApp() {
       runTransaction: async (fn) => fn(undefined as never),
     },
     specialtyRegistry: {
-      getManifest: () => {
+      getType: () => {
         throw new Error("not implemented");
       },
-      tryGetManifest: () => undefined,
+      tryGetType: () => undefined,
       listTypes: () => [],
     },
     agentEnvService: {
