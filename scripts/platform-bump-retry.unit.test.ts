@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type BumpPr,
   decide,
+  isGreen,
   isRed,
   MAX_RETRIES,
   versionFromTitle,
@@ -34,8 +35,27 @@ describe("isRed", () => {
   });
   test("pending is not red", () => {
     expect(
-      isRed(pr({ statusCheckRollup: [{ status: "IN_PROGRESS", conclusion: "" }] })),
+      isRed(
+        pr({ statusCheckRollup: [{ status: "IN_PROGRESS", conclusion: "" }] }),
+      ),
     ).toBe(false);
+  });
+});
+
+describe("isGreen", () => {
+  test("skipped counts as green", () => {
+    expect(
+      isGreen(
+        pr({
+          statusCheckRollup: [{ status: "COMPLETED", conclusion: "SKIPPED" }],
+        }),
+      ),
+    ).toBe(true);
+  });
+  test("legacy status contexts use state", () => {
+    expect(isGreen(pr({ statusCheckRollup: [{ state: "SUCCESS" }] }))).toBe(
+      true,
+    );
   });
 });
 
@@ -47,8 +67,31 @@ describe("decide", () => {
   test("open-stale (conflicting) retries", () => {
     expect(decide([pr({ mergeable: "CONFLICTING" })], 1).action).toBe("retry");
   });
-  test("open-green is a no-op", () => {
-    expect(decide([pr()], 0).action).toBe("noop");
+  test("open-green merges without a retry", () => {
+    expect(decide([pr()], 0)).toMatchObject({
+      action: "merge",
+      version: "0.16.3",
+    });
+  });
+  test("green-with-human-commits merges (no re-dispatch, so commits stay)", () => {
+    const d = decide([pr({ headRefOid: "abc123" })], MAX_RETRIES);
+    expect(d.action).toBe("merge");
+  });
+  test("green but merge already attempted for this head is a no-op", () => {
+    expect(decide([pr()], 0, MAX_RETRIES, true).action).toBe("noop");
+  });
+  test("green but conflicting still retries", () => {
+    expect(decide([pr({ mergeable: "CONFLICTING" })], 0).action).toBe("retry");
+  });
+  test("still-running is a no-op", () => {
+    const running = [
+      { status: "COMPLETED", conclusion: "SUCCESS" },
+      { status: "IN_PROGRESS", conclusion: "" },
+    ];
+    expect(decide([pr({ statusCheckRollup: running })], 0).action).toBe("noop");
+  });
+  test("no checks yet is a no-op", () => {
+    expect(decide([pr({ statusCheckRollup: [] })], 0).action).toBe("noop");
   });
   test("none is a no-op", () => {
     expect(decide([], 0).action).toBe("noop");
@@ -58,9 +101,9 @@ describe("decide", () => {
     expect(d).toMatchObject({ action: "exhausted", version: "0.16.3" });
   });
   test("last allowed attempt still retries", () => {
-    expect(decide([pr({ statusCheckRollup: red })], MAX_RETRIES - 1).action).toBe(
-      "retry",
-    );
+    expect(
+      decide([pr({ statusCheckRollup: red })], MAX_RETRIES - 1).action,
+    ).toBe("retry");
   });
   test("unparseable title is a no-op", () => {
     expect(decide([pr({ title: "x", statusCheckRollup: red })], 0).action).toBe(

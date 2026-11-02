@@ -11,8 +11,14 @@
  * Pure decision logic; the workflow feeds it `gh pr list` JSON and the number
  * of retries already spent on the PR (marker comments).
  *
- * Usage (CI): bun scripts/platform-bump-retry.ts <pr.json> <attempts-used>
- * Prints `action=<retry|noop|exhausted>`, `version=...`, `reason=...` lines.
+ * XPF-1.3: a green open bump PR (e.g. fixed by hand or by a patch pass after
+ * the gate gave up) gets `action=merge`: the workflow runs
+ * scripts/platform-bump-gate.sh on it without re-dispatching platform-release,
+ * which would force-push the branch and discard those fix commits. One merge
+ * attempt per head SHA (MERGE_MARKER_PREFIX comment).
+ *
+ * Usage (CI): bun scripts/platform-bump-retry.ts <pr.json> <attempts-used> [merge-tried]
+ * Prints `action=<retry|merge|noop|exhausted>`, `version=...`, `reason=...` lines.
  */
 
 import { readFileSync } from "node:fs";
@@ -26,8 +32,12 @@ export const MAX_RETRIES = 3;
 /** Hidden marker on the PR comment recording one spent retry. */
 export const RETRY_MARKER = "<!-- platform-bump-retry -->";
 
+/** Hidden marker prefix on the PR comment recording a merge-only attempt; the head SHA follows. */
+export const MERGE_MARKER_PREFIX = "<!-- platform-bump-merge:";
+
 export interface BumpPr {
   title: string;
+  headRefOid?: string;
   mergeable?: string;
   statusCheckRollup?: Array<{
     status?: string;
@@ -39,7 +49,10 @@ export interface BumpPr {
 export type RetryDecision =
   | { action: "retry"; version: string; reason: string }
   | { action: "exhausted"; version: string; reason: string }
+  | { action: "merge"; version: string; reason: string }
   | { action: "noop"; reason: string };
+
+const GREEN = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
 
 const RED = new Set([
   "FAILURE",
@@ -62,10 +75,26 @@ export function isRed(pr: BumpPr): boolean {
   );
 }
 
+/** True when the PR has checks and every one finished SUCCESS / SKIPPED / NEUTRAL. */
+export function isGreen(pr: BumpPr): boolean {
+  const checks = pr.statusCheckRollup ?? [];
+  return (
+    checks.length > 0 &&
+    checks.every((c) => {
+      const done = c.status === undefined || c.status === "COMPLETED";
+      return done && GREEN.has((c.conclusion ?? c.state ?? "").toUpperCase());
+    })
+  );
+}
+
+/**
+ * `mergeTried`: a merge-only attempt was already made for this head SHA.
+ */
 export function decide(
   prs: BumpPr[],
   attemptsUsed: number,
   max = MAX_RETRIES,
+  mergeTried = false,
 ): RetryDecision {
   const pr = prs[0];
   if (!pr) return { action: "noop", reason: "no open bump PR" };
@@ -74,6 +103,15 @@ export function decide(
     return { action: "noop", reason: `cannot read version from "${pr.title}"` };
   }
   const stale = pr.mergeable === "CONFLICTING";
+  if (!stale && isGreen(pr)) {
+    if (mergeTried) {
+      return {
+        action: "noop",
+        reason: "merge already attempted for this head commit",
+      };
+    }
+    return { action: "merge", version, reason: "required checks are green" };
+  }
   if (!stale && !isRed(pr)) {
     return { action: "noop", reason: "bump PR is green or still running" };
   }
@@ -89,9 +127,14 @@ export function decide(
 }
 
 if (import.meta.main) {
-  const [file, used] = process.argv.slice(2);
+  const [file, used, mergeTried] = process.argv.slice(2);
   const prs = JSON.parse(readFileSync(file as string, "utf8")) as BumpPr[];
-  const d = decide(prs, Number(used ?? 0));
+  const d = decide(
+    prs,
+    Number(used ?? 0),
+    MAX_RETRIES,
+    Number(mergeTried ?? 0) > 0,
+  );
   console.log(`action=${d.action}`);
   console.log(`version=${"version" in d ? d.version : ""}`);
   console.log(`reason=${d.reason}`);
