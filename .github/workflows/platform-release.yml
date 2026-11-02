@@ -46,6 +46,11 @@ name: Platform Release Bump
 # Manual / rehearsal run: Actions -> Platform Release Bump -> Run workflow,
 # with the version to pin.
 #
+# XPF-1.4: the force-push replaces an older unmerged bump only when the branch
+# holds bump-bot commits alone (scripts/platform-bump-branch-guard.ts). Any
+# other commit (a patch pass's or a human's fix) fails the run before the push,
+# naming the commits and the PR; the branch and PR stay as they are.
+#
 # Logic tests: scripts/platform-release-bump.unit.test.ts; merge gate:
 # scripts/platform-bump-gate.unit.test.ts. Content test:
 # platform-release.content.test.ts (repo root).
@@ -175,6 +180,8 @@ jobs:
 
       - name: Commit and push
         if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           git checkout -B "$BRANCH"
           git add -A -- docs/platform
@@ -189,6 +196,13 @@ jobs:
             exit 1
           fi
           git commit -m "chore(deps): bump @app-vitals/agent-* to ${VERSION}"
+          # XPF-1.4: a newer release replaces an unmerged older bump only when
+          # the branch holds bot commits alone. Fix commits from a patch pass
+          # or a human would be discarded by the force-push: fail instead and
+          # leave the branch and PR as they are.
+          git fetch origin "$BRANCH" 2>/dev/null || true
+          PR_URL=$(gh pr list --head "$BRANCH" --state open --json url -q '.[0].url')
+          bun scripts/platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"
           # One bump branch: a newer release replaces an unmerged older bump.
           git push --force origin "$BRANCH"
 

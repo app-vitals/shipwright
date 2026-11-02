@@ -17,7 +17,11 @@
  * which would force-push the branch and discard those fix commits. One merge
  * attempt per head SHA (MERGE_MARKER_PREFIX comment).
  *
- * Usage (CI): bun scripts/platform-bump-retry.ts <pr.json> <attempts-used> [merge-tried]
+ * XPF-1.4: a red or conflicting PR whose branch holds non-bot commits is never
+ * retried (a re-dispatch force-pushes over them; platform-release.yml refuses):
+ * it is `exhausted`, i.e. needs a human.
+ *
+ * Usage (CI): bun scripts/platform-bump-retry.ts <pr.json> <attempts-used> [merge-tried] [foreign-commits]
  * Prints `action=<retry|merge|noop|exhausted>`, `version=...`, `reason=...` lines.
  */
 
@@ -89,12 +93,14 @@ export function isGreen(pr: BumpPr): boolean {
 
 /**
  * `mergeTried`: a merge-only attempt was already made for this head SHA.
+ * `foreignCommits`: the bump branch holds commits the bump bot did not author.
  */
 export function decide(
   prs: BumpPr[],
   attemptsUsed: number,
   max = MAX_RETRIES,
   mergeTried = false,
+  foreignCommits = false,
 ): RetryDecision {
   const pr = prs[0];
   if (!pr) return { action: "noop", reason: "no open bump PR" };
@@ -116,6 +122,13 @@ export function decide(
     return { action: "noop", reason: "bump PR is green or still running" };
   }
   const reason = stale ? "conflicts with main" : "required checks are red";
+  if (foreignCommits) {
+    return {
+      action: "exhausted",
+      version,
+      reason: `${reason}; branch holds non-bot commits a re-dispatch would discard, needs a human`,
+    };
+  }
   if (attemptsUsed >= max) {
     return {
       action: "exhausted",
@@ -127,13 +140,14 @@ export function decide(
 }
 
 if (import.meta.main) {
-  const [file, used, mergeTried] = process.argv.slice(2);
+  const [file, used, mergeTried, foreign] = process.argv.slice(2);
   const prs = JSON.parse(readFileSync(file as string, "utf8")) as BumpPr[];
   const d = decide(
     prs,
     Number(used ?? 0),
     MAX_RETRIES,
     Number(mergeTried ?? 0) > 0,
+    Number(foreign ?? 0) > 0,
   );
   console.log(`action=${d.action}`);
   console.log(`version=${"version" in d ? d.version : ""}`);
