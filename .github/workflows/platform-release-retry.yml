@@ -9,7 +9,10 @@ name: Platform Release Retry
 # MAX_RETRIES times per PR (scripts/platform-bump-retry.ts; each retry leaves a
 # marker comment on the PR). No open bump PR, or a green / still-running one,
 # is a no-op. The dispatched run's own failure step opens or refreshes the
-# "platform release bump failed" issue; when retries run out this job does it.
+# "platform release bump failed" issue; when retries run out this job does it,
+# once per PR (an exhausted marker comment stops repeat reports). While any
+# platform-release.yml run is queued or in progress, nothing is retried or
+# reported: that bump may be about to fix the PR.
 #
 # Runs in its own concurrency group (runs are serialized, a newer push
 # supersedes a queued one). It must not share platform-release's group: a
@@ -60,9 +63,32 @@ jobs:
             USED=$(gh pr view "$NUMBER" --json comments \
               -q '[.comments[] | select(.body | contains("<!-- platform-bump-retry -->"))] | length')
           fi
-          bun scripts/platform-bump-retry.ts "$RUNNER_TEMP/pr.json" "$USED" | tee -a "$GITHUB_OUTPUT"
+          bun scripts/platform-bump-retry.ts "$RUNNER_TEMP/pr.json" "$USED" | tee "$RUNNER_TEMP/select.out" >> "$GITHUB_OUTPUT"
           echo "number=${NUMBER}" >> "$GITHUB_OUTPUT"
           echo "used=${USED}" >> "$GITHUB_OUTPUT"
+          ACTION=$(sed -n 's/^action=//p' "$RUNNER_TEMP/select.out" | tail -n 1)
+          # An in-flight or queued bump has not force-pushed yet, so the PR
+          # still looks red: retrying (or reporting exhaustion) now would
+          # spend budget on a bump that may be about to fix it. Later
+          # outputs win over earlier ones in $GITHUB_OUTPUT.
+          if [ "$ACTION" = "retry" ] || [ "$ACTION" = "exhausted" ]; then
+            INFLIGHT=0
+            for STATUS in queued in_progress; do
+              N=$(gh run list --workflow platform-release.yml --status "$STATUS" \
+                --json databaseId -q 'length')
+              INFLIGHT=$((INFLIGHT + N))
+            done
+            if [ "$INFLIGHT" -gt 0 ]; then
+              echo "action=wait" >> "$GITHUB_OUTPUT"
+              echo "platform-release.yml has ${INFLIGHT} queued/in-progress run(s); skipping"
+            fi
+          fi
+          REPORTED=0
+          if [ "$ACTION" = "exhausted" ] && [ -n "$NUMBER" ]; then
+            REPORTED=$(gh pr view "$NUMBER" --json comments \
+              -q '[.comments[] | select(.body | contains("<!-- platform-bump-exhausted -->"))] | length')
+          fi
+          echo "reported=${REPORTED}" >> "$GITHUB_OUTPUT"
 
       - name: Re-dispatch the bump
         if: steps.select.outputs.action == 'retry'
@@ -77,9 +103,11 @@ jobs:
           gh workflow run platform-release.yml --ref main -f version="$VERSION" -f attempt=1
 
       - name: Report exhausted retries
-        if: steps.select.outputs.action == 'exhausted'
+        if: steps.select.outputs.action == 'exhausted' && steps.select.outputs.reported == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          NUMBER: ${{ steps.select.outputs.number }}
           VERSION: ${{ steps.select.outputs.version }}
           REASON: ${{ steps.select.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -92,3 +120,6 @@ jobs:
           else
             gh issue create --title "$TITLE" --body "$BODY"
           fi
+          # Marker so later pushes to main do not report the same exhaustion again.
+          GH_TOKEN="$DISPATCH_TOKEN" gh pr comment "$NUMBER" --body "<!-- platform-bump-exhausted -->
+          Automatic retries are spent for ${VERSION}; reported once in the \"${TITLE}\" issue. Fix this PR by hand."
