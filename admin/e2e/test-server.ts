@@ -20,7 +20,6 @@
 import { withExtensionAgentTypes } from "@app-vitals/agent-admin/admin-extension";
 import type { AdminUIDeps } from "@app-vitals/agent-admin/admin-ui";
 import { createAdminUIApp } from "@app-vitals/agent-admin/admin-ui";
-import { SpecialtyRegistry } from "@app-vitals/agent-admin/specialty-manifest-loader";
 import { Hono } from "hono";
 import { adminExtensions, applyShipwrightDefaults } from "../src/main.ts";
 
@@ -294,7 +293,13 @@ function buildTestApp(): Hono {
   const adminApp = createAdminUIApp({
     ...buildMockDeps(),
     specialtyRegistry: withExtensionAgentTypes(
-      new SpecialtyRegistry(),
+      {
+        getManifest: () => {
+          throw new Error("not implemented");
+        },
+        tryGetManifest: () => undefined,
+        listTypes: () => [],
+      },
       adminExtensions,
     ),
   });
