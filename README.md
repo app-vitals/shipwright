@@ -1,5 +1,7 @@
 # Shipwright Harness -- autonomous delivery agent for Claude Code
 
+By [App Vitals](https://app-vitals.com) · [shipwrightharness.com](https://shipwrightharness.com) · not affiliated with other projects named "Shipwright".
+
 [![release](https://img.shields.io/github/v/release/app-vitals/shipwright?sort=semver&label=release&color=34C77B)](https://github.com/app-vitals/shipwright/releases)
 [![license: MIT](https://img.shields.io/badge/license-MIT-34C77B)](./LICENSE)
 [![built on Claude Code](https://img.shields.io/badge/built%20on-Claude%20Code-34C77B)](https://www.anthropic.com/claude-code)
