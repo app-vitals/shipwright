@@ -4,21 +4,22 @@
 // Factory-specific claim below is sourced from Factory's own announcement and
 // docs (see `src` below) and cited inline. Re-verify before any future edit —
 // see brand/MESSAGING.md D10 for the surface-scoped competitor-naming policy
-// this page operates under. Last re-verified 2026-10-02 (Factory Private added
-// to Deployment; all sources migrated from factory.ai to factory.com).
+// this page operates under. Last re-verified 2026-11-02 (Deployment, Plan
+// approval, Tests-first, Orchestration and Droid Shield claims corrected against
+// Factory's current docs; moved doc URLs updated). Earlier: 2026-10-02.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import TryItCta from "../../components/TryItCta.astro";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "October 2, 2026";
+const verifiedDate = "November 2, 2026";
 
 // Sources.
 const src = {
   missions: "https://factory.com/news/missions",
-  missionsDocs: "https://docs.factory.com/features/missions/overview",
-  slack: "https://docs.factory.com/integrations/slack",
+  missionsDocs: "https://docs.factory.com/missions/overview",
+  slack: "https://docs.factory.com/delegations/slack",
   // Dedicated trust/security sources for the Enterprise-security row's
   // bundled claims — mirrors vs/devin.astro's `src.trust` pattern (a
   // dedicated trust-center domain, not a general product-launch
@@ -26,10 +27,12 @@ const src = {
   // more specific platform-security claims.
   trust: "https://trust.factory.com",
   identityAndAccess: "https://docs.factory.com/enterprise/identity-and-access",
-  droidShield: "https://docs.factory.com/autonomy-and-safety/droid-shield",
   otel: "https://docs.factory.com/enterprise/compliance-audit-and-monitoring",
-  deployment: "https://docs.factory.com/enterprise/network-and-deployment",
   factoryPrivate: "https://factory.com/news/factory-private",
+  specMode: "https://docs.factory.com/autonomy-and-safety/specification-mode",
+  airgap: "https://docs.factory.com/enterprise/airgapped-deployment",
+  llmSafety: "https://docs.factory.com/enterprise/llm-safety-and-agent-controls",
+  missionsPlanning: "https://docs.factory.com/missions/planning",
 };
 
 const comparisonRows = [
@@ -43,7 +46,7 @@ const comparisonRows = [
     dimension: "Deployment",
     shipwright: "Self-host: Docker or your own Kubernetes.",
     factory:
-      "Cloud-managed, hybrid, airgapped, or Factory Private in your own VPC or on-prem — private preview, by request.",
+      "Factory Managed, or Factory Private — private preview, by request — with sandboxes in your VPC and a Factory-hosted control plane by default; fully in-network Custom Deployments, airgapped included, through sales.",
     citation: null,
     citations: [
       { label: "Missions", url: src.missions },
@@ -59,21 +62,22 @@ const comparisonRows = [
   {
     dimension: "Plan approval",
     shipwright: "Default, on every task.",
-    factory: "Missions flow, in their commercial offering.",
-    citation: src.missions,
+    factory: "Opt-in — Spec Mode or Missions; the default mode has no plan gate.",
+    citation: src.specMode,
   },
   {
     dimension: "Tests-first",
     shipwright:
       "Enforced: tests land in the same PR, written first, CI-green to merge.",
-    factory: "Test droid available, not an enforced gate.",
-    citation: src.missionsDocs,
+    factory:
+      "No — validation workers QA each milestone after the code is written, can be turned off, and do not gate merge.",
+    citation: src.missionsPlanning,
   },
   {
     dimension: "Orchestration",
     shipwright: "Shared, assignable task-store queue, cron-native.",
     factory:
-      "Coordinator droid dispatches specialized droids, Mission Control view.",
+      "An orchestrator coordinates worker droids, Mission Control view.",
     citation: src.missionsDocs,
   },
   {
@@ -96,9 +100,9 @@ const comparisonRows = [
     citations: [
       { label: "SCIM", url: src.identityAndAccess },
       { label: "SOC 2 / ISO", url: src.trust },
-      { label: "Droid Shield", url: src.droidShield },
+      { label: "Droid Shield", url: src.llmSafety },
       { label: "OpenTelemetry", url: src.otel },
-      { label: "airgapped", url: src.deployment },
+      { label: "airgapped", url: src.airgap },
     ],
   },
   {
@@ -224,7 +228,7 @@ const dimensionRows = comparisonRows.map((row) => {
       any other agent's routes. Where Factory is still ahead
       is the rest of the enterprise trust layer: SCIM auto-provisioning,
       compliance certifications such as SOC 2 and ISO, Droid Shield
-      secret-scanning before anything reaches a model, OpenTelemetry, and
+      secret-scanning on every commit and push, OpenTelemetry, and
       airgapped deployment. If you are buying for a regulated org and need
       those specific controls in place on day one, Factory has them today and
       Shipwright does not. We are not going to pretend otherwise.
@@ -233,8 +237,8 @@ const dimensionRows = comparisonRows.map((row) => {
       Where Shipwright is ahead. Two things Factory does not do. First, tests
       are not optional or a droid you opt into: every task ships its tests,
       written before the implementation, and CI must be green before merge.
-      Second, plan approval is the default path for all work, not a
-      Missions mode you unlock through their commercial offering. And underneath both,
+      Second, plan approval is the default path for all work, not
+      an opt-in mode you switch on per task. And underneath both,
       Shipwright is MIT: you can fork it, read every line, and run it with
       nothing between your repository and the agent. Factory's plan approval
       and orchestration live inside a managed product you do not control.
@@ -256,8 +260,8 @@ const dimensionRows = comparisonRows.map((row) => {
           label: "Choose Factory when",
           labelColor: "var(--sw-color-support-patriot-bright)",
           items: [
-            { text: "You are buying for an enterprise that needs SCIM auto-provisioning, compliance certifications (SOC 2, ISO), and pre-model secret-scanning in place today." },
-            { text: "You need airgapped or hybrid managed deployment and do not want to operate the infrastructure yourself." },
+            { text: "You are buying for an enterprise that needs SCIM auto-provisioning, compliance certifications (SOC 2, ISO), and commit-time secret-scanning in place today." },
+            { text: "You need an airgapped or VPC-sandboxed deployment and want the vendor to run it for you." },
             { text: "You want model flexibility across Claude, GPT, and Gemini, or BYOK." },
             { text: "A multi-droid coordinator with a dedicated Mission Control dashboard is the operating model your team wants." },
           ],
@@ -268,7 +272,7 @@ const dimensionRows = comparisonRows.map((row) => {
           items: [
             { text: "You have committed to Claude Code and want a pipeline tuned for it, not averaged across providers." },
             { text: "You want tests written first and landed with every change, gated by CI, enforced by the pipeline rather than left to an agent's judgment." },
-            { text: "You want plan approval on every task by default, not as a paid add-on." },
+            { text: "You want plan approval on every task by default, not as an opt-in mode." },
             { text: "You want MIT and self-hosted, forkable and auditable, with nothing managed between your repo and the agent." },
           ],
         },
@@ -280,8 +284,8 @@ const dimensionRows = comparisonRows.map((row) => {
   <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
     <h2>Economics</h2>
     <p class="mt-3 max-w-2xl">
-      Factory's Missions are part of their commercial managed platform, sold
-      on custom contracts. Shipwright is MIT: no
+      Factory's Missions are part of their commercial managed platform.
+      Shipwright is MIT: no
       seat fees and no platform charge for the harness itself. You bring your
       own Claude Code credentials and run it on your own Docker or Kubernetes,
       so your cost is your compute plus your model usage, nothing routed
