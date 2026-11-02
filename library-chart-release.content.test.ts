@@ -64,7 +64,7 @@ describe("library-chart-release.yml", () => {
   });
 
   it("pins actions to a SHA and keeps workflow permissions read-only", () => {
-    for (const line of text.split("\n").filter((l) => /\buses:/.test(l))) {
+    for (const line of text.split("\n").filter((l) => /\buses:/.test(l) && !/uses: \.\//.test(l))) {
       expect(line).toMatch(/@[0-9a-f]{40} # v\d/);
     }
     expect(wf.permissions).toEqual({ contents: "read" });

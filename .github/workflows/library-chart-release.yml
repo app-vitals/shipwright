@@ -109,16 +109,20 @@ jobs:
           source .github/workflows/lib/library-pin.sh
           bump_library_pin charts/shipwright "$VERSION" "$(date -u +%Y-%m-%d)"
 
+      - name: Add Helm chart repos
+        uses: ./.github/actions/helm-repos
+        with:
+          repos: |
+            agent ${{ env.LIBRARY_REPO_URL }}
+            ingress-nginx https://kubernetes.github.io/ingress-nginx
+            traefik https://traefik.github.io/charts
+            jetstack https://charts.jetstack.io
+
       # Refresh the Chart.lock digest and the vendored library tgz the way
       # `helm dependency update` would, but in a scratch copy so the other
       # (exactly pinned) vendored charts are not touched.
       - name: Refresh Chart.lock and the vendored library chart
         run: |
-          helm repo add agent "$LIBRARY_REPO_URL"
-          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-          helm repo add traefik https://traefik.github.io/charts
-          helm repo add jetstack https://charts.jetstack.io
-          helm repo update
           SCRATCH=$(mktemp -d)
           cp -r charts/shipwright "$SCRATCH/shipwright"
           helm dependency update "$SCRATCH/shipwright"
