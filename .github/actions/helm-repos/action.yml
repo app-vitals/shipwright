@@ -1,0 +1,19 @@
+name: Add Helm chart repos
+description: >-
+  Adds Helm chart repos in order and runs `helm repo update`, retrying each
+  network call with a short bounded backoff (4 attempts, ~30s) so a transient
+  chart-host 5xx does not fail the job. Requires helm on PATH and the repo
+  checked out (local action).
+inputs:
+  repos:
+    description: Newline-separated "<name> <url>" pairs, added in order.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Add repos and update (with retry)
+      shell: bash
+      env:
+        HELM_REPOS: ${{ inputs.repos }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/helm-repos.sh"
