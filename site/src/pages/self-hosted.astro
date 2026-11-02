@@ -4,7 +4,8 @@
 // architecture split is the sorting criterion. Every competitor claim below
 // is sourced from goals/drafts/devin-alternative-positioning-research.md's
 // safe-to-print register (2026-07-14), re-verified against vendor primary
-// sources on 2026-10-02 (Cursor and Factory rows updated), and cited inline.
+// sources on 2026-10-02 (Cursor and Factory rows updated) and again on 2026-11-02
+// (Factory, OpenHands and Cursor rows updated), and cited inline.
 // Re-verify before any future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under. OpenCode is
 // deliberately not named (unverified — never-print list).
@@ -15,18 +16,22 @@ import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
 import { escapeHtml } from "../lib/html-escape";
 
-const verifiedDate = "October 2, 2026";
+const verifiedDate = "November 2, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
   cursor: "https://cursor.com/changelog/self-hosted-machines",
+  cursorSelfHosted: "https://cursor.com/docs/cloud-agent/self-hosted",
+  cursorAgentSdk: "https://cursor.com/docs/agent-sdk/deployment",
   openhandsPricing: "https://www.openhands.dev/pricing",
   openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
+  openhandsEnterprise: "https://github.com/OpenHands/enterprise",
   coder: "https://coder.com/docs",
   devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
   devinReleaseNotes: "https://docs.devin.ai/release-notes/2026",
   factoryDeployment: "https://docs.factory.com/enterprise/network-and-deployment",
   factoryPrivate: "https://factory.com/news/factory-private",
+  factoryAirgap: "https://docs.factory.com/enterprise/airgapped-deployment",
   factoryPricing: "https://factory.com/pricing",
 };
 
@@ -76,17 +81,17 @@ const architectureRows = [
     license: "Proprietary",
     architecture: "Hybrid — no documented customer-controlled control plane.",
     detail:
-      "Self-hosted machines keep your codebase, build outputs and secrets on your own infrastructure, across eight supported compute providers, and the agent runs tool calls there. Cursor documents no option to run the orchestration layer yourself. No spec phase, no deploy stage.",
-    citation: src.cursor,
+      "Self-hosted machines keep your codebase, build outputs and secrets on your own infrastructure, and the agent runs tool calls there, but Cursor runs the agent loop, inference and planning. Its Agent SDK can be self-hosted, yet still signs in to Cursor's API. No spec phase, no deploy stage.",
+    citation: [src.cursor, src.cursorSelfHosted, src.cursorAgentSdk],
     self: false,
   },
   {
     tool: "OpenHands",
-    license: "MIT root, time-limited PolyForm carve-out on enterprise/",
-    architecture: "Productized VPC self-host is sales-gated.",
+    license: "MIT (Agent Canvas); commercial server in a separate repo under a PolyForm free-trial licence",
+    architecture: "Multi-user self-host is a paid commercial offering.",
     detail:
-      "The MIT license applies to the local tier; VPC self-hosting for the delivery-pipeline features is sold, not shipped free — the vendor's own site states \"Talk to sales\" for it.",
-    citation: src.openhandsPricing,
+      "The open-source Agent Canvas is MIT and free to self-host on a laptop or shared VM, automations and isolated Docker runtimes included. Multi-user identity, role-based access control and SSO for a self-hosted install are part of the vendor's paid commercial offering.",
+    citation: [src.openhandsPricing, src.openhandsLicense, src.openhandsEnterprise],
     self: false,
   },
   {
@@ -112,8 +117,8 @@ const architectureRows = [
     license: "Proprietary",
     architecture: "Cloud-orchestrated by default — running it yourself is sales-gated.",
     detail:
-      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). Factory Private, launched September 2026, does put the control plane in your own VPC or on-premises environment, with air-gapped configurations available — so it genuinely removes Factory's servers from the loop at runtime. It is in private preview and reachable only by contacting their team, with no self-serve path.",
-    citation: [src.factoryDeployment, src.factoryPrivate, src.factoryPricing],
+      "Factory Managed keeps the control plane in Factory's cloud. Factory Private, launched September 2026 and in private preview by request, runs Droid sandboxes in your VPC, but Factory still hosts the control plane by default. Only a Custom Deployment, airgapped builds included, puts all of Factory inside your network, and both go through Factory's sales team with no self-serve path.",
+    citation: [src.factoryDeployment, src.factoryPrivate, src.factoryAirgap, src.factoryPricing],
     self: false,
   },
 ];
