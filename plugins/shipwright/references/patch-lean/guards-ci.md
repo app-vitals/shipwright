@@ -106,7 +106,19 @@ Keep polling while `status` is `queued`, `in_progress`, or `waiting`; stop at `s
 
 ## Step 6b.9: out-of-scope CI judgment (SLS-2.2)
 
-Having read the 6b logs, decide whether the failing check is caused by this PR. If it is not — e.g.
+Having read the 6b logs, decide whether the failing check is caused by this PR.
+
+**Main-red path (MRB-1.1) — check first.** Before judging out of scope, check that the same failing
+jobs (`CI_FAILURE_SIGNATURE`) are failing on the latest completed CI run of the base branch
+(`gh run list --repo {org}/{repo} --branch {base} --status completed --limit 1`). If so, escalate via
+`commands/references/escalation-pattern.md` (task blocked, or PR record `blocked: true` when no linked
+task) with a `blockedReason` starting `main_red:` naming main's sha and the signature; post one PR
+comment saying the PR is waiting on main and how to resume (re-run CI or update the branch once main is
+green, then `/shipwright:unblock`); release the claim and skip 6c–6e. **Do NOT write the `ci:` ledger
+entry on this path** (an unblock at the same SHA would stay settled). This path ends blocked, so it never
+ends `[silent]`. If main is green or its failures differ, continue below.
+
+If it is not — e.g.
 the same check already fails on the base branch, or the failure is in code this PR does not touch and
 no change to the PR can fix it — the run must not end with nothing recorded: without a ledger entry,
 `check-patch.ts` re-selects the PR every tick. **Never exit `[silent]` without it.**

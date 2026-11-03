@@ -344,6 +344,17 @@ describe("patch-lean.md — kept guards (DTA-9.6 'keep in spine')", () => {
     expect(norm(block)).toContain("Never exit `[silent]` without that entry.");
   });
 
+  it("6b.9 MRB-1.1: main-red path blocks via escalation-pattern, no ledger write", () => {
+    expect(norm(stepBlock("6b.9"))).toContain("`main_red:` block");
+    const guard = norm(refs["guards-ci.md"]);
+    expect(guard).toContain("latest completed CI run of the base branch");
+    expect(guard).toContain("escalation-pattern.md");
+    expect(guard).toContain("`main_red:`");
+    expect(guard).toContain("/shipwright:unblock");
+    expect(guard).toContain("skip 6c–6e");
+    expect(guard).toContain("Do NOT write the `ci:` ledger entry");
+  });
+
   it("6b computes CI_FAILURE_SIGNATURE in the spine (6b.9 and 6d.5 depend on it)", () => {
     expect(stepBlock("6b")).toContain("CI_FAILURE_SIGNATURE");
   });

@@ -2145,10 +2145,31 @@ Store both durations (or a note that typical duration was unavailable) as
 ### Step 6b.9: Out-of-Scope CI Judgment (SLS-2.2)
 
 Having read the CI logs in Step 6b, decide whether the failing check is caused by this PR.
+
+**Main-red path (MRB-1.1) — check this first.** Before judging anything out of scope, check
+whether the same failing jobs are failing on the base branch. Look up the latest completed CI
+run of the base branch (`gh run list --repo {org}/{repo} --branch {base} --status completed
+--limit 1 --json databaseId,headSha,conclusion`), list its failed jobs, and compare them with
+`CI_FAILURE_SIGNATURE`. If the same jobs fail there, the PR is waiting on main, not on a fix:
+
+1. Escalate via [escalation-pattern.md](references/escalation-pattern.md) with
+   `{blockedReason}` = `main_red: {base} @ {main-sha} is failing {CI_FAILURE_SIGNATURE}` (task
+   `blocked`, or the PR record `blocked: true` when no task is linked) and `{temp_file_slug}` =
+   `main-red`.
+2. The one PR comment (`{comment_body}`) explains the PR is waiting on a red `{base}` (name the
+   sha and failing jobs) and how to resume: once `{base}` is green, re-run CI or update the
+   branch, then run `/shipwright:unblock`.
+3. The escalation sequence releases the claim. Skip Steps 6c–6e and move to the next PR.
+4. **Do NOT write the `ci:` ledger entry on this path** — an unblock at the same head SHA would
+   otherwise stay settled and never re-run.
+
+This path ends blocked, so it never ends `[silent]`. If main is green, or its failing jobs
+differ, fall through to the judgment below.
+
 If it is not — for example the same check already fails on the base branch, or the failure
 is in code this PR does not touch and no change to the PR can fix it — the run must not end
 with nothing recorded: without a ledger entry, `check-patch.ts` re-selects the PR every tick.
-Write the `ci` ref before ending, and **never exit `[silent]` without it**.
+For these other out-of-scope judgments, write the `ci` ref before ending, and **never exit `[silent]` without it**.
 
 Reuse `CI_FAILURE_SIGNATURE` from Step 6b (no new computation) and the head SHA the PR
 record is keyed on. The ref is `ci:{headSha}:{ciFailureSignature}` — the format SLS-2.1's
