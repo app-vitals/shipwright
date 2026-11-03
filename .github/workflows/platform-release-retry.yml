@@ -69,7 +69,7 @@ jobs:
         id: select
         run: |
           gh pr list --head "$BRANCH" --state open \
-            --json number,title,mergeable,headRefOid,statusCheckRollup > "$RUNNER_TEMP/pr.json"
+            --json number,title,url,mergeable,headRefOid,statusCheckRollup > "$RUNNER_TEMP/pr.json"
           NUMBER=$(jq -r '.[0].number // empty' "$RUNNER_TEMP/pr.json")
           USED=0
           MERGE_TRIED=0
@@ -78,7 +78,9 @@ jobs:
             # XPF-1.4: non-bot commits on the branch mean a retry would
             # force-push over them; the selector reports such a PR exhausted.
             git fetch origin "$BRANCH"
-            FOREIGN=$(bun scripts/platform-bump-branch-guard.ts origin/main "origin/$BRANCH" | sed -n 's/^foreign=//p' || echo 0)
+            # PBF-1.1: the guard protects only an open PR, so pass its url.
+            PR_URL=$(jq -r '.[0].url // empty' "$RUNNER_TEMP/pr.json")
+            FOREIGN=$(bun scripts/platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL" | sed -n 's/^foreign=//p' || echo 0)
             USED=$(gh pr view "$NUMBER" --json comments \
               -q '[.comments[] | select(.body | contains("<!-- platform-bump-retry -->"))] | length')
             HEAD_SHA=$(jq -r '.[0].headRefOid // empty' "$RUNNER_TEMP/pr.json")

@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import {
   type BranchCommit,
+  foreignToProtect,
   listBranchCommits,
   nonBotCommits,
   parseLog,
@@ -20,7 +21,10 @@ const c = (authorEmail: string, subject = "x"): BranchCommit => ({
 describe("nonBotCommits", () => {
   test("bot-only branch has none", () => {
     expect(
-      nonBotCommits([c(BOT), c("41898282+github-actions[bot]@users.noreply.github.com")]),
+      nonBotCommits([
+        c(BOT),
+        c("41898282+github-actions[bot]@users.noreply.github.com"),
+      ]),
     ).toEqual([]);
   });
   test("mixed branch returns only the non-bot commits", () => {
@@ -77,5 +81,69 @@ describe("listBranchCommits", () => {
   });
   test("no remote branch: nothing to protect", () => {
     expect(inDir(() => listBranchCommits("main", "origin/nope"))).toEqual([]);
+  });
+});
+
+describe("foreignToProtect", () => {
+  const commits = [c(BOT, "bump"), c("dan@example.com", "human fix")];
+  test("open PR: non-bot commits are protected", () => {
+    expect(foreignToProtect(commits, true).map((x) => x.subject)).toEqual([
+      "human fix",
+    ]);
+  });
+  test("no open PR: stale branch, nothing to protect", () => {
+    expect(foreignToProtect(commits, false)).toEqual([]);
+  });
+});
+
+describe("guard CLI", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bump-guard-cli-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...args: string[]) => {
+    const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(r.stderr);
+  };
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(dir, "f"), "a");
+  git("add", "f");
+  git(
+    "-c",
+    "user.email=m@example.com",
+    "-c",
+    "user.name=n",
+    "commit",
+    "-qm",
+    "base",
+  );
+  git("checkout", "-qb", "bump");
+  writeFileSync(join(dir, "f"), "b");
+  git(
+    "-c",
+    "user.email=dan@example.com",
+    "-c",
+    "user.name=n",
+    "commit",
+    "-aqm",
+    "human fix",
+  );
+  const script = join(import.meta.dir, "platform-bump-branch-guard.ts");
+  const run = (...extra: string[]) =>
+    spawnSync("bun", [script, "main", "bump", ...extra], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+
+  test("no pr-url (no open PR): exits 0 despite non-bot commits", () => {
+    const r = run();
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("foreign=0");
+  });
+  test("empty pr-url: exits 0", () => {
+    expect(run("").status).toBe(0);
+  });
+  test("open PR url: exits 1 on non-bot commits", () => {
+    const r = run("https://github.com/o/r/pull/1");
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("foreign=1");
   });
 });
