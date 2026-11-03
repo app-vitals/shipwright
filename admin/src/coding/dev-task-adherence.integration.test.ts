@@ -155,4 +155,29 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
     );
     expect(report.disclaimer).toContain("started, not that it was done well");
   });
+
+  it("counts a stalled-then-resumed item once with combined dispatches (SPL-2.8)", async () => {
+    const agent = await prisma.agent.create({ data: { name: "A" } });
+    const cron = await cronJobService.create(agent.id, {
+      schedule: "0 9 * * *",
+      prompt: "p",
+      silent: true,
+      name: "shipwright-dev-task",
+    });
+    await seedRun(agent.id, cron.id, cron.id, {
+      itemId: "SPL-2.8",
+      startedAt: "2026-01-10T09:00:00Z",
+      usage: [{ name: "shipwright:researcher", invocations: 1 }],
+    });
+    await seedRun(agent.id, cron.id, cron.id, {
+      itemId: "SPL-2.8",
+      startedAt: "2026-01-10T11:00:00Z",
+      usage: [{ name: "general-purpose", invocations: 2 }],
+    });
+    const report = await service.report();
+    expect(report.counts.taskBearingRuns).toBe(1);
+    expect(
+      report.runs[0]?.steps.find((s) => s.stepNumber === "5")?.status,
+    ).toBe("ran");
+  });
 });
