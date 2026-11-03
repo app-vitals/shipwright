@@ -23,7 +23,7 @@ name: Platform Release Bump
 # main. The re-dispatching run exits 0 with a ::warning:: (the PR stays open
 # and is force-pushed by the new run, which queues behind this one in the
 # non-cancelling concurrency group); a second conflict fails the job loudly
-# and the failure issue step fires. Renovate's
+# and the job goes red. Renovate's
 # "app-vitals agent platform" group (renovate.json) is the fallback if a
 # dispatch is missed.
 #
@@ -33,11 +33,9 @@ name: Platform Release Bump
 # source header. platform-docs-guard.yml blocks hand edits to that directory
 # from any other PR.
 #
-# Failures are loud: the job fails (leaving the PR open), and a failure step
-# opens (or comments on) a "platform release bump failed" issue, because a
-# stalled release chain otherwise goes unnoticed for days. On success (or when
-# no change is needed), a success-only step closes any open issue with that
-# title.
+# Failures are loud: the job fails (leaving the PR open) and the failed run is
+# the signal; no issue is opened. platform-release-retry.yml retries a stalled
+# bump PR and leaves a marker comment on it once retries run out.
 #
 # The version comes from an external event, so it is never interpolated into
 # a script: it reaches every step through env and is validated as strict
@@ -87,7 +85,6 @@ jobs:
     permissions:
       contents: write # push the bump branch
       pull-requests: write # open / update the PR
-      issues: write # open the failure issue
     env:
       VERSION: ${{ github.event.client_payload.version || inputs.version }}
       BRANCH: chore/platform-release
@@ -248,8 +245,8 @@ jobs:
       # waits for the CI workflow run on the PR head commit (the fast title
       # check cannot stand in for lint / test), then for the required checks
       # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
-      # A failing or missing check exits 1: the job goes red, the failure()
-      # step below opens an issue, and the PR is left open for a human. The
+      # A failing or missing check exits 1: the job goes red, the job
+      # goes red, and the PR is left open for a human. The
       # gate re-reads the full required set after the watch (and awaits every
 # rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
 # merged red when a rerun dropped the CI checks from the rollup). The
@@ -294,33 +291,3 @@ jobs:
           fi
 
           bash scripts/platform-bump-gate.sh "$PR_URL"
-
-      - name: Open an issue on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="platform release bump failed"
-          BODY="The platform release bump for version \`${VERSION}\` failed: ${RUN_URL}"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body "$BODY"
-          else
-            gh issue create --title "$TITLE" --body "$BODY"
-          fi
-
-      - name: Close success issue
-        if: success() && (steps.diff.outputs.changed == 'false' || steps.merge.outputs.merged == 'true')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="platform release bump failed"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          if [ -z "$ISSUE" ]; then
-            exit 0
-          fi
-          BODY="The platform release bump for version \`${VERSION}\` succeeded: ${RUN_URL}"
-          gh issue comment "$ISSUE" --body "$BODY"
-          gh issue close "$ISSUE"

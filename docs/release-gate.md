@@ -49,7 +49,7 @@ scripts/check-platform-pin.sh <package> <minVersion>
 ## Watch list
 
 - agent `Release` run and `Consumer smoke` (agent repo Actions). Red means fix it in agent; the gate keeps waiting.
-- shipwright `platform-release` run, and any open issue titled **platform release bump failed**.
+- shipwright `platform-release` run and the `platform-bump-exhausted` marker comment on the bump PR.
 
 ## Failure playbook
 
