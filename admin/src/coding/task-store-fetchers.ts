@@ -45,6 +45,8 @@ export interface TaskLifecycle {
   prCreatedAt: string | null;
   mergedAt: string | null;
   deployedAt: string | null;
+  /** CI fix attempts recorded on the task (DTA-8.2); null when unrecorded. */
+  ciFixAttempts: number | null;
 }
 
 /** The CI/outcome fields of a PR record (GET /prs?repo=&prNumber=). */

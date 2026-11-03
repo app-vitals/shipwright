@@ -141,6 +141,7 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       totalRuns: 3,
       taskBearingRuns: 2,
       silentTicks: 1,
+      mixedTasks: 0,
     });
     const [bad, good] = report.runs;
     expect(bad?.adherent).toBe(false);

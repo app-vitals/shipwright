@@ -127,7 +127,7 @@ export interface paths {
         };
         /**
          * Get dev-task adherence report
-         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.
+         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Each series also carries `outcomes` (DTA-8.2): PRs, mean patch/review cycles, share of tasks with 0 and 2+ patch cycles, CI first-pass rate and mean ciFixAttempts, computed over tasks whose runs all used one arm; tasks that ran in more than one commandVariant are excluded and reported as `counts.mixedTasks`. Optional `from`/`to` ISO datetime params bound startedAt.
          */
         get: {
             parameters: {
