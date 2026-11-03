@@ -54,7 +54,12 @@ export function listBranchCommits(
   baseRef: string,
   branchRef: string,
 ): BranchCommit[] {
-  const exists = spawnSync("git", ["rev-parse", "--verify", "--quiet", branchRef]);
+  const exists = spawnSync("git", [
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    branchRef,
+  ]);
   if (exists.status !== 0) return [];
   const log = spawnSync(
     "git",
@@ -81,7 +86,9 @@ export function parseLog(out: string): BranchCommit[] {
 if (import.meta.main) {
   const [baseRef, branchRef, prUrl] = process.argv.slice(2);
   if (!baseRef || !branchRef) {
-    console.error("usage: platform-bump-branch-guard.ts <base-ref> <branch-ref> [pr-url]");
+    console.error(
+      "usage: platform-bump-branch-guard.ts <base-ref> <branch-ref> [pr-url]",
+    );
     process.exit(2);
   }
   const hasOpenPr = !!prUrl?.trim();

@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import {
   type BranchCommit,
   foreignToProtect,
@@ -21,7 +21,10 @@ const c = (authorEmail: string, subject = "x"): BranchCommit => ({
 describe("nonBotCommits", () => {
   test("bot-only branch has none", () => {
     expect(
-      nonBotCommits([c(BOT), c("41898282+github-actions[bot]@users.noreply.github.com")]),
+      nonBotCommits([
+        c(BOT),
+        c("41898282+github-actions[bot]@users.noreply.github.com"),
+      ]),
     ).toEqual([]);
   });
   test("mixed branch returns only the non-bot commits", () => {
@@ -103,13 +106,32 @@ describe("guard CLI", () => {
   git("init", "-q", "-b", "main");
   writeFileSync(join(dir, "f"), "a");
   git("add", "f");
-  git("-c", "user.email=m@example.com", "-c", "user.name=n", "commit", "-qm", "base");
+  git(
+    "-c",
+    "user.email=m@example.com",
+    "-c",
+    "user.name=n",
+    "commit",
+    "-qm",
+    "base",
+  );
   git("checkout", "-qb", "bump");
   writeFileSync(join(dir, "f"), "b");
-  git("-c", "user.email=dan@example.com", "-c", "user.name=n", "commit", "-aqm", "human fix");
+  git(
+    "-c",
+    "user.email=dan@example.com",
+    "-c",
+    "user.name=n",
+    "commit",
+    "-aqm",
+    "human fix",
+  );
   const script = join(import.meta.dir, "platform-bump-branch-guard.ts");
   const run = (...extra: string[]) =>
-    spawnSync("bun", [script, "main", "bump", ...extra], { cwd: dir, encoding: "utf8" });
+    spawnSync("bun", [script, "main", "bump", ...extra], {
+      cwd: dir,
+      encoding: "utf8",
+    });
 
   test("no pr-url (no open PR): exits 0 despite non-bot commits", () => {
     const r = run();

@@ -262,7 +262,10 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
     // and exited 0, and the gate admin-merged a red lint / typecheck / test.
     // The merge command must sit after a full re-read of the required set,
     // and the admin merge may not run in any other step.
-    const gate = readFileSync(join(ROOT, "scripts/platform-bump-gate.sh"), "utf8");
+    const gate = readFileSync(
+      join(ROOT, "scripts/platform-bump-gate.sh"),
+      "utf8",
+    );
     const verify = gate.indexOf("required_checks_all_green");
     const callSite = gate.indexOf('required_checks_all_green "$CHECKS_JSON"');
     const mergeCmd = gate.indexOf("gh pr merge");
@@ -461,13 +464,18 @@ describe("PBF-1.1 guard open-PR semantics", () => {
     join(ROOT, ".github/workflows/platform-release-retry.yml"),
     "utf8",
   );
-  const gateSh = readFileSync(join(ROOT, "scripts/platform-bump-gate.sh"), "utf8");
+  const gateSh = readFileSync(
+    join(ROOT, "scripts/platform-bump-gate.sh"),
+    "utf8",
+  );
   it("retry workflow passes the open PR url to the guard", () => {
     expect(retry).toContain(
       'platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"',
     );
   });
   it("gate squash-merge deletes the branch", () => {
-    expect(gateSh).toContain('gh pr merge "$PR_URL" --squash --admin --delete-branch');
+    expect(gateSh).toContain(
+      'gh pr merge "$PR_URL" --squash --admin --delete-branch',
+    );
   });
 });
