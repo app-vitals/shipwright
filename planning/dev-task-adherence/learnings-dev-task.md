@@ -18,7 +18,9 @@ Reference-file load rate, `dev-task-lean` (% of runs that loaded the file):
 | task-lifecycle | 2% |
 
 Cost per run (estimated): $0.90 default (`dev-task`) vs $1.16 lean
-(`dev-task-lean`).
+(`dev-task-lean`). These figures predate the per-`message.id` dedupe in the
+tally script (one API response was counted once per content block), so they
+overstate cost and turns; re-run the tally to refresh them.
 
 ## Caveats
 

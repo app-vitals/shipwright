@@ -18,6 +18,7 @@ const assistant = (
     usage?: Record<string, number>;
     costUSD?: number;
     tools?: { name: string; input: Record<string, unknown> }[];
+    id?: string;
   },
 ) =>
   line({
@@ -27,6 +28,7 @@ const assistant = (
     ...(opts.costUSD === undefined ? {} : { costUSD: opts.costUSD }),
     message: {
       role: "assistant",
+      ...(opts.id === undefined ? {} : { id: opts.id }),
       usage: opts.usage ?? {},
       content: (opts.tools ?? []).map((t) => ({ type: "tool_use", ...t })),
     },
@@ -83,6 +85,24 @@ const subFile = assistant("a", {
 });
 
 describe("parseTranscript", () => {
+  test("counts a multi-block response once but scans every block's tools", () => {
+    const t = parseTranscript(
+      [
+        user("d", "/shipwright:dev-task DTA-1"),
+        assistant("d", { id: "m1", usage: { input_tokens: M } }),
+        assistant("d", {
+          id: "m1",
+          usage: { input_tokens: M },
+          tools: [{ name: "Agent", input: { subagent_type: "implementer" } }],
+        }),
+        assistant("d", { id: "m2", usage: { input_tokens: M } }),
+      ].join("\n"),
+    );
+    expect(t.turns.main).toBe(2);
+    expect(t.cost.main).toBeCloseTo(6);
+    expect(t.dispatches.implementer).toBe(1);
+  });
+
   test("extracts command, session, turns, refs, dispatches", () => {
     const t = parseTranscript(leanA);
     expect(t.sessionId).toBe("a");

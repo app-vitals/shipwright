@@ -144,6 +144,9 @@ export function parseTranscript(text: string, forceSidechain = false): Transcrip
     dispatches: {},
   };
   let sawPrompt = false;
+  // Claude Code writes one JSONL line per content block, each repeating the
+  // response's message.id and usage — count each response once.
+  const counted = new Set<string>();
   for (const raw of text.split("\n")) {
     if (!raw.trim()) continue;
     let o: Record<string, any>;
@@ -167,8 +170,12 @@ export function parseTranscript(text: string, forceSidechain = false): Transcrip
     }
     if (role !== "assistant" || !msg) continue;
     const k = side ? "sub" : "main";
-    t.turns[k]++;
-    t.cost[k] += costOf(msg.usage, o.costUSD);
+    const id = typeof msg.id === "string" ? msg.id : undefined;
+    if (!id || !counted.has(`${k}:${id}`)) {
+      if (id) counted.add(`${k}:${id}`);
+      t.turns[k]++;
+      t.cost[k] += costOf(msg.usage, o.costUSD);
+    }
     if (!Array.isArray(msg.content)) continue;
     for (const b of msg.content as Block[]) {
       if (b?.type !== "tool_use") continue;
