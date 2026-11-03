@@ -20,14 +20,22 @@
  * as Step 5 ran — covered by a unit fixture. A single dispatch does not also
  * satisfy 6.5 (see evaluateRun).
  *
- * Task-store join (DTA-6.2): steps 2, 8, 9 and 9b are proven by task-store
- * data rather than a dispatch — task.startedAt (2), verification-check rows
+ * Task-store join (DTA-6.2): steps 2, 6, 8, 9 and 9b are proven by task-store
+ * data rather than a dispatch — task.startedAt (2), task.simplifyTotal (6, the
+ * lean dev-task PATCHes the Simplify counts at Step 10; DTA-8.3), verification-check rows
  * (8), task.pr/prCreatedAt (9) and the PR record's CI outcome (9b). They are
  * measured only when the caller supplies a RunEnrichment for the run;
  * otherwise (no fetchers, task 404, fetch failure) they stay "unmeasured".
  *
+ * Stalled/resumed runs (DTA-8.3): a stalled run that is reclaimed gets a new
+ * AgentCronRun row for the same itemId (and sessionId). Rows sharing an itemId
+ * are merged into one logical run judged on the union of their skill usage
+ * (see mergeRunRows); it is counted once, attributed to the latest row.
+ * Step 6 caveat: simplifyTotal is task-level, so a null means "never recorded
+ * by Step 10" (including runs that stalled before Step 10) and reads as skipped.
+ *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
- * Steps with neither a dispatch nor task-store proof (6, 7, 10) are reported
+ * Steps with neither a dispatch nor task-store proof (7, 10) are reported
  * as "unmeasured" and excluded from adherence rates.
  */
 
@@ -57,6 +65,8 @@ export interface RunEnrichment {
     startedAt: string | null;
     pr: number | null;
     prCreatedAt: string | null;
+    /** Simplify fix count PATCHed at Step 10; null/absent when never recorded. */
+    simplifyTotal?: number | null;
   };
   checks: { status: string }[];
   /** PR record outcome; null when the task has no PR / it wasn't found. */
@@ -166,7 +176,7 @@ function isDispatchStep(step: RequiredStep): boolean {
 }
 
 // Steps proven by task-store data instead of an agent dispatch.
-const ENRICHMENT_STEPS = new Set(["2", "8", "9", "9b"]);
+const ENRICHMENT_STEPS = new Set(["2", "6", "8", "9", "9b"]);
 
 function isMeasuredStep(step: RequiredStep): boolean {
   return (
@@ -182,6 +192,8 @@ function evaluateEnrichedStep(
   switch (stepNumber) {
     case "2":
       return e.task.startedAt != null;
+    case "6":
+      return e.task.simplifyTotal != null;
     case "8":
       return e.checks.some(
         (c) => c.status === "ran_passed" || c.status === "ran_failed",
@@ -257,6 +269,53 @@ function evaluateRun(
       status: ran ? ("ran" as const) : ("skipped" as const),
     };
   });
+}
+
+export interface CronRunRow {
+  id: string;
+  itemId: string | null;
+  contextFingerprint: string | null;
+  commandVariant?: string | null;
+  skillUsage: SkillUsageRow[];
+}
+
+/**
+ * Collapses rows that belong to one logical run. Task-bearing rows sharing an
+ * itemId (a stalled run and its resume, SPL-2.8) merge into one: skill usage
+ * is summed by kind+name, and id/contextFingerprint/commandVariant come from
+ * the latest row (input is startedAt-ascending), falling back to the most
+ * recent earlier non-null value. Silent ticks (itemId null) stay separate.
+ * Output preserves first-appearance order.
+ */
+export function mergeRunRows(rows: CronRunRow[]): CronRunRow[] {
+  const out: CronRunRow[] = [];
+  const byItem = new Map<string, number>();
+  for (const row of rows) {
+    const idx = row.itemId == null ? undefined : byItem.get(row.itemId);
+    if (idx === undefined) {
+      if (row.itemId != null) byItem.set(row.itemId, out.length);
+      out.push({ ...row, skillUsage: [...row.skillUsage] });
+      continue;
+    }
+    const prev = out[idx];
+    const usage = new Map<string, SkillUsageRow>();
+    for (const u of [...prev.skillUsage, ...row.skillUsage]) {
+      const k = `${u.kind}\0${u.name}`;
+      const cur = usage.get(k);
+      usage.set(k, {
+        ...u,
+        invocations: (cur?.invocations ?? 0) + u.invocations,
+      });
+    }
+    out[idx] = {
+      id: row.id,
+      itemId: row.itemId,
+      contextFingerprint: row.contextFingerprint ?? prev.contextFingerprint,
+      commandVariant: row.commandVariant ?? prev.commandVariant ?? null,
+      skillUsage: [...usage.values()],
+    };
+  }
+  return out;
 }
 
 export function buildRunAdherence(
@@ -425,7 +484,7 @@ export class DevTaskAdherenceService {
     if (from) startedAt.gte = new Date(from);
     if (to) startedAt.lt = new Date(to);
 
-    const rows = await this.prisma.agentCronRun.findMany({
+    const rawRows = await this.prisma.agentCronRun.findMany({
       where: {
         skipped: false,
         phaseCron: { name: "shipwright-dev-task" },
@@ -441,6 +500,7 @@ export class DevTaskAdherenceService {
       },
       orderBy: { startedAt: "asc" },
     });
+    const rows = mergeRunRows(rawRows);
 
     // Per-request memo: runs sharing an itemId share one set of lookups.
     const cache = new Map<string, Promise<RunEnrichment | undefined>>();

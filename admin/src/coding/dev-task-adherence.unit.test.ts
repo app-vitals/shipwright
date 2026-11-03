@@ -5,6 +5,7 @@ import {
   buildRunAdherence,
   DevTaskAdherenceService,
   ENRICHMENT_CONCURRENCY,
+  mergeRunRows,
   REQUIRED_STEPS,
   type RequiredStep,
   type RunEnrichment,
@@ -85,7 +86,7 @@ describe("dev-task adherence", () => {
     const r = buildRunAdherence(REQUIRED_STEPS, run("u"), []);
     const status = (n: string) =>
       r.steps.find((s) => s.stepNumber === n)?.status;
-    expect(status("6")).toBe("unmeasured");
+    expect(status("6")).toBe("unmeasured"); // no enrichment => no proof
     expect(status("7")).toBe("unmeasured");
     expect(status("9")).toBe("unmeasured");
   });
@@ -104,8 +105,11 @@ describe("dev-task adherence", () => {
       "fpA",
       "fpB",
     ]);
+    // Step 6 is now measured (task-store), but no enrichment here => no rate.
     const step6 = report.overall.steps.find((s) => s.stepNumber === "6");
-    expect(step6).toMatchObject({ measured: false, rate: null });
+    expect(step6).toMatchObject({ measured: true, rate: null });
+    const step7 = report.overall.steps.find((s) => s.stepNumber === "7");
+    expect(step7).toMatchObject({ measured: false, rate: null });
     expect(report.disclaimer).toBe(ADHERENCE_DISCLAIMER);
     expect(report.disclaimer).toContain("started, not that it was done well");
   });
@@ -247,6 +251,7 @@ describe("dev-task adherence", () => {
             ...baseTask,
             startedAt: "2026-10-01T00:00:00Z",
             pr: 3,
+            simplifyTotal: 0,
           },
           checks: [{ status: "ran_passed" }],
           pr: { commitsCiFix: null },
@@ -268,8 +273,84 @@ describe("dev-task adherence", () => {
         ).toBe(true);
       }
       expect(
-        report.overall.steps.find((s) => s.stepNumber === "6")?.measured,
+        report.overall.steps.find((s) => s.stepNumber === "7")?.measured,
       ).toBe(false);
+    });
+
+    it("measures Step 6 from task.simplifyTotal (DTA-8.3)", () => {
+      const st = (simplifyTotal: number | null | undefined) =>
+        buildRunAdherence(
+          STEPS,
+          run("s6"),
+          [],
+          enrich({ task: { ...enrich().task, simplifyTotal } }),
+        ).steps.find((s) => s.stepNumber === "6")?.status;
+      expect(st(0)).toBe("ran");
+      expect(st(3)).toBe("ran");
+      expect(st(null)).toBe("skipped");
+      expect(st(undefined)).toBe("skipped");
+      const report = buildReport(STEPS, [
+        buildRunAdherence(STEPS, run("m"), [], enrich()),
+      ]);
+      expect(
+        report.overall.steps.find((s) => s.stepNumber === "6")?.measured,
+      ).toBe(true);
+    });
+  });
+
+  describe("mergeRunRows / stalled-then-resumed runs (DTA-8.3)", () => {
+    const base = {
+      itemId: "SPL-2.8",
+      contextFingerprint: null,
+      commandVariant: null,
+    };
+
+    it("merges two rows for one itemId: union of dispatches, counted once", async () => {
+      const rows = [
+        {
+          ...base,
+          id: "stalled",
+          skillUsage: [agent("shipwright:researcher")],
+        },
+        {
+          ...base,
+          id: "resumed",
+          commandVariant: "alternate",
+          skillUsage: [
+            agent("general-purpose", 2),
+            agent("shipwright:researcher"),
+          ],
+        },
+        { ...base, id: "tick", itemId: null, skillUsage: [] },
+        { ...base, id: "tick2", itemId: null, skillUsage: [] },
+      ];
+      const merged = mergeRunRows(rows);
+      expect(merged.map((r) => r.id)).toEqual(["resumed", "tick", "tick2"]);
+      expect(merged[0].commandVariant).toBe("alternate");
+      expect(
+        merged[0].skillUsage.find((u) => u.name === "shipwright:researcher")
+          ?.invocations,
+      ).toBe(2);
+
+      const p = { agentCronRun: { findMany: async () => rows } } as never;
+      const report = await new DevTaskAdherenceService(p).report();
+      expect(report.counts).toEqual({
+        totalRuns: 3,
+        taskBearingRuns: 1,
+        silentTicks: 2,
+      });
+      const r = report.runs[0];
+      expect(r.steps.find((s) => s.stepNumber === "5")?.status).toBe("ran");
+      expect(r.missingSteps).not.toContain("5");
+    });
+
+    it("falls back to earlier fingerprint when the latest row lacks one", () => {
+      const merged = mergeRunRows([
+        { ...base, id: "a", contextFingerprint: "fp", skillUsage: [] },
+        { ...base, id: "b", skillUsage: [] },
+      ]);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].contextFingerprint).toBe("fp");
     });
   });
 
