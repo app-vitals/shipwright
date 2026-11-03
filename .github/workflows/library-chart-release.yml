@@ -20,8 +20,7 @@ name: Library Chart Release Bump
 # as usual. Renovate's helmv3 manager is the fallback if a dispatch is missed;
 # check-chart-drift.yml fails when the pin trails the published index.
 #
-# Failures are loud: the job fails (leaving the PR open) and opens (or comments
-# on) a "library chart release bump failed" issue; a success closes it.
+# Failures are loud: the job fails (leaving the PR open) and goes red.
 #
 # The version comes from an external event, so it is never interpolated into a
 # script: it reaches every step through env and is validated as strict X.Y.Z by
@@ -59,7 +58,6 @@ jobs:
     permissions:
       contents: write # push the bump branch
       pull-requests: write # open / update the PR
-      issues: write # open the failure issue
     env:
       VERSION: ${{ github.event.client_payload.version || inputs.version }}
       BRANCH: chore/library-chart-release
@@ -197,7 +195,7 @@ jobs:
       # The bot cannot self-approve its PR; the shared gate waits for the CI
       # run on the head commit, reruns failed required checks (up to 3
       # attempts) and admin-merges. A failing or missing check exits 1: the
-      # job goes red, the failure step opens an issue, the PR stays open.
+      # job goes red and the PR stays open.
       - name: Wait for checks and merge
         id: merge
         if: steps.diff.outputs.changed == 'true'
@@ -205,30 +203,3 @@ jobs:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
         run: bash scripts/platform-bump-gate.sh "$PR_URL"
-
-      - name: Open an issue on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="library chart release bump failed"
-          BODY="The agent-platform library chart bump for version \`${VERSION}\` failed: ${RUN_URL}"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body "$BODY"
-          else
-            gh issue create --title "$TITLE" --body "$BODY"
-          fi
-
-      - name: Close success issue
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="library chart release bump failed"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          [ -z "$ISSUE" ] && exit 0
-          gh issue comment "$ISSUE" --body "The agent-platform library chart bump for version \`${VERSION}\` succeeded: ${RUN_URL}"
-          gh issue close "$ISSUE"
