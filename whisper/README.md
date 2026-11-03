@@ -16,6 +16,18 @@ docker run --rm --entrypoint dpkg-query shipwright-whisper:security -W libbrotli
 CI run for the same upstream-main commit. It uses a commit-specific tag
 `ghcr.io/app-vitals/shipwright-whisper:sha-<commit>`. No chart default or running
 installation changes until an operator selects the published image by digest.
+If automatic publication was missed (for example an earlier Whisper commit's CI
+failed and a later unrelated commit passed), dispatch the recovery from main with
+the successful CI run id:
+
+```sh
+gh workflow run build-whisper.yml --repo app-vitals/shipwright --ref main -f ci_run_id=123456
+```
+
+The recovery validates the workflow id, upstream repository, main branch, push
+event, completed/success state and exact SHA through the Actions API. It does not
+accept a fork run, PR run or failed CI as publication authority.
+
 Verify `/docs` and `/asr` with the same model settings before rollout and obtain a
 fresh image scan afterward. Package-version checks are not full image clearance.
 
