@@ -1,6 +1,6 @@
 # Handoff (Step 10)
 
-Moved from `commands/dev-task.md`.
+Mechanics for `commands/dev-task.md`.
 
 ```bash
 PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

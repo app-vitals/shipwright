@@ -1,6 +1,6 @@
 # Pre-ship checks (Step 8)
 
-Moved from `commands/dev-task.md`.
+Mechanics for `commands/dev-task.md`.
 
 ## No scheduled wakeups
 Run long commands synchronously (chain Bash calls, or poll via Monitor in-session). A session that ends stops heartbeating;

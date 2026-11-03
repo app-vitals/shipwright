@@ -1,6 +1,6 @@
 # Push, PR, and CI gate (Steps 9–9b)
 
-Moved from `commands/dev-task.md`.
+Mechanics for `commands/dev-task.md`.
 
 ## Push and PR
 Pre-push: `GET /verification-checks?taskId={id}&limit=1`; empty → record outcomes now (never blocks).

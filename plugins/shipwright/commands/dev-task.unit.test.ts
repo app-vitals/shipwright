@@ -1,14 +1,24 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { groupChecksByName, parseActionsChecks } from "../scripts/ci-checks.ts";
 
 const DEV_TASK_MD_PATH = join(import.meta.dir, "dev-task.md");
+const REFERENCES_DIR = join(import.meta.dir, "..", "references", "dev-task");
+
+/** dev-task.md plus the mechanics references it links to (the full dev-task prompt surface). */
+function loadDevTaskCorpus(): string {
+  const refs = readdirSync(REFERENCES_DIR)
+    .filter((f) => f.endsWith(".md") && f !== "dropped-details.md")
+    .sort()
+    .map((f) => readFileSync(join(REFERENCES_DIR, f), "utf-8"));
+  return [readFileSync(DEV_TASK_MD_PATH, "utf-8"), ...refs].join("\n\n");
+}
 
 let devTaskContent: string;
 
 beforeAll(() => {
-  devTaskContent = readFileSync(DEV_TASK_MD_PATH, "utf-8");
+  devTaskContent = loadDevTaskCorpus();
 });
 
 describe("parseActionsChecks", () => {
@@ -113,12 +123,8 @@ describe("groupChecksByName", () => {
 
 describe("dev-task.md Step 9b — structured check data collection", () => {
   it("mentions collecting structured check data into ci_checks", () => {
-    const hasCheckData =
-      devTaskContent.includes("ci_checks") &&
-      (devTaskContent.includes("structured check") ||
-        devTaskContent.includes("ci_checks_json_array") ||
-        devTaskContent.includes("ci_checks = []"));
-    expect(hasCheckData).toBe(true);
+    expect(devTaskContent).toContain("ci_checks");
+    expect(devTaskContent).toContain("ci_failures");
   });
 });
 
@@ -136,6 +142,6 @@ describe("dev-task.md Step 10a — execution metric fields in PATCH body", () =>
   });
 
   it("includes model (EFFECTIVE_MODEL) in the Step 10a PATCH body", () => {
-    expect(devTaskContent.includes('\\"model\\": \\"{EFFECTIVE_MODEL}\\"')).toBe(true);
+    expect(devTaskContent.includes('\\"model\\":\\"{EFFECTIVE_MODEL}\\"')).toBe(true);
   });
 });
