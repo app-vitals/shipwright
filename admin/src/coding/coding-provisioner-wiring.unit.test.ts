@@ -26,6 +26,33 @@ function configOf(
 // composition (adminExtensions from main.ts), which stays out of the platform
 // set, while the rest of main.unit.test.ts is platform code.
 describe("buildProvisioner with Shipwright's composed admin extensions", () => {
+  it("passes configured agent pod labels through the published platform package", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_POD_LABELS:
+          '{"example.io/service":"shipwright","example.io/team":"platform"}',
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).podLabels).toEqual({
+      "example.io/service": "shipwright",
+      "example.io/team": "platform",
+    });
+  });
+
+  it("rejects invalid agent labels at startup instead of ignoring the setting", () => {
+    expect(() =>
+      buildProvisioner(
+        {
+          SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+          SHIPWRIGHT_K8S_AGENT_POD_LABELS: '{"example.io/team":"bad value"}',
+        },
+        stubAgentTokenService(),
+      ),
+    ).toThrow();
+  });
+
   it("wires the coding extension's task-store integration only when both URL and admin token are set", () => {
     const withEnv = {
       SHIPWRIGHT_K8S_PROVISIONING: "enabled",
