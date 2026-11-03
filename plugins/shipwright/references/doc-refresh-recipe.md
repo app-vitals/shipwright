@@ -122,6 +122,26 @@ This per-doc report rolls up into the dev-task metrics block (`auto_docs.files_c
 
 ---
 
+## Measured values
+
+Living docs state **policy** and **where a number lives** — never an observed value. This rule applies to every doc either caller edits (`TESTING.md`, README, architecture and guide pages).
+
+- **Observed value (never write):** a number that was read off a run or a point in time — current coverage %, test counts, timings, CI baselines, and run ids or PR numbers cited as a baseline. These go stale the moment the next commit lands.
+- **Configured value (may name):** a policy threshold that lives in a config file and is enforced there, e.g. `fail_under = 51`. Name it together with the file that owns it.
+- **Replace-with-pointer:** when the refresher meets an existing observed value in a doc it is already editing, replace it with a pointer to where the number lives (the config file, or "latest CI run") instead of refreshing the number. Do not go hunting for observed values in docs that are not otherwise being edited.
+- **Exempt:** `docs/test-readiness/**` (already excluded), `planning/**`, and files that are explicitly dated snapshots.
+
+Worked example (`TESTING.md`):
+
+```diff
+-Coverage is enforced in CI (CI baseline 51.82% (CI run 12345 on PR #52)); the gate is `fail_under = 51`.
++Coverage is enforced in CI against the `fail_under = 51` threshold in `pyproject.toml`; the current figure is in the latest CI run.
+```
+
+Part 2 step 4 applies this rule: an observed value is an **Update** whose new text is the pointer, not a refreshed number.
+
+---
+
 ## Scoping the work
 
 The two callers differ only in **which docs are checked**:
