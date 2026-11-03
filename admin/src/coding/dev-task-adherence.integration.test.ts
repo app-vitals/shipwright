@@ -141,6 +141,7 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       totalRuns: 3,
       taskBearingRuns: 2,
       silentTicks: 1,
+      mixedTasks: 0,
     });
     const [bad, good] = report.runs;
     expect(bad?.adherent).toBe(false);
@@ -242,6 +243,7 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       totalRuns: 22,
       taskBearingRuns: 21,
       silentTicks: 1,
+      mixedTasks: 0,
     });
     const five = (s: {
       steps: { stepNumber: string; ran: number; skipped: number }[];

@@ -45,6 +45,8 @@ export interface TaskLifecycle {
   prCreatedAt: string | null;
   mergedAt: string | null;
   deployedAt: string | null;
+  /** CI fix attempts recorded on the task (DTA-8.2); null when unrecorded. */
+  ciFixAttempts: number | null;
   /** Simplify fix count recorded at Step 10 (proves Step 6 ran). */
   simplifyTotal?: number | null;
 }

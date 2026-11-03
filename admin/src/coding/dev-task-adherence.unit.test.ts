@@ -151,6 +151,7 @@ describe("dev-task adherence", () => {
       totalRuns: 5,
       taskBearingRuns: 4,
       silentTicks: 1,
+      mixedTasks: 0,
     });
     expect(report.overall.runs).toBe(4);
     expect(
@@ -340,6 +341,9 @@ describe("dev-task adherence", () => {
         totalRuns: 3,
         taskBearingRuns: 1,
         silentTicks: 2,
+        // Arm membership uses the raw rows: stalled (null) + resumed
+        // (alternate) spans two commandVariant values, so it is mixed.
+        mixedTasks: 1,
       });
       const r = report.runs[0];
       expect(r.steps.find((s) => s.stepNumber === "5")?.status).toBe("ran");
@@ -397,6 +401,7 @@ describe("dev-task adherence", () => {
       prCreatedAt: null,
       mergedAt: null,
       deployedAt: null,
+      ciFixAttempts: 0,
     };
 
     it("enriches task-bearing runs, degrading on 404 and fetch failure", async () => {
@@ -486,6 +491,181 @@ describe("dev-task adherence", () => {
       expect(
         report.runs[0]?.steps.find((s) => s.stepNumber === "9")?.status,
       ).toBe("unmeasured");
+    });
+  });
+});
+
+describe("per-arm outcomes (DTA-8.2)", () => {
+  const enr = (
+    ciFixAttempts: number | null | undefined,
+    pr: { patchCycles: number; reviewCycles: number } | null,
+  ): RunEnrichment => ({
+    task: {
+      startedAt: null,
+      pr: pr ? 1 : null,
+      prCreatedAt: null,
+      ...(ciFixAttempts === undefined ? {} : { ciFixAttempts }),
+    },
+    checks: [],
+    pr: pr ? { commitsCiFix: null, ...pr } : null,
+  });
+  const r = (id: string, arm: string | null, itemId: string | null = id) =>
+    buildRunAdherence(
+      REQUIRED_STEPS,
+      {
+        id: `${id}-${arm}-${Math.random()}`,
+        itemId,
+        contextFingerprint: null,
+        commandVariant: arm,
+      },
+      [],
+    );
+  const arm = (report: ReturnType<typeof buildReport>, v: string | null) =>
+    report.byCommandVariant.find((s) => s.commandVariant === v)?.outcomes;
+
+  it("computes single-arm means, shares and CI first-pass rate", () => {
+    const runs = [
+      r("a", "default"),
+      r("b", "default"),
+      r("c", "default"),
+      r("d", "alternate"),
+    ];
+    const e = new Map<string, RunEnrichment | undefined>([
+      ["a", enr(0, { patchCycles: 0, reviewCycles: 1 })],
+      ["b", enr(2, { patchCycles: 2, reviewCycles: 3 })],
+      ["c", enr(0, { patchCycles: 4, reviewCycles: 2 })],
+      ["d", enr(1, { patchCycles: 1, reviewCycles: 0 })],
+    ]);
+    const rep = buildReport(REQUIRED_STEPS, runs, e);
+    expect(arm(rep, "default")).toEqual({
+      tasks: 3,
+      prs: 3,
+      meanPatchCycles: 2,
+      shareZeroPatchCycles: 1 / 3,
+      shareTwoPlusPatchCycles: 2 / 3,
+      meanReviewCycles: 2,
+      ciFirstPassRate: 2 / 3,
+      meanCiFixAttempts: 2 / 3,
+    });
+    expect(arm(rep, "alternate")).toMatchObject({
+      tasks: 1,
+      meanPatchCycles: 1,
+      ciFirstPassRate: 0,
+      meanCiFixAttempts: 1,
+    });
+    expect(rep.counts.mixedTasks).toBe(0);
+  });
+
+  it("excludes tasks that ran in both arms and counts them", () => {
+    const runs = [
+      r("a", "default"),
+      r("m", "default"),
+      r("m", "alternate"),
+      r("n", "default"),
+      r("n", null),
+    ];
+    const e = new Map<string, RunEnrichment | undefined>([
+      ["a", enr(0, { patchCycles: 1, reviewCycles: 1 })],
+      ["m", enr(3, { patchCycles: 5, reviewCycles: 5 })],
+      ["n", enr(3, { patchCycles: 5, reviewCycles: 5 })],
+    ]);
+    const rep = buildReport(REQUIRED_STEPS, runs, e);
+    expect(rep.counts.mixedTasks).toBe(2);
+    expect(arm(rep, "default")).toMatchObject({
+      tasks: 1,
+      meanPatchCycles: 1,
+      ciFirstPassRate: 1,
+    });
+    expect(arm(rep, "alternate")?.tasks).toBe(0);
+    expect(arm(rep, "alternate")?.meanPatchCycles).toBeNull();
+    expect(arm(rep, null)?.tasks).toBe(0);
+    // runs themselves still counted per arm
+    expect(
+      rep.byCommandVariant.find((s) => s.commandVariant === "alternate")?.runs,
+    ).toBe(1);
+  });
+
+  it("dedupes a task with several runs in the same arm", () => {
+    const runs = [r("a", "default"), r("a", "default"), r("a", "default")];
+    const e = new Map([["a", enr(1, { patchCycles: 2, reviewCycles: 4 })]]);
+    const rep = buildReport(REQUIRED_STEPS, runs, e);
+    expect(arm(rep, "default")).toMatchObject({
+      tasks: 1,
+      prs: 1,
+      meanPatchCycles: 2,
+      meanReviewCycles: 4,
+      meanCiFixAttempts: 1,
+    });
+    expect(rep.byVariant[0]?.outcomes.tasks).toBe(1);
+    expect(rep.overall.outcomes.tasks).toBe(1);
+  });
+
+  it("handles unenriched tasks, missing PRs and null ciFixAttempts", () => {
+    const runs = [
+      r("u", "default"),
+      r("nopr", "default"),
+      r("nullci", "default"),
+      r("silent", "default", null),
+    ];
+    const e = new Map<string, RunEnrichment | undefined>([
+      ["u", undefined],
+      ["nopr", enr(0, null)],
+      ["nullci", enr(null, { patchCycles: 0, reviewCycles: 0 })],
+    ]);
+    const rep = buildReport(REQUIRED_STEPS, runs, e);
+    expect(arm(rep, "default")).toEqual({
+      tasks: 2,
+      prs: 1,
+      meanPatchCycles: 0,
+      shareZeroPatchCycles: 1,
+      shareTwoPlusPatchCycles: 0,
+      meanReviewCycles: 0,
+      ciFirstPassRate: 1,
+      meanCiFixAttempts: 0,
+    });
+    // no enrichment map at all -> all-null outcomes, no leakage into runs
+    const bare = buildReport(REQUIRED_STEPS, runs);
+    expect(bare.overall.outcomes.tasks).toBe(0);
+    expect(bare.overall.outcomes.ciFirstPassRate).toBeNull();
+    expect(JSON.stringify(bare.runs)).not.toContain("patchCycles");
+  });
+
+  it("service passes cached enrichment through without extra lookups", async () => {
+    const rows = ["T-1", "T-1", "T-2"].map((itemId, i) => ({
+      id: `r${i}`,
+      itemId,
+      contextFingerprint: null,
+      commandVariant: i === 1 ? "alternate" : "default",
+      skillUsage: [],
+    }));
+    const calls = { task: 0, pr: 0 };
+    const svc = new DevTaskAdherenceService(
+      { agentCronRun: { findMany: async () => rows } } as never,
+      REQUIRED_STEPS,
+      {
+        getTask: async () => {
+          calls.task++;
+          return {
+            repo: "o/r",
+            startedAt: null,
+            pr: 1,
+            prCreatedAt: null,
+            ciFixAttempts: 0,
+          };
+        },
+        getPrByNumber: async () => {
+          calls.pr++;
+          return { commitsCiFix: 0, patchCycles: 1, reviewCycles: 2 };
+        },
+      },
+    );
+    const rep = await svc.report();
+    expect(calls).toEqual({ task: 2, pr: 2 });
+    expect(rep.counts.mixedTasks).toBe(1);
+    expect(arm(rep, "default")).toMatchObject({
+      tasks: 1,
+      meanPatchCycles: 1,
+      ciFirstPassRate: 1,
     });
   });
 });
@@ -598,11 +778,12 @@ describe("patch adherence (DTA-9.2)", () => {
         [],
       ),
     );
-    const report = buildReport(PATCH_REQUIRED_STEPS, runs, "patch");
+    const report = buildReport(PATCH_REQUIRED_STEPS, runs, undefined, "patch");
     expect(report.counts).toEqual({
       totalRuns: 21,
       taskBearingRuns: 20,
       silentTicks: 1,
+      mixedTasks: 0,
     });
     const rate = (s: {
       steps: { stepNumber: string; rate: number | null }[];
@@ -692,6 +873,7 @@ describe("patch adherence (DTA-9.2)", () => {
         totalRuns: 3,
         taskBearingRuns: 2,
         silentTicks: 1,
+        mixedTasks: 0,
       });
       expect(status(report.runs[0], "5b")).toBe("ran");
       expect(status(report.runs[0], "4c.5")).toBe("ran");

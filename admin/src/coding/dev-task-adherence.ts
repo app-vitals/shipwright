@@ -27,6 +27,20 @@
  * measured only when the caller supplies a RunEnrichment for the run;
  * otherwise (no fetchers, task 404, fetch failure) they stay "unmeasured".
  *
+ * Per-arm outcomes (DTA-8.2): each series (overall, byVariant,
+ * byCommandVariant) also carries `outcomes` — PRs, mean patch/review cycles,
+ * share of tasks with 0 and 2+ patch cycles, CI first-pass rate and mean
+ * ciFixAttempts — computed from the same per-itemId RunEnrichment the step
+ * measurements use (no extra task-store lookups). A task counts once per
+ * series (deduped by itemId) and only when ALL its task-bearing runs share
+ * that series' key; tasks that ran under more than one commandVariant
+ * (retries across arms, null counts as a value) are excluded from arm
+ * outcomes and reported as counts.mixedTasks. Means are sum/count over those
+ * single-arm tasks; ciFirstPassRate = count(ciFixAttempts == 0) /
+ * count(ciFixAttempts != null). Arm membership is judged on the raw
+ * (pre-merge) cron rows, so a task re-dispatched under another arm still
+ * counts as mixed after mergeRunRows collapses it into one logical run.
+ *
  * Stalled/resumed runs (DTA-8.3): a stalled run that is reclaimed gets a new
  * AgentCronRun row for the same itemId (and sessionId). Rows sharing an itemId
  * are merged into one logical run judged on the union of their skill usage
@@ -84,6 +98,8 @@ export interface RunEnrichment {
     startedAt: string | null;
     pr: number | null;
     prCreatedAt: string | null;
+    /** Task-store CI fix attempts (DTA-8.2); null/absent when unrecorded. */
+    ciFixAttempts?: number | null;
     /** Simplify fix count PATCHed at Step 10; null/absent when never recorded. */
     simplifyTotal?: number | null;
   };
@@ -91,8 +107,10 @@ export interface RunEnrichment {
   /** PR record outcome; null when the task has no PR / it wasn't found. */
   pr: {
     commitsCiFix: number | null;
+    /** Per-arm outcomes (DTA-8.2) and patch scoring (DTA-9.2). */
+    patchCycles?: number | null;
+    reviewCycles?: number | null;
     /** Patch scoring (DTA-9.2). */
-    patchCycles?: number;
     commitSha?: string | null;
   } | null;
 }
@@ -144,6 +162,21 @@ interface StepAdherenceRate {
   rate: number | null;
 }
 
+/** Per-arm task outcomes (DTA-8.2); null means = no data. */
+interface OutcomeMetrics {
+  /** Distinct single-arm enriched tasks counted in this series. */
+  tasks: number;
+  /** Of those, tasks with a PR record (denominator for PR metrics). */
+  prs: number;
+  meanPatchCycles: number | null;
+  shareZeroPatchCycles: number | null;
+  shareTwoPlusPatchCycles: number | null;
+  meanReviewCycles: number | null;
+  /** count(ciFixAttempts == 0) / count(ciFixAttempts != null). */
+  ciFirstPassRate: number | null;
+  meanCiFixAttempts: number | null;
+}
+
 interface AdherenceSeries {
   /** Variant tag (contextFingerprint); null for runs without one. */
   variant: string | null;
@@ -152,6 +185,7 @@ interface AdherenceSeries {
   /** adherentRuns / runs; null when there are no runs. */
   adherenceRate: number | null;
   steps: StepAdherenceRate[];
+  outcomes: OutcomeMetrics;
 }
 
 interface CommandVariantSeries extends Omit<AdherenceSeries, "variant"> {
@@ -166,6 +200,11 @@ interface RunCounts {
   taskBearingRuns: number;
   /** Non-skipped runs with no work item (empty-queue ticks). */
   silentTicks: number;
+  /**
+   * Tasks whose task-bearing runs used more than one commandVariant (null
+   * counts as a value). Excluded from per-arm outcomes.
+   */
+  mixedTasks: number;
 }
 
 interface DevTaskAdherenceReport {
@@ -440,10 +479,72 @@ export function buildRunAdherence(
   };
 }
 
+function mean(values: number[]): number | null {
+  return values.length === 0
+    ? null
+    : values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/** Minimal row shape arm membership is judged on (runs or raw cron rows). */
+export interface ArmKeyRow {
+  itemId: string | null;
+  contextFingerprint: string | null;
+  commandVariant?: string | null;
+}
+
+/** Distinct itemIds of task-bearing rows → set of keys they ran under. */
+function keysByTask(
+  runs: ArmKeyRow[],
+  key: (r: ArmKeyRow) => string | null,
+): Map<string, Set<string | null>> {
+  const m = new Map<string, Set<string | null>>();
+  for (const r of runs) {
+    if (r.itemId === null) continue;
+    const set = m.get(r.itemId) ?? new Set<string | null>();
+    set.add(key(r));
+    m.set(r.itemId, set);
+  }
+  return m;
+}
+
+function computeOutcomes(
+  itemIds: Iterable<string>,
+  enrichments: Map<string, RunEnrichment | undefined> | undefined,
+): OutcomeMetrics {
+  let tasks = 0;
+  const patch: number[] = [];
+  const review: number[] = [];
+  const ci: number[] = [];
+  for (const id of itemIds) {
+    const e = enrichments?.get(id);
+    if (!e) continue;
+    tasks++;
+    if (e.pr) {
+      if (e.pr.patchCycles != null) patch.push(e.pr.patchCycles);
+      if (e.pr.reviewCycles != null) review.push(e.pr.reviewCycles);
+    }
+    if (e.task.ciFixAttempts != null) ci.push(e.task.ciFixAttempts);
+  }
+  const share = (pred: (n: number) => boolean) =>
+    patch.length === 0 ? null : patch.filter(pred).length / patch.length;
+  return {
+    tasks,
+    prs: patch.length,
+    meanPatchCycles: mean(patch),
+    shareZeroPatchCycles: share((n) => n === 0),
+    shareTwoPlusPatchCycles: share((n) => n >= 2),
+    meanReviewCycles: mean(review),
+    ciFirstPassRate:
+      ci.length === 0 ? null : ci.filter((n) => n === 0).length / ci.length,
+    meanCiFixAttempts: mean(ci),
+  };
+}
+
 function summarize(
   steps: RequiredStep[],
   runs: RunAdherence[],
   variant: string | null,
+  outcomes: OutcomeMetrics,
   command: AdherenceCommand = "dev-task",
 ): AdherenceSeries {
   const adherentRuns = runs.filter((r) => r.adherent).length;
@@ -452,6 +553,7 @@ function summarize(
     runs: runs.length,
     adherentRuns,
     adherenceRate: runs.length === 0 ? null : adherentRuns / runs.length,
+    outcomes,
     steps: steps.map((step) => {
       let ran = 0;
       let skipped = 0;
@@ -490,9 +592,35 @@ function groupBy(
 export function buildReport(
   steps: RequiredStep[],
   runs: RunAdherence[],
+  enrichments?: Map<string, RunEnrichment | undefined>,
   command: AdherenceCommand = "dev-task",
+  /**
+   * Rows arm membership is judged on; defaults to `runs`. The service passes
+   * the raw pre-merge cron rows so cross-arm retries stay visible as mixed.
+   */
+  armRows?: ArmKeyRow[],
 ): DevTaskAdherenceReport {
   const taskBearing = runs.filter((r) => r.taskBearing);
+  const keyRows = armRows ?? taskBearing;
+
+  // Outcomes for one series: tasks whose runs ALL share `seriesKey` in the
+  // given dimension (a task spanning several keys belongs to no series).
+  const outcomesFor = (
+    keys: Map<string, Set<string | null>>,
+    seriesKey: string | null,
+  ): OutcomeMetrics =>
+    computeOutcomes(
+      [...keys]
+        .filter(([, set]) => set.size === 1 && set.has(seriesKey))
+        .map(([id]) => id),
+      enrichments,
+    );
+
+  const fpKeys = keysByTask(keyRows, (r) => r.contextFingerprint);
+  const cvKeys = keysByTask(keyRows, (r) => r.commandVariant ?? null);
+  const allIds = [...cvKeys.keys()];
+  const mixedTasks = [...cvKeys.values()].filter((s) => s.size > 1).length;
+
   return {
     ...(command === "dev-task" ? {} : { command }),
     disclaimer: ADHERENCE_DISCLAIMER,
@@ -500,11 +628,20 @@ export function buildReport(
       totalRuns: runs.length,
       taskBearingRuns: taskBearing.length,
       silentTicks: runs.length - taskBearing.length,
+      mixedTasks,
     },
     runs,
-    overall: summarize(steps, taskBearing, null, command),
+    // Overall spans every arm, so it keeps every task, mixed or not.
+    overall: summarize(
+      steps,
+      taskBearing,
+      null,
+      computeOutcomes(allIds, enrichments),
+      command,
+    ),
     byVariant: [...groupBy(taskBearing, (r) => r.contextFingerprint)].map(
-      ([variant, rs]) => summarize(steps, rs, variant, command),
+      ([variant, rs]) =>
+        summarize(steps, rs, variant, outcomesFor(fpKeys, variant), command),
     ),
     byCommandVariant: [...groupBy(taskBearing, (r) => r.commandVariant)]
       .sort(([a], [b]) => (a ?? "\uffff").localeCompare(b ?? "\uffff"))
@@ -513,6 +650,7 @@ export function buildReport(
           steps,
           rs,
           commandVariant,
+          outcomesFor(cvKeys, commandVariant),
           command,
         );
         return { commandVariant, ...series };
@@ -635,17 +773,20 @@ export class DevTaskAdherenceService {
 
     // Per-request memo: runs sharing an itemId share one set of lookups.
     const cache = new Map<string, Promise<RunEnrichment | undefined>>();
+    const enrichments = new Map<string, RunEnrichment | undefined>();
     const runs: RunAdherence[] = new Array(rows.length);
     let next = 0;
     const worker = async () => {
       while (next < rows.length) {
         const i = next++;
         const row = rows[i];
+        const enrichment = await this.enrich(row.itemId, cache, command);
+        if (row.itemId) enrichments.set(row.itemId, enrichment);
         runs[i] = buildRunAdherence(
           steps,
           row,
           row.skillUsage,
-          await this.enrich(row.itemId, cache, command),
+          enrichment,
           command,
         );
       }
@@ -656,6 +797,6 @@ export class DevTaskAdherenceService {
         worker,
       ),
     );
-    return buildReport(steps, runs, command);
+    return buildReport(steps, runs, enrichments, command, rawRows);
   }
 }
