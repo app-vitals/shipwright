@@ -53,7 +53,9 @@ Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily fo
 - **Timing:** `avgDurationMs` and `p50DurationMs` (over non-skipped runs with a `completedAt`; null when none)
 - **Telemetry:** `avgTurns`, `avgToolCalls`, `avgContextTokens` (over non-skipped runs that reported each metric; null when none)
 
-Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
+Each series (`overall`, `byVariant[]`, `byCommandVariant[]`) also carries `outcomes` (DTA-8.2: PRs, mean patch/review cycles, share of tasks with 0 and 2+ patch cycles, CI first-pass rate, mean `ciFixAttempts`) and `cost` (DTA-9.3: mean cost per run and token totals from each run's model breakdown). Arm series count only tasks whose runs all used one arm; tasks that ran in more than one `commandVariant` are excluded and reported as `counts.mixedTasks`. Stalled and resumed runs for the same item are merged into one logical run.
+
+Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`, and an optional `command=dev-task|patch` selector (default `dev-task`; echoed in the response). With `command=patch`, runs are scored lane-agnostically against the patch required-steps table (fix dispatch and PR-record push proof measured, other steps unmeasured) and each series also carries `patchGuardrails` (repeat-patch rate, CI-green-after-patch rate as a proxy, mean patch cycles; mixed-arm PRs excluded as `counts.mixedPrs`).
 
 ### Command step adherence
 
@@ -63,7 +65,7 @@ GET /agents/all/cron-runs/dev-task-adherence
 
 Self-serve variant: `GET /agents/{id}/dev-task-adherence` returns the same report scoped to that agent, with no admin scope required (agent's own token, admin, or member session).
 
-Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped. Steps can be measured via either **agent dispatch** (all dispatch-compatible steps) or **task-store data** (steps 2, 8, 9, 9b when task-store is configured and the run's task record is found; DTA-6.2). A dispatch proves a step started; task-store data proves it without a dispatch. Steps with no proof of either kind (steps 6, 7, 10) are reported as `unmeasured` and excluded from adherence rates. The response (`DevTaskAdherenceReport` in `admin/src/coding/dev-task-adherence.ts` in app-vitals/shipwright) contains:
+Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped. Steps can be measured via either **agent dispatch** (all dispatch-compatible steps) or **task-store data** (steps 2, 6, 8, 9, 9b when task-store is configured and the run's task record is found; DTA-6.2). A dispatch proves a step started; task-store data proves it without a dispatch. Step 6 is proven by the task's recorded Simplify count (`simplifyTotal`, PATCHed at Step 10), so a run that stalled before Step 10 reads as skipped. Steps with no proof of either kind (steps 7, 10) are reported as `unmeasured` and excluded from adherence rates. The response (`DevTaskAdherenceReport` in `admin/src/coding/dev-task-adherence.ts` in app-vitals/shipwright) contains:
 
 - **`disclaimer`:** caveat on what measurements prove and which steps can be measured
 - **`counts`:** `totalRuns` (non-skipped dev-task runs), `taskBearingRuns` (dispatched against a work item, i.e. `itemId` set) and `silentTicks` (no work item). All series below, and their rates, cover task-bearing runs only
