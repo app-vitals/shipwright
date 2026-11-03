@@ -62,6 +62,18 @@
  * per-run record and stay unmeasured. A patch run's itemId is "org/repo#N"
  * (or a task id, resolved via getTask) and keys the PR lookup.
  *
+ * Cost and patch guardrails (DTA-9.3): each series carries `cost` — mean cost
+ * per run and token totals, summed from the run's modelBreakdown rows (a
+ * merged stalled/resumed run sums all its rows). Runs with no breakdown are
+ * not counted in meanCostUsd. Arm series (byVariant, byCommandVariant) drop
+ * runs of tasks that ran under more than one key, like outcomes; overall
+ * keeps every run. For `command: "patch"` each series also carries
+ * `patchGuardrails` over its single-arm PRs: repeatPatchRate
+ * (patchCycles >= 2, i.e. patched again after a push), ciGreenAfterPatchRate
+ * (patched PRs with consecutiveCiFailureCount == 0 — a proxy, the PR record
+ * has no direct CI-green flag) and meanPatchCycles. Mixed PRs (run under both
+ * arms) are excluded and reported as counts.mixedPrs.
+ *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
  * Steps with neither a dispatch nor task-store proof (7, 10) are reported
  * as "unmeasured" and excluded from adherence rates.
@@ -112,6 +124,8 @@ export interface RunEnrichment {
     reviewCycles?: number | null;
     /** Patch scoring (DTA-9.2). */
     commitSha?: string | null;
+    /** Patch guardrails (DTA-9.3); 0 = no CI failure reported to patch. */
+    consecutiveCiFailureCount?: number | null;
   } | null;
 }
 
@@ -145,6 +159,8 @@ interface RunAdherence {
   commandVariant: string | null;
   /** True when dispatched against a work item; false for silent ticks. */
   taskBearing: boolean;
+  /** Summed modelBreakdown (DTA-9.3); null when the run has none. */
+  usage: ModelBreakdownRow | null;
   steps: RunStepResult[];
   /** True when every mandatory, dispatch-measurable step ran. */
   adherent: boolean;
@@ -177,6 +193,37 @@ interface OutcomeMetrics {
   meanCiFixAttempts: number | null;
 }
 
+/** Token/cost usage of one run, summed over its modelBreakdown rows. */
+export interface ModelBreakdownRow {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
+interface CostMetrics {
+  /** Runs counted (those with a modelBreakdown). */
+  runsWithCost: number;
+  totalCostUsd: number;
+  /** totalCostUsd / runsWithCost; null when no run has a breakdown. */
+  meanCostUsd: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+/** Patch guardrails (DTA-9.3) over single-arm PRs with a PR record. */
+interface PatchGuardrails {
+  prs: number;
+  /** count(patchCycles >= 2) / prs: patched again after a push. */
+  repeatPatchRate: number | null;
+  /** Of patched PRs (patchCycles > 0) with the field known, share with no CI failure. */
+  ciGreenAfterPatchRate: number | null;
+  meanPatchCycles: number | null;
+}
+
 interface AdherenceSeries {
   /** Variant tag (contextFingerprint); null for runs without one. */
   variant: string | null;
@@ -186,6 +233,9 @@ interface AdherenceSeries {
   adherenceRate: number | null;
   steps: StepAdherenceRate[];
   outcomes: OutcomeMetrics;
+  cost: CostMetrics;
+  /** Patch command only. */
+  patchGuardrails?: PatchGuardrails;
 }
 
 interface CommandVariantSeries extends Omit<AdherenceSeries, "variant"> {
@@ -205,6 +255,8 @@ interface RunCounts {
    * counts as a value). Excluded from per-arm outcomes.
    */
   mixedTasks: number;
+  /** Patch command only: mixedTasks, where the item is a PR. */
+  mixedPrs?: number;
 }
 
 interface DevTaskAdherenceReport {
@@ -403,6 +455,7 @@ export interface CronRunRow {
   contextFingerprint: string | null;
   commandVariant?: string | null;
   skillUsage: SkillUsageRow[];
+  modelBreakdown?: ModelBreakdownRow[];
 }
 
 /**
@@ -420,7 +473,11 @@ export function mergeRunRows(rows: CronRunRow[]): CronRunRow[] {
     const idx = row.itemId == null ? undefined : byItem.get(row.itemId);
     if (idx === undefined) {
       if (row.itemId != null) byItem.set(row.itemId, out.length);
-      out.push({ ...row, skillUsage: [...row.skillUsage] });
+      out.push({
+        ...row,
+        skillUsage: [...row.skillUsage],
+        modelBreakdown: [...(row.modelBreakdown ?? [])],
+      });
       continue;
     }
     const prev = out[idx];
@@ -439,9 +496,32 @@ export function mergeRunRows(rows: CronRunRow[]): CronRunRow[] {
       contextFingerprint: row.contextFingerprint ?? prev.contextFingerprint,
       commandVariant: row.commandVariant ?? prev.commandVariant ?? null,
       skillUsage: [...usage.values()],
+      modelBreakdown: [
+        ...(prev.modelBreakdown ?? []),
+        ...(row.modelBreakdown ?? []),
+      ],
     };
   }
   return out;
+}
+
+function sumUsage(rows?: ModelBreakdownRow[]): ModelBreakdownRow | null {
+  if (!rows || rows.length === 0) return null;
+  const t: ModelBreakdownRow = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    costUsd: 0,
+  };
+  for (const r of rows) {
+    t.inputTokens += r.inputTokens;
+    t.outputTokens += r.outputTokens;
+    t.cacheReadTokens += r.cacheReadTokens;
+    t.cacheCreationTokens += r.cacheCreationTokens;
+    t.costUsd += r.costUsd;
+  }
+  return t;
 }
 
 export function buildRunAdherence(
@@ -451,6 +531,7 @@ export function buildRunAdherence(
     itemId: string | null;
     contextFingerprint: string | null;
     commandVariant?: string | null;
+    modelBreakdown?: ModelBreakdownRow[];
   },
   usage: SkillUsageRow[],
   enrichment?: RunEnrichment,
@@ -473,6 +554,7 @@ export function buildRunAdherence(
     contextFingerprint: run.contextFingerprint,
     commandVariant: run.commandVariant ?? null,
     taskBearing: run.itemId !== null,
+    usage: sumUsage(run.modelBreakdown),
     steps: results,
     adherent: missingSteps.length === 0,
     missingSteps,
@@ -540,11 +622,57 @@ function computeOutcomes(
   };
 }
 
+function computeCost(runs: RunAdherence[]): CostMetrics {
+  const used = runs.flatMap((r) => (r.usage ? [r.usage] : []));
+  const sum = (f: (u: ModelBreakdownRow) => number) =>
+    used.reduce((n, u) => n + f(u), 0);
+  const totalCostUsd = sum((u) => u.costUsd);
+  return {
+    runsWithCost: used.length,
+    totalCostUsd,
+    meanCostUsd: used.length === 0 ? null : totalCostUsd / used.length,
+    inputTokens: sum((u) => u.inputTokens),
+    outputTokens: sum((u) => u.outputTokens),
+    cacheReadTokens: sum((u) => u.cacheReadTokens),
+    cacheCreationTokens: sum((u) => u.cacheCreationTokens),
+  };
+}
+
+function computePatchGuardrails(
+  itemIds: Iterable<string>,
+  enrichments: Map<string, RunEnrichment | undefined> | undefined,
+): PatchGuardrails {
+  const cycles: number[] = [];
+  const patchedCi: number[] = [];
+  for (const id of itemIds) {
+    const pr = enrichments?.get(id)?.pr;
+    if (!pr || pr.patchCycles == null) continue;
+    cycles.push(pr.patchCycles);
+    if (pr.patchCycles > 0 && pr.consecutiveCiFailureCount != null) {
+      patchedCi.push(pr.consecutiveCiFailureCount);
+    }
+  }
+  return {
+    prs: cycles.length,
+    repeatPatchRate:
+      cycles.length === 0
+        ? null
+        : cycles.filter((n) => n >= 2).length / cycles.length,
+    ciGreenAfterPatchRate:
+      patchedCi.length === 0
+        ? null
+        : patchedCi.filter((n) => n === 0).length / patchedCi.length,
+    meanPatchCycles: mean(cycles),
+  };
+}
+
 function summarize(
   steps: RequiredStep[],
   runs: RunAdherence[],
   variant: string | null,
   outcomes: OutcomeMetrics,
+  cost: CostMetrics,
+  guardrails: PatchGuardrails | undefined,
   command: AdherenceCommand = "dev-task",
 ): AdherenceSeries {
   const adherentRuns = runs.filter((r) => r.adherent).length;
@@ -554,6 +682,8 @@ function summarize(
     adherentRuns,
     adherenceRate: runs.length === 0 ? null : adherentRuns / runs.length,
     outcomes,
+    cost,
+    ...(guardrails ? { patchGuardrails: guardrails } : {}),
     steps: steps.map((step) => {
       let ran = 0;
       let skipped = 0;
@@ -621,6 +751,23 @@ export function buildReport(
   const allIds = [...cvKeys.keys()];
   const mixedTasks = [...cvKeys.values()].filter((s) => s.size > 1).length;
 
+  const isPatch = command === "patch";
+  const singleArmIds = (
+    keys: Map<string, Set<string | null>>,
+    seriesKey: string | null,
+  ) =>
+    [...keys]
+      .filter(([, set]) => set.size === 1 && set.has(seriesKey))
+      .map(([id]) => id);
+  const guardrailsFor = (ids: string[]) =>
+    isPatch ? computePatchGuardrails(ids, enrichments) : undefined;
+  // Cost counts a run only when its task stayed in one arm (silent ticks have
+  // no task and no cost worth attributing).
+  const costFor = (rs: RunAdherence[], keys: Map<string, Set<string | null>>) =>
+    computeCost(
+      rs.filter((r) => r.itemId !== null && keys.get(r.itemId)?.size === 1),
+    );
+
   return {
     ...(command === "dev-task" ? {} : { command }),
     disclaimer: ADHERENCE_DISCLAIMER,
@@ -629,6 +776,7 @@ export function buildReport(
       taskBearingRuns: taskBearing.length,
       silentTicks: runs.length - taskBearing.length,
       mixedTasks,
+      ...(isPatch ? { mixedPrs: mixedTasks } : {}),
     },
     runs,
     // Overall spans every arm, so it keeps every task, mixed or not.
@@ -637,11 +785,21 @@ export function buildReport(
       taskBearing,
       null,
       computeOutcomes(allIds, enrichments),
+      computeCost(taskBearing),
+      guardrailsFor(allIds),
       command,
     ),
     byVariant: [...groupBy(taskBearing, (r) => r.contextFingerprint)].map(
       ([variant, rs]) =>
-        summarize(steps, rs, variant, outcomesFor(fpKeys, variant), command),
+        summarize(
+          steps,
+          rs,
+          variant,
+          outcomesFor(fpKeys, variant),
+          costFor(rs, fpKeys),
+          guardrailsFor(singleArmIds(fpKeys, variant)),
+          command,
+        ),
     ),
     byCommandVariant: [...groupBy(taskBearing, (r) => r.commandVariant)]
       .sort(([a], [b]) => (a ?? "\uffff").localeCompare(b ?? "\uffff"))
@@ -651,6 +809,8 @@ export function buildReport(
           rs,
           commandVariant,
           outcomesFor(cvKeys, commandVariant),
+          costFor(rs, cvKeys),
+          guardrailsFor(singleArmIds(cvKeys, commandVariant)),
           command,
         );
         return { commandVariant, ...series };
@@ -766,6 +926,15 @@ export class DevTaskAdherenceService {
         contextFingerprint: true,
         commandVariant: true,
         skillUsage: { select: { kind: true, name: true, invocations: true } },
+        modelBreakdown: {
+          select: {
+            inputTokens: true,
+            outputTokens: true,
+            cacheReadTokens: true,
+            cacheCreationTokens: true,
+            costUsd: true,
+          },
+        },
       },
       orderBy: { startedAt: "asc" },
     });
