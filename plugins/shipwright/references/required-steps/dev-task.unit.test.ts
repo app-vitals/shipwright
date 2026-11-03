@@ -132,10 +132,16 @@ describe("dev-task.json — step sequence and content", () => {
     });
   });
 
-  it("steps 6 and 7 have 'marker needed' or 'unmeasured' in proofOfRunning", () => {
+  it("step 6 is proven by task.simplifyTotal and measurable (DTA-8.3)", () => {
+    const step6 = loadRequiredSteps()?.steps.find((s) => s.stepNumber === "6");
+    expect(step6?.proofOfRunning).toContain("simplifyTotal");
+    expect(step6?.measurable).toBe(true);
+  });
+
+  it("step 7 has 'marker needed' or 'unmeasured' in proofOfRunning", () => {
     requiredStepsContent = loadRequiredSteps();
     requiredStepsContent?.steps?.forEach((step) => {
-      if (step.stepNumber === "6" || step.stepNumber === "7") {
+      if (step.stepNumber === "7") {
         const proof = step.proofOfRunning.toLowerCase();
         expect(proof.includes("marker") || proof.includes("unmeasured")).toBe(
           true,
@@ -144,10 +150,10 @@ describe("dev-task.json — step sequence and content", () => {
     });
   });
 
-  it("steps 6 and 7 have measurable: false", () => {
+  it("step 7 has measurable: false", () => {
     requiredStepsContent = loadRequiredSteps();
     requiredStepsContent?.steps?.forEach((step) => {
-      if (step.stepNumber === "6" || step.stepNumber === "7") {
+      if (step.stepNumber === "7") {
         expect(step.measurable).toBe(false);
       }
     });
@@ -246,7 +252,7 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
     );
     const step9bHeading = devTaskMdContent.match(/## Step 9b: (.+)/);
     expect(step9bHeading).not.toBeNull();
-    expect(step9b?.title).toContain(step9bHeading?.[1].split(":")[0] || "");
+    expect(step9bHeading?.[1]).toContain(step9b?.title || "");
   });
 
   it("step 10 title matches '## Step 10: ...' heading", () => {

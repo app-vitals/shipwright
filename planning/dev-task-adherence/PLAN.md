@@ -247,3 +247,63 @@ Both additive (new fetcher methods, new optional enrichment param with existing 
 unchanged when absent). Safe to deploy standalone: yes for both.
 
 **HITL scan:** no tasks require human steps — pure code, no infra/secrets/`.claude/**` paths.
+
+## Addendum (2026-11-03): DTA-9.x — patch prompt A/B (DTA-3.1's patch outcome)
+
+DTA-2.3 shipped the trimmed dev-task (DTA-7.1 promotes it; DTA-8.x makes the report cheap and adds per-arm
+outcome metrics). Next prompt: **patch**. Chosen with Dan on evidence from the `doc` agent's runs since 2026-10-20.
+
+**Evidence**
+- `patch.md` is 2,549 lines / 140 KB, the largest command (review 106 KB, dev-task 74 KB, deploy 67 KB).
+- 8 of 172 task-bearing patch runs dispatched any subagent; 110 pushed a commit with no subagent dispatch
+  (inline `sed`/Python edits seen in spot checks). Patch is already cheap (~$0.59, ~11 turns per run), so this is
+  a step-adherence problem, not a cost problem.
+- dev-task lean cost more per run than default ($1.16 vs $0.90, ~43 vs ~22 turns) because it runs the steps the default
+  skips. Main-session behaviour was the same in both arms (~19 vs ~18 tool calls, ~2% errors); the extra turns are
+  subagents. The DTA-2.3 note omitted cost. Record cost beside adherence in every trial.
+- Lean reference load rates (98 runs): push-and-ci 27%, pre-ship-checks 24%, handoff 21%, implementation-dispatch 14%,
+  worktree-recovery 4%, task-lifecycle 2%. Runs that read pre-ship-checks recorded `/verification-checks` 24/24, runs that
+  did not 8/74 (confounded). Guards that must run should live in the spine, not behind a reference.
+- Patch volume is ~9 runs/day (vs ~19 for dev-task), so a trial needs a skewed split or a smaller n.
+
+**Design decisions**
+- A sed-style conflict-marker fix counts as skipping the fix subagent: no size exemption, same rule as dev-task.
+- The baseline rides the existing admin adherence report (fleet-wide `AgentCronRunSkillUsage` rows plus task-store/PR
+  joins). No transcript scorer; transcripts are only used for reference-load tallies (per-agent script, DTA-9.4).
+- First cut scores lane-agnostic steps (fix dispatch on non-no-op runs, push, patchCycles, findings ledger, pre-claim
+  release). Per-lane scoring and guard markers wait for baseline numbers.
+- Trial reuses the generic `SHIPWRIGHT_LOOP_PATCH_ALT_COMMAND` / `_ALT_SHARE` switch at 70% lean.
+- Stop condition, set before starting: patch adherence no lower than default; patch cycles and CI pass no worse; cost
+  per run recorded beside adherence.
+- Every prompt trial leaves a learnings file (`planning/dev-task-adherence/learnings-{prompt}.md`): baseline, drop
+  audit, reference load rates, cost vs adherence, surprises.
+
+| ID | Task | Depends on | Layer | Hours | Complexity | Model | HITL |
+|---|---|---|---|---|---|---|---|
+| DTA-9.1 | feat: add patch required-steps table with lane field | none | Shared | 2 | 2 | haiku | |
+| DTA-9.2 | feat: score patch runs in the adherence report | 9.1, 8.1, 8.3 | Background | 6 | 4 | sonnet | |
+| DTA-9.3 | feat: add cost per run and patch guardrail metrics to the report | 9.2, 8.2 | Background | 4 | 3 | sonnet | |
+| DTA-9.4 | chore: add prompt-trial tally script and dev-task learnings | none | Shared | 4 | 3 | sonnet | |
+| DTA-9.5 | Read the patch baseline and confirm trial scope | 9.2, 9.4 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-9.6 | docs: audit what patch-lean may drop from patch.md | none | Shared | 4 | 3 | sonnet | |
+| DTA-9.7 | feat: add patch-lean command | 9.1, 9.6 | Shared | 8 | 5 | opus | |
+| DTA-9.8 | Start the patch trial | 9.5, 9.7, 9.3 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-9.9 | Patch trial readout, learnings and next prompt | 9.8 | Shared | 3 | 2 | haiku | ⚠ HITL |
+
+```
+[START]
+  ├─ DTA-9.1
+  │     └─ DTA-9.2 (needs 9.1, 8.1, 8.3) ── DTA-9.3 (needs 9.2, 8.2)
+  ├─ DTA-9.4
+  ├─ DTA-9.6
+  │     └─ DTA-9.7 (needs 9.1, 9.6)
+  └─ DTA-9.5 (needs 9.2, 9.4)
+        └─ DTA-9.8 (needs 9.5, 9.7, 9.3)
+              └─ DTA-9.9 (needs 9.8)
+```
+
+**Breaking Change Safety:** all additive. Generalizing the report must leave dev-task output unchanged; `patch-lean`
+is only reachable through the ALT env vars. Safe to deploy standalone: yes for every task.
+
+**HITL scan:** 9.5, 9.8, 9.9 are human-run steps with no code diff (9.8 needs agent-admin access for env vars).
+No `.claude/**` paths.

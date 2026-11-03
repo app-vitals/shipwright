@@ -1,6 +1,6 @@
 # Task lifecycle mechanics (Steps 1–2)
 
-Moved from `commands/dev-task.md`. Auth header on all calls: `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN`.
+Mechanics for `commands/dev-task.md`. Auth header on all calls: `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN`.
 
 ## Fetch
 `curl -sf -H "$AUTH" "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}"`. Task ids are global, not per-repo.

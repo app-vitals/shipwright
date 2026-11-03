@@ -1,6 +1,6 @@
 # Worktree and prior-session recovery (Step 4)
 
-Moved from `commands/dev-task.md`. Paths: `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}`,
+Mechanics for `commands/dev-task.md`. Paths: `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}`,
 `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}` (branch slug: `/` → `-`).
 Derive `GH_REPO` from `git remote get-url origin` (CWD is the workspace, not the repo).
 

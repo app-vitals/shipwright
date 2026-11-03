@@ -1,6 +1,6 @@
 # Implementation dispatch (Step 5)
 
-Moved from `commands/dev-task.md`.
+Mechanics for `commands/dev-task.md`.
 
 ## Resolving the subagent type
 ```bash

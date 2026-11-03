@@ -47,6 +47,8 @@ export interface TaskLifecycle {
   deployedAt: string | null;
   /** CI fix attempts recorded on the task (DTA-8.2); null when unrecorded. */
   ciFixAttempts: number | null;
+  /** Simplify fix count recorded at Step 10 (proves Step 6 ran). */
+  simplifyTotal?: number | null;
 }
 
 /** The CI/outcome fields of a PR record (GET /prs?repo=&prNumber=). */
@@ -58,6 +60,8 @@ export interface PrOutcome {
   commitsCiFix: number | null;
   patchCycles: number;
   reviewCycles: number;
+  /** Head commit SHA recorded by claim()/patch() (DTA-9.2 push proof). */
+  commitSha?: string | null;
 }
 
 export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {

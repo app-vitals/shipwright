@@ -5,6 +5,9 @@ import {
   buildRunAdherence,
   DevTaskAdherenceService,
   ENRICHMENT_CONCURRENCY,
+  mergeRunRows,
+  PATCH_REQUIRED_STEPS,
+  parsePrRef,
   REQUIRED_STEPS,
   type RequiredStep,
   type RunEnrichment,
@@ -85,7 +88,7 @@ describe("dev-task adherence", () => {
     const r = buildRunAdherence(REQUIRED_STEPS, run("u"), []);
     const status = (n: string) =>
       r.steps.find((s) => s.stepNumber === n)?.status;
-    expect(status("6")).toBe("unmeasured");
+    expect(status("6")).toBe("unmeasured"); // no enrichment => no proof
     expect(status("7")).toBe("unmeasured");
     expect(status("9")).toBe("unmeasured");
   });
@@ -104,8 +107,11 @@ describe("dev-task adherence", () => {
       "fpA",
       "fpB",
     ]);
+    // Step 6 is now measured (task-store), but no enrichment here => no rate.
     const step6 = report.overall.steps.find((s) => s.stepNumber === "6");
-    expect(step6).toMatchObject({ measured: false, rate: null });
+    expect(step6).toMatchObject({ measured: true, rate: null });
+    const step7 = report.overall.steps.find((s) => s.stepNumber === "7");
+    expect(step7).toMatchObject({ measured: false, rate: null });
     expect(report.disclaimer).toBe(ADHERENCE_DISCLAIMER);
     expect(report.disclaimer).toContain("started, not that it was done well");
   });
@@ -248,6 +254,7 @@ describe("dev-task adherence", () => {
             ...baseTask,
             startedAt: "2026-10-01T00:00:00Z",
             pr: 3,
+            simplifyTotal: 0,
           },
           checks: [{ status: "ran_passed" }],
           pr: { commitsCiFix: null },
@@ -269,8 +276,87 @@ describe("dev-task adherence", () => {
         ).toBe(true);
       }
       expect(
-        report.overall.steps.find((s) => s.stepNumber === "6")?.measured,
+        report.overall.steps.find((s) => s.stepNumber === "7")?.measured,
       ).toBe(false);
+    });
+
+    it("measures Step 6 from task.simplifyTotal (DTA-8.3)", () => {
+      const st = (simplifyTotal: number | null | undefined) =>
+        buildRunAdherence(
+          STEPS,
+          run("s6"),
+          [],
+          enrich({ task: { ...enrich().task, simplifyTotal } }),
+        ).steps.find((s) => s.stepNumber === "6")?.status;
+      expect(st(0)).toBe("ran");
+      expect(st(3)).toBe("ran");
+      expect(st(null)).toBe("skipped");
+      expect(st(undefined)).toBe("skipped");
+      const report = buildReport(STEPS, [
+        buildRunAdherence(STEPS, run("m"), [], enrich()),
+      ]);
+      expect(
+        report.overall.steps.find((s) => s.stepNumber === "6")?.measured,
+      ).toBe(true);
+    });
+  });
+
+  describe("mergeRunRows / stalled-then-resumed runs (DTA-8.3)", () => {
+    const base = {
+      itemId: "SPL-2.8",
+      contextFingerprint: null,
+      commandVariant: null,
+    };
+
+    it("merges two rows for one itemId: union of dispatches, counted once", async () => {
+      const rows = [
+        {
+          ...base,
+          id: "stalled",
+          skillUsage: [agent("shipwright:researcher")],
+        },
+        {
+          ...base,
+          id: "resumed",
+          commandVariant: "alternate",
+          skillUsage: [
+            agent("general-purpose", 2),
+            agent("shipwright:researcher"),
+          ],
+        },
+        { ...base, id: "tick", itemId: null, skillUsage: [] },
+        { ...base, id: "tick2", itemId: null, skillUsage: [] },
+      ];
+      const merged = mergeRunRows(rows);
+      expect(merged.map((r) => r.id)).toEqual(["resumed", "tick", "tick2"]);
+      expect(merged[0].commandVariant).toBe("alternate");
+      expect(
+        merged[0].skillUsage.find((u) => u.name === "shipwright:researcher")
+          ?.invocations,
+      ).toBe(2);
+
+      const p = { agentCronRun: { findMany: async () => rows } } as never;
+      const report = await new DevTaskAdherenceService(p).report();
+      expect(report.counts).toEqual({
+        totalRuns: 3,
+        taskBearingRuns: 1,
+        silentTicks: 2,
+        // Arm membership uses the raw rows: stalled (null) + resumed
+        // (alternate) spans two commandVariant values, so it is mixed.
+        mixedTasks: 1,
+      });
+      const r = report.runs[0];
+      expect(r.steps.find((s) => s.stepNumber === "5")?.status).toBe("ran");
+      expect(r.missingSteps).not.toContain("5");
+    });
+
+    it("falls back to earlier fingerprint when the latest row lacks one", () => {
+      const merged = mergeRunRows([
+        { ...base, id: "a", contextFingerprint: "fp", skillUsage: [] },
+        { ...base, id: "b", skillUsage: [] },
+      ]);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].contextFingerprint).toBe("fp");
     });
   });
 
@@ -580,6 +666,228 @@ describe("per-arm outcomes (DTA-8.2)", () => {
       tasks: 1,
       meanPatchCycles: 1,
       ciFirstPassRate: 1,
+    });
+  });
+});
+
+describe("patch adherence (DTA-9.2)", () => {
+  const patchRun = (
+    steps: RequiredStep[],
+    r: Parameters<typeof buildRunAdherence>[1],
+    usage: SkillUsageRow[],
+    e?: RunEnrichment,
+  ) => buildRunAdherence(steps, r, usage, e, "patch");
+  const status = (
+    r: { steps: { stepNumber: string; status: string }[] },
+    n: string,
+  ) => r.steps.find((s) => s.stepNumber === n)?.status;
+  const pr = (id: string, cv: string | null = null) => ({
+    id,
+    itemId: `o/r#${id}`,
+    contextFingerprint: null,
+    commandVariant: cv,
+  });
+
+  it("scores fix dispatch lane-agnostically on any agent row", () => {
+    for (const name of ["general-purpose", "shipwright:code-reviewer", "x:y"]) {
+      const r = patchRun(PATCH_REQUIRED_STEPS, pr("1"), [agent(name)]);
+      expect(status(r, "5b")).toBe("ran");
+    }
+    const none = patchRun(PATCH_REQUIRED_STEPS, pr("2"), [
+      { kind: "skill", name: "shipwright:patch", invocations: 1 },
+    ]);
+    expect(status(none, "5b")).toBe("skipped");
+    expect(none.missingSteps).toContain("5b");
+  });
+
+  it("leaves lane-specific, claim and marker steps unmeasured", () => {
+    const r = patchRun(PATCH_REQUIRED_STEPS, pr("1"), [agent("a")]);
+    for (const n of [
+      "4b",
+      "6c",
+      "5c.5",
+      "6d.5",
+      "6.5",
+      "3d",
+      "4a.6",
+      "5a.6",
+      "6b.5",
+      "5a.6b",
+      "5a.7",
+      "6b.6",
+    ]) {
+      expect(status(r, n)).toBe("unmeasured");
+    }
+  });
+
+  it("proves the push (4c.5) from the PR record, else unmeasured", () => {
+    const base = {
+      task: { startedAt: null, pr: null, prCreatedAt: null },
+      checks: [],
+    };
+    const run = (e?: RunEnrichment) =>
+      patchRun(PATCH_REQUIRED_STEPS, pr("1"), [agent("a")], e);
+    expect(status(run(), "4c.5")).toBe("unmeasured");
+    expect(
+      status(
+        run({
+          ...base,
+          pr: { commitsCiFix: null, patchCycles: 2, commitSha: "abc" },
+        }),
+        "4c.5",
+      ),
+    ).toBe("ran");
+    expect(
+      status(
+        run({
+          ...base,
+          pr: { commitsCiFix: null, patchCycles: 0, commitSha: "abc" },
+        }),
+        "4c.5",
+      ),
+    ).toBe("skipped");
+    expect(status(run({ ...base, pr: null }), "4c.5")).toBe("unmeasured");
+  });
+
+  it("parses org/repo#N item ids", () => {
+    expect(parsePrRef("app-vitals/shipwright#12")).toEqual({
+      repo: "app-vitals/shipwright",
+      pr: 12,
+    });
+    expect(parsePrRef("DTA-9.2")).toBeNull();
+    expect(parsePrRef(null)).toBeNull();
+  });
+
+  it("reproduces ~5% fix dispatch over task-bearing runs, grouped by commandVariant", () => {
+    const runs = Array.from({ length: 20 }, (_, i) =>
+      patchRun(
+        PATCH_REQUIRED_STEPS,
+        pr(String(i), i % 2 ? "alternate" : "default"),
+        i === 3 ? [agent("general-purpose")] : [],
+      ),
+    );
+    runs.push(
+      patchRun(
+        PATCH_REQUIRED_STEPS,
+        {
+          id: "silent",
+          itemId: null,
+          contextFingerprint: null,
+          commandVariant: null,
+        },
+        [],
+      ),
+    );
+    const report = buildReport(PATCH_REQUIRED_STEPS, runs, undefined, "patch");
+    expect(report.counts).toEqual({
+      totalRuns: 21,
+      taskBearingRuns: 20,
+      silentTicks: 1,
+      mixedTasks: 0,
+    });
+    const rate = (s: {
+      steps: { stepNumber: string; rate: number | null }[];
+    }) => s.steps.find((x) => x.stepNumber === "5b")?.rate;
+    expect(rate(report.overall)).toBe(0.05);
+    expect(report.byCommandVariant.map((c) => c.commandVariant)).toEqual([
+      "alternate",
+      "default",
+    ]);
+    expect(rate(report.byCommandVariant[0])).toBe(0.1);
+    expect(rate(report.byCommandVariant[1])).toBe(0);
+    expect(
+      report.overall.steps.find((x) => x.stepNumber === "4b")?.measured,
+    ).toBe(false);
+    expect(
+      report.overall.steps.find((x) => x.stepNumber === "5b")?.measured,
+    ).toBe(true);
+  });
+
+  describe("service", () => {
+    const rows = [
+      {
+        id: "r1",
+        itemId: "o/r#1",
+        contextFingerprint: null,
+        commandVariant: "default",
+        skillUsage: [agent("general-purpose")],
+      },
+      {
+        id: "r1b",
+        itemId: "o/r#1",
+        contextFingerprint: null,
+        commandVariant: "default",
+        skillUsage: [],
+      },
+      {
+        id: "r2",
+        itemId: "DTA-1.1",
+        contextFingerprint: null,
+        commandVariant: "alternate",
+        skillUsage: [],
+      },
+      {
+        id: "r3",
+        itemId: null,
+        contextFingerprint: null,
+        commandVariant: null,
+        skillUsage: [],
+      },
+    ];
+    const make = () => {
+      const where: unknown[] = [];
+      const prisma = {
+        agentCronRun: {
+          findMany: async (a: { where: unknown }) => {
+            where.push(a.where);
+            return rows;
+          },
+        },
+      } as never;
+      return { prisma, where };
+    };
+
+    it("queries the shipwright-patch cron, merges resumes, and enriches via PR ref or task", async () => {
+      const { prisma, where } = make();
+      const prCalls: string[] = [];
+      const svc = new DevTaskAdherenceService(prisma, REQUIRED_STEPS, {
+        getTask: async () => ({
+          repo: "o/r",
+          startedAt: null,
+          pr: 9,
+          prCreatedAt: null,
+        }),
+        getPrByNumber: async (repo: string, n: number) => {
+          prCalls.push(`${repo}#${n}`);
+          return { commitsCiFix: null, patchCycles: 1, commitSha: "s" };
+        },
+      });
+      const report = await svc.report(undefined, undefined, "agent-1", "patch");
+      expect(where[0]).toMatchObject({
+        skipped: false,
+        phaseCron: { name: "shipwright-patch" },
+        agentId: "agent-1",
+      });
+      expect(report.command).toBe("patch");
+      expect(report.counts).toEqual({
+        totalRuns: 3,
+        taskBearingRuns: 2,
+        silentTicks: 1,
+        mixedTasks: 0,
+      });
+      expect(status(report.runs[0], "5b")).toBe("ran");
+      expect(status(report.runs[0], "4c.5")).toBe("ran");
+      expect(status(report.runs[1], "5b")).toBe("skipped");
+      expect(prCalls.sort()).toEqual(["o/r#1", "o/r#9"]);
+    });
+
+    it("defaults to dev-task with unchanged output (no command key)", async () => {
+      const { prisma, where } = make();
+      const report = await new DevTaskAdherenceService(prisma).report();
+      expect(where[0]).toMatchObject({
+        phaseCron: { name: "shipwright-dev-task" },
+      });
+      expect("command" in report).toBe(false);
     });
   });
 });
