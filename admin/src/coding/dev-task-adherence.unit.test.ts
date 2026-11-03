@@ -4,6 +4,7 @@ import {
   buildReport,
   buildRunAdherence,
   DevTaskAdherenceService,
+  ENRICHMENT_CONCURRENCY,
   REQUIRED_STEPS,
   type RequiredStep,
   type RunEnrichment,
@@ -337,6 +338,64 @@ describe("dev-task adherence", () => {
       expect(st(0, "9b")).toBe("ran");
       for (const i of [1, 2, 3]) expect(st(i, "8")).toBe("unmeasured");
       expect(calls).toEqual(["T-1", "T-2", "T-3"]);
+    });
+
+    const manyRuns = (ids: string[]) =>
+      ids.map((itemId, i) => ({
+        id: `r${i}`,
+        itemId,
+        contextFingerprint: null,
+        commandVariant: null,
+        skillUsage: [],
+      }));
+
+    it("bounds in-flight enrichment to ENRICHMENT_CONCURRENCY", async () => {
+      const ids = Array.from({ length: 30 }, (_, i) => `T-${i}`);
+      const p = {
+        agentCronRun: { findMany: async () => manyRuns(ids) },
+      } as never;
+      let inFlight = 0;
+      let max = 0;
+      const svc = new DevTaskAdherenceService(p, REQUIRED_STEPS, {
+        getTask: async () => {
+          inFlight++;
+          max = Math.max(max, inFlight);
+          await new Promise((r) => setTimeout(r, 2));
+          inFlight--;
+          return task;
+        },
+      });
+      const report = await svc.report();
+      expect(report.runs).toHaveLength(30);
+      expect(max).toBeGreaterThan(1);
+      expect(max).toBeLessThanOrEqual(ENRICHMENT_CONCURRENCY);
+    });
+
+    it("looks up each shared itemId once per request", async () => {
+      const p = {
+        agentCronRun: {
+          findMany: async () => manyRuns(["T-1", "T-1", "T-1", "T-2"]),
+        },
+      } as never;
+      const calls = { task: 0, checks: 0, pr: 0 };
+      const svc = new DevTaskAdherenceService(p, REQUIRED_STEPS, {
+        getTask: async () => {
+          calls.task++;
+          return task;
+        },
+        getVerificationChecks: async () => {
+          calls.checks++;
+          return [{ status: "ran_passed" }];
+        },
+        getPrByNumber: async () => {
+          calls.pr++;
+          return { commitsCiFix: 1 };
+        },
+      });
+      await svc.report();
+      expect(calls).toEqual({ task: 2, checks: 2, pr: 2 });
+      await svc.report();
+      expect(calls).toEqual({ task: 4, checks: 4, pr: 4 });
     });
 
     it("behaves as before with no fetchers", async () => {

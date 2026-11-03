@@ -144,6 +144,13 @@ export const ADHERENCE_DISCLAIMER =
 
 export const REQUIRED_STEPS: RequiredStep[] = requiredStepsFile.steps;
 
+/**
+ * Max runs enriched concurrently in report(). Each enrichment makes up to 3
+ * task-store calls and the task store sits on a small pg pool, so an unbounded
+ * fan-out over a large window queues hundreds of requests.
+ */
+export const ENRICHMENT_CONCURRENCY = 4;
+
 const DOCS_REFRESHER = "shipwright:docs-refresher";
 const GENERAL_PURPOSE = "general-purpose";
 // Auxiliary subagents dispatched inside or around Step 5 that don't count as
@@ -370,11 +377,24 @@ export class DevTaskAdherenceService {
    * Task-store enrichment for one task-bearing run. Any failure (or a 404
    * task) degrades to undefined so the report never fails on the join.
    */
-  private async enrich(
+  private enrich(
     itemId: string | null,
+    cache: Map<string, Promise<RunEnrichment | undefined>>,
+  ): Promise<RunEnrichment | undefined> {
+    if (!itemId) return Promise.resolve(undefined);
+    let pending = cache.get(itemId);
+    if (!pending) {
+      pending = this.fetchEnrichment(itemId);
+      cache.set(itemId, pending);
+    }
+    return pending;
+  }
+
+  private async fetchEnrichment(
+    itemId: string,
   ): Promise<RunEnrichment | undefined> {
     const { getTask, getVerificationChecks, getPrByNumber } = this.fetchers;
-    if (!itemId || !getTask) return undefined;
+    if (!getTask) return undefined;
     try {
       const task = await getTask(itemId);
       if (!task) return undefined;
@@ -422,14 +442,26 @@ export class DevTaskAdherenceService {
       orderBy: { startedAt: "asc" },
     });
 
-    const runs = await Promise.all(
-      rows.map(async (row) =>
-        buildRunAdherence(
+    // Per-request memo: runs sharing an itemId share one set of lookups.
+    const cache = new Map<string, Promise<RunEnrichment | undefined>>();
+    const runs: RunAdherence[] = new Array(rows.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < rows.length) {
+        const i = next++;
+        const row = rows[i];
+        runs[i] = buildRunAdherence(
           this.steps,
           row,
           row.skillUsage,
-          await this.enrich(row.itemId),
-        ),
+          await this.enrich(row.itemId, cache),
+        );
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(ENRICHMENT_CONCURRENCY, rows.length) },
+        worker,
       ),
     );
     return buildReport(this.steps, runs);
