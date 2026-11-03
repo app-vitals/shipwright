@@ -55,7 +55,11 @@ import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
-import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
+import {
+  ADHERENCE_COMMANDS,
+  type AdherenceCommand,
+  type DevTaskAdherenceService,
+} from "./dev-task-adherence.ts";
 import {
   AgentPhaseMethodologySchema,
   AgentWorkQueueSnapshotSchema,
@@ -203,14 +207,26 @@ const getWorkQueueSnapshotRoute = createRoute({
   },
 });
 
+/** `from`/`to` plus the DTA-9.2 `command` selector (default dev-task). */
+const adherenceQuerySchema = cronRunStatsQuerySchema.extend({
+  command: z
+    .enum(ADHERENCE_COMMANDS as [string, ...string[]])
+    .optional()
+    .openapi({
+      example: "patch",
+      description:
+        "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table.",
+    }),
+});
+
 const devTaskAdherenceRoute = createRoute({
   method: "get",
   path: "/agents/all/cron-runs/dev-task-adherence",
   summary: "Get dev-task adherence report",
   description:
-    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
+    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt. Optional `command` (`dev-task` default, or `patch`) selects which phase to score: patch runs are scored against the patch required-steps table (lane-agnostic first cut; fix dispatch and PR-record push proof measured, other steps unmeasured) and grouped by commandVariant, with `command` echoed in the response.",
   request: {
-    query: cronRunStatsQuerySchema,
+    query: adherenceQuerySchema,
   },
   responses: {
     200: {
@@ -230,10 +246,10 @@ const selfDevTaskAdherenceRoute = createRoute({
   path: "/agents/{id}/dev-task-adherence",
   summary: "Get this agent's dev-task adherence report",
   description:
-    "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.",
+    "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to`/`command` params as GET /agents/all/cron-runs/dev-task-adherence.",
   request: {
     params: AgentIdParamSchema,
-    query: cronRunStatsQuerySchema,
+    query: adherenceQuerySchema,
   },
   responses: {
     200: {
@@ -398,8 +414,13 @@ export function createCodingAdminApiApp(
     if (!devTaskAdherenceService) {
       return c.json({ error: "Adherence reporting not configured" }, 404);
     }
-    const { from, to } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(from, to);
+    const { from, to, command } = c.req.valid("query");
+    const report = await devTaskAdherenceService.report(
+      from,
+      to,
+      undefined,
+      command as AdherenceCommand | undefined,
+    );
     return c.json(report, 200);
   });
 
@@ -412,8 +433,13 @@ export function createCodingAdminApiApp(
       return c.json({ error: "Adherence reporting not configured" }, 404);
     }
     const { id: agentId } = c.req.valid("param");
-    const { from, to } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(from, to, agentId);
+    const { from, to, command } = c.req.valid("query");
+    const report = await devTaskAdherenceService.report(
+      from,
+      to,
+      agentId,
+      command as AdherenceCommand | undefined,
+    );
     return c.json(report, 200);
   });
 

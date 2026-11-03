@@ -127,13 +127,15 @@ export interface paths {
         };
         /**
          * Get dev-task adherence report
-         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.
+         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt. Optional `command` (`dev-task` default, or `patch`) selects which phase to score: patch runs are scored against the patch required-steps table (lane-agnostic first cut; fix dispatch and PR-record push proof measured, other steps unmeasured) and grouped by commandVariant, with `command` echoed in the response.
          */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
+                    /** @description Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table. */
+                    command?: "dev-task" | "patch";
                 };
                 header?: never;
                 path?: never;
@@ -198,13 +200,15 @@ export interface paths {
         };
         /**
          * Get this agent's dev-task adherence report
-         * @description Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.
+         * @description Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to`/`command` params as GET /agents/all/cron-runs/dev-task-adherence.
          */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
+                    /** @description Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table. */
+                    command?: "dev-task" | "patch";
                 };
                 header?: never;
                 path: {
