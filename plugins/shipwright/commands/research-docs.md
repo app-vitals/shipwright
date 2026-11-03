@@ -107,7 +107,7 @@ Use the `Edit` tool for section-level changes; fall back to `Write` only for the
 
 Run immediately after Step A5, against each doc Step A5 just touched (stale candidates that were rewritten — not the full candidate set, and never a doc Step A5 left untouched).
 
-Apply the same three checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
+Apply the same four checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty, 6.5d Measured Values — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
 
 For each hit, file **one** task-store task via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
 
@@ -124,6 +124,7 @@ Task titles, one shape per check:
 - 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
 - 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`
 - 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
+- 6.5d hit → `title: "Review {doc} for observed measured value"`
 
 Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
 
@@ -483,6 +484,7 @@ This sub-flow always runs when `testing.md` is missing — there is no skip path
    - CI shape and repo-config requirements
 4. Keep the digest concise (~150 lines max). Use the testing.md template from Step 4
 5. Add a `## References` section that links back to `docs/test-readiness/test-system.md` and `docs/test-readiness/test-readiness-plan.md` for full detail
+6. **Measured-values guard.** Observed figures in `test-readiness-plan.md` — current coverage %, test counts, timings, CI baselines — are linked to, never copied into `testing.md` (see the "Measured values" rule in `references/doc-refresh-recipe.md`). Policy still gets digested: speed budgets and coverage targets (e.g. a `fail_under` threshold, named with the config file that owns it) belong in the digest; the current figure does not — point to the plan or the latest CI run instead.
 
 **Path B — Tests exist but no test-readiness blueprint.** No `docs/test-readiness/test-system.md`, but Step 1 detected runner configs and/or test files. Infer from observed state:
 
@@ -576,9 +578,19 @@ Scan the doc for a convention described only as a principle — "services valida
   schema import) and name it, or drop the claim.
 ```
 
+### 6.5d: Measured Values
+
+Apply the "Measured values" rule from `references/doc-refresh-recipe.md`. Scan the doc for an **observed** value — current coverage %, test counts, timings, CI baselines, or a run id / PR number cited as a baseline — that was read off a run rather than configured. Configured policy values named with their owning file (e.g. `fail_under = 51` in `pyproject.toml`) are fine; `docs/test-readiness/**`, `planning/**` and explicitly dated snapshots are exempt. **The flag must cite `file:line` of the observed value** and propose the pointer replacement (the config file, or "latest CI run"), like 6.5b.
+
+```
+⚠ TESTING.md:14 — states "CI baseline 51.82% (CI run 12345 on PR #52)"
+  Observed value goes stale on the next commit — proposed pointer replacement:
+  "enforced against `fail_under = 51` in `pyproject.toml`; current figure is in the latest CI run"
+```
+
 ### Presenting flags
 
-These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5c together, grouped by doc:
+These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5d together, grouped by doc:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
