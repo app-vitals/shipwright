@@ -291,7 +291,7 @@ describe("platform-bump-gate.sh", () => {
       "pr-merge": [{ out: "merged\n" }],
     });
     expect(r.code).toBe(0);
-    expect(r.calls).toContain(`pr merge ${PR_URL} --squash --admin`);
+    expect(r.calls).toContain(`pr merge ${PR_URL} --squash --admin --delete-branch`);
     expect(r.count("run rerun")).toBe(0);
     expect(r.out).toContain(`Merged ${PR_URL}.`);
   });

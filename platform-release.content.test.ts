@@ -455,3 +455,19 @@ describe("platform-docs-guard.yml", () => {
     expect(run).not.toContain(gha("").slice(0, 3));
   });
 });
+
+describe("PBF-1.1 guard open-PR semantics", () => {
+  const retry = readFileSync(
+    join(ROOT, ".github/workflows/platform-release-retry.yml"),
+    "utf8",
+  );
+  const gateSh = readFileSync(join(ROOT, "scripts/platform-bump-gate.sh"), "utf8");
+  it("retry workflow passes the open PR url to the guard", () => {
+    expect(retry).toContain(
+      'platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"',
+    );
+  });
+  it("gate squash-merge deletes the branch", () => {
+    expect(gateSh).toContain('gh pr merge "$PR_URL" --squash --admin --delete-branch');
+  });
+});

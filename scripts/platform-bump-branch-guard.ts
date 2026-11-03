@@ -9,9 +9,16 @@
  * force-push, this lists the commits on the branch (not in main) that the bump
  * bot did not author; any means the run must not push.
  *
+ * PBF-1.1: only an open PR's branch is protected. A squash-merge never lands
+ * the branch's commits in main by SHA, so a leftover branch from a merged bump
+ * PR would otherwise block every later bump. With no open PR the branch is
+ * stale and the force-push proceeds.
+ *
  * Usage (CI): bun scripts/platform-bump-branch-guard.ts <base-ref> <branch-ref> [pr-url]
- * Prints `foreign=<n>` and one `commit=<sha> <author> <subject>` line per
- * foreign commit. Exits 1 (with an ::error:: annotation) when n > 0. A missing
+ * pr-url is the open PR on the branch; empty or missing means no open PR, so
+ * nothing is protected (prints `foreign=0`, exits 0). With a pr-url, prints
+ * `foreign=<n>` and one `commit=<sha> <author> <subject>` line per foreign
+ * commit, and exits 1 (with an ::error:: annotation) when n > 0. A missing
  * branch ref is fine: nothing to protect.
  */
 
@@ -32,6 +39,14 @@ export interface BranchCommit {
 /** Commits not authored by the bump bot. */
 export function nonBotCommits(commits: BranchCommit[]): BranchCommit[] {
   return commits.filter((c) => !BOT_EMAILS.has(c.authorEmail.toLowerCase()));
+}
+
+/** Non-bot commits to protect: only when an open PR exists on the branch. */
+export function foreignToProtect(
+  commits: BranchCommit[],
+  hasOpenPr: boolean,
+): BranchCommit[] {
+  return hasOpenPr ? nonBotCommits(commits) : [];
 }
 
 /** Commits on `branchRef` that are not in `baseRef`; empty when `branchRef` does not exist. */
@@ -69,7 +84,11 @@ if (import.meta.main) {
     console.error("usage: platform-bump-branch-guard.ts <base-ref> <branch-ref> [pr-url]");
     process.exit(2);
   }
-  const foreign = nonBotCommits(listBranchCommits(baseRef, branchRef));
+  const hasOpenPr = !!prUrl?.trim();
+  const foreign = foreignToProtect(
+    hasOpenPr ? listBranchCommits(baseRef, branchRef) : [],
+    hasOpenPr,
+  );
   console.log(`foreign=${foreign.length}`);
   for (const c of foreign) {
     console.log(`commit=${c.sha.slice(0, 10)} ${c.authorEmail} ${c.subject}`);
