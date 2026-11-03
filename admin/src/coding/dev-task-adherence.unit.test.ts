@@ -3,8 +3,10 @@ import {
   ADHERENCE_DISCLAIMER,
   buildReport,
   buildRunAdherence,
+  type CronRunRow,
   DevTaskAdherenceService,
   ENRICHMENT_CONCURRENCY,
+  type ModelBreakdownRow,
   mergeRunRows,
   PATCH_REQUIRED_STEPS,
   parsePrRef,
@@ -784,6 +786,7 @@ describe("patch adherence (DTA-9.2)", () => {
       taskBearingRuns: 20,
       silentTicks: 1,
       mixedTasks: 0,
+      mixedPrs: 0,
     });
     const rate = (s: {
       steps: { stepNumber: string; rate: number | null }[];
@@ -874,6 +877,7 @@ describe("patch adherence (DTA-9.2)", () => {
         taskBearingRuns: 2,
         silentTicks: 1,
         mixedTasks: 0,
+        mixedPrs: 0,
       });
       expect(status(report.runs[0], "5b")).toBe("ran");
       expect(status(report.runs[0], "4c.5")).toBe("ran");
@@ -888,6 +892,172 @@ describe("patch adherence (DTA-9.2)", () => {
         phaseCron: { name: "shipwright-dev-task" },
       });
       expect("command" in report).toBe(false);
+    });
+  });
+});
+
+describe("cost and patch guardrail metrics (DTA-9.3)", () => {
+  const mb = (costUsd: number, tokens = 100): ModelBreakdownRow => ({
+    inputTokens: tokens,
+    outputTokens: tokens / 2,
+    cacheReadTokens: tokens * 10,
+    cacheCreationTokens: tokens / 4,
+    costUsd,
+  });
+  const rawRun = (
+    id: string,
+    arm: string | null,
+    modelBreakdown: ModelBreakdownRow[] | undefined,
+    itemId: string | null = id,
+  ): CronRunRow => ({
+    id: `${id}-run`,
+    itemId,
+    contextFingerprint: null,
+    commandVariant: arm,
+    skillUsage: [],
+    modelBreakdown,
+  });
+  const build = (rows: CronRunRow[], command?: "patch") => {
+    const steps = command ? PATCH_REQUIRED_STEPS : REQUIRED_STEPS;
+    return rows.map((r) => buildRunAdherence(steps, r, [], undefined, command));
+  };
+  const cost = (rep: ReturnType<typeof buildReport>, v: string | null) =>
+    rep.byCommandVariant.find((s) => s.commandVariant === v)?.cost;
+
+  it("reproduces dev-task cost 0.90 vs 1.16 per run, summing models", () => {
+    const runs = build([
+      rawRun("a", "default", [mb(0.5), mb(0.3)]),
+      rawRun("b", "default", [mb(1.0)]),
+      rawRun("c", "alternate", [mb(1.1)]),
+      rawRun("d", "alternate", [mb(0.6), mb(0.62)]),
+    ]);
+    const rep = buildReport(REQUIRED_STEPS, runs);
+    expect(cost(rep, "default")?.meanCostUsd).toBeCloseTo(0.9, 2);
+    expect(cost(rep, "alternate")?.meanCostUsd).toBeCloseTo(1.16, 2);
+    expect(cost(rep, "default")).toMatchObject({
+      runsWithCost: 2,
+      inputTokens: 300,
+      outputTokens: 150,
+      cacheReadTokens: 3000,
+      cacheCreationTokens: 75,
+    });
+    expect(rep.overall.cost.runsWithCost).toBe(4);
+  });
+
+  it("skips runs without a breakdown and returns null mean when none", () => {
+    const runs = build([
+      rawRun("a", "default", [mb(2)]),
+      rawRun("b", "default", undefined),
+      rawRun("c", "alternate", []),
+    ]);
+    const rep = buildReport(REQUIRED_STEPS, runs);
+    expect(cost(rep, "default")?.meanCostUsd).toBe(2);
+    expect(cost(rep, "alternate")?.meanCostUsd).toBeNull();
+    expect(cost(rep, "alternate")?.runsWithCost).toBe(0);
+  });
+
+  it("sums a stalled+resumed run's breakdown rows via mergeRunRows", () => {
+    const merged = mergeRunRows([
+      rawRun("a", "default", [mb(0.4)]),
+      rawRun("a2", "default", [mb(0.5)], "a"),
+    ]);
+    expect(merged).toHaveLength(1);
+    const [r] = build(merged);
+    expect(r.usage?.costUsd).toBeCloseTo(0.9, 5);
+  });
+
+  it("drops mixed-arm tasks from arm cost but keeps them in overall", () => {
+    const rows = [
+      rawRun("a", "default", [mb(1)]),
+      rawRun("m1", "default", [mb(5)], "m"),
+      rawRun("m2", "alternate", [mb(7)], "m"),
+    ];
+    const rep = buildReport(
+      REQUIRED_STEPS,
+      build(rows),
+      undefined,
+      "dev-task",
+      rows,
+    );
+    expect(cost(rep, "default")?.totalCostUsd).toBe(1);
+    expect(cost(rep, "alternate")?.runsWithCost).toBe(0);
+    expect(rep.overall.cost.totalCostUsd).toBe(13);
+  });
+
+  describe("patch guardrails", () => {
+    const prEnr = (
+      patchCycles: number,
+      consecutiveCiFailureCount: number | null | undefined,
+    ): RunEnrichment => ({
+      task: { startedAt: null, pr: 1, prCreatedAt: null },
+      checks: [],
+      pr: {
+        commitsCiFix: null,
+        patchCycles,
+        reviewCycles: 0,
+        consecutiveCiFailureCount,
+      },
+    });
+    const gr = (rep: ReturnType<typeof buildReport>, v: string | null) =>
+      rep.byCommandVariant.find((s) => s.commandVariant === v)?.patchGuardrails;
+
+    it("computes repeat-patch and CI-green rates per arm, mixed PRs apart", () => {
+      const rows = [
+        rawRun("p1", "default", [mb(0.5)], "o/r#1"),
+        rawRun("p2", "default", [mb(0.7)], "o/r#2"),
+        rawRun("p3", "default", [mb(0.6)], "o/r#3"),
+        rawRun("p4", "alternate", [mb(0.4)], "o/r#4"),
+        rawRun("p5a", "default", [mb(0.4)], "o/r#5"),
+        rawRun("p5b", "alternate", [mb(0.4)], "o/r#5"),
+      ];
+      const e = new Map<string, RunEnrichment | undefined>([
+        ["o/r#1", prEnr(1, 0)],
+        ["o/r#2", prEnr(3, 2)],
+        ["o/r#3", prEnr(0, 0)],
+        ["o/r#4", prEnr(2, 0)],
+        ["o/r#5", prEnr(9, 9)],
+      ]);
+      const rep = buildReport(
+        PATCH_REQUIRED_STEPS,
+        build(rows, "patch"),
+        e,
+        "patch",
+        rows,
+      );
+      expect(gr(rep, "default")).toEqual({
+        prs: 3,
+        repeatPatchRate: 1 / 3,
+        // patched PRs only: #1 green, #2 not (#3 never patched)
+        ciGreenAfterPatchRate: 0.5,
+        meanPatchCycles: 4 / 3,
+      });
+      expect(gr(rep, "alternate")).toEqual({
+        prs: 1,
+        repeatPatchRate: 1,
+        ciGreenAfterPatchRate: 1,
+        meanPatchCycles: 2,
+      });
+      expect(rep.counts.mixedPrs).toBe(1);
+      expect(cost(rep, "default")?.meanCostUsd).toBeCloseTo(0.6, 5);
+    });
+
+    it("is absent for dev-task and null-valued without PR records", () => {
+      const rows = [rawRun("a", "default", [mb(1)])];
+      const dev = buildReport(REQUIRED_STEPS, build(rows));
+      expect(dev.overall.patchGuardrails).toBeUndefined();
+      expect(dev.counts.mixedPrs).toBeUndefined();
+      const patch = buildReport(
+        PATCH_REQUIRED_STEPS,
+        build(rows, "patch"),
+        undefined,
+        "patch",
+      );
+      expect(patch.overall.patchGuardrails).toEqual({
+        prs: 0,
+        repeatPatchRate: null,
+        ciGreenAfterPatchRate: null,
+        meanPatchCycles: null,
+      });
     });
   });
 });

@@ -62,6 +62,8 @@ export interface PrOutcome {
   reviewCycles: number;
   /** Head commit SHA recorded by claim()/patch() (DTA-9.2 push proof). */
   commitSha?: string | null;
+  /** CI-failure streak (DTA-9.3 patch guardrail); 0 = none reported. */
+  consecutiveCiFailureCount?: number | null;
 }
 
 export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {

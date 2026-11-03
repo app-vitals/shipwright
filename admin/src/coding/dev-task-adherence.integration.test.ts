@@ -244,6 +244,7 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       taskBearingRuns: 21,
       silentTicks: 1,
       mixedTasks: 0,
+      mixedPrs: 0,
     });
     const five = (s: {
       steps: { stepNumber: string; ran: number; skipped: number }[];
