@@ -58,6 +58,8 @@ export interface PrOutcome {
   commitsCiFix: number | null;
   patchCycles: number;
   reviewCycles: number;
+  /** Head commit SHA recorded by claim()/patch() (DTA-9.2 push proof). */
+  commitSha?: string | null;
 }
 
 export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {

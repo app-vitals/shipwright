@@ -359,4 +359,48 @@ describeOrSkip("coding admin API (integration)", () => {
     expect(fleet.status).toBe(200);
     expect((await fleet.json()).runs).toHaveLength(2);
   });
+  it("GET /agents/all/cron-runs/dev-task-adherence?command=patch selects the patch phase (DTA-9.2)", async () => {
+    const job = await prisma.agentCronJob.create({
+      data: {
+        agentId,
+        schedule: "0 9 * * *",
+        prompt: "p",
+        silent: true,
+        name: "shipwright-patch",
+      },
+    });
+    await prisma.agentCronRun.create({
+      data: {
+        cronId: job.id,
+        agentId,
+        startedAt: new Date("2026-01-10T09:00:00Z"),
+        skipped: false,
+        phaseId: job.id,
+        itemId: "o/r#5",
+        commandVariant: "default",
+      },
+    });
+    const adherenceApp = createCodingAdminApiApp({
+      ...makeDeps(prisma),
+      devTaskAdherenceService: new DevTaskAdherenceService(prisma),
+    });
+    const patch = await adherenceApp.request(
+      "/agents/all/cron-runs/dev-task-adherence?command=patch",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(patch.status).toBe(200);
+    const body = await patch.json();
+    expect(body.command).toBe("patch");
+    expect(body.byCommandVariant[0].commandVariant).toBe("default");
+    const dev = await adherenceApp.request(
+      "/agents/all/cron-runs/dev-task-adherence",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect((await dev.json()).runs).toHaveLength(0);
+    const bad = await adherenceApp.request(
+      "/agents/all/cron-runs/dev-task-adherence?command=nope",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(bad.status).toBe(400);
+  });
 });

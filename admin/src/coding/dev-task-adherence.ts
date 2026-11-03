@@ -34,6 +34,20 @@
  * Step 6 caveat: simplifyTotal is task-level, so a null means "never recorded
  * by Step 10" (including runs that stalled before Step 10) and reads as skipped.
  *
+ * Patch scoring (DTA-9.2): `command: "patch"` scores the phase cron
+ * shipwright-patch against patch.json. First cut is lane-agnostic: the run's
+ * lane (conflict | review | ci) isn't recorded, so the three lane-specific
+ * "Dispatch ... Subagent" steps (4b, 5b, 6c) cannot be told apart. 5b is the
+ * representative fix-dispatch proof (any agent: row — the configured
+ * subagent_type varies), scored across all task-bearing runs; 4b/6c stay
+ * unmeasured. The push proof is 4c.5 (lane "any"): the PR record shows
+ * patchCycles > 0 and a commitSha (cumulative per PR, so it is a PR-level
+ * proof, and a no-op run on an already-patched PR also reads as ran). The
+ * claim/release steps (3d, 4a.6, 5a.6, 6b.5), the findings-ledger
+ * settlement (5c.5) and the marker-only escalation checks have no durable
+ * per-run record and stay unmeasured. A patch run's itemId is "org/repo#N"
+ * (or a task id, resolved via getTask) and keys the PR lookup.
+ *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
  * Steps with neither a dispatch nor task-store proof (7, 10) are reported
  * as "unmeasured" and excluded from adherence rates.
@@ -43,6 +57,9 @@ import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.
 import requiredStepsFile from "../../../plugins/shipwright/references/required-steps/dev-task.json" with {
   type: "json",
 };
+import patchStepsFile from "../../../plugins/shipwright/references/required-steps/patch.json" with {
+  type: "json",
+};
 
 export interface RequiredStep {
   stepNumber: string;
@@ -50,6 +67,8 @@ export interface RequiredStep {
   mandatory: boolean;
   proofOfRunning: string;
   measurable: boolean;
+  /** Patch only: any | review | conflict | ci. */
+  lane?: string;
 }
 
 export interface SkillUsageRow {
@@ -70,18 +89,27 @@ export interface RunEnrichment {
   };
   checks: { status: string }[];
   /** PR record outcome; null when the task has no PR / it wasn't found. */
-  pr: { commitsCiFix: number | null } | null;
+  pr: {
+    commitsCiFix: number | null;
+    /** Patch scoring (DTA-9.2). */
+    patchCycles?: number;
+    commitSha?: string | null;
+  } | null;
 }
+
+/** Commands the report can score; dev-task is the default. */
+export type AdherenceCommand = "dev-task" | "patch";
+export const ADHERENCE_COMMANDS: readonly AdherenceCommand[] = [
+  "dev-task",
+  "patch",
+];
 
 /** Subset of the task-store fetchers the report uses; all optional. */
 export interface AdherenceFetchers {
   getTask?: (
     itemId: string,
   ) => Promise<(RunEnrichment["task"] & { repo?: string | null }) | null>;
-  getPrByNumber?: (
-    repo: string,
-    pr: number,
-  ) => Promise<{ commitsCiFix: number | null } | null>;
+  getPrByNumber?: (repo: string, pr: number) => Promise<RunEnrichment["pr"]>;
   getVerificationChecks?: (itemId: string) => Promise<{ status: string }[]>;
 }
 
@@ -147,12 +175,36 @@ interface DevTaskAdherenceReport {
   overall: AdherenceSeries;
   byVariant: AdherenceSeries[];
   byCommandVariant: CommandVariantSeries[];
+  /** Set only for non-default commands (patch); absent for dev-task. */
+  command?: AdherenceCommand;
 }
 
 export const ADHERENCE_DISCLAIMER =
   "A dispatch proves a step started, not that it was done well. Steps proven by neither a dispatch nor task-store data are unmeasured and excluded from rates.";
 
 export const REQUIRED_STEPS: RequiredStep[] = requiredStepsFile.steps;
+export const PATCH_REQUIRED_STEPS: RequiredStep[] = patchStepsFile.steps;
+
+/** Phase cron name per command (see agent/src/coding/loop-cron-classifier.ts). */
+const PHASE_CRON_NAME: Record<AdherenceCommand, string> = {
+  "dev-task": "shipwright-dev-task",
+  patch: "shipwright-patch",
+};
+
+const PATCH_FIX_DISPATCH_STEP = "5b";
+const PATCH_PUSH_STEP = "4c.5";
+const PATCH_MEASURED_STEPS = new Set([
+  PATCH_FIX_DISPATCH_STEP,
+  PATCH_PUSH_STEP,
+]);
+
+/** Parses a patch run's "org/repo#N" itemId; null for anything else. */
+export function parsePrRef(
+  itemId: string | null | undefined,
+): { repo: string; pr: number } | null {
+  const m = itemId?.match(/^([^\s#]+\/[^\s#]+)#(\d+)$/);
+  return m ? { repo: m[1], pr: Number(m[2]) } : null;
+}
 
 /**
  * Max runs enriched concurrently in report(). Each enrichment makes up to 3
@@ -178,7 +230,13 @@ function isDispatchStep(step: RequiredStep): boolean {
 // Steps proven by task-store data instead of an agent dispatch.
 const ENRICHMENT_STEPS = new Set(["2", "6", "8", "9", "9b"]);
 
-function isMeasuredStep(step: RequiredStep): boolean {
+function isMeasuredStep(
+  step: RequiredStep,
+  command: AdherenceCommand = "dev-task",
+): boolean {
+  if (command === "patch") {
+    return step.measurable && PATCH_MEASURED_STEPS.has(step.stepNumber);
+  }
   return (
     isDispatchStep(step) ||
     (step.measurable && ENRICHMENT_STEPS.has(step.stepNumber))
@@ -271,6 +329,35 @@ function evaluateRun(
   });
 }
 
+/**
+ * Patch evaluation (DTA-9.2, lane-agnostic first cut): 5b = any agent
+ * dispatch; 4c.5 = PR record shows a pushed patch (patchCycles > 0 with a
+ * commitSha), unmeasured without PR enrichment. Everything else unmeasured.
+ */
+function evaluatePatchRun(
+  steps: RequiredStep[],
+  usage: SkillUsageRow[],
+  enrichment?: RunEnrichment,
+): RunStepResult[] {
+  const dispatched = usage.some((r) => r.kind === "agent" && r.invocations > 0);
+  return steps.map((step) => {
+    let ran: boolean | null = null;
+    if (step.measurable && step.stepNumber === PATCH_FIX_DISPATCH_STEP) {
+      ran = dispatched;
+    } else if (
+      step.measurable &&
+      step.stepNumber === PATCH_PUSH_STEP &&
+      enrichment?.pr
+    ) {
+      ran = (enrichment.pr.patchCycles ?? 0) > 0 && !!enrichment.pr.commitSha;
+    }
+    return {
+      stepNumber: step.stepNumber,
+      status: ran === null ? "unmeasured" : ran ? "ran" : "skipped",
+    };
+  });
+}
+
 export interface CronRunRow {
   id: string;
   itemId: string | null;
@@ -328,8 +415,12 @@ export function buildRunAdherence(
   },
   usage: SkillUsageRow[],
   enrichment?: RunEnrichment,
+  command: AdherenceCommand = "dev-task",
 ): RunAdherence {
-  const results = evaluateRun(steps, usage, enrichment);
+  const results =
+    command === "patch"
+      ? evaluatePatchRun(steps, usage, enrichment)
+      : evaluateRun(steps, usage, enrichment);
   const missingSteps = results
     .filter(
       (r) =>
@@ -353,6 +444,7 @@ function summarize(
   steps: RequiredStep[],
   runs: RunAdherence[],
   variant: string | null,
+  command: AdherenceCommand = "dev-task",
 ): AdherenceSeries {
   const adherentRuns = runs.filter((r) => r.adherent).length;
   return {
@@ -373,7 +465,7 @@ function summarize(
         stepNumber: step.stepNumber,
         title: step.title,
         mandatory: step.mandatory,
-        measured: isMeasuredStep(step),
+        measured: isMeasuredStep(step, command),
         ran,
         skipped,
         rate: total === 0 ? null : ran / total,
@@ -398,9 +490,11 @@ function groupBy(
 export function buildReport(
   steps: RequiredStep[],
   runs: RunAdherence[],
+  command: AdherenceCommand = "dev-task",
 ): DevTaskAdherenceReport {
   const taskBearing = runs.filter((r) => r.taskBearing);
   return {
+    ...(command === "dev-task" ? {} : { command }),
     disclaimer: ADHERENCE_DISCLAIMER,
     counts: {
       totalRuns: runs.length,
@@ -408,9 +502,9 @@ export function buildReport(
       silentTicks: runs.length - taskBearing.length,
     },
     runs,
-    overall: summarize(steps, taskBearing, null),
+    overall: summarize(steps, taskBearing, null, command),
     byVariant: [...groupBy(taskBearing, (r) => r.contextFingerprint)].map(
-      ([variant, rs]) => summarize(steps, rs, variant),
+      ([variant, rs]) => summarize(steps, rs, variant, command),
     ),
     byCommandVariant: [...groupBy(taskBearing, (r) => r.commandVariant)]
       .sort(([a], [b]) => (a ?? "\uffff").localeCompare(b ?? "\uffff"))
@@ -419,6 +513,7 @@ export function buildReport(
           steps,
           rs,
           commandVariant,
+          command,
         );
         return { commandVariant, ...series };
       }),
@@ -439,14 +534,47 @@ export class DevTaskAdherenceService {
   private enrich(
     itemId: string | null,
     cache: Map<string, Promise<RunEnrichment | undefined>>,
+    command: AdherenceCommand,
   ): Promise<RunEnrichment | undefined> {
     if (!itemId) return Promise.resolve(undefined);
     let pending = cache.get(itemId);
     if (!pending) {
-      pending = this.fetchEnrichment(itemId);
+      pending =
+        command === "patch"
+          ? this.fetchPatchEnrichment(itemId)
+          : this.fetchEnrichment(itemId);
       cache.set(itemId, pending);
     }
     return pending;
+  }
+
+  /** PR-record enrichment for a patch run; undefined on any failure. */
+  private async fetchPatchEnrichment(
+    itemId: string,
+  ): Promise<RunEnrichment | undefined> {
+    const { getTask, getPrByNumber } = this.fetchers;
+    if (!getPrByNumber) return undefined;
+    try {
+      let ref = parsePrRef(itemId);
+      if (!ref && getTask) {
+        const t = await getTask(itemId);
+        if (t?.repo && t.pr != null) ref = { repo: t.repo, pr: t.pr };
+      }
+      if (!ref) return undefined;
+      const pr = await getPrByNumber(ref.repo, ref.pr);
+      return {
+        task: {
+          repo: ref.repo,
+          startedAt: null,
+          pr: ref.pr,
+          prCreatedAt: null,
+        },
+        checks: [],
+        pr,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private async fetchEnrichment(
@@ -471,15 +599,18 @@ export class DevTaskAdherenceService {
   }
 
   /**
-   * Report over non-skipped dev-task runs with startedAt in [from, to).
-   * When `agentId` is given, only that agent's runs are included; omitted is
-   * fleet-wide.
+   * Report over non-skipped runs of `command`'s phase cron (default
+   * dev-task) with startedAt in [from, to). When `agentId` is given, only that
+   * agent's runs are included; omitted is fleet-wide. For patch the steps come
+   * from patch.json (the service's own `steps` are dev-task's).
    */
   async report(
     from?: string,
     to?: string,
     agentId?: string,
+    command: AdherenceCommand = "dev-task",
   ): Promise<DevTaskAdherenceReport> {
+    const steps = command === "patch" ? PATCH_REQUIRED_STEPS : this.steps;
     const startedAt: { gte?: Date; lt?: Date } = {};
     if (from) startedAt.gte = new Date(from);
     if (to) startedAt.lt = new Date(to);
@@ -487,7 +618,7 @@ export class DevTaskAdherenceService {
     const rawRows = await this.prisma.agentCronRun.findMany({
       where: {
         skipped: false,
-        phaseCron: { name: "shipwright-dev-task" },
+        phaseCron: { name: PHASE_CRON_NAME[command] },
         ...(agentId ? { agentId } : {}),
         ...(from || to ? { startedAt } : {}),
       },
@@ -511,10 +642,11 @@ export class DevTaskAdherenceService {
         const i = next++;
         const row = rows[i];
         runs[i] = buildRunAdherence(
-          this.steps,
+          steps,
           row,
           row.skillUsage,
-          await this.enrich(row.itemId, cache),
+          await this.enrich(row.itemId, cache, command),
+          command,
         );
       }
     };
@@ -524,6 +656,6 @@ export class DevTaskAdherenceService {
         worker,
       ),
     );
-    return buildReport(this.steps, runs);
+    return buildReport(steps, runs, command);
   }
 }
