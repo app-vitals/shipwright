@@ -246,7 +246,7 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
     );
     const step9bHeading = devTaskMdContent.match(/## Step 9b: (.+)/);
     expect(step9bHeading).not.toBeNull();
-    expect(step9b?.title).toContain(step9bHeading?.[1].split(":")[0] || "");
+    expect(step9bHeading?.[1]).toContain(step9b?.title || "");
   });
 
   it("step 10 title matches '## Step 10: ...' heading", () => {

@@ -1,6 +1,6 @@
-# Intentionally dropped from dev-task-lean
+# Intentionally dropped from dev-task
 
-Everything else in `commands/dev-task.md` was moved to a sibling reference file. These items were cut. Git history
+When `commands/dev-task.md` was trimmed to a short spine, everything else moved to a sibling reference file in this directory. These items were cut. Git history
 (`git log -- plugins/shipwright/commands/dev-task.md`) (commit titles) suggest each addition refined the same pipeline rather than fixing a
 one-off incident; AGH-1.1 (wakeups) is preserved in `pre-ship-checks.md` and `push-and-ci.md`.
 
