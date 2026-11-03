@@ -88,12 +88,11 @@ describe("library-chart-release.yml", () => {
     expect(runs).toContain('bash scripts/platform-bump-gate.sh "$PR_URL"');
   });
 
-  it("fails loudly: opens an issue on failure and closes it on success", () => {
-    const failure = job.steps.find((s) => s.if === "failure()");
-    expect(failure?.run).toContain("library chart release bump failed");
-    expect(failure?.run).toContain("gh issue create");
-    const ok = job.steps.find((s) => s.if === "success()");
-    expect(ok?.run).toContain("gh issue close");
+  it("fails loudly without issue steps or the issues permission", () => {
+    expect(job.permissions?.issues).toBeUndefined();
+    const runs = job.steps.map((s) => s.run ?? "").join("\n");
+    expect(runs).not.toContain("gh issue");
+    expect(job.steps.some((s) => s.if === "failure()")).toBe(false);
   });
 });
 
@@ -111,10 +110,10 @@ describe("check-chart-drift.yml library pin check", () => {
     expect(step?.run).toContain("exit 1");
   });
 
-  it("still runs when the tag drift step failed, and opens an issue when anything fails", () => {
+  it("still runs when the tag drift step failed, and opens no issue", () => {
     expect(step?.if).toBe(gha("!cancelled()"));
-    expect(job.permissions?.issues).toBe("write");
-    const failure = job.steps.find((s) => s.if === "failure()");
-    expect(failure?.run).toContain("gh issue create");
+    expect(job.permissions?.issues).toBeUndefined();
+    const runs = job.steps.map((s) => s.run ?? "").join("\n");
+    expect(runs).not.toContain("gh issue");
   });
 });
