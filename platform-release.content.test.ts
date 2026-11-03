@@ -103,7 +103,6 @@ describe("platform-release.yml safety", () => {
     expect(job.permissions).toEqual({
       contents: "write",
       "pull-requests": "write",
-      issues: "write",
     });
   });
 });
@@ -213,11 +212,11 @@ describe("platform-release.yml bump", () => {
     expect(pr?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
   });
 
-  it("fails loudly: a failure() step opens or comments on an issue", () => {
-    const onFailure = steps.filter((s) => s.if === "failure()");
-    expect(onFailure.length).toBe(1);
-    expect(onFailure[0].run).toContain("gh issue create");
-    expect(onFailure[0].run).toContain("gh issue comment");
+  it("fails loudly without issue steps or the issues permission", () => {
+    expect(job.permissions?.issues).toBeUndefined();
+    expect(allRuns).not.toContain("gh issue");
+    expect(steps.some((s) => s.if === "failure()")).toBe(false);
+    expect(steps.some((s) => s.name?.includes("issue"))).toBe(false);
   });
 });
 
@@ -226,7 +225,6 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
   const mergeIdx = steps.findIndex(
     (s) => s.name === "Wait for checks and merge",
   );
-  const failIdx = steps.findIndex((s) => s.if === "failure()");
   const merge = steps[mergeIdx];
 
   it("gives the PR step id pr and writes pr_url to GITHUB_OUTPUT", () => {
@@ -276,9 +274,9 @@ describe("platform-release.yml self-merge (PLD-2.3)", () => {
     expect(allRuns).not.toContain("--admin");
   });
 
-  it("runs after the PR step and before the failure step", () => {
+  it("runs after the PR step and is the last step", () => {
     expect(mergeIdx).toBeGreaterThan(prIdx);
-    expect(mergeIdx).toBeLessThan(failIdx);
+    expect(mergeIdx).toBe(steps.length - 1);
   });
 
   it("allows 30 minutes for the job", () => {
@@ -366,81 +364,6 @@ describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
   });
 });
 
-describe("platform-release.yml close failure issue (PBP-1.3)", () => {
-  const failureIdx = steps.findIndex((s) => s.if === "failure()");
-  const closeIdx = steps.findIndex(
-    (s) => s.name === "Close success issue" || s.name?.includes("close"),
-  );
-  const closeStep = steps.find(
-    (s) => s.name === "Close success issue" || s.name?.includes("close"),
-  );
-
-  it("exists and runs after the failure step", () => {
-    expect(closeIdx).toBeGreaterThan(failureIdx);
-    expect(closeStep).toBeDefined();
-  });
-
-  it("runs only on success and when either no change was needed or the merge succeeded", () => {
-    const expectedIf = `success() && (steps.diff.outputs.changed == 'false' || steps.merge.outputs.merged == 'true')`;
-    expect(closeStep?.if).toBe(expectedIf);
-  });
-
-  it("uses the exact same issue title as the failure step", () => {
-    const failureStep = steps[failureIdx];
-    const failureRun = failureStep.run ?? "";
-    const closeRun = closeStep?.run ?? "";
-
-    // Both should reference "platform release bump failed"
-    expect(failureRun).toContain("platform release bump failed");
-    expect(closeRun).toContain("platform release bump failed");
-
-    // Extract the title strings to verify they are identical
-    const failureTitleMatch = failureRun.match(/TITLE="([^"]+)"/);
-    const closeTitleMatch = closeRun.match(/TITLE="([^"]+)"/);
-    expect(failureTitleMatch).not.toBeNull();
-    expect(closeTitleMatch).not.toBeNull();
-    expect(failureTitleMatch?.[1]).toBe(closeTitleMatch?.[1]);
-  });
-
-  it("searches for the open issue using gh issue list", () => {
-    const run = closeStep?.run ?? "";
-    expect(run).toContain("gh issue list");
-    expect(run).toContain("--state open");
-    expect(run).toContain('--search "');
-    expect(run).toContain("in:title");
-  });
-
-  it("closes the issue and comments with a link to the run", () => {
-    const run = closeStep?.run ?? "";
-    expect(run).toContain("gh issue close");
-    expect(run).toContain("gh issue comment");
-    expect(run).toContain("RUN_URL");
-  });
-
-  it("uses GITHUB_TOKEN and env for the run URL", () => {
-    expect(closeStep?.env?.GH_TOKEN).toBe(gha("secrets.GITHUB_TOKEN"));
-    expect(closeStep?.env?.RUN_URL).toBe(
-      gha("github.server_url") +
-        "/" +
-        gha("github.repository") +
-        "/actions/runs/" +
-        gha("github.run_id"),
-    );
-  });
-
-  it("has a no-op when no issue is open", () => {
-    const run = closeStep?.run ?? "";
-    expect(run).toContain("[ -z");
-    expect(run).toContain("ISSUE");
-  });
-
-  it("mentions the success in its comment body", () => {
-    const run = closeStep?.run ?? "";
-    expect(run).toContain("$" + "{VERSION}");
-    expect(run).toMatch(/close|closed|success/i);
-  });
-});
-
 describe("platform-docs-guard.yml", () => {
   const guard = readFileSync(
     join(ROOT, ".github/workflows/platform-docs-guard.yml"),
@@ -477,5 +400,29 @@ describe("PBF-1.1 guard open-PR semantics", () => {
     expect(gateSh).toContain(
       'gh pr merge "$PR_URL" --squash --admin --delete-branch',
     );
+  });
+});
+
+describe("platform-release-retry.yml exhausted report", () => {
+  const retry = Bun.YAML.parse(
+    readFileSync(
+      join(ROOT, ".github/workflows/platform-release-retry.yml"),
+      "utf8",
+    ),
+  ) as Workflow;
+  const rjob = retry.jobs.retry;
+  const report = rjob.steps.find((s) => s.name === "Report exhausted retries");
+
+  it("opens no issue and drops the issues permission", () => {
+    expect(rjob.permissions?.issues).toBeUndefined();
+    const runs = rjob.steps.map((s) => s.run ?? "").join("\n");
+    expect(runs).not.toContain("gh issue");
+  });
+
+  it("still posts the platform-bump-exhausted marker comment once per PR", () => {
+    expect(report?.if).toContain("steps.select.outputs.reported == '0'");
+    expect(report?.run).toContain("<!-- platform-bump-exhausted -->");
+    expect(report?.run).toContain("gh pr comment");
+    expect(report?.run).not.toMatch(/issue/i);
   });
 });

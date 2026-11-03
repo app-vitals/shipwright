@@ -8,9 +8,8 @@ name: Platform Release Retry
 # re-dispatches platform-release.yml for the PR's version, at most
 # MAX_RETRIES times per PR (scripts/platform-bump-retry.ts; each retry leaves a
 # marker comment on the PR). No open bump PR, or a green / still-running one,
-# is a no-op. The dispatched run's own failure step opens or refreshes the
-# "platform release bump failed" issue; when retries run out this job does it,
-# once per PR (an exhausted marker comment stops repeat reports). While any
+# is a no-op. When retries run out this job comments on the PR once
+# (an exhausted marker comment stops repeat reports); no issue is opened. While any
 # platform-release.yml run is queued or in progress, nothing is retried or
 # reported: that bump may be about to fix the PR.
 #
@@ -52,7 +51,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     env:
       BRANCH: chore/platform-release
       GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -141,21 +139,11 @@ jobs:
       - name: Report exhausted retries
         if: steps.select.outputs.action == 'exhausted' && steps.select.outputs.reported == '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           NUMBER: ${{ steps.select.outputs.number }}
           VERSION: ${{ steps.select.outputs.version }}
           REASON: ${{ steps.select.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          TITLE="platform release bump failed"
-          BODY="Platform bump ${VERSION} is still stalled and automatic retries are spent (${REASON}): ${RUN_URL}"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body "$BODY"
-          else
-            gh issue create --title "$TITLE" --body "$BODY"
-          fi
           # Marker so later pushes to main do not report the same exhaustion again.
-          GH_TOKEN="$DISPATCH_TOKEN" gh pr comment "$NUMBER" --body "<!-- platform-bump-exhausted -->
-          Automatic retries are spent for ${VERSION}; reported once in the \"${TITLE}\" issue. Fix this PR by hand."
+          gh pr comment "$NUMBER" --body "<!-- platform-bump-exhausted -->
+          Automatic retries are spent for ${VERSION} (${REASON}): ${RUN_URL}. Fix this PR by hand."
