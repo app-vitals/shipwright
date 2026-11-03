@@ -126,7 +126,8 @@ Logs, prompt and upsert body: [lane-ci.md](../references/patch-lean/lane-ci.md);
   poll `gh run view` every 15 s up to 8 times, renewing the heartbeat each iteration. Terminal non-failure, non-cancelled → release,
   print the `✓ ... rerun succeeded` line, skip 6c. Rerun `cancelled`/`failure`/inconclusive → collect `{repeated-timeout-context}`.
   **Proof:** `gh run rerun` plus the poll, or the gate did not hold.
-- **6b.9** Out-of-scope CI judgment (SLS-2.2): failure not caused by this PR (e.g. it fails on base) → POST a `source: "patch"`,
+- **6b.9** Out-of-scope CI judgment (SLS-2.2): first, if the same failing jobs fail on base's latest completed CI run → `main_red:` block
+  (MRB-1.1), no `ci:` write. Otherwise failure not caused by this PR → POST a `source: "patch"`,
   `disposition: "rejected"` finding with ref `ci:{headSha}:{ciFailureSignature}`, release, skip 6c–6e. Never exit `[silent]` without
   that entry. Caused by this PR, or unsure → write nothing. **Proof:** the `ci:` ledger POST, or proceeding to 6c.
 - **6c** Heartbeat, then dispatch the CI-fix subagent (skeleton 4), plus the REPEATED TIMEOUT/HANG note after 6b.8. **Proof:** an Agent dispatch.
