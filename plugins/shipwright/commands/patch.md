@@ -177,7 +177,7 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 - **One or more tasks match**: this PR can have more than one task linked to it (e.g. a
   bundled multi-task branch), so compute `PATCH_MODEL` from the **highest tier among ALL
   matched tasks' `.model` fields** (`model ?? 'sonnet'` for any task with the field unset),
-  escalated one tier up the same ladder `dev-task.md`'s Step 5c BLOCKED handling already
+  escalated one tier up the same ladder `references/dev-task/implementation-dispatch.md`'s "Status handling" BLOCKED ladder already
   climbs — a patch dispatch is always reacting to a problem the way a BLOCKED
   implementation subagent is, so it starts where that ladder's first escalation would land,
   instead of waiting to hit it: `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already
@@ -2423,9 +2423,9 @@ Otherwise, proceed below.
 ### Step 6.5a: Poll for the Final CI Result
 
 Reuse the same "poll the GitHub Actions API, dedupe by latest run per workflow, skip
-cleanly when nothing is configured" pattern as `dev-task.md`'s Step 9b.2 — same shape, a
+cleanly when nothing is configured" pattern as `references/dev-task/push-and-ci.md`'s CI gate — same shape, a
 tighter cadence: 30-second interval, capped at **~5 minutes** (10 polls max) rather than
-Step 9b.2's 10-minute cap, since this is a final gate on a patch cycle that already ran
+that CI gate's 10-minute cap, since this is a final gate on a patch cycle that already ran
 fixes, not a first-attempt wait.
 
 Resolve the repo and current HEAD SHA (the worktree for whichever of Steps 4/5/6 pushed
@@ -2458,7 +2458,7 @@ workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task
 9b.2, to avoid a stale failed run being counted alongside its passing rerun.
 
 **No CI configured:** if no matching runs appear after 60 seconds (2 polls), skip the rest
-of Step 6.5 and proceed to Step 7 — mirroring `dev-task.md` Step 9b.2's identical
+of Step 6.5 and proceed to Step 7 — mirroring `references/dev-task/push-and-ci.md`'s CI gate's identical
 no-CI-configured skip. Print:
 ```
 ⏭ No CI checks configured — skipping CI verification gate
