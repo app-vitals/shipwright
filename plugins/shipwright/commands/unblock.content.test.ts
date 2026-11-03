@@ -115,6 +115,16 @@ describe("unblock.md — phase inference (AC2)", () => {
     }
   });
 
+  it("maps the main_red: blockedReason to the patch phase with confirm-main-green retry guidance", () => {
+    const row = content
+      .split("\n")
+      .find((l) => l.startsWith("|") && l.includes("`main_red:`"));
+    expect(row).toBeDefined();
+    expect(row).toContain("**patch**");
+    expect(content).toMatch(/confirm the base branch is\s+green again/);
+    expect(content).toMatch(/refresh CI/);
+  });
+
   it("mentions every deploy.md blockedReason pattern", () => {
     for (const reason of deployReasons) {
       expect(content).toContain(reason);

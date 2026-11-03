@@ -142,6 +142,7 @@ subagent's own detail) after a fixed prefix.
 | **patch** | `second-round disagreement` (reviewer vs. automated fix, escalated to HITL) | task: `blockedReason` |
 | **patch** | `structurally unfixable` (finding requires a write under `.claude/**`, which the CLI blocks unconditionally — escalated to HITL on the first round) | task: `blockedReason` |
 | **patch** | `review-finding fix blocked` | task: `blockedReason` |
+| **patch** | `main_red:` (the PR's CI failure is inherited from a red base branch — nothing for patch to fix on the PR; `blockedReason` is `main_red: {base} @ {main-sha} is failing {signature}`) | task: `blockedReason`; PR: `blockedReason` |
 | **patch** | `CI-fix blocked` | task: `blockedReason` |
 | **deploy** | `Post-merge CI failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
 | **deploy** | `Deploy stage failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
@@ -265,6 +266,11 @@ reset endpoint for that counter today — neither `/tasks/:id/skip/reset` nor
 A 6c retry clears `blocked`/`blockedReason`, but `consecutiveCiFailureCount` stays elevated,
 so one more patch cycle hitting the same CI failure signature re-blocks the PR immediately.
 Tell the human this before retrying so they aren't surprised by an immediate re-block.
+
+**`main_red:` blocks (patch).** Before retrying, tell the human to confirm the base branch is
+green again (the sha and failing jobs are named in `blockedReason`), then refresh CI — re-run
+the failed checks or update the PR branch onto the new base. Retrying while `main` is still
+red just re-blocks the PR on the next patch cycle.
 
 ### 6e. Redirect
 
