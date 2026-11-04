@@ -127,6 +127,10 @@ describe("platform-release.yml bump", () => {
     expect(wait.run).toContain("sleep 15");
     expect(wait.run).toMatch(/npm view "\$\{?pkg\}?@\$\{?VERSION\}?" version/);
     expect(wait.run).toContain("exit 1");
+    // The version must also have a servable tarball, not just a registry listing.
+    expect(wait.run).toMatch(/npm view "\$\{?pkg\}?@\$\{?VERSION\}?" dist\.tarball/);
+    expect(wait.run).toContain('curl -fsI "$tarball"');
+    expect(wait.run).toContain("seq 1 40");
     // The version reaches the step through env only, never a template expression.
     expect(wait.run).not.toContain("${{");
     // The step precedes every `bun install` in the job.
@@ -134,6 +138,20 @@ describe("platform-release.yml bump", () => {
       /bun install/.test(s.run ?? ""),
     );
     expect(idx).toBeLessThan(firstInstall);
+  });
+
+  it("retries bun install only on registry 404 / failed-to-resolve and names VERSION on exhaustion", () => {
+    const run = steps.find((s) => s.name === "Refresh bun.lock")?.run ?? "";
+    expect(run).toContain("max_attempts=5");
+    expect(run).toContain("sleep 20");
+    expect(run).toMatch(/grep -Eqi '404\|failed to resolve'/);
+    // Non-registry errors fail immediately, before any sleep.
+    expect(run.indexOf("non-registry error")).toBeLessThan(
+      run.indexOf("sleep 20"),
+    );
+    expect(run).toContain("${VERSION}");
+    expect(run).toContain("${last_error}");
+    expect(run).not.toContain("${{");
   });
 
   it("commits only package.json files, bun.lock and the docs snapshot, on one fixed bump branch", () => {

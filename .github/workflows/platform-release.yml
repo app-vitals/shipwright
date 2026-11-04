@@ -137,8 +137,13 @@ jobs:
             found=false
             for _ in $(seq 1 40); do
               if [ "$(npm view "${pkg}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
-                found=true
-                break
+                # npm can list the version before the tarball is served, so
+                # also require the tarball URL to answer a HEAD.
+                tarball=$(npm view "${pkg}@${VERSION}" dist.tarball 2>/dev/null)
+                if [ -n "$tarball" ] && curl -fsI "$tarball" >/dev/null 2>&1; then
+                  found=true
+                  break
+                fi
               fi
               echo "Waiting for ${pkg}@${VERSION} on npm..."
               sleep 15
@@ -150,8 +155,29 @@ jobs:
             echo "Found ${pkg}@${VERSION}"
           done
 
+      # Even after the wait, a registry edge can still 404 a tarball. Retry
+      # only on registry 404 / resolve failures; any other error fails fast.
       - name: Refresh bun.lock
-        run: bun install
+        run: |
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            if out=$(bun install 2>&1); then
+              echo "$out"
+              exit 0
+            fi
+            echo "$out" >&2
+            if ! echo "$out" | grep -Eqi '404|failed to resolve'; then
+              echo "ERROR: bun install failed with a non-registry error" >&2
+              exit 1
+            fi
+            last_error=$(echo "$out" | grep -Ei '404|failed to resolve' | tail -n 1)
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Registry 404 on attempt ${attempt}/${max_attempts}; retrying in 20s..."
+              sleep 20
+            fi
+          done
+          echo "ERROR: bun install for ${VERSION} still failing after ${max_attempts} attempts: ${last_error}" >&2
+          exit 1
 
       # A platform bump that changes the admin surface drifts the committed
       # admin spec and types mechanically (the byte-identity tests fail for a
