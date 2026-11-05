@@ -98,6 +98,11 @@ interface LoopPhaseToggles {
    * without the env var still behaves exactly as it does today.
    */
   plan: boolean;
+  /**
+   * MPD-1.4 merge phase. Read from the `shipwright-merge` child row exactly
+   * like the other phases; ships disabled.
+   */
+  merge: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -111,6 +116,7 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
   "shipwright-review-patch",
   "shipwright-deploy",
   "shipwright-plan",
+  "shipwright-merge",
 ]);
 
 /**
@@ -129,7 +135,8 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
  * would turn that probe permanently true and fire a false "run
  * reconcileSystemCrons()" warn on every fully-reconciled, all-phases-disabled
  * tick. The plan phase's own absence is not a reconciliation gap — it's the
- * expected state for any agent that hasn't opted in.
+ * expected state for any agent that hasn't opted in. MPD-1.4's
+ * "shipwright-merge" is omitted for the same reason.
  */
 export const LOOP_PHASE_JOB_NAMES = [
   "shipwright-dev-task",
@@ -195,6 +202,7 @@ export function resolveLoopPhaseToggles<T extends CronJobLike>(
     patch: enabledByName("shipwright-patch"),
     deploy: enabledByName("shipwright-deploy"),
     plan: enabledByName("shipwright-plan"),
+    merge: enabledByName("shipwright-merge"),
   };
 }
 

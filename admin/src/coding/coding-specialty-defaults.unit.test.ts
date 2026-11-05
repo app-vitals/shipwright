@@ -22,13 +22,14 @@ describe("coding specialtyDefaults hook", () => {
     expect(defaults).toBe(CODING_SPECIALTY_DEFAULTS);
   });
 
-  it("returns exactly the 14 system crons, by name and in order", () => {
+  it("returns exactly the 15 system crons, by name and in order", () => {
     expect(crons.map((c) => c.name)).toEqual([
       "shipwright-plan",
       "shipwright-dev-task",
       "shipwright-patch",
       "shipwright-review",
       "shipwright-deploy",
+      "shipwright-merge",
       "shipwright-loop",
       "shipwright-test-readiness",
       "shipwright-docs-freshness",
@@ -56,6 +57,7 @@ describe("coding specialtyDefaults hook", () => {
       "shipwright-patch",
       "shipwright-review",
       "shipwright-deploy",
+      "shipwright-merge",
     ]) {
       expect(byName(name)?.parentCron).toBe("shipwright-loop");
     }
@@ -65,6 +67,11 @@ describe("coding specialtyDefaults hook", () => {
   it("shipwright-plan runs /shipwright:plan-session and ships disabled", () => {
     expect(byName("shipwright-plan")?.prompt).toBe("/shipwright:plan-session");
     expect(byName("shipwright-plan")?.enabled).toBe(false);
+  });
+
+  it("shipwright-merge runs /shipwright:merge and ships disabled", () => {
+    expect(byName("shipwright-merge")?.prompt).toBe("/shipwright:merge");
+    expect(byName("shipwright-merge")?.enabled).toBe(false);
   });
 
   it("only the dev-task, patch and review phases ship enabled", () => {
