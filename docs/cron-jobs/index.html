@@ -79,8 +79,8 @@ read-only after creation except for the <code>enabled</code> toggle. Anything el
 preCheck) is owned by the specialty defaults and only changes when the defaults change and a
 reconcile runs.</p>
 <h3 id="loop-driven-vs-standalone-crons">Loop-driven vs standalone crons</h3>
-<p>Not every cron discovers its own work. The five pipeline crons — <code>shipwright-plan</code>,
-<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, and <code>shipwright-deploy</code> — are children of
+<p>Not every cron discovers its own work. The six pipeline crons — <code>shipwright-plan</code>,
+<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, <code>shipwright-deploy</code>, and <code>shipwright-merge</code> — are children of
 <code>shipwright-loop</code> (linked via <code>parentCronId</code>). They are <strong>loop-driven, item-addressed executors</strong>,
 not self-discovering standalone crons:</p>
 <ul>
@@ -157,6 +157,14 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <td>—</td>
 <td>off</td>
 <td>Merges and deploys the PR <code>shipwright-loop</code> selects. Inert if <code>shipwright-loop</code> is disabled.</td>
+</tr>
+<tr>
+<td><code>shipwright-merge</code></td>
+<td>every minute</td>
+<td><code>/shipwright:merge</code></td>
+<td>—</td>
+<td>off</td>
+<td>Merges the approved, CI-green PR <code>shipwright-loop</code> selects, without the deploy pipeline. Inert if <code>shipwright-loop</code> is disabled.</td>
 </tr>
 <tr>
 <td><code>shipwright-loop</code></td>
