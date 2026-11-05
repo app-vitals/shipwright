@@ -325,7 +325,7 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d '{"status": "blocked", "note": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+    -d '{"status": "blocked", "blockedReason": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -358,7 +358,7 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "$(jq -n --arg note "Squash merge failed — $MERGE_OUTPUT" '{"status": "blocked", "note": $note}')" | jq .
+    -d "$(jq -n --arg reason "Squash merge failed — $MERGE_OUTPUT" '{"status": "blocked", "blockedReason": $reason}')" | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
