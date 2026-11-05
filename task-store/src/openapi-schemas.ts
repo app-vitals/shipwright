@@ -9,7 +9,11 @@
 import { z } from "@hono/zod-openapi";
 
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
-import { MAX_BULK_TASKS } from "./task-service.ts";
+import {
+  BY_PR_TARGET_STATUSES,
+  MAX_BULK_TASKS,
+  MAX_PATCH_BY_PR_NUMBERS,
+} from "./task-service.ts";
 
 /** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
  * the generated Prisma client so this file stays a pure Zod-schema module. */
@@ -884,6 +888,47 @@ export const BulkInsertResponseSchema = z
     }),
   })
   .openapi("BulkInsertResponse");
+
+/**
+ * Request body for PATCH /tasks/by-pr (MPD-1.2). Shape violations (empty or
+ * over-cap prNumbers, non-positive-integer entries, unknown status) are
+ * rejected by the app's validation hook as 400.
+ */
+export const PatchTasksByPrBodySchema = z
+  .object({
+    repo: z.string().min(1).openapi({ example: "org/repo" }),
+    prNumbers: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(MAX_PATCH_BY_PR_NUMBERS)
+      .openapi({
+        example: [101, 102],
+        description: `PR numbers of \`repo\`, 1 to ${MAX_PATCH_BY_PR_NUMBERS} positive integers.`,
+      }),
+    status: z.enum(BY_PR_TARGET_STATUSES).openapi({ example: "deployed" }),
+    at: z.string().min(1).optional().openapi({
+      example: "2026-07-02T00:00:00.000Z",
+      description:
+        "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.",
+    }),
+  })
+  .openapi("PatchTasksByPrBody");
+
+/** Response for PATCH /tasks/by-pr */
+export const PatchTasksByPrResponseSchema = z
+  .object({
+    updated: z.array(z.string()).openapi({
+      description: "Ids of `merged` tasks moved to the requested status.",
+    }),
+    unchanged: z.array(z.string()).openapi({
+      description: "Ids of tasks already at the requested status (no-op).",
+    }),
+    skipped: z.array(z.object({ id: z.string(), status: z.string() })).openapi({
+      description:
+        "Matching tasks in any other status; never modified. Carries their current status.",
+    }),
+  })
+  .openapi("PatchTasksByPrResponse");
 
 /** Response for GET /tasks/distinct */
 export const DistinctResponseSchema = z

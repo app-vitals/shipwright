@@ -109,6 +109,9 @@ function fakeTaskService(
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters) {
       opts.onList?.(filters);
       return {

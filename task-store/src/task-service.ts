@@ -210,6 +210,24 @@ export const BULK_TX_PER_TASK_TIMEOUT_MS = 100;
 export const MAX_BULK_TASKS = 500;
 
 /**
+ * Hard cap on `prNumbers` per `markMergedByPr()` call (MPD-1.2). Bounds the
+ * single transaction's work (and its scaled budget) the same way
+ * MAX_BULK_TASKS does for bulk(); over the cap is a clean 400.
+ */
+export const MAX_PATCH_BY_PR_NUMBERS = 100;
+
+/** Target statuses PATCH /tasks/by-pr may move a `merged` task to. */
+export const BY_PR_TARGET_STATUSES = ["deployed", "released"] as const;
+export type ByPrTargetStatus = (typeof BY_PR_TARGET_STATUSES)[number];
+
+/** Result of TaskService.markMergedByPr. */
+export interface MarkMergedByPrResult {
+  updated: string[];
+  unchanged: string[];
+  skipped: Array<{ id: string; status: string }>;
+}
+
+/**
  * Transaction budget for a `bulk()` call of `taskCount` tasks: the shared
  * single-item floor plus a per-task allowance. Exported for the
  * timeout-conformance tests.
@@ -504,6 +522,15 @@ export interface TaskServiceLike {
   bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }>;
+  markMergedByPr(params: {
+    repo: string;
+    prNumbers: number[];
+    status: ByPrTargetStatus;
+    /** ISO timestamp for deployedAt/releasedAt; defaults to now. */
+    at?: string;
+    /** Account scope: string restricts to that account, null/undefined is unrestricted. */
+    accountId?: string | null;
+  }): Promise<MarkMergedByPrResult>;
   update(id: string, data: Prisma.TaskUpdateInput): Promise<Task>;
   remove(id: string): Promise<void>;
   claim(id: string, claimedBy: string): Promise<Task>;
@@ -962,6 +989,103 @@ export class TaskService implements TaskServiceLike {
     // backward compatibility (AC4); collisions hard-fail the whole batch via
     // ConflictError above instead of populating it.
     return { inserted: createdRows.length, updated: 0, skipped: [] };
+  }
+
+  /**
+   * MPD-1.2: move every `merged` task linked to the given PRs of `repo` to
+   * `deployed`/`released`, stamping deployedAt/releasedAt (= `at` or now).
+   * One $transaction covers the lookup, every update, the TaskEvent rows and
+   * the single webhook dispatch, so a bundle of tasks on one PR is
+   * all-or-nothing. Tasks already at the target status are `unchanged`
+   * (idempotent); tasks in any other status are `skipped` and never touched.
+   * A concurrent status change between the lookup and an update (the update
+   * is guarded on status='merged') aborts the whole call with 409.
+   */
+  async markMergedByPr(params: {
+    repo: string;
+    prNumbers: number[];
+    status: ByPrTargetStatus;
+    at?: string;
+    accountId?: string | null;
+  }): Promise<MarkMergedByPrResult> {
+    const { repo, prNumbers, status, accountId } = params;
+    if (prNumbers.length === 0) {
+      throw new BadRequestError("prNumbers must not be empty");
+    }
+    if (prNumbers.length > MAX_PATCH_BY_PR_NUMBERS) {
+      throw new BadRequestError(
+        `prNumbers accepts at most ${MAX_PATCH_BY_PR_NUMBERS} entries per call (received ${prNumbers.length}) — split the batch`,
+      );
+    }
+    let stamp: string;
+    if (params.at !== undefined) {
+      const parsed = new Date(params.at);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestError(
+          `at '${params.at}' is not a valid ISO timestamp`,
+        );
+      }
+      stamp = parsed.toISOString();
+    } else {
+      stamp = this.clock.now().toISOString();
+    }
+    const stampField = status === "deployed" ? "deployedAt" : "releasedAt";
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const matched = await tx.task.findMany({
+          where: {
+            repo,
+            pr: { in: prNumbers },
+            ...(accountId ? { accountId } : {}),
+          },
+          orderBy: [{ pr: "asc" }, { id: "asc" }],
+        });
+        const result: MarkMergedByPrResult = {
+          updated: [],
+          unchanged: [],
+          skipped: [],
+        };
+        const rows: Task[] = [];
+        for (const before of matched) {
+          if (before.status === status) {
+            result.unchanged.push(before.id);
+            continue;
+          }
+          if (before.status !== "merged") {
+            result.skipped.push({ id: before.id, status: before.status });
+            continue;
+          }
+          const claimed = await tx.task.updateMany({
+            where: { id: before.id, status: "merged" },
+            data: { status, [stampField]: stamp },
+          });
+          if (claimed.count === 0) {
+            throw new ConflictError(
+              `task '${before.id}' changed status concurrently — retry`,
+            );
+          }
+          const after = await tx.task.findUnique({ where: { id: before.id } });
+          if (!after) throw new NotFoundError("task not found");
+          await this.recordTaskTransition(
+            tx,
+            before,
+            after,
+            "patch-by-pr",
+            before.claimedBy ?? "system",
+          );
+          result.updated.push(before.id);
+          rows.push(after);
+        }
+        // Same rollback-on-throw contract as bulk(): one dispatch for the
+        // whole batch, a WebhookDeliveryError rolls everything back.
+        if (rows.length > 0) {
+          await this.webhookDispatcher("task.write", rows);
+        }
+        return result;
+      },
+      { timeout: bulkTxTimeoutMs(MAX_PATCH_BY_PR_NUMBERS) },
+    );
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {

@@ -134,6 +134,9 @@ function fakeTaskService(
   opts: { getResult?: Task | null } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(_filters?: TaskListFilters): Promise<TaskListResult> {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
