@@ -40,6 +40,7 @@ export type TaskStatus =
   | "done"
   | "deploying"
   | "deployed"
+  | "released"
   | "blocked"
   | "cancelled";
 

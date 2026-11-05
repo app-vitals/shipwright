@@ -89,6 +89,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     phase: null,
     readyForReviewAt: null,
     readyForPatchAt: null,
+    readyForMergeAt: null,
     readyForDeployAt: null,
     skipCount: 0,
     lastSkippedAt: null,
@@ -207,7 +208,7 @@ interface CapturedClaimCall {
   prNumber: number;
   commitSha: string;
   claimedBy: string;
-  phase?: "review" | "patch" | "deploy";
+  phase?: "review" | "patch" | "merge" | "deploy";
   prCreatedAt?: string;
   authorLogin?: string | null;
   headRef?: string | null;
@@ -237,7 +238,7 @@ function fakePrService(
     listResult?: PullRequest[];
     claimNextResult?: {
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge" | "deploy";
     } | null;
     claimCalls?: CapturedClaimCall[];
     appendFindingCalls?: CapturedAppendFindingCall[];
@@ -310,7 +311,7 @@ function fakePrService(
       prNumber: number,
       commitSha: string,
       claimedBy: string,
-      phase?: "review" | "patch" | "deploy",
+      phase?: "review" | "patch" | "merge" | "deploy",
       prCreatedAt?: string,
       authorLogin?: string | null,
       headRef?: string | null,
@@ -464,7 +465,7 @@ function fakePrService(
       _repos?: string[],
     ): Promise<{
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge" | "deploy";
     } | null> {
       if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
       return null;
@@ -854,6 +855,45 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(201);
     expect(claimCalls).toHaveLength(1);
     expect(claimCalls[0]?.phase).toBe("patch");
+  });
+
+  it('POST /prs/claim accepts and forwards phase:"merge" to service.claim() (MPD-1.1)', async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "merge",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.phase).toBe("merge");
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("merge");
+  });
+
+  it("POST /prs/claim rejects an unknown phase value with 400", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "bogus",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(claimCalls).toHaveLength(0);
   });
 
   it("POST /prs/claim without a phase field leaves phase undefined (service default applies)", async () => {
@@ -1699,6 +1739,23 @@ describe("/prs routes (smoke)", () => {
     expect(body.readyForReviewAt).toBe(readyAt);
     expect(body.readyForPatchAt).toBe(readyAt);
     expect(body.readyForDeployAt).toBe(readyAt);
+  });
+
+  it("PATCH /prs/:id accepts phase=merge and readyForMergeAt (MPD-1.1)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", phase: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const readyAt = "2026-07-02T00:00:00.000Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ phase: "merge", readyForMergeAt: readyAt }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("merge");
+    expect(body.readyForMergeAt).toBe(readyAt);
   });
 
   it("PATCH /prs/:id updates blocked and blockedReason", async () => {

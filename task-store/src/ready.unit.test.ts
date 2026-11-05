@@ -123,6 +123,16 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([task]);
   });
 
+  it("includes a task when dependency status is released (terminal, MPD-1.1)", async () => {
+    const dep = makeTask({ id: "dep-1", status: "released" });
+    const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
+    expect(result).toEqual([task]);
+  });
+
   it("includes a task when dependency status is cancelled (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "cancelled" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });

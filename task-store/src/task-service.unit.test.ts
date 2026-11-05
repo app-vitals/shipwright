@@ -116,7 +116,7 @@ describe("TaskService state filter logic (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t2", "t3", "t4"]);
   });
 
-  it("state=closed includes all CLOSED_STATUSES: merged, done, deploying, deployed, cancelled", () => {
+  it("state=closed includes all CLOSED_STATUSES: merged, done, deploying, deployed, released, cancelled", () => {
     const tasks = CLOSED_STATUSES.map((s) =>
       makeMinimalTask({ id: `t-${s}`, status: s }),
     );

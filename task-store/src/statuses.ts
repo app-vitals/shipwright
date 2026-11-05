@@ -12,6 +12,7 @@ export const CLOSED_STATUSES = [
   "done",
   "deploying",
   "deployed",
+  "released",
   "cancelled",
 ] as const;
 

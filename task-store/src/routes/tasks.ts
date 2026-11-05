@@ -186,6 +186,7 @@ export const TASK_PATCH_FIELDS: ReadonlySet<string> = new Set([
   "completedAt",
   "deployingAt",
   "deployedAt",
+  "releasedAt",
   "ciFixAttempts",
   "mergeCommit",
   "prUrl",

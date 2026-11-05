@@ -79,6 +79,7 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "completedAt",
   "deployingAt",
   "deployedAt",
+  "releasedAt",
   "ciFixAttempts",
   "mergeCommit",
   "prUrl",

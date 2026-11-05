@@ -134,7 +134,8 @@ export interface TaskItem {
 function statusBadgeClass(s: string): string {
   if (s === "in_progress" || s === "pr_open" || s === "approved")
     return "badge-blue";
-  if (s === "done" || s === "deployed" || s === "merged") return "badge-green";
+  if (s === "done" || s === "deployed" || s === "released" || s === "merged")
+    return "badge-green";
   if (s === "blocked" || s === "cancelled") return "badge-red";
   return "badge-gray";
 }
@@ -562,6 +563,7 @@ export function renderTasksPage(
     "done",
     "deploying",
     "deployed",
+    "released",
     "blocked",
     "cancelled",
   ]
@@ -764,7 +766,7 @@ function renderTasksBoard(args: {
   } = args;
 
   // The board's Status dropdown deliberately omits the closed statuses
-  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/cancelled).
+  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/released/cancelled).
   // Selecting one here would set `?status=…`, which bypasses admin-ui.ts's
   // `state=open` board default and returns tasks that bucketTaskColumn maps
   // to the "done" column — a column TASK_BOARD_COLUMNS no longer renders
@@ -781,6 +783,7 @@ function renderTasksBoard(args: {
     "done",
     "deploying",
     "deployed",
+    "released",
     "blocked",
     "cancelled",
   ]
@@ -1350,6 +1353,7 @@ const SESSION_CLOSED_STATUSES = new Set([
   "done",
   "deploying",
   "deployed",
+  "released",
   "cancelled",
 ]);
 
