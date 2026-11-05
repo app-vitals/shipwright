@@ -50,11 +50,13 @@ TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$S
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
-TASK_IDS=$(echo "$TASK_JSON" | jq -r '[.tasks[].id] | join(" ")')
+TASK_IDS=$(echo "$TASK_JSON" | jq -r '[.tasks[] | select(.status == "pr_open") | .id] | join(" ")')
 ```
 
 **Bundled PRs (`TASK_IDS`).** A single PR can carry several tasks. `TASK_IDS` is the
-space-separated list of every task on this PR, including the primary. Marking merged (Step 3b)
+space-separated list of every `pr_open` task on this PR, including the primary — bundle-mates
+already past `pr_open` (e.g. `deployed`/`done`) are excluded so they are never regressed to
+`merged`. Marking merged (Step 3b)
 and the post-merge CI watch (Step 4) loop over `TASK_IDS`, so bundle-mates are merged and
 watched or blocked together.
 

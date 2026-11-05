@@ -434,6 +434,10 @@ describe("merge.md — Step 4: post-merge CI watch", () => {
     expect(extractWatch(content)).toContain("every task on `TASK_IDS`");
   });
 
+  it("builds TASK_IDS from pr_open tasks only so later-status bundle-mates are not regressed", () => {
+    expect(content).toContain('select(.status == "pr_open") | .id');
+  });
+
   it("blocks every linked task with blockedReason naming the failed run id (no legacy note)", () => {
     const section = extractWatch(content);
     expect(section).toContain("Post-merge CI failed — run ID: {id}");
