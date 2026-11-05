@@ -33,7 +33,8 @@
  *      and trust it instead of re-claiming and 409ing against itself. Then
  *      dispatch the correct one-shot command by the item's phase tag (task →
  *      /shipwright:dev-task | /shipwright:plan-session; pr →
- *      /shipwright:review | /shipwright:patch | /shipwright:deploy) via the
+ *      /shipwright:review | /shipwright:patch | /shipwright:deploy |
+ *      /shipwright:merge) via the
  *      injected claude runner, and report the run. Every phase's command is
  *      `{command} {itemId}` except plan's, which is
  *      `{command} {repo} {session} --autonomous {itemId}`.
@@ -108,6 +109,10 @@ import {
   parseCandidateId,
 } from "./check-helpers.ts";
 import {
+  buildProductionDeps as buildMergeDeps,
+  getMergeCandidates,
+} from "./check-merge.ts";
+import {
   buildProductionDeps as buildPatchDeps,
   getPatchCandidates,
 } from "./check-patch.ts";
@@ -146,13 +151,7 @@ import {
  * four it is gated behind BOTH its manifest cron toggle and the
  * SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch.
  */
-type LoopPhase =
-  | "dev-task"
-  | "plan"
-  | "review"
-  | "patch"
-  | "deploy"
-  | "merge";
+type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy" | "merge";
 
 export interface LoopOrchestratorDeps {
   /** WL-2.2 dev-task qualification, pre-wired over its own production deps. */
@@ -171,6 +170,12 @@ export interface LoopOrchestratorDeps {
   getPatchCandidates: () => Promise<WorkPrCandidate[]>;
   /** WL-2.2 deploy qualification — candidates tagged phase: "deploy". */
   getDeployCandidates: () => Promise<WorkPrCandidate[]>;
+  /**
+   * MPD-1.3 merge qualification — candidates tagged phase: "merge". Optional:
+   * an orchestrator constructed without it behaves exactly as before, and it
+   * is only ever CALLED when the `shipwright-merge` toggle is on.
+   */
+  getMergeCandidates?: () => Promise<WorkPrCandidate[]>;
   /**
    * Pre-claim (CBD-1.2): claims a dev-task candidate directly against the
    * task store, POSTing /tasks/{id}/claim, BEFORE it is dispatched. Resolves
@@ -828,6 +833,7 @@ export function createLoopOrchestrator(
     getReviewCandidates,
     getPatchCandidates,
     getDeployCandidates,
+    getMergeCandidates,
     claimTask,
     claimPr,
     recordSkip,
@@ -1090,9 +1096,9 @@ export function createLoopOrchestrator(
       phase === "dev-task"
         ? `dev-task:${itemId}`
         : phase === "review" ||
-        phase === "patch" ||
-        phase === "deploy" ||
-        phase === "merge"
+            phase === "patch" ||
+            phase === "deploy" ||
+            phase === "merge"
           ? `${phase}:${itemId}:${randomUUID()}`
           : undefined;
 
@@ -2039,6 +2045,8 @@ export function createLoopOrchestrator(
         if (toggles.review) allPrs.push(...(await getReviewCandidates()));
         if (toggles.patch) allPrs.push(...(await getPatchCandidates()));
         if (toggles.deploy) allPrs.push(...(await getDeployCandidates()));
+        if (toggles.merge && getMergeCandidates)
+          allPrs.push(...(await getMergeCandidates()));
         const nowMs = clock.now().getTime();
         const prs: WorkPrCandidate[] = allPrs.filter(
           (p) =>
@@ -2471,6 +2479,7 @@ async function createProductionLoopOrchestrator(
   const reviewDeps = await buildReviewDeps({ ghJson, ghGraphql });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
   const deployDeps = await buildDeployDeps({ ghJson });
+  const mergeDeps = await buildMergeDeps({ ghJson });
   const taskStoreClient = createTaskStoreClient();
 
   return createLoopOrchestrator({
@@ -2479,6 +2488,7 @@ async function createProductionLoopOrchestrator(
     getReviewCandidates: () => getReviewCandidates(reviewDeps),
     getPatchCandidates: () => getPatchCandidates(patchDeps),
     getDeployCandidates: () => getDeployCandidates(deployDeps),
+    getMergeCandidates: () => getMergeCandidates(mergeDeps),
     claimTask: (id) => taskStoreClient.claim(id),
     claimPr: (pr) => {
       const parsed = parseCandidateId(pr.id);

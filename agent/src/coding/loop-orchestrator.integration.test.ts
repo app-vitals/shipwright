@@ -1523,7 +1523,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
   // dev-task's DTR-1.1 behavior above is untouched by any of this.
 
   /** The three PR phases CRT-1.3 widened the resume gate to. */
-  const PR_PHASES = ["review", "patch", "deploy"] as const;
+  const PR_PHASES = ["review", "patch", "deploy", "merge"] as const;
   type PrPhase = (typeof PR_PHASES)[number];
 
   /** Maps a PR phase to the child cron job name that enables it. */
@@ -1531,6 +1531,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     review: "shipwright-review",
     patch: "shipwright-patch",
     deploy: "shipwright-deploy",
+    merge: "shipwright-merge",
   };
 
   /**
@@ -1626,6 +1627,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       getReviewCandidates: opts.phase === "review" ? candidates : noCandidates,
       getPatchCandidates: opts.phase === "patch" ? candidates : noCandidates,
       getDeployCandidates: opts.phase === "deploy" ? candidates : noCandidates,
+      getMergeCandidates: opts.phase === "merge" ? candidates : noCandidates,
       claimTask: async () => true,
       claimPr: async () => {
         consumed = true;

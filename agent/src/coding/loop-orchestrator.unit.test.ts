@@ -358,6 +358,7 @@ function makeDrainingRunner(
     review?: WorkPrCandidate[];
     patch?: WorkPrCandidate[];
     deploy?: WorkPrCandidate[];
+    merge?: WorkPrCandidate[];
   },
   consumed: Set<string>,
   results: (string | ClaudeRunResult)[] = [],
@@ -383,6 +384,10 @@ function makeDrainingRunner(
       age: p.age,
     })),
     "/shipwright:deploy": (pools.deploy ?? []).map((p) => ({
+      id: p.id,
+      age: p.age,
+    })),
+    "/shipwright:merge": (pools.merge ?? []).map((p) => ({
       id: p.id,
       age: p.age,
     })),
@@ -428,7 +433,7 @@ function task(
 function pr(
   id: string,
   age: string,
-  phase: "review" | "patch" | "deploy",
+  phase: "review" | "patch" | "deploy" | "merge",
   overrides: Partial<WorkPrCandidate> = {},
 ): WorkPrCandidate {
   return { id, age, phase, commitSha: `${id}-sha`, ...overrides };
@@ -467,6 +472,7 @@ interface MakeDepsOptions {
   reviewCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   patchCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
+  mergeCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   runner?: LoopOrchestratorDeps["runner"];
   reporter?: CronRunReporter;
   // DTW-1.3: live task-state probe used by the dev-task auto-resume loop.
@@ -589,6 +595,12 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     getDeployCandidates: poolStub(
       "deploy",
       options.deployCandidates,
+      consumed,
+      calls,
+    ),
+    getMergeCandidates: poolStub(
+      "merge",
+      options.mergeCandidates,
       consumed,
       calls,
     ),
@@ -1245,6 +1257,100 @@ describe("createLoopOrchestrator", () => {
 
     expectDispatchedCommands(messages, [
       "/shipwright:deploy acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
+    ]);
+  });
+
+  test("merge-only tick (merge enabled, deploy disabled) dispatches /shipwright:merge with the pre-claim marker for the oldest eligible PR", async () => {
+    const consumed = new Set<string>();
+    const mergeCandidates = [
+      pr("acme/x#8", "2026-01-02T00:00:00Z", "merge"),
+      pr("acme/x#7", "2026-01-01T00:00:00Z", "merge"),
+    ];
+    const deployCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "deploy")];
+    const { runner, messages } = makeDrainingRunner(
+      { merge: mergeCandidates, deploy: deployCandidates },
+      consumed,
+    );
+    const deps = makeDeps({
+      mergeCandidates,
+      deployCandidates,
+      runner,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-merge", true),
+      job("shipwright-deploy", false),
+    ]);
+
+    expectDispatchedCommands(messages, [
+      "/shipwright:merge acme/x#7 [preclaim:acme/x#7:acme/x#7-sha]",
+      "/shipwright:merge acme/x#8 [preclaim:acme/x#8:acme/x#8-sha]",
+    ]);
+  });
+
+  test("with merge disabled the merge provider is never called and behavior is unchanged", async () => {
+    const consumed = new Set<string>();
+    const mergeCandidates = [pr("acme/x#7", "2026-01-01T00:00:00Z", "merge")];
+    const deployCandidates = [pr("acme/x#3", "2026-01-02T00:00:00Z", "deploy")];
+    const { runner, messages } = makeDrainingRunner(
+      { merge: mergeCandidates, deploy: deployCandidates },
+      consumed,
+    );
+    const calls: string[] = [];
+    const deps = makeDeps({
+      mergeCandidates,
+      deployCandidates,
+      runner,
+      consumed,
+      calls,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-merge", false),
+      job("shipwright-deploy", true),
+    ]);
+
+    expect(calls).not.toContain("merge");
+    expectDispatchedCommands(messages, [
+      "/shipwright:deploy acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
+    ]);
+  });
+
+  test("merge and deploy coexist: mixed phases drain in global age order", async () => {
+    const consumed = new Set<string>();
+    const mergeCandidates = [pr("acme/x#2", "2026-01-02T00:00:00Z", "merge")];
+    const deployCandidates = [pr("acme/x#1", "2026-01-01T00:00:00Z", "deploy")];
+    const reviewCandidates = [pr("acme/x#3", "2026-01-03T00:00:00Z", "review")];
+    const { runner, messages } = makeDrainingRunner(
+      {
+        merge: mergeCandidates,
+        deploy: deployCandidates,
+        review: reviewCandidates,
+      },
+      consumed,
+    );
+    const deps = makeDeps({
+      mergeCandidates,
+      deployCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-merge", true),
+      job("shipwright-deploy", true),
+      job("shipwright-review", true),
+    ]);
+
+    expectDispatchedCommands(messages, [
+      "/shipwright:deploy acme/x#1 [preclaim:acme/x#1:acme/x#1-sha]",
+      "/shipwright:merge acme/x#2 [preclaim:acme/x#2:acme/x#2-sha]",
+      "/shipwright:review acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
     ]);
   });
 
@@ -4091,7 +4197,7 @@ describe("createLoopOrchestrator", () => {
 
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
 
-  for (const phase of ["review", "patch", "deploy"] as const) {
+  for (const phase of ["review", "patch", "deploy", "merge"] as const) {
     const optKey = `${phase}Candidates` as const;
     const command = `/shipwright:${phase}`;
 

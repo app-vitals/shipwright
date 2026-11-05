@@ -97,6 +97,15 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: "shipwright-loop",
   },
   {
+    name: "shipwright-merge",
+    schedule: "* * * * *",
+    prompt: "/shipwright:merge",
+    silent: true,
+    preCheck: null,
+    enabled: false,
+    parentCron: "shipwright-loop",
+  },
+  {
     name: "shipwright-loop",
     schedule: "* * * * *",
     prompt:
