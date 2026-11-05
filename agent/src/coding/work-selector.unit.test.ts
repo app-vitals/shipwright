@@ -132,6 +132,23 @@ describe("selectNextWorkItem", () => {
     expect(result?.type === "pr" && result.pr.phase).toBe("review");
   });
 
+  it("ranks merge-phase candidates in strict age FIFO with review/patch/deploy", () => {
+    const prs = [
+      makePr({ id: "o/r#4", age: "2026-01-04T00:00:00.000Z", phase: "deploy" }),
+      makePr({ id: "o/r#3", age: "2026-01-03T00:00:00.000Z", phase: "merge" }),
+      makePr({ id: "o/r#2", age: "2026-01-02T00:00:00.000Z", phase: "patch" }),
+      makePr({ id: "o/r#1", age: "2026-01-05T00:00:00.000Z", phase: "review" }),
+    ];
+    expect(rankWorkItems([], prs).map((i) => [i.id, i.phase])).toEqual([
+      ["o/r#2", "patch"],
+      ["o/r#3", "merge"],
+      ["o/r#4", "deploy"],
+      ["o/r#1", "review"],
+    ]);
+    const result = selectNextWorkItem([], [prs[0], prs[1]]);
+    expect(result?.type === "pr" && result.pr.phase).toBe("merge");
+  });
+
   it("handles PR without phase set (undefined) in ranking correctly", () => {
     const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
     const newer = makePr({

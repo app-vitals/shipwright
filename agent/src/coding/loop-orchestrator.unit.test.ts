@@ -6094,3 +6094,18 @@ describe("resolvePhaseCommand default existence check (DTA-1.3)", () => {
     }
   });
 });
+
+// ─── merge phase mapping (MPD-1.3) ──────────────────────────────────────────
+
+describe("merge phase", () => {
+  test("a merge candidate id round-trips to /shipwright:merge and a merge claim", () => {
+    expect(resolvePhaseCommand("merge", () => 0.99).command).toBe(
+      "/shipwright:merge",
+    );
+    const request = buildClaimPrRequest(
+      { id: "acme/repo#7", age: "", phase: "merge", commitSha: "abc" },
+      { repo: "acme/repo", prNumber: 7 },
+    );
+    expect(request).toMatchObject({ phase: "merge", prNumber: 7 });
+  });
+});
