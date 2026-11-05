@@ -69,7 +69,8 @@ pre-flight failure) must release it first so the PR is not stuck until the claim
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **merge-only mode** — no
-todos update will be performed.
+todos update will be performed. Set `MERGE_ONLY=true` for this case (else `MERGE_ONLY=false`);
+Step 4's failure path reads it.
 
 ### 1a. Own-PRs-Only Check
 
@@ -488,9 +489,12 @@ non-green `conclusion` — `failure`, `cancelled`, `timed_out`, `action_required
   Logs: gh run view {id} --log --failed
 ```
 Block every task on `TASK_IDS` (not just the primary — bundle-mates were merged together and
-fail together). If no task is linked, flag the PR record instead:
+fail together). Only do so when Step 3b actually marked them merged: in merge-only mode
+(`MERGE_ONLY=true`) the tasks were never moved to `merged`, so PATCHing `blocked` onto them
+would regress their status (e.g. an already `deployed`/`done` task). In merge-only mode, or when
+no task is linked, flag the PR record instead:
 ```bash
-if [ -n "$TASK_IDS" ]; then
+if [ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]; then
   for tid in $TASK_IDS; do
     curl -sf -X PATCH \
       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \

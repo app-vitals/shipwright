@@ -442,6 +442,12 @@ describe("merge.md — Step 4: post-merge CI watch", () => {
     expect(section).not.toContain('\\"note\\"');
   });
 
+  it("guards the failure-path task block with the merge-only condition", () => {
+    const section = extractWatch(content);
+    expect(content).toContain("MERGE_ONLY=true");
+    expect(section).toContain('[ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]');
+  });
+
   it("flags the PR record blocked:true with blockedReason when no task is linked", () => {
     const section = extractWatch(content);
     expect(section).toContain("/prs/$PR_RECORD_ID");
