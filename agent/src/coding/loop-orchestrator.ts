@@ -146,7 +146,13 @@ import {
  * four it is gated behind BOTH its manifest cron toggle and the
  * SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch.
  */
-type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy";
+type LoopPhase =
+  | "dev-task"
+  | "plan"
+  | "review"
+  | "patch"
+  | "deploy"
+  | "merge";
 
 export interface LoopOrchestratorDeps {
   /** WL-2.2 dev-task qualification, pre-wired over its own production deps. */
@@ -507,6 +513,7 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
   review: "/shipwright:review",
   patch: "/shipwright:patch",
   deploy: "/shipwright:deploy",
+  merge: "/shipwright:merge",
 };
 
 /** Which slash-command variant a dispatch ran (DTA-1.3). */
@@ -1082,7 +1089,10 @@ export function createLoopOrchestrator(
     const sessionKey =
       phase === "dev-task"
         ? `dev-task:${itemId}`
-        : phase === "review" || phase === "patch" || phase === "deploy"
+        : phase === "review" ||
+        phase === "patch" ||
+        phase === "deploy" ||
+        phase === "merge"
           ? `${phase}:${itemId}:${randomUUID()}`
           : undefined;
 
@@ -1572,7 +1582,10 @@ export function createLoopOrchestrator(
     // record's CUID that GET/POST /prs/{id} keys on — the same distinction the
     // recordSkip/resetSkip calls above already observe.
     if (
-      (phase === "review" || phase === "patch" || phase === "deploy") &&
+      (phase === "review" ||
+        phase === "patch" ||
+        phase === "deploy" ||
+        phase === "merge") &&
       sessionKey
     ) {
       try {
@@ -2419,7 +2432,7 @@ export function buildClaimPrRequest(
   repo: string;
   prNumber: number;
   commitSha: string;
-  phase: "review" | "patch" | "deploy";
+  phase: "review" | "patch" | "deploy" | "merge";
   authorLogin?: string;
   headRefName?: string;
   title?: string;

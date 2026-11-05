@@ -59,7 +59,7 @@ export interface WorkTaskCandidate {
 export interface WorkPrCandidate {
   id: string;
   age: string;
-  phase?: "review" | "patch" | "deploy";
+  phase?: "review" | "patch" | "deploy" | "merge";
   title?: string;
   /**
    * The PR author's GitHub login (POM-1.2) — forwarded by loop-orchestrator's
@@ -121,7 +121,7 @@ export interface RankedWorkItem {
   type: "task" | "pr";
   id: string;
   title?: string;
-  phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
+  phase: "dev-task" | "plan" | "review" | "patch" | "deploy" | "merge";
   age: string;
 }
 

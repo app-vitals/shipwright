@@ -518,7 +518,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     repo: string;
     prNumber: number;
     commitSha: string;
-    phase: "review" | "patch" | "deploy";
+    phase: "review" | "patch" | "deploy" | "merge";
     /** POM-1.2: forwarded to POST /prs/claim so origin can be derived server-side. */
     authorLogin?: string | null;
     /**
@@ -713,7 +713,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       repo: string;
       prNumber: number;
       commitSha: string;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "deploy" | "merge";
       authorLogin?: string | null;
       headRefName?: string;
       title?: string;
