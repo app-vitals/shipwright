@@ -1850,6 +1850,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       "done",
       "deploying",
       "deployed",
+      "released",
       "cancelled",
     ]) {
       expect(statusHtml).not.toContain(`value="${closed}"`);
@@ -1896,6 +1897,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       "done",
       "deploying",
       "deployed",
+      "released",
       "blocked",
       "cancelled",
     ]) {
@@ -4734,7 +4736,14 @@ describe("classifyTaskState", () => {
     },
   );
 
-  test.each(["merged", "done", "deploying", "deployed", "cancelled"] as const)(
+  test.each([
+    "merged",
+    "done",
+    "deploying",
+    "deployed",
+    "released",
+    "cancelled",
+  ] as const)(
     "closed status %s takes precedence over a stale non-empty blockedBy",
     (status) => {
       const task: TaskItem = {
@@ -4780,12 +4789,16 @@ describe("bucketTaskColumn", () => {
     status: "pending",
   };
 
-  test.each(["merged", "deployed", "done", "deploying", "cancelled"] as const)(
-    "status %s buckets as done",
-    (status) => {
-      expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
-    },
-  );
+  test.each([
+    "merged",
+    "deployed",
+    "released",
+    "done",
+    "deploying",
+    "cancelled",
+  ] as const)("status %s buckets as done", (status) => {
+    expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
+  });
 
   test("status done wins over hitl:true (done takes precedence)", () => {
     const task: TaskItem = { ...BASE, status: "done", hitl: true };
@@ -6123,4 +6136,16 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       );
     });
   }
+});
+
+describe("released status rendering (MPD-1.6)", () => {
+  test("session detail renders a released task with the green badge", () => {
+    const html = renderSessionDetailPage(
+      "session-abc",
+      [{ id: "T-REL", title: "Released task", status: "released" }],
+      "user@example.com",
+    );
+    expect(html).toContain('class="badge badge-green"');
+    expect(html).toMatch(/badge-green[^>]*>released</);
+  });
 });

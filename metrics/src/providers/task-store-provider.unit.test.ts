@@ -525,3 +525,22 @@ describe("TaskStoreProvider.mergedPrsByRepo (unit) — commit-count aggregation"
     expect(row?.[colIndex(t, "commitSum")]).toBe(0);
   });
 });
+
+describe("TaskStoreProvider.summary (unit) — released counts as shipped (MPD-1.6)", () => {
+  test("released tasks count in tasks_completed alongside deployed and merged", async () => {
+    const base = {
+      repo: "org/repo",
+      startedAt: "2026-06-02T08:00:00.000Z",
+      completedAt: "2026-06-02T12:00:00.000Z",
+      createdAt: "2026-06-01T08:00:00.000Z",
+    };
+    const tasks: TaskRecord[] = [
+      { ...base, id: "QS-1.1", status: "released" },
+      { ...base, id: "QS-1.2", status: "deployed" },
+      { ...base, id: "QS-1.3", status: "pending" },
+    ];
+    const provider = buildProvider(tasks, []);
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    expect(t.results[0][colIndex(t, "tasks_completed")]).toBe(2);
+  });
+});

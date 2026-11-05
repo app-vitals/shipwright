@@ -1585,8 +1585,8 @@ const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
 // Every task resolves to exactly one column. Precedence is checked top to
 // bottom below, first match wins:
 //
-//   1. done         — status is one of merged/deployed/done/deploying/
-//                      cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
+//   1. done         — status is one of merged/deployed/released/done/
+//                      deploying/cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
 //                      every other signal, including hitl:true or a blocked
 //                      joined PR, so a completed task never shows as needing
 //                      a human.
