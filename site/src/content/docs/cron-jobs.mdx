@@ -81,8 +81,8 @@ reconcile runs.
 
 ### Loop-driven vs standalone crons
 
-Not every cron discovers its own work. The five pipeline crons — `shipwright-plan`,
-`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy` — are children of
+Not every cron discovers its own work. The six pipeline crons — `shipwright-plan`,
+`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, `shipwright-deploy`, and `shipwright-merge` — are children of
 `shipwright-loop` (linked via `parentCronId`). They are **loop-driven, item-addressed executors**,
 not self-discovering standalone crons:
 
@@ -118,6 +118,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 | `shipwright-review` | every minute | `/shipwright:review` | — | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-patch` | every minute | `/shipwright:patch` | — | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-deploy` | every minute | `/shipwright:deploy` | — | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-merge` | every minute | `/shipwright:merge` | — | off | Merges the approved, CI-green PR `shipwright-loop` selects, without the deploy pipeline. Inert if `shipwright-loop` is disabled. |
 | `shipwright-loop` | every minute | internal | — | off | Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
 | `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
