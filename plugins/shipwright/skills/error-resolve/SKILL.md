@@ -152,8 +152,8 @@ reached `deployed` or `done` status — never `merged`, never `pr_open`, never a
 status.**
 
 `deployed` and `done` are the only resolving statuses.
-`merged`, `released` and `pr_open` never resolve: `released` means a library was published, which does not change a running service until a
-consumer deploys it (a published library has no effect on a running service by itself).
+`merged`, `released` and `pr_open` never resolve: `released` means a library was published, and a published library does not change a running
+service until a consumer deploys it.
 
 For each issue with a successfully-looked-up gating task status (Step 3):
 
