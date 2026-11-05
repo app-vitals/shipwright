@@ -42,7 +42,7 @@ A single `app.onError` hook (`task-store/src/app.ts`) dispatches every thrown er
 
 ### Outbound webhook
 
-The task store can notify a downstream service of task writes via a generic `{ type, data }` webhook — configured entirely through env vars (`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS`, see [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)). `task.write` is the only event type today, firing from every `TaskService` method that creates or mutates a task row (`create`, `bulk`, `update`, `claim`, `complete`, `fail`, `release`, `unblock`, `recordSkip`, `resetSkip`) — `remove()` and `heartbeat()` deliberately don't fire it. Delivery is **fail-closed with no retry**: the dispatch happens inside the same transaction as the write it announces, so a delivery failure rolls back the entire write rather than leaving an unannounced task row. See `task-store/src/webhook-dispatcher.ts` for the envelope/signature implementation.
+The task store can notify a downstream service of task writes via a generic `{ type, data }` webhook — configured entirely through env vars (`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS`, see [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)). `task.write` is the only event type today, firing from every `TaskService` method that creates or mutates a task row (`create`, `bulk`, `markMergedByPr`, `update`, `claim`, `complete`, `fail`, `release`, `unblock`, `recordSkip`, `resetSkip`) — `remove()` and `heartbeat()` deliberately don't fire it. Delivery is **fail-closed with no retry**: the dispatch happens inside the same transaction as the write it announces, so a delivery failure rolls back the entire write rather than leaving an unannounced task row. See `task-store/src/webhook-dispatcher.ts` for the envelope/signature implementation.
 
 ### Sessions
 
@@ -106,6 +106,23 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 ### PR tracking & dispatch guards
 
 PR origin metrics, verification checks, skip tracking (reason-aware auto-block), the same-branch exclusivity guard, and the session archive sweep are documented in [`task-store-pr-tracking.md`](./task-store-pr-tracking.md).
+
+### Marking merged tasks deployed or released by PR
+
+`PATCH /tasks/by-pr` is for external deployment/release automation that knows PR numbers, not task ids.
+
+Request body: `{ "repo": "org/repo", "prNumbers": [101, 102], "status": "deployed" | "released", "at"?: "<ISO timestamp>" }`.
+
+- `prNumbers` must hold 1 to 100 positive integers; an empty list, an over-large batch, a non-integer entry, an unknown `status` (only `deployed` and `released` are accepted), a malformed `repo` or an unparseable `at` is a `400`.
+- Every task of `repo` whose `pr` is listed is considered. Only tasks currently `merged` transition: they get the requested `status` and `deployedAt` / `releasedAt` set to `at` (default: now), with TaskEvent audit rows.
+- Idempotent: a task already at the requested `status` is reported under `unchanged` and left untouched, so repeating a call is safe.
+- Tasks in any other status (`pr_open`, `approved`, `blocked`, `done`, ...) are never modified and are reported under `skipped` with their current status. Note that a task already `deployed` is `skipped` (not `unchanged`) when `released` is requested, and vice versa.
+- Everything runs in one transaction (including the single `task.write` webhook dispatch): a bundle of tasks on one PR is updated all-or-nothing. A task changing status concurrently aborts the call with `409`; retry.
+- Scope: agent tokens may only target a `repo` in their repo scope (`403` otherwise) and only see tasks of their own account; admin tokens are unrestricted or narrowed with `?accountId=`.
+
+Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<id>", "status": "pr_open" }] }`.
+
+The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
 
 ### Token management
 

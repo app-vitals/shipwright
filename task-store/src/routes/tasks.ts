@@ -41,6 +41,13 @@
  *                              whole call instead of populating it). Capped at
  *                              MAX_BULK_TASKS tasks per call (400 over that), which
  *                              bounds the batch-size-scaled transaction budget.
+ *   PATCH  /tasks/by-pr         (MPD-1.2) body { repo, prNumbers[], status: deployed|released, at? } —
+ *                              in ONE transaction moves every `merged` task of those PRs to
+ *                              the status and stamps deployedAt/releasedAt (= at or now),
+ *                              writing TaskEvent rows. Already-at-status tasks are
+ *                              `unchanged`, any other status is `skipped`. Returns
+ *                              { updated, unchanged, skipped }. Agent tokens: repo must be in
+ *                              scope (403); account-scoped. Max MAX_PATCH_BY_PR_NUMBERS prNumbers.
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete
@@ -78,6 +85,8 @@ import {
   DistinctResponseSchema,
   ErrorSchema,
   FailBodySchema,
+  PatchTasksByPrBodySchema,
+  PatchTasksByPrResponseSchema,
   SkipBodySchema,
   TaskEventsQuerySchema,
   TaskEventsResponseSchema,
@@ -88,7 +97,11 @@ import {
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
-import { MAX_BULK_TASKS, type TaskServiceLike } from "../task-service.ts";
+import {
+  MAX_BULK_TASKS,
+  MAX_PATCH_BY_PR_NUMBERS,
+  type TaskServiceLike,
+} from "../task-service.ts";
 import { isOrgRepo, normalizePr } from "../validate.ts";
 
 // Fields that gate task claim ownership. Agent tokens must go through the
@@ -470,6 +483,49 @@ const bulkRoute = createRoute({
     },
     502: {
       description: "Webhook delivery failed; the entire batch was rolled back",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const patchByPrRoute = createRoute({
+  method: "patch",
+  path: "/by-pr",
+  tags: ["tasks"],
+  summary: "Mark merged tasks deployed or released by PR number",
+  description: `For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of \`repo\` whose \`pr\` is in \`prNumbers\` and whose status is \`merged\` is moved to \`status\` (\`deployed\` | \`released\`) and its \`deployedAt\`/\`releasedAt\` is stamped with \`at\` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported \`unchanged\` (idempotent); tasks in any other status are \`skipped\` with their status and never modified. At most ${MAX_PATCH_BY_PR_NUMBERS} PR numbers per call. Equivalent manual flow: \`GET /tasks?pr=&repo=\` then \`PATCH /tasks/:id\`.`,
+  request: {
+    body: {
+      content: { "application/json": { schema: PatchTasksByPrBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Per-task outcome",
+      content: {
+        "application/json": { schema: PatchTasksByPrResponseSchema },
+      },
+    },
+    400: {
+      description: `Bad request — empty or more than ${MAX_PATCH_BY_PR_NUMBERS} prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at`,
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description:
+        "Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — a task changed status concurrently; the whole call was rolled back, retry",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; the whole call was rolled back",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -1091,6 +1147,38 @@ export function createTasksRoutes(
     const result = await withGenericIdConflict(c, () =>
       taskService.bulk(body as Prisma.TaskCreateInput[]),
     );
+    return c.json(result, 200);
+  });
+
+  // ─── PATCH by PR (MPD-1.2) ─────────────────────────────────────────────────
+  // Must be registered before /:id routes to avoid param capture.
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(patchByPrRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos");
+    const body = c.req.valid("json");
+    if (!isOrgRepo(body.repo)) {
+      throw new BadRequestError(
+        `repo '${body.repo}' must be in org/repo format`,
+      );
+    }
+    if (agentId !== null && !(repos ?? []).includes(body.repo)) {
+      throw new ForbiddenError(
+        `repo '${body.repo}' is not in this agent's scope`,
+      );
+    }
+    if (c.get("accountId") === NO_ACCESS_ACCOUNT_ID) {
+      throw new ForbiddenError(
+        "account scope unavailable — cannot update tasks",
+      );
+    }
+    const result = await taskService.markMergedByPr({
+      repo: body.repo,
+      prNumbers: body.prNumbers,
+      status: body.status,
+      at: body.at,
+      accountId: resolveAccountScope(c),
+    });
     return c.json(result, 200);
   });
 

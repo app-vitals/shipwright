@@ -179,6 +179,9 @@ function fakeTaskService(
   } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?) {
       const tasks = (opts.listResult ?? []).map(withBlockedBy);
       return {

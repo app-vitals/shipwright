@@ -106,6 +106,9 @@ function fakeTaskService(
   opts: { listResult?: Task[]; capturedListFilters?: TaskListFilters[] } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?: TaskListFilters) {
       if (opts.capturedListFilters && filters) {
         opts.capturedListFilters.push({ ...filters });

@@ -149,6 +149,32 @@ curl -sf -X POST \
   | jq .
 ```
 
+### PATCH /tasks/by-pr
+
+Mark every `merged` task linked to a set of PRs as `deployed` or `released` in one request, for automation that knows PRs rather than task ids. Register order matters server-side: this literal path is matched before `PATCH /tasks/:id`.
+
+Request body: `{ "repo": "org/repo", "prNumbers": [101, 102], "status": "deployed" | "released", "at"?: "<ISO timestamp>" }`.
+
+- `prNumbers` must hold 1 to 100 positive integers; an empty list, an over-large batch, a non-integer entry, an unknown `status` (only `deployed` and `released` are accepted), a malformed `repo` or an unparseable `at` is a `400`.
+- Every task of `repo` whose `pr` is listed is considered. Only tasks currently `merged` transition: they get the requested `status` and `deployedAt` / `releasedAt` set to `at` (default: now), with TaskEvent audit rows.
+- Idempotent: a task already at the requested `status` is reported under `unchanged` and left untouched, so repeating a call is safe.
+- Tasks in any other status (`pr_open`, `approved`, `blocked`, `done`, ...) are never modified and are reported under `skipped` with their current status. Note that a task already `deployed` is `skipped` (not `unchanged`) when `released` is requested, and vice versa.
+- Everything runs in one transaction (including the single `task.write` webhook dispatch): a bundle of tasks on one PR is updated all-or-nothing. A task changing status concurrently aborts the call with `409`; retry.
+- Scope: agent tokens may only target a `repo` in their repo scope (`403` otherwise) and only see tasks of their own account; admin tokens are unrestricted or narrowed with `?accountId=`.
+
+Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<id>", "status": "pr_open" }] }`.
+
+The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/by-pr" \
+  -d '{"repo": "org/repo", "prNumbers": [101, 102], "status": "deployed"}' \
+  | jq .
+```
+
 ### GET /tasks/distinct
 
 Return the distinct `sessions` and `repos` visible to the caller. Useful for filtering UI dropdowns.
