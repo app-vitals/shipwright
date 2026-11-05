@@ -20,7 +20,9 @@ datasource db {
 // ─── Task Status ──────────────────────────────────────────────────────────────
 // Full pipeline status set. Lifecycle:
 // pending → in_progress → pr_open → approved → merged → deploying → deployed
-// Terminal: merged | done | deployed | cancelled. Paused: blocked.
+// `released` (MPD-1.1) is a terminal alternative to `deployed` for repos whose
+// changes ship on a release cadence rather than a direct deploy.
+// Terminal: merged | done | deployed | released | cancelled. Paused: blocked.
 
 enum TaskStatus {
   pending
@@ -31,6 +33,7 @@ enum TaskStatus {
   done
   deploying
   deployed
+  released
   blocked
   cancelled
 }
@@ -91,6 +94,7 @@ model Task {
   completedAt        String?
   deployingAt        String?
   deployedAt         String?
+  releasedAt         String? // MPD-1.1: set when status → released (mirrors deployedAt)
   ciFixAttempts      Int?
   mergeCommit        String?
   prUrl              String?
@@ -213,6 +217,7 @@ enum PrReviewState {
 enum PrPhase {
   review
   patch
+  merge
   deploy
 }
 
@@ -273,9 +278,10 @@ model PullRequest {
   claimedBy         String?
   claimedAt         String?
   heartbeatAt       String?
-  phase             PrPhase? // current pipeline phase: review | patch | deploy
+  phase             PrPhase? // current pipeline phase: review | patch | merge | deploy
   readyForReviewAt  String?
   readyForPatchAt   String?
+  readyForMergeAt   String? // MPD-1.1: stamped on first phase=merge claim
   readyForDeployAt  String?
   blocked           Boolean       @default(false)
   blockedReason     String?

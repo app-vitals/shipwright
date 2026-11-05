@@ -34,7 +34,7 @@ those three. Three call sites write these fields:
    repo-wide census sweep (see [agent-ops.md](./agent-ops.md#pr-origin-census-sweep)) to backfill
    origin/author/branch/title/commit-count metrics for PRs the pipeline never claimed directly. It
    never touches claim/phase/review/patch/blocked fields, so it's safe to run alongside
-   review/patch/deploy's separate `POST /prs/claim` lock. New rows get `phase=null`,
+   review/patch/merge/deploy's separate `POST /prs/claim` lock. New rows get `phase=null`,
    `reviewState="pending"`, `staged=false`. The five commit-count fields (CPP-1.1: `commitCount`,
    `commitsDocsRefresh`, `commitsReviewPatch`, `commitsCiFix`, `commitsImplementation`) are written
    unconditionally when supplied.

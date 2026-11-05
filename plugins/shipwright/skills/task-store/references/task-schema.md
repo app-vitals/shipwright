@@ -43,7 +43,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 | `ciFixAttempts` | number | before `pr_open` → `approved` / `merged` |
 | `mergedAt` | ISO string | → `merged` |
 | `blockedAt` / `blockedReason` | ISO string / string | → `blocked` |
-| `cancelledAt` / `deployingAt` / `deployedAt` / `completedAt` | ISO string | corresponding status |
+| `cancelledAt` / `deployingAt` / `deployedAt` / `releasedAt` / `completedAt` | ISO string | corresponding status |
 | `mergeCommit` | string | merge commit SHA |
 | `source` / `issue` | string | provenance ref; see conventions below. Filterable via `GET /tasks?source=...`. |
 
@@ -67,7 +67,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 
 `pending → in_progress → pr_open → approved → merged → deploying → deployed`
 
-Terminal: `merged`, `done`, `deployed`, `cancelled`. Paused: `blocked`.
+Terminal: `merged`, `done`, `deployed`, `released`, `cancelled`. Paused: `blocked`.
 
 A task is **`--ready`** when `status === "pending"` AND every id in `dependencies` is satisfied
 (the dependency is `merged`, or on the same `branch` with `pr_open` / `approved`).

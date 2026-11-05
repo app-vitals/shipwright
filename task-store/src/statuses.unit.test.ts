@@ -23,6 +23,7 @@ const ALL_KNOWN_STATUSES = [
   "done",
   "deploying",
   "deployed",
+  "released",
   "blocked",
   "cancelled",
 ] as const;
@@ -30,16 +31,28 @@ const ALL_KNOWN_STATUSES = [
 describe("CLOSED_STATUSES", () => {
   it("contains exactly the terminal statuses (order-independent)", () => {
     expect(Array.from<string>(CLOSED_STATUSES).sort()).toEqual(
-      ["merged", "done", "deploying", "deployed", "cancelled"].sort(),
+      [
+        "merged",
+        "done",
+        "deploying",
+        "deployed",
+        "released",
+        "cancelled",
+      ].sort(),
     );
   });
 
-  it("has length 5", () => {
-    expect(CLOSED_STATUSES.length).toBe(5);
+  it("has length 6", () => {
+    expect(CLOSED_STATUSES.length).toBe(6);
   });
 
   it("has no duplicate entries", () => {
     expect(new Set(CLOSED_STATUSES).size).toBe(CLOSED_STATUSES.length);
+  });
+
+  it("classifies 'released' as closed (MPD-1.1) — it satisfies dependencies like 'deployed'", () => {
+    expect(CLOSED_STATUSES).toContain("released");
+    expect(OPEN_STATUSES as readonly string[]).not.toContain("released");
   });
 });
 
@@ -96,7 +109,7 @@ describe("array independence", () => {
   it("mutating a copy of CLOSED_STATUSES does not affect the exported array", () => {
     const copy: string[] = [...CLOSED_STATUSES];
     copy.push("something-else");
-    expect(CLOSED_STATUSES.length).toBe(5);
+    expect(CLOSED_STATUSES.length).toBe(6);
     expect(CLOSED_STATUSES).not.toContain("something-else");
   });
 

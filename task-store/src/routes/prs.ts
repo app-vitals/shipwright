@@ -159,7 +159,7 @@ const claimRoute = createRoute({
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
   description:
-    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge`/`deploy` phases preserve `reviewState` as-is rather than resetting it; `merge`/`deploy` also stamp `readyForMergeAt`/`readyForDeployAt` respectively when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -248,7 +248,7 @@ const updateRoute = createRoute({
   tags: ["PRs"],
   summary: "Update pull request fields",
   description:
-    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -666,7 +666,10 @@ export function createPrsRoutes(
     // readJson reads the raw body, not the Zod-validated payload — this guard
     // narrows phase to the allowed enum values before forwarding to the service.
     const resolvedPhase =
-      phase === "review" || phase === "patch" || phase === "deploy"
+      phase === "review" ||
+      phase === "patch" ||
+      phase === "merge" ||
+      phase === "deploy"
         ? phase
         : undefined;
 
@@ -838,8 +841,9 @@ export function createPrsRoutes(
   //   state, mergedAt, reviewState — set when marking a PR as merged
   //
   // Pipeline phase tracking:
-  //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
-  //   the review/patch/deploy skills to record when a PR enters each phase
+  //   phase, readyForReviewAt, readyForPatchAt, readyForMergeAt,
+  //   readyForDeployAt — set by the review/patch/merge/deploy skills to record
+  //   when a PR enters each phase
   //
   // PR-level block (blocks automation on a PR with no linked Task):
   //   blocked, blockedReason, blockedHeadSha
@@ -861,6 +865,7 @@ export function createPrsRoutes(
     "phase",
     "readyForReviewAt",
     "readyForPatchAt",
+    "readyForMergeAt",
     "readyForDeployAt",
     "blocked",
     "blockedReason",

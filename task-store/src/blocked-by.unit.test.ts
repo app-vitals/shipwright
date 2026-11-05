@@ -146,6 +146,13 @@ describe("computeBlockedBy", () => {
     expect(result).toEqual([]);
   });
 
+  it("returns empty array when dependency is in terminal status (released, MPD-1.1)", () => {
+    const dep = makeTask({ id: "dep-1", status: "released" });
+    const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
+    const result = computeBlockedBy(task, [task, dep]);
+    expect(result).toEqual([]);
+  });
+
   it("returns empty array when dependency is in terminal status (cancelled)", () => {
     const dep = makeTask({ id: "dep-1", status: "cancelled" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });

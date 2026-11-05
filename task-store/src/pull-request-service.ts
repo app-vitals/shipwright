@@ -622,6 +622,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     on first creation of the record, also stamps readyForReviewAt=now
    *     (mirrors claimNext()'s behaviour for pre-existing records)
    *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
+   *   - merge: sets phase='merge', claim fields, sets readyForMergeAt=now if null
+   *     (MPD-1.1); does NOT touch reviewState
    *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
    *
    * Conflict detection:
@@ -679,6 +681,11 @@ export class PullRequestService implements PullRequestServiceLike {
 
         if (phase === "review") {
           updateData.reviewState = "in_progress";
+        } else if (phase === "merge") {
+          // Set readyForMergeAt only if not already set
+          if (existing.readyForMergeAt === null) {
+            updateData.readyForMergeAt = now;
+          }
         } else if (phase === "deploy") {
           // Set readyForDeployAt only if not already set
           if (existing.readyForDeployAt === null) {
@@ -797,6 +804,8 @@ export class PullRequestService implements PullRequestServiceLike {
         if (phase === "review") {
           createData.reviewState = "in_progress";
           createData.readyForReviewAt = now;
+        } else if (phase === "merge") {
+          createData.readyForMergeAt = now;
         } else if (phase === "deploy") {
           createData.readyForDeployAt = now;
         }
@@ -1004,7 +1013,7 @@ export class PullRequestService implements PullRequestServiceLike {
    * Steps (all in one transaction):
    *   1. Count active claims by agentId — if >= maxConcurrent, return null
    *   2. Find oldest unclaimed eligible PR ordered by
-   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ASC
+   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt, readyForDeployAt) ASC
    *      WHERE claimedBy IS NULL AND state='open' AND reviewState IN ('pending','posted','approved')
    *   3. Determine phase from reviewState: pending→review, posted→patch, approved→deploy
    *   4. Set readyForReviewAt=now if null (first claim)
@@ -1062,7 +1071,7 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
            ${accountFilter}
-         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
+         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt", "readyForDeployAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
       `;

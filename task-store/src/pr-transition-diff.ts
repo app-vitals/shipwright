@@ -61,6 +61,7 @@ export const AUDITED_FIELDS: ReadonlyArray<keyof PullRequest> = [
   "phase",
   "readyForReviewAt",
   "readyForPatchAt",
+  "readyForMergeAt",
   "readyForDeployAt",
   "blocked",
   "blockedReason",
