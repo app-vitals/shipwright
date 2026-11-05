@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List tasks
-         * @description Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.
+         * @description Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
          */
         get: {
             parameters: {
@@ -22,7 +22,9 @@ export interface paths {
                     state?: "open" | "closed" | "in_progress" | "ready" | "blocked";
                     source?: string;
                     session?: string;
+                    /** @description Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). */
                     repo?: string | string[];
+                    /** @description Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter. */
                     org?: string | string[];
                     assignee?: string;
                     claimedBy?: string;
@@ -31,9 +33,13 @@ export interface paths {
                     limit?: string;
                     offset?: string;
                     ready?: "true" | "false";
+                    /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
+                    accountId?: string;
                     hitl?: "true" | "false";
+                    /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally. */
                     kind?: "dev" | "prd";
                     sort?: "asc" | "desc";
+                    /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
                     updatedSince?: string;
                 };
                 header?: never;
@@ -65,7 +71,7 @@ export interface paths {
         put?: never;
         /**
          * Create a task
-         * @description Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).
+         * @description Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.
          */
         post: {
             parameters: {
@@ -107,6 +113,24 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+                /** @description Forbidden — the agent token's account scope could not be resolved */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -126,7 +150,7 @@ export interface paths {
         put?: never;
         /**
          * Bulk insert tasks
-         * @description Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it.
+         * @description Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's `accountId` is stamped from the caller exactly as for `POST /tasks`; an agent token's id collision returns the generic `task id unavailable` 409 body.
          */
         post: {
             parameters: {
@@ -168,7 +192,16 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Conflict — a task id in the batch already exists; the entire batch was rolled back */
+                /** @description Forbidden — the agent token's account scope could not be resolved */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — a task id in the batch is unavailable; the entire batch was rolled back */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -192,6 +225,94 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/tasks/by-pr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Mark merged tasks deployed or released by PR number
+         * @description For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of `repo` whose `pr` is in `prNumbers` and whose status is `merged` is moved to `status` (`deployed` | `released`) and its `deployedAt`/`releasedAt` is stamped with `at` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported `unchanged` (idempotent); tasks in any other status are `skipped` with their status and never modified. At most 100 PR numbers per call. Equivalent manual flow: `GET /tasks?pr=&repo=` then `PATCH /tasks/:id`.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PatchTasksByPrBody"];
+                };
+            };
+            responses: {
+                /** @description Per-task outcome */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PatchTasksByPrResponse"];
+                    };
+                };
+                /** @description Bad request — empty or more than 100 prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — a task changed status concurrently; the whole call was rolled back, retry */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Webhook delivery failed; the whole call was rolled back */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/tasks/distinct": {
@@ -251,7 +372,7 @@ export interface paths {
         };
         /**
          * Get a task by ID
-         * @description Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.
+         * @description Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.
          */
         get: {
             parameters: {
@@ -802,7 +923,7 @@ export interface paths {
         put?: never;
         /**
          * Record a skip — increments skipCount, auto-blocks at threshold
-         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches.
+         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.
          */
         post: {
             parameters: {
@@ -813,7 +934,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SkipBody"];
+                };
+            };
             responses: {
                 /** @description Updated task */
                 200: {
@@ -1018,7 +1143,9 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    /** @description Max records to return */
                     limit?: string;
+                    /** @description Pagination offset */
                     offset?: string;
                 };
                 header?: never;
@@ -1283,23 +1410,34 @@ export interface paths {
         };
         /**
          * List pull requests
-         * @description Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).
+         * @description Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
          */
         get: {
             parameters: {
                 query?: {
+                    /** @description Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos. */
                     repo?: string | string[];
+                    /** @description Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND). */
                     org?: string | string[];
+                    /** @description PR number (parsed as integer) */
                     prNumber?: string;
                     state?: "open" | "merged" | "closed";
                     reviewState?: "pending" | "in_progress" | "posted" | "approved";
+                    /** @description Filter by staged flag */
                     staged?: "true" | "false";
+                    /** @description Max records to return */
                     limit?: string;
+                    /** @description Pagination offset */
                     offset?: string;
+                    /** @description When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does. */
                     ready?: "true" | "false";
+                    /** @description When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open). */
                     blocked?: "true" | "false";
+                    /** @description Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering. */
                     sort?: "asc" | "desc";
+                    /** @description Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
                     updatedSince?: string;
+                    /** @description Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values. */
                     origin?: string;
                 };
                 header?: never;
@@ -1338,7 +1476,7 @@ export interface paths {
         put?: never;
         /**
          * Claim a pull request (atomic)
-         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.
+         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge`/`deploy` phases preserve `reviewState` as-is rather than resetting it; `merge`/`deploy` also stamp `readyForMergeAt`/`readyForDeployAt` respectively when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).
          */
         post: {
             parameters: {
@@ -1371,7 +1509,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Bad request */
+                /** @description Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404) */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -1531,6 +1669,7 @@ export interface paths {
         get: {
             parameters: {
                 query: {
+                    /** @description Repository in org/repo format. */
                     repo: string;
                 };
                 header?: never;
@@ -1585,7 +1724,7 @@ export interface paths {
         };
         /**
          * Fetch a single pull request
-         * @description Fetches a single PR record by its ID. Returns `404` if not found.
+         * @description Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.
          */
         get: {
             parameters: {
@@ -1607,7 +1746,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1625,7 +1764,7 @@ export interface paths {
         head?: never;
         /**
          * Update pull request fields
-         * @description Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.
+         * @description Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.
          */
         patch: {
             parameters: {
@@ -1660,7 +1799,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1706,6 +1845,15 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1747,7 +1895,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1801,7 +1949,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1851,7 +1999,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1901,7 +2049,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1929,7 +2077,7 @@ export interface paths {
         put?: never;
         /**
          * Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism
-         * @description Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.
+         * @description Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips") or starting with the patch no-progress escalation prefix ("patch dispatch made no progress"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.
          */
         post: {
             parameters: {
@@ -1951,7 +2099,7 @@ export interface paths {
                         "application/json": components["schemas"]["PullRequest"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2014,7 +2162,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2045,7 +2193,9 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    /** @description Max records to return */
                     limit?: string;
+                    /** @description Pagination offset */
                     offset?: string;
                 };
                 header?: never;
@@ -2065,7 +2215,7 @@ export interface paths {
                         "application/json": components["schemas"]["PrEventsResponse"];
                     };
                 };
-                /** @description Not found */
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2093,17 +2243,25 @@ export interface paths {
         };
         /**
          * List sessions
-         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.
+         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.
          */
         get: {
             parameters: {
                 query?: {
+                    /** @description Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering. */
                     state?: "waiting" | "active" | "closed" | "empty" | "archived" | "all";
+                    /** @description 'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last. */
                     sort?: "waitingSince" | "lastActivityAt";
+                    /** @description Only sessions whose rollup.agentIds includes this agent. */
                     agentId?: string;
+                    /** @description Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b). */
                     repo?: string | string[];
+                    /** @description Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`). */
                     org?: string | string[];
+                    /** @description Case-insensitive substring match against slug OR title. */
                     q?: string;
+                    /** @description Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
                     limit?: string;
                     offset?: string;
                 };
@@ -2150,11 +2308,14 @@ export interface paths {
         };
         /**
          * Get a session by slug
-         * @description Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.
+         * @description Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;
@@ -2199,11 +2360,14 @@ export interface paths {
         head?: never;
         /**
          * Rename/archive a session — admin-only
-         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.
+         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
          */
         patch: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;
@@ -2265,16 +2429,21 @@ export interface paths {
         };
         /**
          * List verification checks for a task, a PR, or a repo+checkName pair
-         * @description Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak.
+         * @description Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.
          */
         get: {
             parameters: {
                 query?: {
+                    /** @description Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required. */
                     taskId?: string;
                     prId?: string;
+                    /** @description Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak. */
                     repo?: string;
+                    /** @description Paired with ?repo= — supplying only one of the pair is 400. */
                     checkName?: string;
+                    /** @description Max records to return */
                     limit?: string;
+                    /** @description Pagination offset */
                     offset?: string;
                 };
                 header?: never;
@@ -2315,7 +2484,7 @@ export interface paths {
         put?: never;
         /**
          * Record a single per-check verification outcome
-         * @description Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted.
+         * @description Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted. Agent tokens are scoped (SSP-6.10): `repo` must be in the token's repos (else `403`), and the parent task/PR must be in the token's repos and account (else `404`, indistinguishable from missing). The row is stamped with the parent's `accountId`. Admin tokens are unrestricted.
          */
         post: {
             parameters: {
@@ -2348,7 +2517,16 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Not found — the referenced task/pr does not exist */
+                /** @description Forbidden — `repo` is not in the agent token's scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — the referenced task/pr does not exist or is outside the token's repo/account scope */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2369,6 +2547,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TaskListResponse: {
+            tasks: components["schemas"]["Task"][];
+            /** @example 10 */
+            total: number;
+            /**
+             * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
+             * @example false
+             */
+            scopeDegraded: boolean;
+        };
         Task: {
             /** @example clx1234567890 */
             id: string;
@@ -2378,7 +2566,7 @@ export interface components {
              * @example pending
              * @enum {string}
              */
-            status: "pending" | "in_progress" | "pr_open" | "approved" | "merged" | "done" | "deploying" | "deployed" | "blocked" | "cancelled";
+            status: "pending" | "in_progress" | "pr_open" | "approved" | "merged" | "done" | "deploying" | "deployed" | "released" | "blocked" | "cancelled";
             /** @example manual */
             source?: string | null;
             /** @example session-123 */
@@ -2433,6 +2621,8 @@ export interface components {
             deployingAt?: string | null;
             /** @example 2026-01-06T00:00:00.000Z */
             deployedAt?: string | null;
+            /** @example null */
+            releasedAt?: string | null;
             /** @example 2 */
             ciFixAttempts?: number | null;
             /** @example abc123def456 */
@@ -2457,13 +2647,18 @@ export interface components {
              */
             kind: "dev" | "prd";
             /**
-             * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
+             * @description Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
              * @default 0
              * @example 0
              */
             skipCount: number;
             /** @example 2026-01-02T00:00:00.000Z */
             lastSkippedAt?: string | null;
+            /**
+             * @description The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `"unspecified"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.
+             * @example dev-task:deferred:unmet-hidden-requirement
+             */
+            lastSkipReason?: string | null;
             /** @example agent-id-123 */
             claimedBy?: string | null;
             /** @example prefer-sonnet */
@@ -2517,16 +2712,6 @@ export interface components {
              */
             updatedAt: string;
         };
-        TaskListResponse: {
-            tasks: components["schemas"]["Task"][];
-            /** @example 10 */
-            total: number;
-            /**
-             * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
-             * @example false
-             */
-            scopeDegraded: boolean;
-        };
         Error: {
             /** @example not found */
             error: string;
@@ -2546,6 +2731,11 @@ export interface components {
             layer?: string;
             /** @example feat/feature-x */
             branch?: string;
+            /**
+             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+             * @example 42
+             */
+            pr?: unknown;
             /** @example [] */
             dependencies?: string[];
             /** @example [] */
@@ -2564,6 +2754,7 @@ export interface components {
              * @enum {string}
              */
             kind?: "dev" | "prd";
+        } & {
             [key: string]: unknown;
         };
         BulkInsertResponse: {
@@ -2578,15 +2769,54 @@ export interface components {
             skipped: string[];
         };
         /** @description Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it. */
-        BulkInsertBody: {
+        BulkInsertBody: ({
             /** @example Implement feature X */
             title?: string;
             /** @example pending */
             status?: string;
             /** @example org/repo */
             repo?: string | null;
+            /**
+             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+             * @example 42
+             */
+            pr?: unknown;
+        } & {
             [key: string]: unknown;
-        }[];
+        })[];
+        PatchTasksByPrResponse: {
+            /** @description Ids of `merged` tasks moved to the requested status. */
+            updated: string[];
+            /** @description Ids of tasks already at the requested status (no-op). */
+            unchanged: string[];
+            /** @description Matching tasks in any other status; never modified. Carries their current status. */
+            skipped: {
+                id: string;
+                status: string;
+            }[];
+        };
+        PatchTasksByPrBody: {
+            /** @example org/repo */
+            repo: string;
+            /**
+             * @description PR numbers of `repo`, 1 to 100 positive integers.
+             * @example [
+             *       101,
+             *       102
+             *     ]
+             */
+            prNumbers: number[];
+            /**
+             * @example deployed
+             * @enum {string}
+             */
+            status: "deployed" | "released";
+            /**
+             * @description ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.
+             * @example 2026-07-02T00:00:00.000Z
+             */
+            at?: string;
+        };
         DistinctResponse: {
             /**
              * @example [
@@ -2608,6 +2838,12 @@ export interface components {
             orgs: string[];
         };
         UpdateTaskBody: {
+            /**
+             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+             * @example 42
+             */
+            pr?: unknown;
+        } & {
             [key: string]: unknown;
         };
         ClaimBody: {
@@ -2617,6 +2853,20 @@ export interface components {
         FailBody: {
             /** @example build failed */
             reason?: string;
+        };
+        SkipBody: {
+            /** @example dev-task:deferred:unmet-hidden-requirement */
+            reason?: string;
+        };
+        TaskEventsResponse: {
+            /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
+            events: components["schemas"]["TaskEvent"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
         };
         TaskEvent: {
             /** @example clxevent123456 */
@@ -2640,16 +2890,6 @@ export interface components {
              * @example 2026-08-17T12:00:00.000Z
              */
             createdAt: string;
-        };
-        TaskEventsResponse: {
-            /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
-            events: components["schemas"]["TaskEvent"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /** @example 0 */
-            offset: number;
         };
         TaskToken: {
             /** @example clxtoken123456 */
@@ -2679,60 +2919,15 @@ export interface components {
             /** @example agent-id-123 */
             agentId?: string;
         };
-        PrFinding: {
-            /** @example clxfinding123456 */
-            id: string;
-            /** @example clx0987654321 */
-            prRecordId: string;
-            /** @example src/foo.ts:42 */
-            ref: string;
-            /**
-             * @example resolved
-             * @enum {string}
-             */
-            disposition: "resolved" | "superseded" | "rejected";
-            /**
-             * @example review
-             * @enum {string}
-             */
-            source: "review" | "patch";
-            /** @example Fixed the null check in the follow-up commit. */
-            evidence: string;
-            /** @example 2026-08-17T12:00:00.000Z */
-            at: string;
-            /**
-             * @description Agent instance that triaged this finding, if any.
-             * @example agent-abc123
-             */
-            agentId: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            createdAt: string;
-        };
-        PullRequestEvent: {
-            /** @example clxevent123456 */
-            id: string;
-            /** @example clx0987654321 */
-            prRecordId: string;
-            /** @example reviewState */
-            field: string;
-            /** @example pending */
-            oldValue: string | null;
-            /** @example in_progress */
-            newValue: string | null;
-            /** @example agent-abc123 */
-            actor: string | null;
-            /** @example claim */
-            method: string;
-            /** @example 2026-08-17T12:00:00.000Z */
-            at: string;
-            /**
-             * Format: date-time
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            createdAt: string;
+        PrListResponse: {
+            /** @description Array of pull requests */
+            prs: components["schemas"]["PullRequest"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
         };
         PullRequest: {
             /** @example clx0987654321 */
@@ -2798,11 +2993,13 @@ export interface components {
              * @example review
              * @enum {string|null}
              */
-            phase?: "review" | "patch" | "deploy" | null;
+            phase?: "review" | "patch" | "merge" | "deploy" | null;
             /** @example 2026-01-02T00:00:00.000Z */
             readyForReviewAt?: string | null;
             /** @example null */
             readyForPatchAt?: string | null;
+            /** @example null */
+            readyForMergeAt?: string | null;
             /** @example null */
             readyForDeployAt?: string | null;
             /**
@@ -2850,7 +3047,7 @@ export interface components {
              */
             commitsImplementation?: number | null;
             /**
-             * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
+             * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips') or starts with the patch no-progress escalation prefix ('patch dispatch made no progress'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
              * @default 0
              * @example 0
              */
@@ -2868,6 +3065,16 @@ export interface components {
              * @example 0
              */
             consecutiveCiFailureCount: number;
+            /** @description Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then. */
+            blockedHeadSha?: string | null;
+            /** @description Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed. */
+            blockedReviewId?: string | null;
+            /** @description ISO timestamp of the most recent skip auto-block (PSL-3.1). */
+            blockedAt?: string | null;
+            /** @description blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
+            lastAutoBlockReason?: string | null;
+            /** @description ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
+            lastAutoBlockedAt?: string | null;
             /**
              * Format: date-time
              * @example 2026-01-01T00:00:00.000Z
@@ -2883,15 +3090,60 @@ export interface components {
             /** @description Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
             events?: components["schemas"]["PullRequestEvent"][];
         };
-        PrListResponse: {
-            /** @description Array of pull requests */
-            prs: components["schemas"]["PullRequest"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /** @example 0 */
-            offset: number;
+        PrFinding: {
+            /** @example clxfinding123456 */
+            id: string;
+            /** @example clx0987654321 */
+            prRecordId: string;
+            /** @example src/foo.ts:42 */
+            ref: string;
+            /**
+             * @example resolved
+             * @enum {string}
+             */
+            disposition: "resolved" | "superseded" | "rejected";
+            /**
+             * @example review
+             * @enum {string}
+             */
+            source: "review" | "patch";
+            /** @example Fixed the null check in the follow-up commit. */
+            evidence: string;
+            /** @example 2026-08-17T12:00:00.000Z */
+            at: string;
+            /**
+             * @description Agent instance that triaged this finding, if any.
+             * @example agent-abc123
+             */
+            agentId: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            createdAt: string;
+        };
+        PullRequestEvent: {
+            /** @example clxevent123456 */
+            id: string;
+            /** @example clx0987654321 */
+            prRecordId: string;
+            /** @example reviewState */
+            field: string;
+            /** @example pending */
+            oldValue: string | null;
+            /** @example in_progress */
+            newValue: string | null;
+            /** @example agent-abc123 */
+            actor: string | null;
+            /** @example claim */
+            method: string;
+            /** @example 2026-08-17T12:00:00.000Z */
+            at: string;
+            /**
+             * Format: date-time
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            createdAt: string;
         };
         ClaimPrBody: {
             /**
@@ -2919,7 +3171,7 @@ export interface components {
              * @example patch
              * @enum {string}
              */
-            phase?: "review" | "patch" | "deploy";
+            phase?: "review" | "patch" | "merge" | "deploy";
             /**
              * @description ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.
              * @example 2026-01-01T00:00:00.000Z
@@ -2940,6 +3192,21 @@ export interface components {
              * @example Add the origin metrics dimension
              */
             title?: string | null;
+            /**
+             * @description True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.
+             * @example true
+             */
+            authorIsBot?: boolean;
+            /**
+             * @description True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.
+             * @example false
+             */
+            hasAutomatedLabel?: boolean;
+            /**
+             * @description True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.
+             * @example false
+             */
+            hasShipwrightLabel?: boolean;
         };
         ClaimNextResponse: {
             pr: components["schemas"]["PullRequest"];
@@ -2947,7 +3214,7 @@ export interface components {
              * @example review
              * @enum {string}
              */
-            phase: "review" | "patch" | "deploy";
+            phase: "review" | "patch" | "merge" | "deploy";
         };
         ClaimNextBody: {
             /**
@@ -2965,6 +3232,8 @@ export interface components {
             /** @description The upserted PullRequest rows, one per input entry. */
             prs: components["schemas"]["PullRequest"][];
         };
+        /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
+        CensusBody: components["schemas"]["CensusEntry"][];
         CensusEntry: {
             /** @example org/repo */
             repo: string;
@@ -3002,8 +3271,6 @@ export interface components {
             /** @example 6 */
             commitsImplementation?: number | null;
         };
-        /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
-        CensusBody: components["schemas"]["CensusEntry"][];
         CensusCursorResponse: {
             /**
              * @description Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.
@@ -3067,9 +3334,23 @@ export interface components {
             /** @example 0 */
             offset: number;
         };
+        SessionListResponse: {
+            sessions: components["schemas"]["Session"][];
+            /** @example 10 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+        };
         Session: {
             /** @example shipwright-may-launch */
             slug: string;
+            /**
+             * @description The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently.
+             * @example default
+             */
+            accountId: string;
             /** @example May launch prep */
             title?: string | null;
             /**
@@ -3134,15 +3415,6 @@ export interface components {
             }[];
             /** @example false */
             archived: boolean;
-        };
-        SessionListResponse: {
-            sessions: components["schemas"]["Session"][];
-            /** @example 10 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /** @example 0 */
-            offset: number;
         };
         SessionPatchBody: {
             /**
