@@ -844,8 +844,40 @@ once on failure, then fall back to the inline main-thread review — at most bui
 inline, with the same terminal guarantee. If at least one reviewer succeeded, the review
 proceeds with the surviving responses.
 
-The surviving responses are handed to a later merge step before Step 8; until then Step 7
-must still end with SOME valid parsed response (or the inline fallback) as required above.
+**Merge (MPS-2.2).** With more than one surviving response, merge them into ONE response
+before Step 8; a single surviving response (or the single-reviewer path) skips the merge and
+passes through unchanged. Merge BEFORE applying any policy threshold.
+
+- **Duplicate rule.** Two findings are duplicates when ALL of: (1) identical `file`; (2) lines
+  within a 3-line window (`abs(a.line - b.line) <= 3`; a `null` line matches only another
+  `null` line on the same file); (3) title similarity — after lowercasing and stripping
+  punctuation, one title contains the other, or the token sets share Jaccard overlap >= 0.6.
+  Group transitively (if A~B and B~C, all three are one group).
+- **Collapse each group** into one finding: keep the member with the highest `severity`
+  (`critical` > `important` > `suggestion`), breaking ties by highest `confidence`, and use
+  that member's `title`, `file`, `line`, `category`, `description`, and `suggestion`. Set the
+  merged `confidence` to the group's maximum. Conflicting severities never average — the
+  highest wins.
+- **Agreement count.** Record `agreement` = the number of DISTINCT reviewers that reported a
+  member of the group, in a main-thread side map keyed by the merged finding. It is NOT added
+  to the finding object (the review contract output shape is unchanged); use it only to break
+  ties when Step 8 trims to `max_findings` (higher `agreement` kept first among equal
+  `confidence`).
+- **Non-duplicates** pass through unchanged, with `agreement` = 1.
+- **`priorFindingsStatus[]`.** Merge conservatively, per `ref`: `resolved: true` only if EVERY
+  surviving reviewer that returned an entry for that `ref` attested `resolved: true`; if any
+  said `false`, the merged entry is `resolved: false` and its `evidence` is taken from a
+  `resolved: false` reviewer. A reviewer that omitted the `ref` does not count as attesting
+  resolved. Emit exactly one entry per input `ref`.
+- **Other fields.** `strengths[]` is the de-duplicated union; `recommendation` is `COMMENT` if
+  any surviving reviewer said `COMMENT`, else `APPROVE`; `summary` and
+  `recommendation_reason` come from the reviewer that supplied the highest-severity finding
+  (else the first surviving reviewer).
+
+The merged object conforms to the unchanged review contract shape (`summary`, `findings[]`,
+`strengths[]`, `recommendation`, `recommendation_reason`, `priorFindingsStatus[]`), so Steps
+8-11 consume it exactly as they would a single reviewer's response. Step 7 must still end with
+SOME valid parsed response (or the inline fallback) as required above.
 
 ---
 
@@ -862,9 +894,11 @@ acceptance-criteria check). This step applies the policy thresholds resolved in 
 | 50-74 | Suggestion | Valid concern, lower impact |
 | < 50 | Discard | Nitpick or false positive |
 
-Apply policy thresholds to the subagent's `findings[]`:
+Apply policy thresholds to the subagent's `findings[]` (for a multi-reviewer run, the MERGED
+`findings[]` from Step 7's Merge — thresholds apply after merging, never per reviewer):
 - Drop findings below `min_confidence` (default 75)
-- Trim to `max_findings` (default 5), removing lowest confidence first
+- Trim to `max_findings` (default 5), removing lowest confidence first (ties: lowest merged
+  `agreement` first)
 - Group remaining findings by their `severity` field (`critical`, `important`, `suggestion`)
 
 **Keep it tight.** A good review has 2-5 actionable items. If the subagent returned
