@@ -31,11 +31,11 @@ export type AgentPhaseMethodology = z.infer<typeof AgentPhaseMethodologySchema>;
 
 export const PutAgentPhaseMethodologyBodySchema = z
   .object({
-    subagentType: z
-      .string()
-      .min(1)
-      .nullable()
-      .openapi({ example: "shipwright:code-reviewer" }),
+    subagentType: z.string().min(1).nullable().openapi({
+      example: "shipwright:code-reviewer",
+      description:
+        "Subagent type for the phase, or null to clear. For the `review` phase only, a comma-separated list of up to 5 types (trimmed, de-duplicated, no empty entries); other phases accept a single value.",
+    }),
   })
   .openapi("PutAgentPhaseMethodologyBody");
 

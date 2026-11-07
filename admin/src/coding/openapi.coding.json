@@ -48,7 +48,7 @@
     "/agents/{id}/phase-methodology/{phase}": {
       "put": {
         "summary": "Set a phase's subagent-type override",
-        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types; entries are trimmed, duplicates dropped, and empty entries rejected. Any other phase rejects a multi-value list with a 400. `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
         "parameters": [
           {
             "schema": {
@@ -98,7 +98,7 @@
             }
           },
           "400": {
-            "description": "Bad request — invalid phase",
+            "description": "Bad request — invalid phase, or an invalid/disallowed subagentType list",
             "content": {
               "application/json": {
                 "schema": {
@@ -527,7 +527,8 @@
               "null"
             ],
             "minLength": 1,
-            "example": "shipwright:code-reviewer"
+            "example": "shipwright:code-reviewer",
+            "description": "Subagent type for the phase, or null to clear. For the `review` phase only, a comma-separated list of up to 5 types (trimmed, de-duplicated, no empty entries); other phases accept a single value."
           }
         },
         "required": [

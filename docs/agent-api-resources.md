@@ -30,6 +30,8 @@ Upserts the `subagentType` override for one pipeline phase. `phase` must be one 
 
 Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
 
+For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types (e.g. `"a,b"`). Entries are trimmed, duplicates are dropped (first occurrence wins), and empty entries are rejected. A multi-value list on any other phase, an empty entry, or more than 5 entries returns `400` with `{ error }`. Single values and `null` behave as before. `GET /agents/:id/config` still returns `phaseMethodology` values as strings (the normalized comma-joined list for `review`).
+
 Returns `200` with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
 
 ---
