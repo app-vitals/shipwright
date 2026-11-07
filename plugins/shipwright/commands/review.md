@@ -815,6 +815,87 @@ Step 7 without one. Steps 9-11's claim-owning PATCH calls (`reviewedCommitSha`/`
 response, so a hanging or unparsed Step 7 is never acceptable — that's what would otherwise
 leave the PR claim outstanding indefinitely.
 
+#### Multiple reviewers (MPS-2.1)
+
+**List parsing.** `REVIEW_SUBAGENT_TYPE` may hold a comma-separated list of `subagent_type`
+names (the API accepts up to 5 entries for the review phase). Split it on commas into
+`REVIEWERS`, trim whitespace around each entry, and ignore empty entries. If `REVIEWERS` has
+exactly one entry (including a list that resolves to one entry after trimming, such as
+`"shipwright:code-reviewer,"`), follow the single-reviewer path above unchanged — everything
+in this subsection applies only when `REVIEWERS` has more than one entry.
+
+**Parallel dispatch.** Dispatch every reviewer in ONE parallel Agent call: a single message
+containing one Agent tool use per entry in `REVIEWERS`, each with `subagent_type` set to that
+entry, the same `model: TASK_MODEL ?? 'sonnet'`, `run_in_background: false`, and the
+identical prompt block and contract inputs listed above. The fan-out is still synchronous and
+blocking — the call returns once every reviewer has returned its full JSON response, so there
+is no wakeup or poll step, exactly as for a single reviewer. Each response is parsed
+independently.
+
+**Per-reviewer failure.** A reviewer whose response is malformed, or whose dispatch itself
+fails, is retried once by re-dispatching the same `subagent_type` with a reminder of the
+schema. If the retry also fails, drop that reviewer and print a one-line note naming it
+(`reviewer {subagent_type} failed after retry and was dropped`). Do not substitute the
+built-in reviewer for an individual dropped reviewer while others survive.
+
+**All reviewers failed.** If every reviewer in `REVIEWERS` is dropped, fall back to the
+existing chain above using the built-in `shipwright:code-reviewer`: dispatch it fresh, retry
+once on failure, then fall back to the inline main-thread review — at most built-in → retry →
+inline, with the same terminal guarantee. If at least one reviewer succeeded, the review
+proceeds with the surviving responses.
+
+**Merge (MPS-2.2).** With more than one surviving response, merge them into ONE response
+before Step 8; a single surviving response (or the single-reviewer path) skips the merge and
+passes through unchanged. Merge BEFORE applying any policy threshold.
+
+- **Duplicate rule.** Two findings are duplicates when ALL of: (1) identical `file`; (2) lines
+  within a 3-line window (`abs(a.line - b.line) <= 3`; a `null` line matches only another
+  `null` line on the same file); (3) title similarity — after lowercasing and stripping
+  punctuation, one title contains the other, or the token sets share Jaccard overlap >= 0.6.
+  Group transitively (if A~B and B~C, all three are one group).
+- **Collapse each group** into one finding: keep the member with the highest `severity`
+  (`critical` > `important` > `suggestion`), breaking ties by highest `confidence`, and use
+  that member's `title`, `file`, `line`, `category`, `description`, and `suggestion`. Set the
+  merged `confidence` to the group's maximum. Conflicting severities never average — the
+  highest wins.
+- **Agreement count.** Record `agreement` = the number of DISTINCT reviewers that reported a
+  member of the group, in a main-thread side map keyed by the merged finding. It is NOT added
+  to the finding object (the review contract output shape is unchanged); use it only to break
+  ties when Step 8 trims to `max_findings` (higher `agreement` kept first among equal
+  `confidence`).
+- **Non-duplicates** pass through unchanged, with `agreement` = 1.
+- **`priorFindingsStatus[]`.** Merge conservatively, per `ref`: `resolved: true` only if EVERY
+  surviving reviewer that returned an entry for that `ref` attested `resolved: true`; if any
+  said `false`, the merged entry is `resolved: false` and its `evidence` is taken from a
+  `resolved: false` reviewer. A reviewer that omitted the `ref` does not count as attesting
+  resolved. Emit exactly one entry per input `ref`.
+- **Other fields.** `strengths[]` is the de-duplicated union; `recommendation` is `COMMENT` if
+  any surviving reviewer said `COMMENT`, else `APPROVE`; `summary` and
+  `recommendation_reason` come from the reviewer that supplied the highest-severity finding
+  (else the first surviving reviewer).
+
+The merged object conforms to the unchanged review contract shape (`summary`, `findings[]`,
+`strengths[]`, `recommendation`, `recommendation_reason`, `priorFindingsStatus[]`), so Steps
+8-11 consume it exactly as they would a single reviewer's response. Step 7 must still end with
+SOME valid parsed response (or the inline fallback) as required above.
+
+**Verify (MPS-2.3).** Runs only when `REVIEWERS` had more than one entry AND more than one
+surviving response was merged; a single-reviewer run, or a multi-reviewer run with a single
+survivor, skips verification entirely. It runs after the Merge and BEFORE any policy threshold.
+The verifier is a fixed built-in: dispatch `shipwright:finding-verifier` — never read it from
+config, and it has no `phaseMethodology` phase key or other knob — with `model: TASK_MODEL ??
+'sonnet'` and `run_in_background: false`, passing the diff, the changed-files list, and the
+merged `findings[]` each tagged with its `index`. It returns `{"verdicts": [{"index",
+"substantiated", "evidence"}]}`.
+
+- Drop every merged finding whose verdict is `substantiated: false`, and remove it from the
+  `agreement` side map. Findings with `substantiated: true`, or with no verdict, are kept.
+- The verifier can only drop findings: it never adds findings or alters `severity`,
+  `confidence`, or any other field, and the review contract output shape is unchanged.
+- **Non-fatal failure.** If the dispatch fails or the output is malformed (no retry), keep the
+  merged findings unverified and print a one-line note (`finding verifier failed; using
+  unverified merged findings`). Verifier failure never blocks Step 8.
+
 ---
 
 ## Step 8: Score and Classify Findings
@@ -830,9 +911,11 @@ acceptance-criteria check). This step applies the policy thresholds resolved in 
 | 50-74 | Suggestion | Valid concern, lower impact |
 | < 50 | Discard | Nitpick or false positive |
 
-Apply policy thresholds to the subagent's `findings[]`:
+Apply policy thresholds to the subagent's `findings[]` (for a multi-reviewer run, the MERGED
+`findings[]` from Step 7's Merge, minus any dropped by Verify — thresholds apply after merging, never per reviewer):
 - Drop findings below `min_confidence` (default 75)
-- Trim to `max_findings` (default 5), removing lowest confidence first
+- Trim to `max_findings` (default 5), removing lowest confidence first (ties: lowest merged
+  `agreement` first)
 - Group remaining findings by their `severity` field (`critical`, `important`, `suggestion`)
 
 **Keep it tight.** A good review has 2-5 actionable items. If the subagent returned
