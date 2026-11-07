@@ -53,7 +53,10 @@ import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
-import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import {
+  type AgentPhaseMethodologyService,
+  normalizeSubagentList,
+} from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import {
   ADHERENCE_COMMANDS,
@@ -142,7 +145,7 @@ const putPhaseMethodologyRoute = createRoute({
   path: "/agents/{id}/phase-methodology/{phase}",
   summary: "Set a phase's subagent-type override",
   description:
-    "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+    "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types; entries are trimmed, duplicates dropped, and empty entries rejected. Any other phase rejects a multi-value list with a 400. `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
   request: {
     params: PhaseParamSchema,
     body: {
@@ -158,7 +161,11 @@ const putPhaseMethodologyRoute = createRoute({
         "application/json": { schema: PhaseMethodologyWrapperSchema },
       },
     },
-    400: { description: "Bad request — invalid phase", ...jsonError },
+    400: {
+      description:
+        "Bad request — invalid phase, or an invalid/disallowed subagentType list",
+      ...jsonError,
+    },
     404: { description: "Agent not found", ...jsonError },
   },
 });
@@ -397,7 +404,7 @@ export function createCodingAdminApiApp(
     const row = await agentPhaseMethodologyService.upsert(
       agentId,
       phase,
-      body.subagentType,
+      normalizeSubagentList(phase, body.subagentType),
     );
     return c.json({ phaseMethodology: serializePhaseMethodology(row) }, 200);
   });

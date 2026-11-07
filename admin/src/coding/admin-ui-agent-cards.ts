@@ -140,7 +140,7 @@ export function renderPhaseMethodologyCard(
   return `<div class="card">
       <div class="card-title">Phase Methodology</div>
       <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
-        Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
+        Override which subagent type handles each pipeline phase. The review phase also accepts a comma-separated list (up to 5, duplicates dropped); other phases take a single value. Clear the field and Save to fall back to the default.
       </p>
       <div class="data-table-wrapper">
         <table class="data-table">

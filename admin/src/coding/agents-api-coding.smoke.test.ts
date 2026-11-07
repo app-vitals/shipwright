@@ -346,6 +346,64 @@ describe("admin API — phase methodology (PMC-1.1)", () => {
     expect(res.status).toBe(400);
   });
 
+  async function putSubagentType(phase: string, subagentType: unknown) {
+    const app = createCodingAdminApiApp(makeMockDeps());
+    return app.request(`/agents/${AGENT_ID}/phase-methodology/${phase}`, {
+      method: "PUT",
+      body: JSON.stringify({ subagentType }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+  }
+
+  it("PUT phase-methodology/review stores a normalized comma-separated list (200)", async () => {
+    const res = await putSubagentType("review", " a , b,a ");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology.subagentType).toBe("a,b");
+  });
+
+  it("PUT phase-methodology rejects a multi-value list on a non-review phase with a 400 {error} body", async () => {
+    for (const phase of [
+      "dev-task",
+      "patch",
+      "plan-session",
+      "prd",
+      "deploy",
+    ]) {
+      const res = await putSubagentType(phase, "a,b");
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(typeof body.error).toBe("string");
+      expect(body.error).toContain("review");
+    }
+  });
+
+  it("PUT phase-methodology/review rejects empty entries and >5 entries with a 400 {error} body", async () => {
+    for (const value of ["a,,b", "a,", ",a", "a, ,b", "a,b,c,d,e,f"]) {
+      const res = await putSubagentType("review", value);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(typeof body.error).toBe("string");
+    }
+  });
+
+  it("PUT phase-methodology/review accepts exactly 5 entries; duplicates collapse before the cap", async () => {
+    const five = await putSubagentType("review", "a,b,c,d,e");
+    expect(five.status).toBe(200);
+    const dup = await putSubagentType("review", "a,b,c,d,e,a");
+    expect(dup.status).toBe(200);
+    expect((await dup.json()).phaseMethodology.subagentType).toBe("a,b,c,d,e");
+  });
+
+  it("PUT phase-methodology single value on a non-review phase is unchanged (200)", async () => {
+    const res = await putSubagentType("patch", "solo");
+    expect(res.status).toBe(200);
+    expect((await res.json()).phaseMethodology.subagentType).toBe("solo");
+  });
+
   it("GET /agents/:id/phase-methodology returns 404 for an unknown agent", async () => {
     const app = createCodingAdminApiApp(makeMockDeps());
     const res = await app.request(
