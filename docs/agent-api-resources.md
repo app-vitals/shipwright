@@ -30,7 +30,7 @@ Upserts the `subagentType` override for one pipeline phase. `phase` must be one 
 
 Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
 
-For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types (e.g. `"a,b"`). Entries are trimmed, duplicates are dropped (first occurrence wins), and empty entries are rejected. A multi-value list on any other phase, an empty entry, or more than 5 entries returns `400` with `{ error }`. Single values and `null` behave as before. `GET /agents/:id/config` still returns `phaseMethodology` values as strings (the normalized comma-joined list for `review`).
+For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types (e.g. `"a,b"`). Entries are trimmed, duplicates are dropped (first occurrence wins), and empty entries are rejected. A multi-value list on any other phase, an empty entry, or more than 5 entries returns `400` with `{ error }`. Single values and `null` behave as before. `GET /agents/:id/config` still returns `phaseMethodology` values as strings (the normalized comma-joined list for `review`). Multi-reviewer behavior is owned by the `/shipwright:review` caller: reviewers run in parallel, findings are merged and de-duplicated (policy thresholds apply after the merge), and a fixed built-in `shipwright:finding-verifier` pass drops findings it cannot substantiate. The verifier is not configurable through `phaseMethodology`. See [review contract](../plugins/shipwright/references/methodology-contracts/review.md).
 
 Returns `200` with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
 
