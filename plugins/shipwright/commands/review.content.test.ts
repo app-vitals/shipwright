@@ -2384,6 +2384,57 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   });
 });
 
+describe("review.md — Step 7 fans out multiple reviewers in parallel (MPS-2.1)", () => {
+  function extractMultiSection(): string {
+    const step7Section = extractStep7Section(content);
+    const idx = step7Section.indexOf("#### Multiple reviewers (MPS-2.1)");
+    expect(idx).toBeGreaterThan(-1);
+    return step7Section.slice(idx).replace(/\s+/g, " ");
+  }
+
+  it("documents comma-split list parsing with trimming and empty-entry removal", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("comma-separated list");
+    expect(section).toContain("Split it on commas");
+    expect(section).toContain("trim whitespace around each entry");
+    expect(section).toContain("ignore empty entries");
+  });
+
+  it("a list resolving to one entry follows the unchanged single-reviewer path", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("exactly one entry");
+    expect(section).toContain("follow the single-reviewer path above unchanged");
+  });
+
+  it("dispatches all reviewers in ONE parallel Agent call, synchronously, with identical inputs", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("ONE parallel Agent call");
+    expect(section).toContain("one Agent tool use per entry");
+    expect(section).toContain("run_in_background: false");
+    expect(section).toContain("identical prompt block and contract inputs");
+    expect(section).toContain("synchronous and blocking");
+  });
+
+  it("per-reviewer failure retries once with the same subagent_type, then drops with a one-line note", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("retried once by re-dispatching the same `subagent_type`");
+    expect(section).toContain("drop that reviewer and print a one-line note");
+  });
+
+  it("all-failed falls back to the built-in -> retry -> inline chain; survivors proceed otherwise", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("every reviewer in `REVIEWERS` is dropped");
+    expect(section).toContain("built-in → retry → inline");
+    expect(section).toContain("proceeds with the surviving responses");
+  });
+
+  it("keeps the single-entry RVM-1.2 wording intact and the section inside Step 7", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("override → override retry → built-in → built-in retry →\n  inline");
+    expect(step7Section).toContain("subagent_type: REVIEW_SUBAGENT_TYPE");
+  });
+});
+
 describe("review.md — Step 1 policy read-path is DB-first with hardcoded fallback (APM-1.2, ARD-1.1)", () => {
   function extractStep1Section(md: string): string {
     const step1Idx = md.indexOf("## Step 1: Load Policy");

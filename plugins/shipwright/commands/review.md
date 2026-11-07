@@ -815,6 +815,38 @@ Step 7 without one. Steps 9-11's claim-owning PATCH calls (`reviewedCommitSha`/`
 response, so a hanging or unparsed Step 7 is never acceptable — that's what would otherwise
 leave the PR claim outstanding indefinitely.
 
+#### Multiple reviewers (MPS-2.1)
+
+**List parsing.** `REVIEW_SUBAGENT_TYPE` may hold a comma-separated list of `subagent_type`
+names (the API accepts up to 5 entries for the review phase). Split it on commas into
+`REVIEWERS`, trim whitespace around each entry, and ignore empty entries. If `REVIEWERS` has
+exactly one entry (including a list that resolves to one entry after trimming, such as
+`"shipwright:code-reviewer,"`), follow the single-reviewer path above unchanged — everything
+in this subsection applies only when `REVIEWERS` has more than one entry.
+
+**Parallel dispatch.** Dispatch every reviewer in ONE parallel Agent call: a single message
+containing one Agent tool use per entry in `REVIEWERS`, each with `subagent_type` set to that
+entry, the same `model: TASK_MODEL ?? 'sonnet'`, `run_in_background: false`, and the
+identical prompt block and contract inputs listed above. The fan-out is still synchronous and
+blocking — the call returns once every reviewer has returned its full JSON response, so there
+is no wakeup or poll step, exactly as for a single reviewer. Each response is parsed
+independently.
+
+**Per-reviewer failure.** A reviewer whose response is malformed, or whose dispatch itself
+fails, is retried once by re-dispatching the same `subagent_type` with a reminder of the
+schema. If the retry also fails, drop that reviewer and print a one-line note naming it
+(`reviewer {subagent_type} failed after retry and was dropped`). Do not substitute the
+built-in reviewer for an individual dropped reviewer while others survive.
+
+**All reviewers failed.** If every reviewer in `REVIEWERS` is dropped, fall back to the
+existing chain above using the built-in `shipwright:code-reviewer`: dispatch it fresh, retry
+once on failure, then fall back to the inline main-thread review — at most built-in → retry →
+inline, with the same terminal guarantee. If at least one reviewer succeeded, the review
+proceeds with the surviving responses.
+
+The surviving responses are handed to a later merge step before Step 8; until then Step 7
+must still end with SOME valid parsed response (or the inline fallback) as required above.
+
 ---
 
 ## Step 8: Score and Classify Findings
