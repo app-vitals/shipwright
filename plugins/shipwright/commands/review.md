@@ -879,6 +879,23 @@ The merged object conforms to the unchanged review contract shape (`summary`, `f
 8-11 consume it exactly as they would a single reviewer's response. Step 7 must still end with
 SOME valid parsed response (or the inline fallback) as required above.
 
+**Verify (MPS-2.3).** Runs only when `REVIEWERS` had more than one entry AND more than one
+surviving response was merged; a single-reviewer run, or a multi-reviewer run with a single
+survivor, skips verification entirely. It runs after the Merge and BEFORE any policy threshold.
+The verifier is a fixed built-in: dispatch `shipwright:finding-verifier` — never read it from
+config, and it has no `phaseMethodology` phase key or other knob — with `model: TASK_MODEL ??
+'sonnet'` and `run_in_background: false`, passing the diff, the changed-files list, and the
+merged `findings[]` each tagged with its `index`. It returns `{"verdicts": [{"index",
+"substantiated", "evidence"}]}`.
+
+- Drop every merged finding whose verdict is `substantiated: false`, and remove it from the
+  `agreement` side map. Findings with `substantiated: true`, or with no verdict, are kept.
+- The verifier can only drop findings: it never adds findings or alters `severity`,
+  `confidence`, or any other field, and the review contract output shape is unchanged.
+- **Non-fatal failure.** If the dispatch fails or the output is malformed (no retry), keep the
+  merged findings unverified and print a one-line note (`finding verifier failed; using
+  unverified merged findings`). Verifier failure never blocks Step 8.
+
 ---
 
 ## Step 8: Score and Classify Findings
@@ -895,7 +912,7 @@ acceptance-criteria check). This step applies the policy thresholds resolved in 
 | < 50 | Discard | Nitpick or false positive |
 
 Apply policy thresholds to the subagent's `findings[]` (for a multi-reviewer run, the MERGED
-`findings[]` from Step 7's Merge — thresholds apply after merging, never per reviewer):
+`findings[]` from Step 7's Merge, minus any dropped by Verify — thresholds apply after merging, never per reviewer):
 - Drop findings below `min_confidence` (default 75)
 - Trim to `max_findings` (default 5), removing lowest confidence first (ties: lowest merged
   `agreement` first)

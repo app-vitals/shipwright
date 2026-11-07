@@ -2685,6 +2685,67 @@ describe("review.md — Step 7 merges and dedupes parallel reviewer findings (MP
   });
 });
 
+describe("review.md — Step 7 verifies merged findings with a built-in verifier (MPS-2.3)", () => {
+  function extractVerifySection(): string {
+    const step7Section = extractStep7Section(content);
+    const idx = step7Section.indexOf("**Verify (MPS-2.3).**");
+    expect(idx).toBeGreaterThan(-1);
+    return step7Section.slice(idx).replace(/\s+/g, " ");
+  }
+
+  it("dispatches only for multi-reviewer runs with more than one merged response", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("only when `REVIEWERS` had more than one entry");
+    expect(section).toContain("single-reviewer run");
+    expect(section).toContain("skips verification entirely");
+    expect(section).toContain("BEFORE any policy threshold");
+  });
+
+  it("dispatches the fixed built-in verifier synchronously, not from config", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("`shipwright:finding-verifier`");
+    expect(section).toContain("never read it from config");
+    expect(section).toContain("no `phaseMethodology` phase key");
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("drops unsubstantiated findings, keeps the agreement map in sync, never alters the contract", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("`substantiated: false`");
+    expect(section).toContain("`agreement` side map");
+    expect(section).toContain("never adds findings");
+    expect(section).toContain("review contract output shape is unchanged");
+  });
+
+  it("verifier failure is non-fatal and falls back to unverified merged findings with a note", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("Non-fatal failure");
+    expect(section).toContain("keep the merged findings unverified");
+    expect(section).toContain("one-line note");
+    expect(section).toContain("never blocks Step 8");
+  });
+
+  it("Step 8 thresholds apply after Verify", () => {
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    const step9Idx = content.indexOf("## Step 9");
+    const step8 = content.slice(step8Idx, step9Idx).replace(/\s+/g, " ");
+    expect(step8).toContain("minus any dropped by Verify");
+  });
+
+  it("the finding-verifier agent is read-only, conservative, and add-nothing", () => {
+    const agent = readFileSync(
+      join(import.meta.dir, "..", "agents", "finding-verifier.md"),
+      "utf-8",
+    );
+    expect(agent).toContain("name: finding-verifier");
+    expect(agent).toContain("tools: Glob, Grep, LS, Read\n");
+    expect(agent).toContain("model: sonnet");
+    expect(agent).toContain("Be conservative");
+    expect(agent).toContain("Never add new findings");
+    expect(agent).toContain('"substantiated"');
+  });
+});
+
 describe("review.md — Step 1 policy read-path is DB-first with hardcoded fallback (APM-1.2, ARD-1.1)", () => {
   function extractStep1Section(md: string): string {
     const step1Idx = md.indexOf("## Step 1: Load Policy");
