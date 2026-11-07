@@ -104,6 +104,28 @@ A single JSON object:
     left blank. For `resolved: true`, cite the exact `file:line` or diff excerpt proving the
     fix. For `resolved: false`, explain why the originally-described issue is still present.
 
+## Multiple reviewers
+
+For the `review` phase only, the per-agent override may be a comma-separated list of up to 5
+subagent types (e.g. `a,b`). The contract above is unchanged **per reviewer**: every entry
+receives identical inputs and must return the same output shape, and a single-entry list is
+the ordinary single-reviewer path. Everything else is owned by the caller, not by the
+reviewers:
+
+- **Fan-out** — the caller dispatches all reviewers in one parallel Agent call. A reviewer
+  that fails is retried once, then dropped; if all fail, the built-in fallback chain runs.
+- **Merge** — the caller dedupes findings across reviewers (same file, lines within 3, similar
+  title), keeping the highest severity and the highest confidence, and records an agreement
+  count used only as a `max_findings` tie-break. `priorFindingsStatus[]` is merged
+  conservatively: a prior finding is `resolved` only if every reporting reviewer attests it.
+  Thresholds (`min_confidence`, `max_findings`) are applied after the merge, not per reviewer.
+- **Verifier** — when more than one reviewer's response was merged, the caller runs the fixed
+  built-in `shipwright:finding-verifier`, which can only drop findings it cannot substantiate
+  against the diff. It is not configurable (no phase key) and its failure is non-fatal.
+
+A compliant reviewer needs no awareness of any of this; the merged result conforms to the
+output shape above. See `commands/review.md` Step 7 for the full procedure.
+
 ## Scope
 
 This contract covers only the wire shape between the caller and the review-phase subagent —
