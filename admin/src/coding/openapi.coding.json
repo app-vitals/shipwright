@@ -608,7 +608,6 @@
               "plan",
               "review",
               "patch",
-              "deploy",
               "merge"
             ],
             "example": "dev-task"

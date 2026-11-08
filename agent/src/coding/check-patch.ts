@@ -21,7 +21,7 @@
  * no task is linked or the lookup fails — readyForPatchAt is a necessarily-
  * recent phase-readiness stamp, not the work item's true origination age,
  * and is no longer used for age sourcing (it remains in PrRecord solely for
- * queryPrRecord's other historical callers). Unlike check-deploy.ts's
+ * queryPrRecord's other historical callers). Unlike check-merge.ts's
  * queryTaskStatus usage, a lookup failure here is NOT gating — it is only
  * ever consumed for its createdAt field, so a thrown error just falls back
  * to pr.createdAt rather than disqualifying the PR.
@@ -36,7 +36,7 @@ import {
   isSelfCleanApprove,
 } from "../../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
-import { hasSelfApproveReview } from "./check-deploy.ts";
+import { hasSelfApproveReview } from "./check-helpers.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
@@ -271,7 +271,7 @@ export interface CheckPatchDeps {
   getCurrentUser: (owner: string) => Promise<string>;
   /**
    * Whether the agent may count its own clean-APPROVE review as approval of
-   * its own PR (same policy check-deploy.ts uses). Optional; absent = false.
+   * its own PR (same policy check-merge.ts uses). Optional; absent = false.
    */
   isSelfReviewAllowed?: () => Promise<boolean>;
   /**
@@ -301,7 +301,7 @@ export interface CheckPatchDeps {
    */
   getScopedRepos: () => string[];
   // Task status lookup for the linked task (if any), used PURELY to source
-  // the age field via its createdAt — unlike check-deploy.ts, this is never
+  // the age field via its createdAt — unlike check-merge.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
   // same as "no linked task" (age falls back to pr.createdAt); it must not
   // disqualify an otherwise-eligible PR from patch candidacy.
@@ -492,7 +492,7 @@ async function hasMergeOnlyStaleFindings(
 
 /**
  * Whether a BEHIND PR is a patch candidate on that alone: approved (same rule
- * as check-deploy.ts — GitHub APPROVED, or for self-authored PRs when policy
+ * as check-merge.ts — GitHub APPROVED, or for self-authored PRs when policy
  * allows a clean self-APPROVE), CI green on the head, and no unaddressed
  * findings. Gating on readiness keeps strict-mode repos from re-running CI on
  * every open PR after each merge to main. Shared by getPatchCandidates and the
@@ -669,7 +669,7 @@ export async function getPatchCandidates(
     // task's createdAt (LPF-3.2) and to gate on hitl/blocked status
     // (CBD-2.2, PRB-2.2). A thrown error is treated as "no linked task" so a
     // lookup failure never disqualifies an otherwise-eligible PR from patch
-    // candidacy — unlike check-deploy.ts, which fails closed, patch
+    // candidacy — unlike check-merge.ts, which fails closed, patch
     // re-dispatch is not consequential enough to block on an unreachable
     // task-store.
     let linkedTask: LinkedTaskInfo | null = null;

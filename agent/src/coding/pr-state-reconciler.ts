@@ -12,7 +12,7 @@
  *
  * Unlike the claim reaper (crash backstop for the *claim* fields only), this
  * reconciles the *business state* (state/mergedAt) against GitHub reality,
- * closing the gap CHU-1.x left: check-deploy.ts/check-review.ts/check-patch.ts
+ * closing the gap CHU-1.x left: check-merge.ts/check-review.ts/check-patch.ts
  * only ever scan GitHub's *open* PR list, so a merged/closed PR silently
  * drops out of view before its task-store record gets corrected.
  *
@@ -321,7 +321,7 @@ export interface PrStateReconcilerDeps {
    * (built once); this filter is intersected with it at call time so a repo
    * cloned locally for reference but absent from this list never gets
    * reconciled (see WL-4.4). This scope-filtering is new as of WL-4.4 —
-   * check-deploy.ts/check-review.ts/check-patch.ts do not yet apply
+   * check-merge.ts/check-review.ts/check-patch.ts do not yet apply
    * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
@@ -346,7 +346,7 @@ export interface PrStateReconcilerDeps {
    * reads a live DB-synced ref (APM-1.6) — mirrors this same file's
    * `cleanup_after_days`/`readCleanupAfterDays` live-read pattern (see
    * `removeWorktree`'s production implementation below) and
-   * `check-deploy.ts`/`check-review.ts`'s `isSelfReviewAllowed` getter.
+   * `check-merge.ts`/`check-review.ts`'s `isSelfReviewAllowed` getter.
    * `buildProductionDeps()` wires this as `() =>
    * readCleanupMergedWorktrees(workspacePath)` (check-helpers.ts).
    */
@@ -790,7 +790,7 @@ async function reconcileRecord(
 
 /**
  * Resolve the repo to check a pr_open task against, mirroring the legacy
- * check-deploy.ts reconcileStalePrOpenTasks fallback: a task's own `repo`
+ * check-merge.ts reconcileStalePrOpenTasks fallback: a task's own `repo`
  * field wins when it's already "org/repo" shaped, otherwise fall back to
  * the first configured repo. Returns undefined when neither is available
  * (bare repo name + no configured repos) — callers must skip defensively
@@ -843,7 +843,7 @@ function logStartedAtSkip(task: PrOpenTaskRecord, taskRepo: string): void {
 
 /**
  * Reconcile one pr_open task against live GitHub state (DSR-1.1 —
- * ports check-deploy.ts's reconcileStalePrOpenTasks two-path logic into the
+ * ports check-merge.ts's reconcileStalePrOpenTasks two-path logic into the
  * ongoing background sweep instead of a one-shot precheck script).
  *
  * Direct path (task.pr set): reuse the same ghViewPr dep the PR-record pass
@@ -1500,7 +1500,7 @@ interface TasksByBranchPage {
  * shape/response handling as `makeListTasksByStatus` above, but filtered by
  * repo+branch instead of status. `repo=` scoping mirrors
  * `listOpenPrRecords`'s own GET /prs helper; `branch=` mirrors
- * check-deploy.ts's `createBundleCompleteQuery` (GET /tasks?branch=), the
+ * check-merge.ts's `createBundleCompleteQuery` (GET /tasks?branch=), the
  * existing "check every task on a branch individually" pattern this guard
  * follows.
  *

@@ -2,11 +2,11 @@
  * agent/src/coding/check-merge.unit.test.ts
  *
  * Unit tests for getMergeCandidates() — the merge-phase candidate provider
- * (MPD-1.3), derived from check-deploy.ts minus the Deploy-run busy-repo guard.
+ * (MPD-1.3).
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CiRun, GhPr, GhReview } from "./check-deploy.ts";
+import type { CiRun, GhPr, GhReview } from "./check-merge.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckMergeDeps,
@@ -90,7 +90,13 @@ describe("getMergeCandidates", () => {
     const deps = makeDeps({
       prs: [makeGhPr({ reviewDecision: null })],
       reviews: {
-        50: [{ author: { login: "bodhi-agent" }, body: "APPROVE", state: "COMMENTED" }],
+        50: [
+          {
+            author: { login: "bodhi-agent" },
+            body: "APPROVE",
+            state: "COMMENTED",
+          },
+        ],
       },
     });
     expect(await getMergeCandidates(deps)).toHaveLength(1);
@@ -101,7 +107,13 @@ describe("getMergeCandidates", () => {
       selfReview: false,
       prs: [makeGhPr({ reviewDecision: null })],
       reviews: {
-        50: [{ author: { login: "bodhi-agent" }, body: "APPROVE", state: "COMMENTED" }],
+        50: [
+          {
+            author: { login: "bodhi-agent" },
+            body: "APPROVE",
+            state: "COMMENTED",
+          },
+        ],
       },
     });
     expect(await getMergeCandidates(deps)).toEqual([]);
@@ -141,7 +153,9 @@ describe("getMergeCandidates", () => {
 
   test("uses linked task createdAt as age, else PR createdAt", async () => {
     const withTask = await getMergeCandidates(
-      makeDeps({ task: { status: "pr_open", createdAt: "2026-01-01T00:00:00.000Z" } }),
+      makeDeps({
+        task: { status: "pr_open", createdAt: "2026-01-01T00:00:00.000Z" },
+      }),
     );
     expect(withTask[0].age).toBe("2026-01-01T00:00:00.000Z");
     const noTask = await getMergeCandidates(makeDeps());
@@ -149,7 +163,9 @@ describe("getMergeCandidates", () => {
   });
 
   test("excludes PRs with an incomplete bundle", async () => {
-    expect(await getMergeCandidates(makeDeps({ bundleComplete: false }))).toEqual([]);
+    expect(
+      await getMergeCandidates(makeDeps({ bundleComplete: false })),
+    ).toEqual([]);
   });
 
   test("excludes PRs with a claimedBy record", async () => {
@@ -164,18 +180,5 @@ describe("getMergeCandidates", () => {
 
   test("excludes repos outside the configured scope", async () => {
     expect(await getMergeCandidates(makeDeps({ scoped: [] }))).toEqual([]);
-  });
-
-  test("an active Deploy workflow run no longer excludes a repo", async () => {
-    // Even if a caller (wrongly) supplies deploy-run deps, they are ignored.
-    const deps = {
-      ...makeDeps(),
-      fetchActiveDeployRuns: async () => [
-        { name: "Deploy", status: "in_progress" },
-      ],
-    } as CheckMergeDeps;
-    const result = await getMergeCandidates(deps);
-    expect(result).toHaveLength(1);
-    expect(result[0].phase).toBe("merge");
   });
 });

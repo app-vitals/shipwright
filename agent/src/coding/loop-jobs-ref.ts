@@ -11,7 +11,7 @@
  * cronTasks map. The shipwright-loop job's node-cron callback used to close
  * over that one syncCrons() invocation's `jobs` array — and
  * resolveLoopPhaseToggles(jobs) (loop-cron-classifier.ts, read inside
- * runLoopTick) is what decides which of dev-task/review/patch/deploy are
+ * runLoopTick) is what decides which of dev-task/review/patch/merge are
  * enabled. Because the loop is scheduled once, its toggle view was frozen at
  * whatever those four jobs' enabled flags were at first-schedule time — a
  * later flag change was silently ignored until the loop cron itself was

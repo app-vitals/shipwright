@@ -66,7 +66,7 @@ const RankedWorkItemSchema = z
       .optional()
       .openapi({ example: "Add work queue snapshot endpoints" }),
     phase: z
-      .enum(["dev-task", "plan", "review", "patch", "deploy", "merge"])
+      .enum(["dev-task", "plan", "review", "patch", "merge"])
       .openapi({ example: "dev-task" }),
     age: z.string().openapi({
       example: "2026-01-01T00:00:00.000Z",

@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
 import { codingAdminExtension } from "./coding-admin-extension.ts";
 import {
   CODING_SPECIALTY_DEFAULTS,
@@ -22,13 +23,12 @@ describe("coding specialtyDefaults hook", () => {
     expect(defaults).toBe(CODING_SPECIALTY_DEFAULTS);
   });
 
-  it("returns exactly the 15 system crons, by name and in order", () => {
+  it("returns exactly the 14 system crons, by name and in order", () => {
     expect(crons.map((c) => c.name)).toEqual([
       "shipwright-plan",
       "shipwright-dev-task",
       "shipwright-patch",
       "shipwright-review",
-      "shipwright-deploy",
       "shipwright-merge",
       "shipwright-loop",
       "shipwright-test-readiness",
@@ -56,7 +56,6 @@ describe("coding specialtyDefaults hook", () => {
       "shipwright-dev-task",
       "shipwright-patch",
       "shipwright-review",
-      "shipwright-deploy",
       "shipwright-merge",
     ]) {
       expect(byName(name)?.parentCron).toBe("shipwright-loop");
@@ -122,5 +121,50 @@ describe("coding specialtyDefaults hook", () => {
 
   it("returns nothing for other specialties", () => {
     expect(codingSpecialtyDefaults("specialist")).toBeUndefined();
+  });
+
+  it("does not ship a shipwright-deploy cron (MPD-3.2)", () => {
+    expect(byName("shipwright-deploy")).toBeUndefined();
+    expect(crons.some((c) => c.prompt.includes("/shipwright:deploy"))).toBe(
+      false,
+    );
+  });
+
+  it("reconcileSystemCrons() deletes an existing shipwright-deploy child row (MPD-3.2)", async () => {
+    // Minimal in-memory prisma double: one system loop row plus a stale
+    // shipwright-deploy child row; reconcile must delete the latter only.
+    const rows = [
+      { id: "loop-1", name: "shipwright-loop", parentCronId: null },
+      { id: "deploy-1", name: "shipwright-deploy", parentCronId: "loop-1" },
+    ];
+    const deletedIds: string[] = [];
+    const tx = {
+      agentCronJob: {
+        update: async () => ({}),
+        create: async ({ data }: { data: { name: string } }) => ({
+          id: `new-${data.name}`,
+        }),
+        delete: async ({ where }: { where: { id: string } }) => {
+          deletedIds.push(where.id);
+        },
+      },
+    };
+    const prisma = {
+      agent: { findUnique: async () => ({ specialty: "coding" }) },
+      agentCronJob: { findMany: async () => rows },
+      $transaction: async (cb: (t: typeof tx) => Promise<void>) => cb(tx),
+    };
+    const service = new AgentCronJobService(
+      // biome-ignore lint/suspicious/noExplicitAny: partial prisma double
+      prisma as any,
+      undefined,
+      undefined,
+      codingSpecialtyDefaults,
+    );
+
+    const result = await service.reconcileSystemCrons("agent-1");
+
+    expect(deletedIds).toEqual(["deploy-1"]);
+    expect(result.deleted).toBe(1);
   });
 });
