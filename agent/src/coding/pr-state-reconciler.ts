@@ -189,7 +189,7 @@ export interface PrOpenTaskRecord {
   repo?: string;
   pr?: number;
   branch?: string;
-  /** Merge timestamp; read by the deploying→deployed pass (DSR-2.1) to gate against a stale promote run. */
+  /** Merge timestamp; read by the merged→deployed pass (DSR-2.1) to gate against a stale promote run. */
   mergedAt?: string | null;
   /**
    * Task-store's write-once "first claimed at" timestamp (RCP-1.1) —
@@ -203,7 +203,7 @@ export interface PrOpenTaskRecord {
    * trusted to be THIS task's own work, even when the BBR-1.1 headcount
    * guard alone would pass (exactly one task shares the branch) — confirmed
    * failing live on TRD-1.2 (PR 2270) and RSG-1.2 (PR 2287), both healed to
-   * a merged/deploying-looking state despite claimedBy/claimedAt/startedAt
+   * a merged-looking state despite claimedBy/claimedAt/startedAt
    * all being null, because each shared a branch with a legitimately-worked
    * bundle-mate. `claimedAt` is deliberately NOT used for this gate — a
    * stale-claim reaper releasing a crashed session's claim nulls `claimedAt`
@@ -802,7 +802,7 @@ function resolveTaskRepo(
  * answers "how many task-store records share this branch" — a single-task
  * branch still passes it even when that one task was never actually
  * claimed/started, which is exactly the gap TRD-1.2 (PR 2270) and RSG-1.2
- * (PR 2287) fell through: both healed to a merged/deploying-looking state
+ * (PR 2287) fell through: both healed to a merged-looking state
  * purely because a bundle-mate's real work happened to live on the same
  * branch.
  *
@@ -986,7 +986,6 @@ export async function reconcilePrOpenTasks(
     await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
   }
 }
-
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 

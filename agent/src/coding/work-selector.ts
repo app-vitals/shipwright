@@ -4,7 +4,7 @@
  * Pure helper: selectNextWorkItem(tasks, prs) → WorkItem | null
  *
  * Given a list of ready tasks (aged by createdAt) and a list of ready PRs
- * (aged by COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt),
+ * (aged by COALESCE(readyForReviewAt, readyForPatchAt),
  * already filtered by the caller to only the pipeline phases currently
  * enabled), returns the single oldest ready item across both entity types —
  * strict age-based FIFO, no phase-priority bias.

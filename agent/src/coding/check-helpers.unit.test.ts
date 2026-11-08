@@ -1117,7 +1117,7 @@ describe("createTaskStoreClient query()", () => {
         repo: "app-vitals/shipwright",
         prNumber: 42,
         commitSha: "abc123def456",
-        phase: "deploy",
+        phase: "merge",
       }),
     ).resolves.toEqual({ id: "clx0987654321", commitSha: "abc123def456" });
   });

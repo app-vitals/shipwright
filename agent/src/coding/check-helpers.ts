@@ -39,7 +39,6 @@ export type TaskStatus =
   | "approved"
   | "merged"
   | "done"
-  | "deploying"
   | "deployed"
   | "released"
   | "blocked"
@@ -72,7 +71,6 @@ export interface Task {
   file?: string;
   cancelledAt?: string;
   completedAt?: string;
-  deployingAt?: string;
   deployedAt?: string;
   ciFixAttempts?: number;
   mergeCommit?: string;
@@ -530,7 +528,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     repo: string;
     prNumber: number;
     commitSha: string;
-    phase: "review" | "patch" | "deploy" | "merge";
+    phase: "review" | "patch" | "merge";
     /** POM-1.2: forwarded to POST /prs/claim so origin can be derived server-side. */
     authorLogin?: string | null;
     /**
@@ -725,7 +723,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       repo: string;
       prNumber: number;
       commitSha: string;
-      phase: "review" | "patch" | "deploy" | "merge";
+      phase: "review" | "patch" | "merge";
       authorLogin?: string | null;
       headRefName?: string;
       title?: string;

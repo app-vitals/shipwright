@@ -561,7 +561,6 @@ export function renderTasksPage(
     "approved",
     "merged",
     "done",
-    "deploying",
     "deployed",
     "released",
     "blocked",
@@ -766,7 +765,7 @@ function renderTasksBoard(args: {
   } = args;
 
   // The board's Status dropdown deliberately omits the closed statuses
-  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/released/cancelled).
+  // (SESSION_CLOSED_STATUSES: merged/done/deployed/released/cancelled).
   // Selecting one here would set `?status=…`, which bypasses admin-ui.ts's
   // `state=open` board default and returns tasks that bucketTaskColumn maps
   // to the "done" column — a column TASK_BOARD_COLUMNS no longer renders
@@ -781,7 +780,6 @@ function renderTasksBoard(args: {
     "approved",
     "merged",
     "done",
-    "deploying",
     "deployed",
     "released",
     "blocked",
@@ -1351,7 +1349,6 @@ export function renderTaskDetailPage(
 const SESSION_CLOSED_STATUSES = new Set([
   "merged",
   "done",
-  "deploying",
   "deployed",
   "released",
   "cancelled",
@@ -1586,7 +1583,7 @@ const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
 // bottom below, first match wins:
 //
 //   1. done         — status is one of merged/deployed/released/done/
-//                      deploying/cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
+//                      cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
 //                      every other signal, including hitl:true or a blocked
 //                      joined PR, so a completed task never shows as needing
 //                      a human.
