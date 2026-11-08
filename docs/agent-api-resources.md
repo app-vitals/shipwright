@@ -51,7 +51,7 @@ Body:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `computedAt` | yes | ISO timestamp when the agent computed this ranking |
-| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "merge" \| "deploy", age: string }` (`age` is an ISO timestamp) |
+| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "merge", age: string }` (`age` is an ISO timestamp) |
 
 Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with:
 

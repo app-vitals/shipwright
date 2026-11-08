@@ -61,12 +61,12 @@ A `Session` row is upserted automatically whenever a task write sets a non-blank
 ### Task status lifecycle
 
 ```
-pending → in_progress → pr_open → approved → merged → deploying → deployed
+pending → in_progress → pr_open → approved → merged → deployed
                                                     ↘ released
                                                     ↘ done
 ```
 
-Terminal statuses (closed): `merged`, `done`, `deploying`, `deployed`, `released`, `cancelled`.
+Terminal statuses (closed): `merged`, `done`, `deployed`, `released`, `cancelled`.
 `released` (with its `releasedAt` stamp) mirrors `deployed`/`deployedAt` for changes that ship on a
 release cadence rather than a direct deploy.
 Paused status: `blocked` (returned to `pending` on retry).
@@ -95,7 +95,7 @@ filter.
 
 When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it checks whether all of the task's dependencies are "satisfied." A task's dependencies are specified in its `dependencies` array (a list of task IDs). A single dependency is satisfied when its task meets one of these conditions:
 
-1. **Terminal status** — the dependency's `status` is `merged`, `done`, `deploying`, `deployed`, `released`, or `cancelled`. These statuses indicate the dependency is complete and no longer blocking.
+1. **Terminal status** — the dependency's `status` is `merged`, `done`, `deployed`, `released`, or `cancelled`. These statuses indicate the dependency is complete and no longer blocking.
 
 2. **Same-branch bundled** — the dependency has `status = pr_open` or `status = approved` AND its `branch` field equals the requesting task's `branch`. This indicates both tasks are part of the same feature branch and their PRs are bundled together in the queue (reviewed/approved as a unit).
 
