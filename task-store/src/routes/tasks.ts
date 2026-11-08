@@ -155,9 +155,11 @@ function assertNoLifecycleFieldWrite(
 //   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
 //   requiresHumanApproval — dropped in RHA-1.4; the merge-approval gate that consulted
 //   it was removed from the deploy workflow in RHA-1.1.
+//   deployingAt — dropped in MPD-3.5 along with the `deploying` status.
 const REMOVED_TASK_FIELDS = [
   "hitlNotifiedAt",
   "requiresHumanApproval",
+  "deployingAt",
 ] as const;
 
 function stripRemovedFields(body: Record<string, unknown>): void {
@@ -197,7 +199,6 @@ export const TASK_PATCH_FIELDS: ReadonlySet<string> = new Set([
   "priority",
   "cancelledAt",
   "completedAt",
-  "deployingAt",
   "deployedAt",
   "releasedAt",
   "ciFixAttempts",
@@ -272,6 +273,14 @@ function assertTaskFieldTypes(body: Record<string, unknown>): void {
   const bad = (field: string, expected: string): never => {
     throw new BadRequestError(`'${field}' must be ${expected}`);
   };
+  // TaskStatus is a Prisma enum — an unknown value (e.g. the `deploying` status
+  // dropped in MPD-3.5) would otherwise reach Prisma and surface as a raw 500.
+  if (
+    body.status !== undefined &&
+    (typeof body.status !== "string" || !VALID_STATUSES.has(body.status))
+  ) {
+    throw new BadRequestError(`invalid status: '${String(body.status)}'`);
+  }
   for (const f of TASK_INT_FIELDS) {
     const v = body[f];
     if (v != null && !Number.isInteger(v)) bad(f, "an integer or null");

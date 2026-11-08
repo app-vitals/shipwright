@@ -10,7 +10,6 @@
 export const CLOSED_STATUSES = [
   "merged",
   "done",
-  "deploying",
   "deployed",
   "released",
   "cancelled",

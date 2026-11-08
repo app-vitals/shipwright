@@ -1,7 +1,7 @@
 /**
  * task-store/src/pull-request-service.ts
  * PullRequestService — operations for tracking GitHub PRs through the
- * Shipwright review → patch → deploy pipeline.
+ * Shipwright review → patch → merge pipeline.
  *
  * claim() is atomic via a Prisma $transaction:
  *   1. Find existing record by @@unique([accountId, repo, prNumber])
@@ -555,21 +555,21 @@ export class PullRequestService implements PullRequestServiceLike {
       const updateData: Prisma.PullRequestUpdateInput = { ...data };
 
       // When a caller transitions reviewState to 'approved' and hasn't already
-      // supplied readyForDeployAt, stamp it now rather than leaving it to be
+      // supplied readyForMergeAt, stamp it now rather than leaving it to be
       // set lazily on the next claim/claimNext. claimNext's
       // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
-      // it at the actual approval moment keeps the deploy-readiness ordering
+      // it at the actual approval moment keeps the merge-readiness ordering
       // accurate for PRs that sit approved-but-unclaimed for a while.
       if (
         data.reviewState === "approved" &&
-        data.readyForDeployAt === undefined
+        data.readyForMergeAt === undefined
       ) {
         const existing = await this.prisma.pullRequest.findUnique({
           where: { id },
-          select: { readyForDeployAt: true },
+          select: { readyForMergeAt: true },
         });
-        if (existing && existing.readyForDeployAt === null) {
-          updateData.readyForDeployAt = this.clock.now().toISOString();
+        if (existing && existing.readyForMergeAt === null) {
+          updateData.readyForMergeAt = this.clock.now().toISOString();
         }
       }
 
@@ -587,7 +587,7 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.phase = null;
       }
 
-      // deploy.md's merge-completion PATCH transitions state to 'merged' —
+      // merge.md's merge-completion PATCH transitions state to 'merged' —
       // explicitly release the claim in the same call, mirroring patch()'s
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
@@ -624,7 +624,6 @@ export class PullRequestService implements PullRequestServiceLike {
    *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
    *   - merge: sets phase='merge', claim fields, sets readyForMergeAt=now if null
    *     (MPD-1.1); does NOT touch reviewState
-   *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
    *
    * Conflict detection:
    *   - Same commitSha AND claimedBy IS NOT NULL for same phase → 409. Staleness of
@@ -685,11 +684,6 @@ export class PullRequestService implements PullRequestServiceLike {
           // Set readyForMergeAt only if not already set
           if (existing.readyForMergeAt === null) {
             updateData.readyForMergeAt = now;
-          }
-        } else if (phase === "deploy") {
-          // Set readyForDeployAt only if not already set
-          if (existing.readyForDeployAt === null) {
-            updateData.readyForDeployAt = now;
           }
         }
         // phase === 'patch': do NOT touch reviewState (preserve 'posted')
@@ -806,8 +800,6 @@ export class PullRequestService implements PullRequestServiceLike {
           createData.readyForReviewAt = now;
         } else if (phase === "merge") {
           createData.readyForMergeAt = now;
-        } else if (phase === "deploy") {
-          createData.readyForDeployAt = now;
         }
 
         await tx.pullRequest.create({ data: createData });
@@ -1013,9 +1005,9 @@ export class PullRequestService implements PullRequestServiceLike {
    * Steps (all in one transaction):
    *   1. Count active claims by agentId — if >= maxConcurrent, return null
    *   2. Find oldest unclaimed eligible PR ordered by
-   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt, readyForDeployAt) ASC
+   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt) ASC
    *      WHERE claimedBy IS NULL AND state='open' AND reviewState IN ('pending','posted','approved')
-   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→deploy
+   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→merge
    *   4. Set readyForReviewAt=now if null (first claim)
    *   5. Claim with the appropriate phase
    *   6. Return {pr, phase}
@@ -1071,7 +1063,7 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
            ${accountFilter}
-         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt", "readyForDeployAt") ASC NULLS LAST,
+         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
       `;
@@ -1095,7 +1087,7 @@ export class PullRequestService implements PullRequestServiceLike {
       } else if (target.reviewState === "posted") {
         phase = "patch";
       } else {
-        phase = "deploy"; // approved
+        phase = "merge"; // approved
       }
 
       // Step 4 & 5: Build claim update
@@ -1112,9 +1104,9 @@ export class PullRequestService implements PullRequestServiceLike {
         if (target.readyForReviewAt === null) {
           updateData.readyForReviewAt = nowIso;
         }
-      } else if (phase === "deploy") {
-        if (target.readyForDeployAt === null) {
-          updateData.readyForDeployAt = nowIso;
+      } else if (phase === "merge") {
+        if (target.readyForMergeAt === null) {
+          updateData.readyForMergeAt = nowIso;
         }
       }
       // patch: preserve reviewState='posted', no readyForPatchAt change here

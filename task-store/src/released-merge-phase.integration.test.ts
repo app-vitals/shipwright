@@ -7,8 +7,8 @@
  *   - PATCH /tasks/:id from `merged` to `released`/`deployed` writes the
  *     expected TaskEvent rows
  *   - PullRequestService.claim(phase=merge) stamps readyForMergeAt
- *   - claimNext()'s FIFO ordering ages PRs across all four ready-for-*
- *     timestamps (review, patch, merge, deploy)
+ *   - claimNext()'s FIFO ordering ages PRs across all three ready-for-*
+ *     timestamps (review, patch, merge; deploy was dropped in MPD-3.5)
  *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST; the suite skips otherwise.
  */
@@ -252,9 +252,9 @@ describeOrSkip("PR merge phase (MPD-1.1, integration)", () => {
     expect(result.record.readyForMergeAt).toBe(now.toISOString());
   });
 
-  it("claimNext() ages PRs FIFO across readyForReviewAt, readyForPatchAt, readyForMergeAt and readyForDeployAt", async () => {
+  it("claimNext() ages PRs FIFO across readyForReviewAt, readyForPatchAt and readyForMergeAt", async () => {
     const service = new PullRequestService(prisma, FixedClock(now));
-    // Deliberately interleave the four timestamp columns so that a COALESCE
+    // Deliberately interleave the three timestamp columns so that a COALESCE
     // missing any one of them would produce a different order.
     await prisma.pullRequest.createMany({
       data: [
@@ -262,7 +262,7 @@ describeOrSkip("PR merge phase (MPD-1.1, integration)", () => {
           repo: REPO,
           prNumber: 1201,
           reviewState: "approved",
-          readyForDeployAt: "2026-07-01T04:00:00.000Z",
+          readyForMergeAt: "2026-07-01T04:00:00.000Z",
         },
         {
           repo: REPO,

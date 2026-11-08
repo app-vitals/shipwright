@@ -103,16 +103,6 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([task]);
   });
 
-  it("includes a task when dependency status is deploying (terminal)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "deploying" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks(
-      [task, dep],
-      isPrMergedShouldNotBeCalled,
-    );
-    expect(result).toEqual([task]);
-  });
-
   it("includes a task when dependency status is deployed (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "deployed" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });

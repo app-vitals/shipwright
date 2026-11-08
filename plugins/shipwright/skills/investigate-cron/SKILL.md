@@ -293,7 +293,7 @@ PR_RECORD_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
 if [ -z "$PR_RECORD_JSON" ]; then
   echo "No task-store PR record for {org}/{repo}#{pr} — not yet tracked, or never a PR. Skip this signal."
 else
-  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForDeployAt, patchCycles, commitSha}'
+  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForMergeAt, patchCycles, commitSha}'
 fi
 
 # Task record(s) — live lookup via GET /tasks?repo=&pr= for a PR, or /tasks/{id} for a bare task id:

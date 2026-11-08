@@ -78,7 +78,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,

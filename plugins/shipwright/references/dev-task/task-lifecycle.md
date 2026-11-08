@@ -11,7 +11,7 @@ Block when ANY holds: id matches `^prd-`; description opens with
 `PATCH /tasks/{id}` `{"status":"blocked","hitl":true,"blockedReason":"misrouted_needs_plan_session_not_dev_task"}`; stop.
 
 ## Dependency check (pending only)
-Satisfied when dep status ∈ {merged, done, deploying, deployed, released, cancelled}; or same-branch dep in
+Satisfied when dep status ∈ {merged, done, deployed, released, cancelled}; or same-branch dep in
 {pr_open, approved}; or `pr_open` dep whose PR GitHub reports merged. Otherwise emit
 `[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]` then `[silent]`, without claiming.
 The tagged reason keeps the loop orchestrator from counting the defer toward `SKIP_BLOCK_THRESHOLD`.

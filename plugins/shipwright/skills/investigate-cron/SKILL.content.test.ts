@@ -333,7 +333,7 @@ describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
     const hasReadyForFields =
       content.includes("readyForReviewAt") ||
       content.includes("readyForPatchAt") ||
-      content.includes("readyForDeployAt") ||
+      content.includes("readyForMergeAt") ||
       content.includes("readyFor");
     expect(hasReadyForFields).toBe(true);
   });

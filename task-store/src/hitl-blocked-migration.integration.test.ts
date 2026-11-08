@@ -12,7 +12,8 @@
  * post-migration schema the Prisma client is generated against. To exercise
  * the pre-migration → post-migration transition, this test re-creates the
  * dropped columns via raw SQL, seeds pre-migration-shape rows, runs the exact
- * three UPDATE statements from migration.sql, then asserts the resulting state
+ * three UPDATE statements from migration.sql (less the dropped `deploying`
+ * literal, see runDataMigration), then asserts the resulting state
  * via the Prisma client (new schema) before dropping the temporary columns.
  *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
@@ -66,10 +67,13 @@ async function runDataMigration(prisma: PrismaClient): Promise<void> {
     'UPDATE "Task" SET "hitl" = false WHERE "hitl" = true AND "blockedReason" IS NOT NULL;',
   );
   // 2. Move any still-open ones onto the new blocked-status signal.
+  //    'deploying' is omitted from the original NOT IN list: MPD-3.5 dropped it
+  //    from the TaskStatus enum, so the literal no longer parses against the
+  //    current schema (and no row can hold it).
   await prisma.$executeRawUnsafe(
     `UPDATE "Task" SET "status" = 'blocked'
      WHERE "hitl" = false AND "blockedReason" IS NOT NULL
-       AND "status" NOT IN ('merged','done','deploying','deployed','cancelled');`,
+       AND "status" NOT IN ('merged','done','deployed','cancelled');`,
   );
   // 3. Carry forward only still-open PRs.
   await prisma.$executeRawUnsafe(
