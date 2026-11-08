@@ -484,12 +484,12 @@ organization prefixes extracted from the `repos` it already returns.
 
 **Version**: next (WLS-6.1)
 
-`dev-task`, `review`, `patch`, and `deploy` no longer self-discover work. Each is now an
-explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`deploy`
+`dev-task`, `review`, `patch`, and `merge` no longer self-discover work. Each is now an
+explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`merge`
 require an `org/repo#number` PR. Candidate selection — deciding *what* to work on — now
 happens exclusively upstream, in the `shipwright-loop` cron's in-process candidate
 providers (`agent/src/coding/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
-`check-deploy.ts`), which merge candidates and dispatch the winning item's command with its
+`check-merge.ts`), which merge candidates and dispatch the winning item's command with its
 id/PR embedded directly in the prompt. No self-search fallback remains inside any of the
 four commands.
 
@@ -502,8 +502,8 @@ no Slack message, no work done.
 **What to update**: enable the `shipwright-loop` system cron (`PATCH
 /agents/:id/crons/:cronId` with `{"enabled": true}`, or via the admin UI). `dev-task`,
 `review`, and `patch` are enabled by default, so once the loop is on, they resume working
-automatically. `shipwright-deploy` remains an explicit opt-in — its per-phase cron ships
-`enabled: false`, so toggle it on separately if you also want deploys driven by the loop.
+automatically. `shipwright-merge` remains an explicit opt-in — its per-phase cron ships
+`enabled: false`, so toggle it on separately if you also want merges driven by the loop.
 
 ---
 
