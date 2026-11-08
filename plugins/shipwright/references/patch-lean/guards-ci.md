@@ -39,7 +39,7 @@ lane (continue to Step 7).
 
 `check-patch.ts`'s `isBundleComplete` (CPB-1.1) only guards the loop-driven path; a human invoking
 the command directly bypasses it, and a bundle-mate can start or block between selection and dispatch.
-Re-query right before the CI-fix dispatch (mirrors deploy.md Step 2b):
+Re-query right before the CI-fix dispatch (mirrors merge.md's live-state re-check):
 
 ```bash
 BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')

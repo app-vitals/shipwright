@@ -195,7 +195,7 @@ A task is ready when **all** of the following are true:
 - every dependency is satisfied per the dependency rules below (terminal status, same-branch PR, or merged cross-branch PR)
 
 **Dependency-satisfied rules** (first match wins):
-1. `dep.status ∈ { merged, done, deploying, deployed, released, cancelled }` → satisfied
+1. `dep.status ∈ { merged, done, deployed, released, cancelled }` → satisfied
 2. Same-branch dep with `status ∈ { pr_open, approved }` → satisfied (bundled PR)
 3. `pr_open` dep with a PR number, GitHub reports the PR as merged → satisfied
 4. Anything else → **not satisfied** (task is excluded from `?ready=true`)
@@ -219,7 +219,7 @@ When `?ready=true` returns `{ tasks: [], total: 0 }`:
 
 `pending` → `in_progress` → `pr_open` → `approved` → `merged`
 
-Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`, `released`
+Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 
 ---
 

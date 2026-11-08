@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Claude Code** — a deployable agent plus the autonomous coding system that powers it. The system is a Claude Code plugin (`shipwright`) covering the full delivery loop — **spec → plan → execute → review → deploy** — alongside a metrics dashboard and a Shipwright agent. The brand is **Shipwright Harness**; the installable package is **`shipwright`**.
 
-> The plugin is repo-agnostic: it runs its planning/execution/review/deploy commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
+> The plugin is repo-agnostic: it runs its planning/execution/review/merge commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
 
 ## Architecture — four artifacts, sequenced A → B → C → D
 
@@ -107,9 +107,9 @@ Two surfaces — do not conflate them:
 
 **Status lifecycle:**
 ```
-pending → in_progress → pr_open → merged → deployed → done
+pending → in_progress → pr_open → merged → deployed | released
 ```
-plus `approved`, `blocked`, `cancelled`.
+plus `approved`, `done`, `blocked`, `cancelled`.
 
 Tasks sharing a non-blank `session` field (set only by `/shipwright:plan-session`) roll up into a
 **Session** — browsable in the admin UI's Sessions tab (`/admin/sessions`), which shows per-session
@@ -124,7 +124,7 @@ and [`docs/agent-web-ui.md`](./docs/agent-web-ui.md) for the full model.
 3. Build + land tests **in the same PR, at the correct layer** (no "tests later").
 4. Open a PR; move the status through its lifecycle.
 
-Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, plan, review, patch, deploy) in a single multi-step run until work is exhausted. The `plan` phase (PDR-4.1, `/shipwright:plan-session --autonomous`) ships disabled and is double-gated: it additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var, so with that unset the loop behaves exactly as the four-phase loop did.
+Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:merge`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, plan, review, patch, merge) in a single multi-step run until work is exhausted. The `plan` phase (PDR-4.1, `/shipwright:plan-session --autonomous`) ships disabled and is double-gated: it additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var, so with that unset the loop behaves exactly as the four-phase loop did.
 
 **Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 

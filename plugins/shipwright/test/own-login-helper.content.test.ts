@@ -7,7 +7,6 @@ const FILES = [
   "commands/review.md",
   "commands/patch.md",
   "commands/merge.md",
-  "commands/deploy.md",
   "skills/review-staged/SKILL.md",
 ];
 
@@ -23,12 +22,4 @@ describe("own-login resolution uses the canonical login helper (MGI-1.3)", () =>
       expect(content).not.toMatch(/gh api \/?user\b/);
     });
   }
-
-  it("deploy.md still sends authorLogin in the raw app/<slug> form (PR_AUTHOR)", () => {
-    const content = readFileSync(join(ROOT, "commands/deploy.md"), "utf-8");
-    expect(content).toContain(
-      '--arg authorLogin "$PR_AUTHOR" \\\n        --arg headRef "revert/canary-',
-    );
-    expect(content).not.toContain('--arg authorLogin "$AGENT_LOGIN"');
-  });
 });

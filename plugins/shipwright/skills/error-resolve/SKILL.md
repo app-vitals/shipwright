@@ -159,7 +159,7 @@ For each issue with a successfully-looked-up gating task status (Step 3):
 
 - Gating task status is `deployed` or `done` → **ready to resolve.**
 - Gating task status is anything else (`pending`, `in_progress`, `pr_open`, `approved`,
-  `merged`, `released`, `deploying`, `blocked`, or any other non-terminal/non-`deployed`/non-`done`
+  `merged`, `released`, `blocked`, or any other non-terminal/non-`deployed`/non-`done`
   value) → **not ready.** Record the blocking status for the summary (Step 8) so a human can
   see exactly what's still pending. `merged` and `pr_open` are explicitly **not** sufficient
   even though they're further along than `pending` — the task must have actually shipped

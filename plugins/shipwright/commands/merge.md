@@ -7,7 +7,7 @@ argument-hint: "[org/repo#number | number]"
 
 Merge a PR, mark its linked task-store records merged, and watch post-merge CI on the squash
 commit. This is the loop's merge phase: the orchestrator dispatches it for approved, CI-green
-PRs. This command does NOT run `/shipwright:deploy`'s Deploy → Canary → Promote pipeline —
+PRs. There is no Deploy → Canary → Promote pipeline —
 merging and watching post-merge CI is its entire scope. A post-merge CI failure blocks the
 affected tasks for a human; there is no canary and no promote.
 
@@ -165,7 +165,7 @@ reviews from GitHub and check if any review has a clean APPROVE body — either 
 `APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
 posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
 self-review convention, case-insensitive, optional `**` around either word — mirrors
-`agent/src/check-helpers.ts`'s `isCleanApproveBody`, shared by `agent/src/check-deploy.ts`'s
+`agent/src/check-helpers.ts`'s `isCleanApproveBody`, shared by `agent/src/check-merge.ts`'s
 `hasSelfApproveReview` and `agent/src/check-patch.ts`'s `isSelfCleanApprove`):
 
 ```bash

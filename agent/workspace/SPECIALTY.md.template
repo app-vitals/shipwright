@@ -13,12 +13,12 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
 ```
 
-`dev-task`, `review`, `patch`, and `deploy` are **explicit-target-only executors** — none of
+`dev-task`, `review`, `patch`, and `merge` are **explicit-target-only executors** — none of
 them self-discovers work. Candidate selection happens upstream, once per tick, in the
-`shipwright-loop` cron: its candidate providers merge dev-task/review/patch/deploy
+`shipwright-loop` cron: its candidate providers merge dev-task/review/patch/merge
 candidates and pick exactly one winning item via strict age-based FIFO, then dispatch the
 matching command with the winning task id or `org/repo#number` embedded directly in the
-prompt. `dev-task`, `review`, and `patch` are enabled by default; `deploy` is opt-in. A
+prompt. `dev-task`, `review`, and `patch` are enabled by default; `merge` is opt-in. A
 standalone phase cron with `shipwright-loop` disabled is **silently inert** — its prompt
 carries no target, so every tick responds `[silent]` and does nothing.
 

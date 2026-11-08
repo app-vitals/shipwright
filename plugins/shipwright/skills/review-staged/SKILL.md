@@ -11,7 +11,7 @@ and steers each with a verb. No reviews are posted without an explicit "post it"
 This skill assumes `/shipwright:review` has already staged the reviews into the
 task store (`staged: true`) and written review files to `state/reviews/PR_REVIEW_{pr}.md`
 and `state/reviews/pr_review_{pr}.json`. It does **not** review new PRs and does
-**not** merge anything — merging is handled exclusively by `/shipwright:deploy`.
+**not** merge anything — merging is handled exclusively by `/shipwright:merge`.
 
 ---
 
@@ -246,7 +246,7 @@ Done. {posted}/{N} posted, {skipped}/{N} skipped.
 ## Notes
 
 - This skill never auto-posts. Every post requires an explicit "post it" from the owner.
-- This skill never merges. Merging is handled exclusively by `/shipwright:deploy`.
+- This skill never merges. Merging is handled exclusively by `/shipwright:merge`.
 - This skill never re-reviews. If the head SHA has moved (current `headRefOid` differs from
   `record.reviewedCommitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
 - Use `gh` CLI for all GitHub interactions. Respect the active `GH_TOKEN` / `gh auth` context.
