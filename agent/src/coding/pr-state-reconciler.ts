@@ -257,17 +257,6 @@ export interface PrStateReconcilerDeps {
     limit: number,
     offset: number,
   ) => Promise<PrOpenTaskRecord[]>;
-  /**
-   * List one page of task-store Tasks with an arbitrary status (XPF-5.2) —
-   * the generic sibling of `listPrOpenTasks`, used by the stale-deploy
-   * sweeper for "deploying" and "merged". Optional so deps built before
-   * XPF-5.2 keep typechecking; the sweeper is a no-op when it's absent.
-   */
-  listTasksByStatus?: (
-    status: string,
-    limit: number,
-    offset: number,
-  ) => Promise<PrOpenTaskRecord[]>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
   updateTaskStatus: (
     id: string,
@@ -998,82 +987,6 @@ export async function reconcilePrOpenTasks(
   }
 }
 
-/**
- * XPF-5.2: how long a task may sit in "deploying"/"merged" after its PR
- * merged before the sweeper treats the deploy as finished. The
- * deploying→deployed (and merged→deployed) PATCH is an agent-owned step of
- * /shipwright:deploy; when the session dies between merge and that PATCH, or
- * the repo has no deploy workflow to watch, nothing else ever moves the
- * record. 24h is far beyond any real Deploy→Canary→Promote run.
- */
-export const STALE_DEPLOY_AGE_MS = 24 * 60 * 60 * 1000;
-const STALE_DEPLOY_STATUSES = ["deploying", "merged"] as const;
-
-async function reconcileStaleDeployTask(
-  deps: PrStateReconcilerDeps,
-  task: PrOpenTaskRecord,
-): Promise<boolean> {
-  const taskRepo = resolveTaskRepo(deps, task);
-  if (!taskRepo || !task.pr) return false;
-  const ghState = await deps.ghViewPr(taskRepo, task.pr);
-  if (ghState.state !== "MERGED") return false; // never sweep on a non-merged PR
-  const mergedAt = ghState.mergedAt ?? task.mergedAt;
-  if (!mergedAt) return false;
-  const nowMs = Date.parse(deps.now());
-  if (nowMs - Date.parse(mergedAt) < STALE_DEPLOY_AGE_MS) return false;
-  await deps.updateTaskStatus(task.id, {
-    status: "deployed",
-    deployedAt: deps.now(),
-  });
-  return true;
-}
-
-/**
- * Sweep tasks stuck in "deploying"/"merged" whose PR GitHub confirms merged
- * more than `STALE_DEPLOY_AGE_MS` ago to "deployed". Repo-agnostic on
- * purpose: the removed DSR-2.1 pass keyed on a "Promote to Prod" workflow
- * that only pipelined repos have (#1954), so no-pipeline repos were left
- * with nothing. Per-task failures are logged and isolated.
- */
-export async function reconcileStaleDeployTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<void> {
-  const list = deps.listTasksByStatus;
-  if (!list) return;
-  const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
-  const scopedReposSet = new Set(deps.getScopedRepos());
-
-  for (const status of STALE_DEPLOY_STATUSES) {
-    const tasks: PrOpenTaskRecord[] = [];
-    try {
-      for (let offset = 0; ; offset += limit) {
-        const page = await list(status, limit, offset);
-        tasks.push(...page);
-        if (page.length < limit) break;
-      }
-    } catch (err) {
-      console.error(
-        `[pr-state-reconciler] failed to list ${status} tasks:`,
-        err instanceof Error ? err.message : String(err),
-      );
-      continue;
-    }
-
-    for (const task of tasks) {
-      const taskRepo = resolveTaskRepo(deps, task);
-      if (!taskRepo || !scopedReposSet.has(taskRepo) || !task.pr) continue;
-      try {
-        await reconcileStaleDeployTask(deps, task);
-      } catch (err) {
-        console.error(
-          `[pr-state-reconciler] failed to sweep ${status} task ${task.id}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
-    }
-  }
-}
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
@@ -1136,7 +1049,6 @@ export async function reconcilePrState(
   logPassSummary("[pr-state-reconciler]", "pass", summary);
 
   await reconcilePrOpenTasks(deps);
-  await reconcileStaleDeployTasks(deps);
 }
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
@@ -1718,7 +1630,6 @@ export function buildProductionDeps(opts: {
     },
     listPrOpenTasks: (limit: number, offset: number) =>
       listTasksByStatus("pr_open", limit, offset),
-    listTasksByStatus,
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
