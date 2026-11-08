@@ -10,7 +10,7 @@ Base path: `/agents` (same resource as the core API — these are additional rou
 
 ## Phase Methodology
 
-Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
+Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, merge, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
 
 ### List phase-methodology overrides
 
@@ -26,7 +26,7 @@ Returns `{ phaseMethodology: AgentPhaseMethodology[] }` — an array of only the
 PUT /agents/:id/phase-methodology/{phase}
 ```
 
-Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `deploy`, or `dev-task`.
+Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `merge`, or `dev-task`.
 
 Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
 
@@ -61,7 +61,7 @@ Upserts the single row for this `agentId`, overwriting any prior snapshot. Retur
     "id": "string",
     "agentId": "string",
     "computedAt": "ISO timestamp",
-    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|merge|deploy", "age": "ISO timestamp" }],
+    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|merge", "age": "ISO timestamp" }],
     "createdAt": "ISO timestamp"
   }
 }

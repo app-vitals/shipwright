@@ -79,7 +79,7 @@ describe("selectNextWorkItem", () => {
   });
 
   it("selects a PR candidate purely on age, with no local claim re-validation", () => {
-    // Regression guard: getReviewCandidates/getPatchCandidates/getDeployCandidates
+    // Regression guard: getReviewCandidates/getPatchCandidates/getMergeCandidates
     // (LPF-2.2) now only ever return unclaimed PRs (server-side ?ready=true
     // filtering), so a WorkPrCandidate no longer carries a claimedBy field at
     // all. The selector must not re-derive or check claim status locally — a
@@ -116,25 +116,25 @@ describe("selectNextWorkItem", () => {
     });
   });
 
-  it("ranks by age regardless of phase — older review-phase beats newer deploy-phase", () => {
+  it("ranks by age regardless of phase — older review-phase beats newer merge-phase", () => {
     const olderReview = makePr({
       id: "pr-older",
       age: "2026-01-01T00:00:00.000Z",
       phase: "review",
     });
-    const newerDeploy = makePr({
+    const newerMerge = makePr({
       id: "pr-newer",
       age: "2026-01-02T00:00:00.000Z",
-      phase: "deploy",
+      phase: "merge",
     });
-    const result = selectNextWorkItem([], [newerDeploy, olderReview]);
+    const result = selectNextWorkItem([], [newerMerge, olderReview]);
     expect(result).toEqual({ type: "pr", pr: olderReview });
     expect(result?.type === "pr" && result.pr.phase).toBe("review");
   });
 
-  it("ranks merge-phase candidates in strict age FIFO with review/patch/deploy", () => {
+  it("ranks merge-phase candidates in strict age FIFO with review/patch", () => {
     const prs = [
-      makePr({ id: "o/r#4", age: "2026-01-04T00:00:00.000Z", phase: "deploy" }),
+      makePr({ id: "o/r#4", age: "2026-01-04T00:00:00.000Z", phase: "merge" }),
       makePr({ id: "o/r#3", age: "2026-01-03T00:00:00.000Z", phase: "merge" }),
       makePr({ id: "o/r#2", age: "2026-01-02T00:00:00.000Z", phase: "patch" }),
       makePr({ id: "o/r#1", age: "2026-01-05T00:00:00.000Z", phase: "review" }),
@@ -142,7 +142,7 @@ describe("selectNextWorkItem", () => {
     expect(rankWorkItems([], prs).map((i) => [i.id, i.phase])).toEqual([
       ["o/r#2", "patch"],
       ["o/r#3", "merge"],
-      ["o/r#4", "deploy"],
+      ["o/r#4", "merge"],
       ["o/r#1", "review"],
     ]);
     const result = selectNextWorkItem([], [prs[0], prs[1]]);
@@ -237,7 +237,7 @@ describe("rankWorkItems", () => {
     const pr = makePr({
       id: "pr1",
       age: "2026-01-02T00:00:00.000Z",
-      phase: "deploy",
+      phase: "merge",
       title: "PR title",
     });
 
@@ -255,7 +255,7 @@ describe("rankWorkItems", () => {
         type: "pr",
         id: "pr1",
         title: "PR title",
-        phase: "deploy",
+        phase: "merge",
         age: "2026-01-02T00:00:00.000Z",
       },
     ]);

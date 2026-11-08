@@ -46,14 +46,6 @@ export const CODING_SPECIALTY_DEFAULTS: SpecialtyDefaults = {
       parentCron: "shipwright-loop",
     },
     {
-      name: "shipwright-deploy",
-      schedule: "* * * * *",
-      prompt: "/shipwright:deploy",
-      silent: true,
-      enabled: false,
-      parentCron: "shipwright-loop",
-    },
-    {
       name: "shipwright-merge",
       schedule: "* * * * *",
       prompt: "/shipwright:merge",

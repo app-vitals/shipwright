@@ -88,15 +88,6 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: "shipwright-loop",
   },
   {
-    name: "shipwright-deploy",
-    schedule: "* * * * *",
-    prompt: "/shipwright:deploy",
-    silent: true,
-    preCheck: null,
-    enabled: false,
-    parentCron: "shipwright-loop",
-  },
-  {
     name: "shipwright-merge",
     schedule: "* * * * *",
     prompt: "/shipwright:merge",
@@ -277,6 +268,39 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
 
     const jobs = await service.list(agentId);
     const systemJobs = jobs.filter((j) => j.system);
+    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
+  });
+
+  // MPD-3.2: the deploy phase is gone from the defaults; reconcile's orphan
+  // pass must delete a pre-existing shipwright-deploy child row (and keep the
+  // rest of the golden set intact).
+  it("reconcileSystemCrons() deletes a pre-existing shipwright-deploy child row", async () => {
+    const agentId = await createAgent(prisma, "Coding Agent", "coding");
+    await service.reconcileSystemCrons(agentId);
+    const loop = (await service.list(agentId)).find(
+      (j) => j.name === "shipwright-loop",
+    );
+    expect(loop).toBeDefined();
+    await prisma.agentCronJob.create({
+      data: {
+        agentId,
+        name: "shipwright-deploy",
+        system: true,
+        schedule: "* * * * *",
+        prompt: "/shipwright:deploy",
+        silent: true,
+        enabled: false,
+        parentCronId: loop?.id ?? null,
+      },
+    });
+
+    const result = await service.reconcileSystemCrons(agentId);
+
+    expect(result.deleted).toBe(1);
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    expect(
+      systemJobs.find((j) => j.name === "shipwright-deploy"),
+    ).toBeUndefined();
     expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
   });
 });

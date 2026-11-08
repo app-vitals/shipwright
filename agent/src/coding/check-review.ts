@@ -30,7 +30,7 @@
  * or the lookup fails — readyForReviewAt is a necessarily-recent
  * phase-readiness stamp, not the work item's true origination age, and is no
  * longer used for age sourcing (it remains in PrRecord solely for
- * queryPrRecord's other historical callers). Unlike check-deploy.ts's
+ * queryPrRecord's other historical callers). Unlike check-merge.ts's
  * queryTaskStatus usage, a lookup failure here is NOT gating — it is only
  * ever consumed for its createdAt field, so a thrown error just falls back to
  * pr.createdAt rather than disqualifying the PR.
@@ -445,7 +445,7 @@ export interface CheckReviewDeps {
    */
   getScopedRepos: () => string[];
   // Task status lookup for the linked task (if any), used PURELY to source
-  // the age field via its createdAt — unlike check-deploy.ts, this is never
+  // the age field via its createdAt — unlike check-merge.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
   // same as "no linked task" (age falls back to pr.createdAt); it must not
   // disqualify an otherwise-eligible PR from review candidacy.

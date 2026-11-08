@@ -145,7 +145,7 @@ describe("getPlanCandidates", () => {
   // buildPrdTaskQuery()'s task-store query carries no hitl
   // filter (Task.hitl is nullable, so `?hitl=false` would drop the entire
   // NULL-hitl queue), so the gate lives in the mapper via
-  // isTaskBlockedForDispatch — matching check-review/check-patch/check-deploy.
+  // isTaskBlockedForDispatch — matching check-review/check-patch/check-merge.
 
   test("drops a hitl:true task — a human-escalated task is never autonomously dispatched", async () => {
     const result = await getPlanCandidates(
