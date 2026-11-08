@@ -26,12 +26,12 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
-`dev-task`, `review`, `patch`, `merge`, and `deploy` are item-addressed executors, not self-discovering
+`dev-task`, `review`, `patch`, and `merge` are item-addressed executors, not self-discovering
 standalone crons: each requires an explicit target (a task id for `dev-task`; an
-`org/repo#number` PR for the other four) and does no candidate scanning of its own.
-Candidate selection for the six loop-driven phases — `dev-task`, `plan-session`, `review`, `patch`, `merge`, and `deploy` — happens once, upstream, in the Shipwright agent's `shipwright-loop`
+`org/repo#number` PR for the other three) and does no candidate scanning of its own.
+Candidate selection for the five loop-driven phases — `dev-task`, `plan-session`, `review`, `patch`, and `merge` — happens once, upstream, in the Shipwright agent's `shipwright-loop`
 cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supported driver for
-these six phases; it merges candidates from `agent/src`'s per-phase qualification
+these five phases; it merges candidates from `agent/src`'s per-phase qualification
 functions and dispatches the winning item's command with its id/PR embedded directly in the
 prompt. The `plan-session` phase (PDR-4.1) and the `merge` phase (MPD-1.3) are the newest additions and both are gated behind opt-in toggles in the agent manifest. The `plan-session` phase
 is dispatched as `/shipwright:plan-session {repo} {session} --autonomous {task-id}`; it ships disabled and is
