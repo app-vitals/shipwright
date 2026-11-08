@@ -36,7 +36,7 @@ type TaskOptionalOverrides = Pick<TaskSchema, "createdAt">;
 
 /**
  * Slim Task record — only the fields the metrics provider reads. Terminal /
- * completed statuses are `merged | done | deployed | deploying | released`; `blocked` is
+ * completed statuses are `merged | done | deployed | released`; `blocked` is
  * blocked; `in_progress | pr_open | approved` are mid-flight.
  */
 export type TaskRecord = Pick<

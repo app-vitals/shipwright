@@ -1837,7 +1837,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   // `state=open` default query, and every returned task buckets to the
   // "done" column — which TASK_BOARD_COLUMNS no longer renders — so the
   // board would silently show "No tasks" in all 3 columns.
-  test("board Status dropdown omits closed statuses (merged/done/deploying/deployed/cancelled) but keeps the active ones", () => {
+  test("board Status dropdown omits closed statuses (merged/done/deployed/cancelled) but keeps the active ones", () => {
     const html = renderBoard([]);
     const statusSelect = html.match(
       /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
@@ -1848,7 +1848,6 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     for (const closed of [
       "merged",
       "done",
-      "deploying",
       "deployed",
       "released",
       "cancelled",
@@ -1895,7 +1894,6 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       "approved",
       "merged",
       "done",
-      "deploying",
       "deployed",
       "released",
       "blocked",
@@ -4736,14 +4734,7 @@ describe("classifyTaskState", () => {
     },
   );
 
-  test.each([
-    "merged",
-    "done",
-    "deploying",
-    "deployed",
-    "released",
-    "cancelled",
-  ] as const)(
+  test.each(["merged", "done", "deployed", "released", "cancelled"] as const)(
     "closed status %s takes precedence over a stale non-empty blockedBy",
     (status) => {
       const task: TaskItem = {
@@ -4789,16 +4780,12 @@ describe("bucketTaskColumn", () => {
     status: "pending",
   };
 
-  test.each([
-    "merged",
-    "deployed",
-    "released",
-    "done",
-    "deploying",
-    "cancelled",
-  ] as const)("status %s buckets as done", (status) => {
-    expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
-  });
+  test.each(["merged", "deployed", "released", "done", "cancelled"] as const)(
+    "status %s buckets as done",
+    (status) => {
+      expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
+    },
+  );
 
   test("status done wins over hitl:true (done takes precedence)", () => {
     const task: TaskItem = { ...BASE, status: "done", hitl: true };
@@ -6147,5 +6134,39 @@ describe("released status rendering (MPD-1.6)", () => {
     );
     expect(html).toContain('class="badge badge-green"');
     expect(html).toMatch(/badge-green[^>]*>released</);
+  });
+});
+
+describe("unknown legacy task status", () => {
+  const LEGACY = "legacy_unknown_status";
+  const task: TaskItem = { id: "TASK-L", title: "Legacy", status: LEGACY };
+
+  test("list, board and detail pages render without throwing, with gray badge", () => {
+    const pagination = { total: 1, limit: 50, page: 1 };
+    for (const view of ["table", "board"] as const) {
+      const html = renderTasksPage(
+        [task],
+        {},
+        false,
+        USER_NAME,
+        {},
+        pagination,
+        undefined,
+        undefined,
+        false,
+        "America/Los_Angeles",
+        {},
+        view,
+      );
+      expect(html).toContain("TASK-L");
+    }
+    const detail = renderTaskDetailPage(task, "user@example.com", {}, "UTC");
+    expect(detail).toContain(LEGACY);
+    expect(detail).toContain("badge-gray");
+  });
+
+  test("bucketTaskColumn and classifyTaskState do not throw", () => {
+    expect(() => bucketTaskColumn(task)).not.toThrow();
+    expect(() => classifyTaskState(task)).not.toThrow();
   });
 });
