@@ -42,7 +42,6 @@ import {
   reconcilePrOpenTasks,
   reconcilePrState,
   reconcileReviewState,
-  reconcileStaleDeployTasks,
   SCOPE_DEGRADED,
 } from "./pr-state-reconciler.ts";
 
@@ -79,8 +78,6 @@ interface MakeDepsOptions {
   pageLimit?: number;
   /** pr_open tasks for the new reconcile-tasks pass; defaults to [] so existing tests are unaffected. */
   prOpenTasks?: PrOpenTaskRecord[];
-  /** status -> tasks for the XPF-5.2 stale-deploy sweeper; defaults to {} so existing tests are unaffected. */
-  tasksByStatus?: Record<string, PrOpenTaskRecord[]>;
   /** "repo#branch" -> merged-PR-list result, or an Error to throw, for the branch-fallback path. */
   branchResults?: Record<string, Array<{ number: number }> | Error>;
   now?: () => string;
@@ -132,7 +129,6 @@ function makeDeps({
   ghResults = {},
   pageLimit = 50,
   prOpenTasks = [],
-  tasksByStatus = {},
   branchResults = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
@@ -188,8 +184,6 @@ function makeDeps({
       listPrOpenTasksCalls.push({ limit, offset });
       return prOpenTasks.slice(offset, offset + limit);
     },
-    listTasksByStatus: async (status: string, limit: number, offset: number) =>
-      (tasksByStatus[status] ?? []).slice(offset, offset + limit),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       taskPatchCalls.push({ id, fields });
     },
@@ -3092,88 +3086,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 });
 
 // ─── gh-call throttling (PSR-1.2) ──────────────────────────────────────────────
-
-describe("reconcileStaleDeployTasks (XPF-5.2)", () => {
-  const repo = "acme/example-repo";
-  const OLD = "2026-07-10T00:00:00.000Z"; // 5 days before FAKE_NOW
-  const RECENT = "2026-07-14T20:00:00.000Z"; // 4h before FAKE_NOW
-  const merged = (mergedAt: string): GhPrView => ({
-    state: "MERGED",
-    mergedAt,
-  });
-
-  test.each(["deploying", "merged"])(
-    "sweeps a %s task whose PR merged > 24h ago to deployed",
-    async (status) => {
-      const { deps, taskPatchCalls } = makeDeps({
-        tasksByStatus: { [status]: [{ id: "T-1", repo, pr: 7 }] },
-        ghResults: { [`${repo}#7`]: merged(OLD) },
-      });
-      await reconcileStaleDeployTasks(deps);
-      expect(taskPatchCalls).toEqual([
-        { id: "T-1", fields: { status: "deployed", deployedAt: FAKE_NOW } },
-      ]);
-    },
-  );
-
-  test("leaves a recently merged task alone (deploy may still be in flight)", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      tasksByStatus: { deploying: [{ id: "T-1", repo, pr: 7 }] },
-      ghResults: { [`${repo}#7`]: merged(RECENT) },
-    });
-    await reconcileStaleDeployTasks(deps);
-    expect(taskPatchCalls).toEqual([]);
-  });
-
-  test("never sweeps when GitHub does not report the PR merged", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      tasksByStatus: { merged: [{ id: "T-1", repo, pr: 7 }] },
-      ghResults: { [`${repo}#7`]: { state: "OPEN", mergedAt: null } },
-    });
-    await reconcileStaleDeployTasks(deps);
-    expect(taskPatchCalls).toEqual([]);
-  });
-
-  test("skips tasks with no pr and out-of-scope repos without a gh call", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      getScopedRepos: () => [repo],
-      tasksByStatus: {
-        deploying: [
-          { id: "T-nopr", repo },
-          { id: "T-other", repo: "acme/other", pr: 9 },
-        ],
-      },
-    });
-    await reconcileStaleDeployTasks(deps);
-    expect(taskPatchCalls).toEqual([]);
-  });
-
-  test("a per-task gh failure does not abort the rest", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      tasksByStatus: {
-        deploying: [
-          { id: "T-bad", repo, pr: 1 },
-          { id: "T-ok", repo, pr: 2 },
-        ],
-      },
-      ghResults: {
-        [`${repo}#1`]: new Error("boom"),
-        [`${repo}#2`]: merged(OLD),
-      },
-    });
-    await reconcileStaleDeployTasks(deps);
-    expect(taskPatchCalls.map((c) => c.id)).toEqual(["T-ok"]);
-  });
-
-  test("runs as part of reconcilePrState", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      tasksByStatus: { deploying: [{ id: "T-1", repo, pr: 7 }] },
-      ghResults: { [`${repo}#7`]: merged(OLD) },
-    });
-    await reconcilePrState(deps);
-    expect(taskPatchCalls.map((c) => c.id)).toEqual(["T-1"]);
-  });
-});
 
 describe("reconcile delay throttling (PSR-1.2)", () => {
   test("reconcilePrState invokes deps.delay once per record, scaling with batch size", async () => {
