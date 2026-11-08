@@ -4,12 +4,10 @@ import { join } from "node:path";
 
 const DEV_TASK_PATH = join(import.meta.dir, "dev-task.md");
 const PATCH_PATH = join(import.meta.dir, "patch.md");
-const DEPLOY_PATH = join(import.meta.dir, "deploy.md");
 const CLAUDE_MD_PATH = join(import.meta.dir, "..", "CLAUDE.md");
 
 let devTask: string;
 let patch: string;
-let deploy: string;
 let claudeMd: string;
 
 beforeAll(() => {
@@ -23,7 +21,6 @@ beforeAll(() => {
       .map((f) => readFileSync(join(refsDir, f), "utf-8")),
   ].join("\n\n");
   patch = readFileSync(PATCH_PATH, "utf-8");
-  deploy = readFileSync(DEPLOY_PATH, "utf-8");
   claudeMd = readFileSync(CLAUDE_MD_PATH, "utf-8");
 });
 
@@ -84,29 +81,6 @@ describe("patch.md — SHIPWRIGHT_REPO_DIR", () => {
 
   it("documents SHIPWRIGHT_REPO_DIR default as $HOME/src", () => {
     expect(patch).toContain("$HOME/src");
-  });
-});
-
-describe("deploy.md — SHIPWRIGHT_REPO_DIR", () => {
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} in bash blocks", () => {
-    const blocks = bashBlocks(deploy);
-    expect(blocks).not.toContain("~/src/{repo}");
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-    expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}");
-  });
-
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo} in bash blocks", () => {
-    const blocks = bashBlocks(deploy);
-    expect(blocks).toContain(
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}",
-    );
-  });
-
-  it("documents SHIPWRIGHT_REPO_DIR default as $HOME/src", () => {
-    expect(deploy).toContain("$HOME/src");
   });
 });
 

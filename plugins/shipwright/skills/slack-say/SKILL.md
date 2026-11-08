@@ -8,7 +8,7 @@ description: >
   chatter, for every small step, or as a substitute for the agent's final
   response — it is a best-effort ping, not the answer. Triggers on: multi-step
   commands/skills that run long enough a human might wonder if they stalled
-  (dev-task, patch, review, plan-session, deploy), or when the user mentions
+  (dev-task, patch, review, plan-session, merge), or when the user mentions
   "post progress to Slack", "slack-say", or "progress ping". Invokes
   `scripts/slack-say.ts` via `bun run` — never throws, never fails the caller.
 ---

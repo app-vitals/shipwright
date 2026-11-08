@@ -5,7 +5,7 @@ argument-hint: "org/repo#number"
 
 # Review
 
-Evaluate open PRs and post findings. Scope: review only — no patching, merging, or deploying.
+Evaluate open PRs and post findings. Scope: review only — no patching or merging.
 
 PR tracking state — claimed commit SHAs, review state, and staging status — lives in the
 task store PR API (`$SHIPWRIGHT_TASK_STORE_URL/prs`). This is shared state across agents:
@@ -1062,7 +1062,7 @@ subsection when there was nothing to check.
 Immediately before Step 10 finalizes the verdict, this step determines whether this PR has
 **unaddressed findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check
 for Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
-rather than re-deriving it (the drift PRB-2.1 previously fixed between `check-deploy.ts` and
+rather than re-deriving it (the drift PRB-2.1 previously fixed between `check-merge.ts` and
 `check-patch.ts`/`check-review.ts`).
 
 **This is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
@@ -1516,7 +1516,7 @@ curl -sf -X PATCH \
 fi
 ```
 
-**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing task status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
+**Never update task status when posting a review.** The merge command looks up tasks by PR number (expecting `status: 'pr_open'`) to mark them merged — changing task status here breaks that linkage. Task status transitions are owned by the merge command (`pr_open` → `merged`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
 
 ---
 ## Step 14: Resolve and Claim the Target PR

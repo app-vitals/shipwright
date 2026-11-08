@@ -9,7 +9,7 @@ Discover every `status: 'blocked'` task and `blocked: true` PR in the task store
 which pipeline phase escalated each one from its `blockedReason` text, and walk through
 them one at a time so a human can decide: **retry**, **redirect**, or **abandon**.
 
-Unlike `dev-task`/`review`/`patch`/`deploy`, this command is **not** dispatched by the
+Unlike `dev-task`/`review`/`patch`/`merge`, this command is **not** dispatched by the
 `shipwright-loop` cron and is exempt from the Candidate Selection Contract (see
 `plugins/shipwright/CLAUDE.md`) — it self-discovers its own targets because it is a
 human-facing triage tool, not an autonomous pipeline phase. It never runs unattended.
@@ -123,14 +123,8 @@ containment, not exact equality — several patterns include a dynamic suffix (a
 subagent's own detail) after a fixed prefix.
 
 - **PR-only records:** parse `.blockedReason` on the PR.
-- **Tasks:** parse `.blockedReason` first. If it's empty, also check `.note` — `deploy.md`
-  writes its five escalation strings (`Post-merge CI failed`, `Deploy stage failed`,
-  `canary_blocked`, `Pipeline timeout`, `Canary failed after deploy`) into the task's `note`
-  field when a task is linked (`$TASK_ID` set), not `blockedReason`; `blockedReason` on a
-  task-linked deploy escalation stays `null`. `blockedReason` is only populated for these
-  five deploy patterns in the PR-only branch (`$PR_RECORD_ID`, no linked task). All other
-  phases (dev-task, patch, spin-detection) write to `blockedReason` on tasks as usual — the
-  `.note` fallback only matters for deploy-originated task escalations.
+- **Tasks:** parse `.blockedReason`. `merge.md` writes its escalation strings to `blockedReason` on
+  both the linked task and the PR record, so no `.note` fallback is needed.
 
 | Origin phase | pattern (substring match) | field(s) to check |
 |---|---|---|
@@ -144,12 +138,9 @@ subagent's own detail) after a fixed prefix.
 | **patch** | `review-finding fix blocked` | task: `blockedReason` |
 | **patch** | `main_red:` (the PR's CI failure is inherited from a red base branch — nothing for patch to fix on the PR; `blockedReason` is `main_red: {base} @ {main-sha} is failing {signature}`) | task: `blockedReason`; PR: `blockedReason` |
 | **patch** | `CI-fix blocked` | task: `blockedReason` |
-| **deploy** | `Post-merge CI failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Deploy stage failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `canary_blocked` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Pipeline timeout` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Canary failed after deploy` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a; the task-linked branch of that same step sets `status=deployed` with no note/blockedReason at all, so this pattern never appears on a task) | PR: `blockedReason` only |
+| **merge** | `Post-merge CI failed` | task: `blockedReason`; PR: `blockedReason` |
+| **merge** | `Squash merge failed` | task: `blockedReason`; PR: `blockedReason` |
+| **merge** | `Merge blocked by branch protection` (a self-review APPROVE does not satisfy the required-review rule — a human adds a real approval or configures a ruleset bypass actor before retry) | task: `blockedReason`; PR: `blockedReason` |
 | **spin-detection — skip-count (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — tracked via `skipCount`; **not task-only** — `Task` and `PullRequest` each carry their own `skipCount`/`lastSkippedAt` (`task-store/prisma/schema.prisma`) and `PullRequestService.recordSkip()` produces this identical blockedReason string on a PR-only record (no linked task), just like `TaskService.recordSkip()` does on a task — distinct from (though similarly named to) the PR CI-failure-streak variant below | task: `blockedReason`; PR: `blockedReason` |
 | **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately | PR: `blockedReason` only |
 
@@ -169,9 +160,9 @@ BLOCKED: {task-id or org/repo#pr}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Title:         {title}
 Repo:          {repo}
-Origin phase:  {dev-task | patch | deploy | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
+Origin phase:  {dev-task | patch | merge | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
 Blocked at:    {blockedAt}
-Blocked reason: {blockedReason, or task.note when blockedReason is empty (deploy escalations on a linked task)}
+Blocked reason: {blockedReason}
 PR:            {task.pr or "(none)"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -190,7 +181,7 @@ action taken, move to the next).
 
 There are three retry destinations, chosen per item:
 
-- **task.pr is set** (escalation happened mid-review/patch/deploy, after a PR already
+- **task.pr is set** (escalation happened mid-review/patch/merge, after a PR already
   existed) → PATCH the task directly to `status: 'pr_open'`. Do **not** use `/release` here
   — `/release` resets to `'pending'`, which would let `dev-task` open a duplicate PR.
 - **task.pr is empty** (no PR exists yet) → use the single `POST /tasks/:id/unblock` call.

@@ -297,7 +297,7 @@ shipwright/
 │   ├── product-spec-template.md # PRODUCT-SPEC.md template for /prd
 │   └── toolchain-patterns.md    # Config file → command mapping
 ├── scripts/
-│   └── check-*.ts               # Cron precheck guards (dev-task, review, deploy, patch)
+│   └── check-*.ts               # Cron precheck guards (dev-task, review, merge, patch)
 ├── README.md
 └── TESTING.md
 ```

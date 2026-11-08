@@ -787,8 +787,8 @@ another patch run (or a stale leftover claim from `/shipwright:review`, e.g. a
 still-claimed `phase: "review"` record left behind after posting — the record stays
 claimed until released or reaped). Without a pre-work claim, two overlapping patch runs
 could both dispatch competing fix subagents against the same branch. Claim the PR record
-with `phase: "patch"` now, before starting the merge/resolve, mirroring deploy.md's Step
-4a pre-merge claim:
+with `phase: "patch"` now, before starting the merge/resolve, mirroring merge.md's pre-merge
+claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
 it against this site's live head before trusting it — the head can have moved since Step 2
@@ -1098,7 +1098,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -1895,7 +1895,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -2011,7 +2011,7 @@ same signal before dispatch is ever considered — but that filter only guards t
 `shipwright-loop`-driven path. A human running `/shipwright:patch org/repo#123` directly
 bypasses `check-patch.ts` entirely, and time can also pass between candidate selection and
 this point in the run (a bundle-mate task can start, or get blocked, after this PR was
-selected). Mirror deploy.md's Step 2b here, immediately before Step 6c's dispatch, so an
+selected). Mirror merge.md's live-state re-check here, immediately before Step 6c's dispatch, so an
 incomplete bundle is caught on both paths — this is where a prior CI-fix-on-an-incomplete-
 bundle incident actually happened: re-query the same sibling-branch-status signal now, right
 before dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.

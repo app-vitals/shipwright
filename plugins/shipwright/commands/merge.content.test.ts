@@ -72,7 +72,7 @@ describe("merge.md — Arguments section (AC1)", () => {
     expect(section).toContain("[silent]");
   });
 
-  it("accepts the [preclaim:{recordId}:{commitSha}] marker exactly as review/patch/deploy do", () => {
+  it("accepts the [preclaim:{recordId}:{commitSha}] marker exactly as review/patch/merge do", () => {
     const section = extractArgsSection(content);
     expect(section).toContain("[preclaim:{recordId}:{commitSha}]");
     expect(section).toContain("formatPreClaimMarker");

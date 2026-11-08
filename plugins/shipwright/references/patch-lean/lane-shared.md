@@ -55,7 +55,7 @@ Check the cache before fresh detection, then docs-first discovery and config-fil
 ## 3. Claim the PR record (pre-work lock)
 
 The subagent can run long enough to overlap another patch run (or a stale `phase: "review"` claim
-left by `/shipwright:review`). Claim with `phase: "patch"` before dispatching, mirroring deploy.md's
+left by `/shipwright:review`). Claim with `phase: "patch"` before dispatching, mirroring merge.md's
 pre-merge claim.
 
 **Pre-Claim Fast Path (CBD-1.5).** If Step 0 captured a marker, validate it against this site's live

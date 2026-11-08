@@ -263,7 +263,7 @@ describe("hitl.md — guard against silent PR in HITL session (HSR-2.1 AC2)", ()
     expect(lower).toContain("false");
   });
 
-  it("Step 6 explains that leaving status unchanged allows the task to re-enter normal candidacy for review/patch/deploy", () => {
+  it("Step 6 explains that leaving status unchanged allows the task to re-enter normal candidacy for review/patch/merge", () => {
     const section = extractStep6Section(content);
     const lower = section.toLowerCase();
     // Should explain that PR flows through the normal lifecycle
@@ -271,7 +271,7 @@ describe("hitl.md — guard against silent PR in HITL session (HSR-2.1 AC2)", ()
       lower.includes("review") ||
       lower.includes("normal") ||
       lower.includes("candidacy") ||
-      lower.includes("deploy") ||
+      lower.includes("merge") ||
       lower.includes("lifecycle");
     expect(hasNormalFlow).toBe(true);
   });

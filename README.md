@@ -160,7 +160,7 @@ To stop: tmux kill-session -t shipwright
 /shipwright:dev-task       → build + test + open a PR for the next ready task
 /shipwright:review         → policy-controlled PR review
 /shipwright:patch          → address review findings / failing CI
-/shipwright:deploy         → merge + deploy
+/shipwright:merge          → merge + watch post-merge CI
 ```
 
 Tasks are tracked in the Shipwright task store (see [`docs/task-store.md`](./docs/task-store.md)), so the queue is shared across every agent working the pipeline.
