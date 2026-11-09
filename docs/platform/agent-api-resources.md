@@ -160,7 +160,7 @@ PUT /agents/:id/baked-marketplaces
 
 Runtime-only. The agent's own bearer token is required; other agents' keys, admins and session members get `403`.
 
-Body: `{ names: string[] }` — array of marketplace directory basenames (e.g. `["vitals-os", "shipwright"]`).
+Body: `{ names: string[] }` — array of marketplace directory basenames (e.g. `["acme-tools", "shipwright"]`).
 
 Returns `200` with `{ names: string[] }` — the stored list.
 
