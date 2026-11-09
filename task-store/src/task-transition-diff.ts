@@ -77,7 +77,6 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "priority",
   "cancelledAt",
   "completedAt",
-  "deployingAt",
   "deployedAt",
   "releasedAt",
   "ciFixAttempts",

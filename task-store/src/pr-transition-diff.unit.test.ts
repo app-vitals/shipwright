@@ -34,7 +34,6 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     readyForReviewAt: null,
     readyForPatchAt: null,
     readyForMergeAt: null,
-    readyForDeployAt: null,
     blocked: false,
     blockedReason: null,
     skipCount: 0,

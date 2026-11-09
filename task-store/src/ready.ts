@@ -12,8 +12,8 @@
  *     dependency-satisfied rules below
  *
  * Dependency-satisfied rules:
- *   1. dep.status ∈ CLOSED_STATUSES (statuses.ts: merged, done, deploying,
- *      deployed, released, cancelled) → satisfied
+ *   1. dep.status ∈ CLOSED_STATUSES (statuses.ts: merged, done, deployed,
+ *      released, cancelled) → satisfied
  *   2. same-branch dep with status ∈ { pr_open, approved } → satisfied (bundled)
  *   3. cross-branch dep with status === pr_open AND dep.pr set AND isPrMerged(pr)
  *   4. anything else → not satisfied

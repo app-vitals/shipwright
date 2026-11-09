@@ -55,7 +55,6 @@ export const TaskSchema = z
         "approved",
         "merged",
         "done",
-        "deploying",
         "deployed",
         "released",
         "blocked",
@@ -120,7 +119,6 @@ export const TaskSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-05T00:00:00.000Z" }),
-    deployingAt: z.string().nullable().optional().openapi({ example: null }),
     deployedAt: z
       .string()
       .nullable()
@@ -369,7 +367,7 @@ export const PullRequestSchema = z
     reviewedCommitSha: z.string().nullable().optional().openapi({
       example: "abc123def456",
       description:
-        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
+        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping.",
     }),
     patchCycles: z.number().int().default(0).openapi({ example: 1 }),
     reviewCycles: z.number().int().default(0).openapi({ example: 0 }),
@@ -406,7 +404,7 @@ export const PullRequestSchema = z
       .optional()
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
     phase: z
-      .enum(["review", "patch", "merge", "deploy"])
+      .enum(["review", "patch", "merge"])
       .nullable()
       .optional()
       .openapi({ example: "review" }),
@@ -421,11 +419,6 @@ export const PullRequestSchema = z
       .optional()
       .openapi({ example: null }),
     readyForMergeAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: null }),
-    readyForDeployAt: z
       .string()
       .nullable()
       .optional()
@@ -1231,7 +1224,7 @@ export const ClaimPrBodySchema = z
       example: "agent-id-123",
       description: "Agent claiming this PR (admin tokens only)",
     }),
-    phase: z.enum(["review", "patch", "merge", "deploy"]).optional().openapi({
+    phase: z.enum(["review", "patch", "merge"]).optional().openapi({
       example: "patch",
       description:
         "Pipeline phase this claim is for (defaults to 'review' when omitted)",
@@ -1312,7 +1305,7 @@ export const ClaimNextResponseSchema = z
   .object({
     pr: PullRequestSchema,
     phase: z
-      .enum(["review", "patch", "merge", "deploy"])
+      .enum(["review", "patch", "merge"])
       .openapi({ example: "review" }),
   })
   .openapi("ClaimNextResponse");

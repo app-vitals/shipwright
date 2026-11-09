@@ -4,6 +4,27 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: task-store drops `deploying`, `deployingAt`, the `deploy` PR phase and `readyForDeployAt` _(MPD-3.5)_
+
+**Version**: next (MPD-3.5)
+
+**Who this affects**: any task-store API client that still writes or filters on the removed values.
+Shipwright's own loop, commands and admin/metrics stopped using them in MPD-3.1–3.4.
+
+- `TaskStatus` no longer has `deploying` and `Task.deployingAt` is gone. `status=deploying` on
+  `GET /tasks`, `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` returns `400`. A
+  `deployingAt` key in a task write body is silently stripped, like other removed fields.
+- `PrPhase` no longer has `deploy` and `PullRequest.readyForDeployAt` is gone. `phase=deploy` on
+  `POST /prs/claim` or `PATCH /prs/:id` returns `400`. `POST /prs/claim-next` now claims an
+  approved PR in phase `merge`, and approval (`reviewState=approved`) stamps `readyForMergeAt`.
+  FIFO aging is `COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt)`.
+- Migration `20261108000000_drop_deploying_status_deploy_phase` runs on task-store boot. It moves
+  every `deploying` task to `merged`, clears `phase` and the claim fields on every `phase=deploy`
+  PR, and copies `readyForDeployAt` into `readyForMergeAt` where that is unset, before it recreates
+  both enums and drops the two columns. Nothing to do by hand.
+
+---
+
 ## Breaking: the admin is built on `@app-vitals/agent-admin` 0.7.1 _(AGR-4.2)_
 
 **Version**: next (AGR-4.2)

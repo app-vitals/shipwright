@@ -36,7 +36,6 @@ function task(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     deployedAt: null,
     releasedAt: null,
     ciFixAttempts: null,

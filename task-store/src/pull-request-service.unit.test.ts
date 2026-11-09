@@ -1020,7 +1020,7 @@ describe("PullRequestService.update() merge completion", () => {
   test("state:merged clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
-      readyForDeployAt: NOW.toISOString(),
+      readyForMergeAt: NOW.toISOString(),
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1044,7 +1044,7 @@ describe("PullRequestService.update() merge completion", () => {
   test("state:closed clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
-      readyForDeployAt: NOW.toISOString(),
+      readyForMergeAt: NOW.toISOString(),
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1096,11 +1096,11 @@ describe("PullRequestService.update() claim release on review post", () => {
     expect(data.phase).toBeNull();
   });
 
-  test("reviewState:approved clears claim fields AND stamps readyForDeployAt", async () => {
+  test("reviewState:approved clears claim fields AND stamps readyForMergeAt", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
       claimedBy: "agent-a",
-      readyForDeployAt: null,
+      readyForMergeAt: null,
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1109,7 +1109,7 @@ describe("PullRequestService.update() claim release on review post", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.reviewState).toBe("approved");
-    expect(data.readyForDeployAt).toBe(NOW.toISOString());
+    expect(data.readyForMergeAt).toBe(NOW.toISOString());
     expect(data.claimedBy).toBeNull();
     expect(data.claimedAt).toBeNull();
     expect(data.heartbeatAt).toBeNull();

@@ -44,7 +44,6 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     phase: null,
     readyForReviewAt: null,
     readyForPatchAt: null,
-    readyForDeployAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -203,7 +202,7 @@ function fakePrService(
       _repos?: string[],
     ): Promise<{
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge";
     } | null> {
       return null;
     },

@@ -116,7 +116,7 @@ describe("TaskService state filter logic (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t2", "t3", "t4"]);
   });
 
-  it("state=closed includes all CLOSED_STATUSES: merged, done, deploying, deployed, released, cancelled", () => {
+  it("state=closed includes all CLOSED_STATUSES: merged, done, deployed, released, cancelled", () => {
     const tasks = CLOSED_STATUSES.map((s) =>
       makeMinimalTask({ id: `t-${s}`, status: s }),
     );
@@ -287,7 +287,7 @@ describe("listBlocked logic (unit)", () => {
       }),
       makeMinimalTask({
         id: "t3",
-        status: "deploying",
+        status: "released",
         hitl: true,
       }),
       makeMinimalTask({
@@ -409,7 +409,6 @@ describe("TaskService.listBlocked() sort (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -910,7 +909,6 @@ describe("TaskService.list() blockedBy dependency lookup scoping", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1077,7 +1075,6 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1368,7 +1365,6 @@ describe("TaskService.listReady() filters (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1904,7 +1900,6 @@ describe("TaskService.listBlocked() filters (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -2830,7 +2825,6 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
