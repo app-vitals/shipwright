@@ -148,7 +148,7 @@ To stop: tmux kill-session -t shipwright
 
 | Component | What it does | Status |
 |---|---|---|
-| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | ✅ Available |
+| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, and a test-readiness pipeline. | ✅ Available |
 | **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. Run locally with `task api` or `task ui` (offline mode, no secrets needed). | ✅ Available |
 | **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | ✅ Available |
 
