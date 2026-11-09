@@ -158,6 +158,13 @@ const additions = shipped.filter((name) => !preSwapNames.has(name));
  * migration adds (`UPDATE "T" SET "new" = "other"`), as 20261029000000 does
  * for the typeName -> specialty rename. It writes only the new, still-empty
  * column, so no applied data is lost. Any other UPDATE still fails.
+ *
+ * A second narrow exception: Prisma emits a new table's foreign key as a
+ * separate `ALTER TABLE "T" ADD CONSTRAINT ... FOREIGN KEY`. That is accepted
+ * only when `T` is created by a CREATE TABLE in the same migration (no
+ * existing rows or constraints are touched). Referential actions
+ * (`ON DELETE`/`ON UPDATE`) are stripped before the destructive-keyword
+ * check, so `ON DELETE CASCADE` is not mistaken for a DELETE statement.
  */
 function additiveViolations(sql: string): string[] {
   const statements = sql
@@ -170,18 +177,38 @@ function additiveViolations(sql: string): string[] {
   const addedColumns = new Set(
     [...statements.join(";").matchAll(/ADD COLUMN "(\w+)"/g)].map((m) => m[1]),
   );
+  const createdTables = new Set(
+    statements.flatMap((s) => {
+      const m = s.match(/^CREATE TABLE "(\w+)"/);
+      return m ? [m[1]] : [];
+    }),
+  );
   const violations: string[] = [];
   for (const statement of statements) {
     const backfill = statement.match(/^UPDATE "\w+" SET "(\w+)" = "\w+"$/);
     if (backfill && addedColumns.has(backfill[1] as string)) continue;
+    const foreignKey = statement.match(
+      /^ALTER TABLE "(\w+)" ADD CONSTRAINT "\w+" FOREIGN KEY/,
+    );
+    const newTableForeignKey =
+      foreignKey && createdTables.has(foreignKey[1] as string);
     if (
+      !newTableForeignKey &&
       !/^(CREATE TABLE|CREATE (UNIQUE )?INDEX|ALTER TABLE "\w+" ADD COLUMN)/.test(
         statement,
       )
     ) {
       violations.push(`unexpected statement: ${statement}`);
     }
-    if (/\b(DROP|DELETE|UPDATE|TRUNCATE|RENAME)\b/i.test(statement)) {
+    const withoutReferentialActions = statement.replace(
+      /\bON (DELETE|UPDATE) (CASCADE|RESTRICT|NO ACTION|SET NULL|SET DEFAULT)/gi,
+      "",
+    );
+    if (
+      /\b(DROP|DELETE|UPDATE|TRUNCATE|RENAME)\b/i.test(
+        withoutReferentialActions,
+      )
+    ) {
       violations.push(`destructive statement: ${statement}`);
     }
     if (statement.startsWith("ALTER TABLE")) {
@@ -254,5 +281,65 @@ describe("admin migration history (AGR-4.2)", () => {
         'ALTER TABLE "Agent" ADD COLUMN "x" TEXT NOT NULL DEFAULT \'\';\nCREATE INDEX "i" ON "Agent"("x");',
       ),
     ).toEqual([]);
+  });
+
+  it("accepts a foreign key on a table created in the same migration", () => {
+    const sql = `-- CreateTable
+CREATE TABLE "AgentMarketplace" (
+    "id" TEXT NOT NULL,
+    "agentId" TEXT NOT NULL,
+    CONSTRAINT "AgentMarketplace_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AgentMarketplace_agentId_key" ON "AgentMarketplace"("agentId");
+
+-- AddForeignKey
+ALTER TABLE "AgentMarketplace" ADD CONSTRAINT "AgentMarketplace_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "Agent"("id") ON DELETE CASCADE ON UPDATE CASCADE;`;
+    expect(additiveViolations(sql)).toEqual([]);
+  });
+
+  it("still rejects constraints and destructive SQL around the foreign-key exception", () => {
+    const fk =
+      'ADD CONSTRAINT "A_fkey" FOREIGN KEY ("agentId") REFERENCES "Agent"("id") ON DELETE CASCADE ON UPDATE CASCADE';
+    // A foreign key on a table the migration did not create.
+    expect(additiveViolations(`ALTER TABLE "Agent" ${fk};`)).not.toEqual([]);
+    expect(
+      additiveViolations(
+        `CREATE TABLE "Other" ("id" TEXT NOT NULL);\nALTER TABLE "Agent" ${fk};`,
+      ),
+    ).not.toEqual([]);
+    // Any other constraint on a new table is still unexpected.
+    expect(
+      additiveViolations(
+        'CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ADD CONSTRAINT "c" CHECK ("id" <> \'\');',
+      ),
+    ).not.toEqual([]);
+    // Stripping referential actions must not hide real destructive SQL.
+    expect(
+      additiveViolations(
+        `CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ${fk};\nDROP TABLE "Agent";`,
+      ),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        `CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ${fk};\nDELETE FROM "Agent";`,
+      ),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        `CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ${fk};\nUPDATE "Agent" SET "name" = 'x';`,
+      ),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        `CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ${fk};\nTRUNCATE TABLE "Agent";`,
+      ),
+    ).not.toEqual([]);
+    expect(
+      additiveViolations(
+        `CREATE TABLE "New" ("id" TEXT NOT NULL);\nALTER TABLE "New" ${fk};\nALTER TABLE "Agent" RENAME TO "A2";`,
+      ),
+    ).not.toEqual([]);
   });
 });
