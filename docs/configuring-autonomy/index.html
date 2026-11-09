@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en" data-astro-cid-ccykbmgk><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v7.3.2"><title>Configuring Autonomy — Shipwright Harness</title><meta name="description" content="Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review, patch, and deploy."><link rel="canonical" href="https://shipwrightharness.com/docs/configuring-autonomy/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/configuring-autonomy/"><meta property="og:title" content="Configuring Autonomy — Shipwright Harness"><meta property="og:description" content="Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review, patch, and deploy."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script><script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+<!DOCTYPE html><html lang="en" data-astro-cid-ccykbmgk><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v7.3.2"><title>Configuring Autonomy — Shipwright Harness</title><meta name="description" content="Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review and patch."><link rel="canonical" href="https://shipwrightharness.com/docs/configuring-autonomy/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/configuring-autonomy/"><meta property="og:title" content="Configuring Autonomy — Shipwright Harness"><meta property="og:description" content="Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review and patch."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script><script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
 
   // Skip analytics on localhost / dev to avoid polluting production data.
   if (
@@ -50,7 +50,7 @@ You review and merge PRs yourself.</p>
 <td>off</td>
 </tr>
 <tr>
-<td><code>shipwright-deploy</code></td>
+<td><code>shipwright-merge</code></td>
 <td>off</td>
 </tr>
 </tbody>
@@ -87,7 +87,7 @@ You still control merging.</p>
 <td><strong>on</strong></td>
 </tr>
 <tr>
-<td><code>shipwright-deploy</code></td>
+<td><code>shipwright-merge</code></td>
 <td>off</td>
 </tr>
 </tbody>
@@ -96,8 +96,8 @@ You still control merging.</p>
 posts reviews to GitHub immediately (the default) or holds them for your approval. See
 <a href="#staged-reviews">Staged reviews</a> below.</p>
 <h3 id="stage-3--full-autonomous-loop">Stage 3 — Full autonomous loop</h3>
-<p>Enable <code>shipwright-deploy</code>. The agent now merges approved PRs and monitors post-merge CI.
-The full loop runs without manual intervention: plan → build → review → patch → deploy.</p>
+<p>Enable <code>shipwright-merge</code>. The agent now merges approved PRs and monitors post-merge CI.
+The full loop runs without manual intervention: plan → build → review → patch → merge.</p>
 <table>
 <thead>
 <tr>
@@ -119,13 +119,13 @@ The full loop runs without manual intervention: plan → build → review → pa
 <td><strong>on</strong></td>
 </tr>
 <tr>
-<td><code>shipwright-deploy</code></td>
+<td><code>shipwright-merge</code></td>
 <td><strong>on</strong></td>
 </tr>
 </tbody>
 </table>
-<p>Only enable deploy when you have the safeguards in place — CI gates, required reviewers, and
-a working <code>check-deploy</code> pre-check — so the agent can’t merge something broken.</p>
+<p>Only enable merge when you have the safeguards in place — CI gates, required reviewers, and
+a working merge pre-check — so the agent can’t merge something broken.</p>
 <hr/>
 <h2 id="common-workflow-patterns">Common workflow patterns</h2>
 <table>
@@ -135,7 +135,7 @@ a working <code>check-deploy</code> pre-check — so the agent can’t merge som
 <th style="text-align:center">dev-task</th>
 <th style="text-align:center">review</th>
 <th style="text-align:center">patch</th>
-<th style="text-align:center">deploy</th>
+<th style="text-align:center">merge</th>
 <th>Notes</th>
 </tr>
 </thead>
@@ -162,7 +162,7 @@ a working <code>check-deploy</code> pre-check — so the agent can’t merge som
 <td style="text-align:center">✓</td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">✓</td>
-<td>Skip the task queue; open PRs yourself and let review/patch/deploy take it from there.</td>
+<td>Skip the task queue; open PRs yourself and let review/patch/merge take it from there.</td>
 </tr>
 </tbody>
 </table>
@@ -181,11 +181,11 @@ Nothing is posted to GitHub until you approve it. Once you’ve confirmed the re
 post it manually, or turn <code>autoPostReviews</code> back on to go back to automatic posting.</p>
 <h3 id="bring-your-own-pr">Bring your own PR</h3>
 <p>You don’t have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
-anything — and Shipwright picks it up from there. With <code>review</code>, <code>patch</code>, and <code>deploy</code> enabled,
+anything — and Shipwright picks it up from there. With <code>review</code>, <code>patch</code>, and <code>merge</code> enabled,
 the agent will review the PR, patch any CI failures, and merge it once it’s clean.</p>
 <p>This works and is a reasonable way to get comfortable with the system. That said, bypassing
 <code>dev-task</code> means skipping the quality work it does before the PR exists: structured planning,
-tests-first implementation, and the pre-PR research pass. The review and deploy phases catch
+tests-first implementation, and the pre-PR research pass. The review and merge phases catch
 issues, but they work better when the PR was built with that discipline from the start. For
 anything beyond a quick fix, going through the task queue produces better outcomes.</p>
 <hr/>
@@ -251,7 +251,7 @@ on the next config sync (every 60 seconds).</p>
 <span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Content-Type: application/json&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
 <span class="line"><span style="color:var(--astro-code-token-string)">  -d</span><span style="color:var(--astro-code-token-string-expression)"> &#39;{&quot;enabled&quot;: true}&#39;</span></span></code></pre>
 <p>Or via the <code>shipwright:agent-admin</code> skill from inside a Claude Code session:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Enable the shipwright-deploy cron for this agent.</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>Enable the shipwright-merge cron for this agent.</span></span></code></pre>
 <hr/>
 <h2 id="next-steps">Next steps</h2>
 <p>Once you have your workflow configured, the next step is deploying the agent as a persistent

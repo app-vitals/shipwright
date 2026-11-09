@@ -28,7 +28,7 @@ patrol commands that run on a schedule.</p>
 installed. Where a command is a thin wrapper around a same-named skill, it’s cross-linked to
 that skill’s entry in <a href="/docs/agent-skills">Agent Skills</a>.</p>
 <h2 id="core--delivery-loop">Core / Delivery Loop</h2>
-<p>The commands that drive the spec → plan → execute → review → deploy loop.</p>
+<p>The commands that drive the spec → plan → execute → review → merge loop.</p>
 <table>
 <thead>
 <tr>
@@ -58,8 +58,8 @@ that skill’s entry in <a href="/docs/agent-skills">Agent Skills</a>.</p>
 <td>Address unresolved review findings, merge conflicts, and failing CI on a specific own open PR — queries GitHub directly, fixes in a worktree, pushes.</td>
 </tr>
 <tr>
-<td><code>/shipwright:deploy</code></td>
-<td>Merge and deploy a PR through the Deploy → Canary → Promote pipeline.</td>
+<td><code>/shipwright:merge</code></td>
+<td>Merge an approved, CI-green PR.</td>
 </tr>
 <tr>
 <td><code>/shipwright:metrics</code></td>

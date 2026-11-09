@@ -26,14 +26,14 @@ knows <em>how</em> to do something — some back a same-named slash command dire
 the agent’s own judgment based on context, with no dedicated command to invoke them explicitly.</p>
 <p>Each entry’s description below is read directly from that skill’s <code>SKILL.md</code> frontmatter.</p>
 <h2 id="core--delivery-loop">Core / Delivery Loop</h2>
-<p>The one skill every other command in the spec → plan → execute → review → deploy loop depends
+<p>The one skill every other command in the spec → plan → execute → review → merge loop depends
 on for task-queue reads and writes.</p>
 <h3 id="task-store">task-store</h3>
 <p>Query and update the Shipwright task store — pick the next ready task, mark status transitions,
 and append new tasks. Use whenever you need to read from or write to the task queue. Calls the
 task store HTTP API directly via curl.</p>
 <p><em>Invocation:</em> Auto-triggered by the agent’s own judgment whenever a task-store read or write is
-needed — <code>/shipwright:dev-task</code>, <code>/shipwright:review</code>, <code>/shipwright:patch</code>, <code>/shipwright:deploy</code>,
+needed — <code>/shipwright:dev-task</code>, <code>/shipwright:review</code>, <code>/shipwright:patch</code>, <code>/shipwright:merge</code>,
 and <code>/shipwright:plan-session</code> all invoke it internally, but there is no standalone
 <code>/shipwright:task-store</code> command.</p>
 <h2 id="test-readiness-pipeline">Test Readiness Pipeline</h2>
