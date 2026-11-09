@@ -253,7 +253,7 @@
               "type": "string"
             },
             "example": [
-              "acme-tools",
+              "vitals-os",
               "shipwright"
             ]
           },
@@ -3313,7 +3313,7 @@
               "type": "string"
             },
             "example": [
-              "acme-tools"
+              "vitals-os"
             ]
           }
         },
@@ -3333,7 +3333,7 @@
             },
             "maxItems": 100,
             "example": [
-              "acme-tools",
+              "vitals-os",
               "shipwright"
             ]
           }
