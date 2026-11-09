@@ -2335,6 +2335,103 @@
           "subagentType"
         ]
       },
+      "MarketplacesWrapper": {
+        "type": "object",
+        "properties": {
+          "marketplaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMarketplace"
+            }
+          }
+        },
+        "required": [
+          "marketplaces"
+        ]
+      },
+      "AgentMarketplace": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "name",
+          "source",
+          "ref",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "MarketplaceWrapper": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "$ref": "#/components/schemas/AgentMarketplace"
+          }
+        },
+        "required": [
+          "marketplace"
+        ]
+      },
+      "UpsertAgentMarketplaceBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "description": "GitHub `owner/repo` or an https git URL",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          }
+        },
+        "required": [
+          "name",
+          "source"
+        ]
+      },
       "CronRunTokenStats": {
         "type": "object",
         "properties": {
@@ -3225,6 +3322,12 @@
               "$ref": "#/components/schemas/AgentConfigPlugin"
             }
           },
+          "marketplaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfigMarketplace"
+            }
+          },
           "repos": {
             "type": "array",
             "items": {
@@ -3369,6 +3472,31 @@
         "required": [
           "marketplace",
           "plugin"
+        ]
+      },
+      "AgentConfigMarketplace": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "ref"
         ]
       },
       "AgentConfigFeatures": {
@@ -5740,6 +5868,132 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/marketplaces": {
+      "get": {
+        "summary": "List marketplaces",
+        "description": "Returns every remote plugin marketplace configured for the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of marketplaces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplacesWrapper"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add or update a marketplace",
+        "description": "Upserts a remote plugin marketplace by `name`. `source` must be a GitHub `owner/repo` or an https git URL (no credentials); `ref` optionally pins a branch, tag or sha. 422 on an invalid `name`, `source` or `ref`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertAgentMarketplaceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Marketplace added or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid name, source or ref",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/marketplaces/{marketplaceId}": {
+      "delete": {
+        "summary": "Remove a marketplace",
+        "description": "Removes the marketplace row by id. 404 when the id does not exist or belongs to a different agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "marketplaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marketplace removed"
+          },
+          "404": {
+            "description": "Marketplace not found",
             "content": {
               "application/json": {
                 "schema": {
