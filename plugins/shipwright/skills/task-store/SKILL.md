@@ -219,7 +219,7 @@ When `?ready=true` returns `{ tasks: [], total: 0 }`:
 
 `pending` → `in_progress` → `pr_open` → `approved` → `merged`
 
-Branch statuses: `blocked`, `cancelled`, `deployed`, `released`
+Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 
 ---
 

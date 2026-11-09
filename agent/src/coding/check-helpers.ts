@@ -1149,7 +1149,7 @@ const INCOMPLETE_BUNDLE_STATUSES: ReadonlySet<TaskStatus> = new Set([
 
 /**
  * Build a `(branch: string) => Promise<boolean>` query function against the
- * task-store `/tasks` endpoint's `?branch=` filter, mirroring deploy.md's Step
+ * task-store `/tasks` endpoint's `?branch=` filter, mirroring the former deploy.md's Step
  * 2b bundle-completeness bash logic exactly: a branch is "complete" iff none
  * of its tasks are `pending`, `in_progress`, or `blocked` (a branch with zero
  * tasks counts as complete — there are no bundle-mates to wait on).

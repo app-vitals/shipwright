@@ -12,7 +12,7 @@ Use this skill to configure and manage Shipwright agents via the admin API. Cove
 env vars, tool permissions, API tokens, and plugins for any agent — including yourself.
 
 **Scope boundary:** For delivery pipeline work (planning, code tasks, reviews, deploys) use the
-task-store, dev-task, review, or deploy skills. This skill is for agent lifecycle management only.
+task-store, dev-task, review, or merge skills. This skill is for agent lifecycle management only.
 
 ---
 

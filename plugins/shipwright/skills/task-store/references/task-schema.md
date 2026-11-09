@@ -65,7 +65,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 
 ## Status lifecycle
 
-`pending → in_progress → pr_open → approved → merged → deployed | released`
+`pending → in_progress → pr_open → approved → merged → deployed | released` (plus `done`, `blocked`, `cancelled`)
 
 Terminal: `merged`, `done`, `deployed`, `released`, `cancelled`. Paused: `blocked`.
 

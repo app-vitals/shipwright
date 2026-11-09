@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/plugin",
-  "version": "1.455.3",
+  "version": "1.455.7",
   "private": true,
   "description": "Shipwright Claude Code plugin — spec → plan → execute → review → deploy",
   "scripts": {
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@app-vitals/agent-runtime": "1.2.5",
+    "@app-vitals/agent-runtime": "1.2.7",
     "js-yaml": "^5.0.0"
   },
   "devDependencies": {

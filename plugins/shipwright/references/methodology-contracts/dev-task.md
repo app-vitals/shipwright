@@ -58,7 +58,7 @@ specifies the wire shape, not implementation policy.
 ## Output
 
 A dev-task-phase subagent's output is **dual** — a text report, plus the actual committed
-code changes left on disk. This is a deliberate difference from the review/patch/deploy
+code changes left on disk. This is a deliberate difference from the review/patch/merge
 contracts, whose callers parse the subagent's returned text as the entire result: here, Step 6
 onward (Simplify, spec compliance, requirements verification) all operate on `git diff
 main...HEAD` — they re-derive what changed by reading the branch's commits, not by parsing
@@ -94,7 +94,7 @@ BLOCKER:  {if BLOCKED}
   the same prompt plus the blocker context appended) and, only after that ladder is exhausted,
   PATCHes the task `blocked` with `blockedReason: "implementation_blocked_after_model_escalation"`
   — the same "caller performs the actual side effect, subagent only reports a verdict" pattern
-  the patch- and deploy-phase contracts use for their own escalation/status transitions.
+  the patch- and merge-phase contracts use for their own escalation/status transitions.
 
 ## Scope
 

@@ -18,7 +18,7 @@ requirements for using this guide.
 
 If you're new to a Shipwright deployment: an **agent** is a single deployed unit (Slack app +
 runtime + persistent home directory) that drains a **task queue** by running the delivery loop
-— build, review, patch, deploy — against one or more GitHub repos. Everything else in this
+— build, review, patch, merge — against one or more GitHub repos. Everything else in this
 guide assumes that shape.
 
 Fastest orientation path:
@@ -125,7 +125,7 @@ underlying Kubernetes provisioning model.
 The delivery loop moves work through five phases — **plan** (run a planning session for a PRD
 task a human flagged for autonomous planning), **dev-task** (build and open a PR for a
 task), **review** (post findings on an open PR), **patch** (fix a PR in response to review
-feedback), and **deploy** (merge and ship an approved PR) — each implemented as an
+feedback), and **merge** (merge an approved PR and watch post-merge CI) — each implemented as an
 explicit-target-only command that takes an id, a repo/session pair, or an `org/repo#number`
 and does nothing if
 invoked with no target. In production, none of the five self-discovers work: the
@@ -134,7 +134,7 @@ asks each enabled phase's candidate provider for ready work, merges tasks and PR
 list, picks the single oldest-ready item via a strict FIFO work-selector (no phase-priority
 bias — a stale PR can win over a newer task and vice versa), pre-claims it, and dispatches the
 matching command — then repeats immediately until the queue drains dry. `dev-task`, `review`,
-and `patch` ship enabled by default; `deploy`, `plan`, and `shipwright-loop` itself ship
+and `patch` ship enabled by default; `merge`, `plan`, and `shipwright-loop` itself ship
 disabled, opt-in from the agent's Cron Jobs card — and `plan` is double-gated, additionally
 requiring the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var before the loop will
 collect or dispatch a single plan candidate.
@@ -154,7 +154,7 @@ Work through these in order:
    found nothing worth posting. A `skipped` outcome means the cron's `preCheck` script found no
    work and a Claude turn was never spent. Neither is a bug by itself.
 2. **If a pipeline cron never shows any runs**, check whether `shipwright-loop` itself is
-   enabled — `shipwright-plan`/`dev-task`/`review`/`patch`/`deploy` are children of
+   enabled — `shipwright-plan`/`dev-task`/`review`/`patch`/`merge` are children of
    `shipwright-loop`
    and never get an independent schedule; their `enabled` toggle only matters once
    `shipwright-loop` reads it.
@@ -256,7 +256,7 @@ on per-agent from the Cron Jobs card once you're comfortable with what they'll d
 
 Most maintenance crons poll a `preCheck` script first and only spend a Claude turn if that
 script produces output; most ticks across those crons cost nothing. The pipeline crons
-(plan/dev-task/review/patch/deploy/loop) don't carry a `preCheck` — they're instead gated by
+(plan/dev-task/review/patch/merge/loop) don't carry a `preCheck` — they're instead gated by
 `shipwright-loop`'s own candidate providers, which decide per tick whether there's a
 winning item to dispatch.
 

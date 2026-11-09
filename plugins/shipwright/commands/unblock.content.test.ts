@@ -94,13 +94,10 @@ describe("unblock.md — phase inference (AC2)", () => {
     "review-finding fix blocked",
     "CI-fix blocked",
   ];
-  const deployReasons = [
+  const mergeReasons = [
     "Post-merge CI failed",
-    "Deploy stage failed",
-    "canary_blocked",
-    "Pipeline timeout",
-    "Canary failed after deploy",
-    "Post-merge CI still pending after 10 minutes",
+    "Squash merge failed",
+    "Merge blocked by branch protection",
   ];
 
   it("mentions every dev-task.md blockedReason pattern", () => {
@@ -125,8 +122,8 @@ describe("unblock.md — phase inference (AC2)", () => {
     expect(content).toMatch(/refresh CI/);
   });
 
-  it("mentions every deploy.md blockedReason pattern", () => {
-    for (const reason of deployReasons) {
+  it("mentions every merge.md blockedReason pattern", () => {
+    for (const reason of mergeReasons) {
       expect(content).toContain(reason);
     }
   });
@@ -147,10 +144,11 @@ describe("unblock.md — phase inference (AC2)", () => {
     expect(lower).toContain("no dedicated reset");
   });
 
-  it("attributes dev-task reasons to the dev-task phase, patch reasons to patch, deploy reasons to deploy", () => {
+  it("attributes dev-task reasons to the dev-task phase, patch reasons to patch, merge reasons to merge", () => {
     expect(content).toMatch(/dev-task/);
     expect(content).toMatch(/patch/);
-    expect(content).toMatch(/deploy/);
+    expect(content).toMatch(/\*\*merge\*\*/);
+    expect(content).not.toContain("canary_blocked");
   });
 
   it("handles an unrecognized blockedReason as unknown origin phase rather than guessing", () => {

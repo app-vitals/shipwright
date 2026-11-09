@@ -20,14 +20,14 @@ by the PR/task it was dispatched against.
 
 Arguments:
 
-- `<name>` — cron name: `deploy`, `dev-task`, `patch`, `plan`, `review`
+- `<name>` — cron name: `dev-task`, `merge`, `patch`, `plan`, `review`
 - `<time>` — approximate time the cron fired, e.g. `6pm`, `14:30`, `2:30pm PST`.
   Timezone defaults to Pacific if not specified.
 - `--item <org/repo#N|taskId>` — a PR (`org/repo#N`, e.g. `acme/x#123`) or a bare
   task id (e.g. `IC-1.1`). When present, no time argument is needed or used.
 
 **Examples:**
-- `/shipwright:investigate-cron deploy 6pm`
+- `/shipwright:investigate-cron merge 6pm`
 - `/shipwright:investigate-cron --item acme/x#123`
 - `/shipwright:investigate-cron --item IC-1.1`
 
@@ -48,13 +48,13 @@ if [ "$1" = "--item" ]; then
   ITEM_ARG="$2"   # e.g. "acme/x#123" or "IC-1.1"
 else
   MODE="name-time"
-  CRON_NAME="$1"  # e.g. deploy
+  CRON_NAME="$1"  # e.g. merge
   TIME_ARG="$2"   # e.g. 6pm
 fi
 ```
 
 For example:
-- `/shipwright:investigate-cron deploy 6pm` → `MODE=name-time`, `CRON_NAME="deploy"`, `TIME_ARG="6pm"`
+- `/shipwright:investigate-cron merge 6pm` → `MODE=name-time`, `CRON_NAME="merge"`, `TIME_ARG="6pm"`
 - `/shipwright:investigate-cron --item acme/x#123` → `MODE=item`, `ITEM_ARG="acme/x#123"`
 
 `--item` mode skips time parsing entirely (3a does not apply) — there is no
@@ -81,7 +81,7 @@ CRONS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
 
 # The loop cron is the top-level cron: parentCronId === null (typically
 # system === true and named "shipwright-loop"). Phase crons (dev-task, plan,
-# review, patch, deploy) are children: parentCronId === <loop cron's id>.
+# review, patch, merge) are children: parentCronId === <loop cron's id>.
 LOOP_CRON_ID=$(echo "$CRONS_JSON" | jq -r '.crons[] | select(.parentCronId == null and .system == true) | .id' | head -1)
 
 if [ -z "$LOOP_CRON_ID" ] || [ "$LOOP_CRON_ID" = "null" ]; then
@@ -275,7 +275,7 @@ fi
 
 If the item appears in the snapshot far down the ranking relative to other
 ready candidates, that alone can explain "hasn't run yet — not its turn" for a
-`dev-task`/`review`/`patch`/`deploy` cron. If it's absent from the snapshot
+`dev-task`/`review`/`patch`/`merge` cron. If it's absent from the snapshot
 entirely, either it wasn't a ready candidate at the last tick, or no snapshot
 exists yet — note which, and move on to 2b/2c rather than guessing.
 
@@ -309,7 +309,7 @@ if [[ "$ITEM_ARG" =~ ^[A-Z]+-[0-9]+\.[0-9]+$ ]]; then
 else
   # ITEM_ARG is a PR reference — fetch associated tasks via live lookup.
   # Gated on ITEM_ARG's shape, not on PR_RECORD_JSON being non-empty: a
-  # freshly-opened PR not yet claimed by review/patch/deploy has no
+  # freshly-opened PR not yet claimed by review/patch/merge has no
   # PullRequest record yet, but real Task records (Task.repo/Task.pr) can
   # already exist — the live lookup below must still run for it.
   TASKS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -349,7 +349,7 @@ echo "$GH_LIVE_JSON" | jq .
 
 `gh pr checks` may not reliably work here — agent PATs generally lack Checks
 API access. If a CI-status signal is needed, prefer the lightweight Actions-API
-pattern used elsewhere in this plugin (e.g. `deploy.md`, `patch.md`,
+pattern used elsewhere in this plugin (e.g. `merge.md`, `patch.md`,
 `review.md`): `gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA&per_page=20"`
 filtered/deduped client-side. Keep it to a single snapshot fetch here — this
 step is a quick ground-truth check, not a full CI poll loop.
@@ -800,7 +800,7 @@ the task that rewrites Step 5's synthesis content).
 
 Produce a plain-language explanation covering:
 
-1. **Cron name** — which cron was investigated (`deploy`, `dev-task`, etc.) — in item
+1. **Cron name** — which cron was investigated (`merge`, `dev-task`, etc.) — in item
    mode, list every phase that dispatched against the item
 2. **Time** — when the session fired (from the resolved run's `startedAt`, or the
    JSONL mtime/first entry timestamp when using the fallback path)

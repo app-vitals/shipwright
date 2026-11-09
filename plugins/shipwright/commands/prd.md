@@ -277,7 +277,7 @@ produces the spec in their place.
 ### Inputs
 
 Per `plugins/shipwright/references/methodology-contracts/prd.md` (PRM-1.1), prd has
-no pre-assembled input payload the way review, patch, deploy, and plan-session do — the only
+no pre-assembled input payload the way review, patch, merge, and plan-session do — the only
 inputs are:
 
 - **Session folder name** — `$ARGUMENTS`, used to derive `planning/$ARGUMENTS/PRODUCT-SPEC.md`.

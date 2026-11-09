@@ -1417,7 +1417,7 @@ const SIBLING_PIPELINE_COMMANDS = [
   "dev-task",
   "review",
   "patch",
-  "deploy",
+  "merge",
 ] as const;
 
 describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
