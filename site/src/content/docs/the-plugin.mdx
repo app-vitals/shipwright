@@ -10,7 +10,7 @@ next: "/docs/running-locally"
 # The Plugin
 
 The Shipwright plugin (artifact **A**) is the core of the system. Install it once into any Claude Code
-session and it drives the full **spec → plan → execute → review → deploy** loop against any repository.
+session and it drives the full **spec → plan → execute → review → merge** loop against any repository.
 It is pure TypeScript with no server, no database, and no external HTTP — everything runs locally
 inside Claude Code.
 
@@ -47,7 +47,7 @@ a slash command prefixed with `/shipwright:`.
 | `/shipwright:dev-task` | Pick the next ready task and build it — tests first, then implementation, then open a PR |
 | `/shipwright:review` | Deep single-pass code review of an open PR with inline comments |
 | `/shipwright:patch` | Fix failing CI and unresolved review findings on open PRs |
-| `/shipwright:deploy` | Merge an approved PR and watch post-merge CI |
+| `/shipwright:merge` | Merge an approved PR and watch post-merge CI |
 | `/shipwright:metrics` | Pull pipeline metrics (cycle time, throughput, first-time quality) |
 | `/shipwright:research` | Load relevant project docs and web research for the current task |
 | `/shipwright:research-docs` | Refresh docs that have drifted from the code |

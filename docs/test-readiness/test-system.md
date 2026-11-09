@@ -458,7 +458,7 @@ a guideline.
 ### Branch protection (`main`)
 
 Per the flat, repo-agnostic `repo-config` recommendation (this repo is on, or moving toward,
-`shipwright-deploy` with the merging account as a ruleset `bypass_actor`):
+`shipwright-merge` with the merging account as a ruleset `bypass_actor`):
 
 - **Required PR** — no direct pushes.
 - **Required status checks** — every layer-relevant job from the CI shape above:

@@ -17,11 +17,11 @@ The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic
 
 ## A — Plugin
 
-The plugin drives the delivery loop: **spec → plan → execute → review → deploy**. It is repo-agnostic — it runs its commands against *any* repository, and this repo is both its source and a codebase it ships against.
+The plugin drives the delivery loop: **spec → plan → execute → review → merge**. It is repo-agnostic — it runs its commands against *any* repository, and this repo is both its source and a codebase it ships against.
 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
-- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `research`, `research-docs`, and more.
+- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, and `test-debt`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).

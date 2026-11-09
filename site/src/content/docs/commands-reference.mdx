@@ -20,7 +20,7 @@ that skill's entry in [Agent Skills](/docs/agent-skills).
 
 ## Core / Delivery Loop
 
-The commands that drive the spec → plan → execute → review → deploy loop.
+The commands that drive the spec → plan → execute → review → merge loop.
 
 | Command | What it does |
 |---------|--------------|
@@ -29,7 +29,7 @@ The commands that drive the spec → plan → execute → review → deploy loop
 | `/shipwright:dev-task` | Execute a specific task from the task store by id — build the feature, simplify, verify requirements, and ship a PR. |
 | `/shipwright:review` | Review a specific open PR — deep single-pass review with inline comments, policy-controlled posting. |
 | `/shipwright:patch` | Address unresolved review findings, merge conflicts, and failing CI on a specific own open PR — queries GitHub directly, fixes in a worktree, pushes. |
-| `/shipwright:deploy` | Merge and deploy a PR through the Deploy → Canary → Promote pipeline. |
+| `/shipwright:merge` | Merge an approved, CI-green PR. |
 | `/shipwright:metrics` | Analyze pipeline metrics — fix cascade trends, quality rates, and actionable recommendations across planning sessions. |
 | `/shipwright:research` | Load relevant project docs and web research for a given task, via an isolated sub-agent. |
 | `/shipwright:research-docs` | Analyze the codebase and generate or update project documentation — like `/init` but for the `docs/` directory. Supports an unattended `--auto` mode for cron use. |

@@ -706,12 +706,12 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
 
 **Version**: next (RHA-1)
 
-The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the deploy command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
+The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the merge command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
 
 **What changed**:
-- The `deploy` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
+- The `merge` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
 - The `plan-session` command no longer classifies tasks as "Type B" (requiring merge approval) — it only recognizes Type A (human-executable tasks with `hitl: true`) and neither (standard tasks).
-- The deploy workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
+- The merge workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
 - In RHA-1.4, the column was dropped from the Prisma schema and the database via migration `20260811000000_drop_requires_human_approval`. The filter parameter was removed from the task-store API in RHA-1.3.
 
 **Migration**:

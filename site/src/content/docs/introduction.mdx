@@ -9,7 +9,7 @@ next: "/docs/getting-started"
 # Introduction
 
 Shipwright Harness is the open-source autonomous delivery agent for Claude Code. It drives the full
-software delivery loop — **spec → plan → execute → review → deploy** — across any repository, without
+software delivery loop — **spec → plan → execute → review → merge** — across any repository, without
 manual hand-offs.
 
 There are three natural paths through these docs: **evaluate** whether Shipwright fits your pipeline by
@@ -40,7 +40,7 @@ as you need.
 ## Two systems: delivery and operations
 
 As you read on, you'll run into two categorically different systems. The **delivery lifecycle** is the
-five-beat story any engineer already recognizes — spec → plan → task → PR → review/patch → deploy —
+five-beat story any engineer already recognizes — spec → plan → task → PR → review/patch → merge —
 covered in the [Plugin](/docs/the-plugin) section of these docs. The **fleet-operations layer** is the
 machinery that runs that lifecycle unattended across many autonomous agents — crons, agent config and
 provisioning, and the task/PR queues — covered in the [Agent](/docs/the-agent) and [Operations](/docs/day-to-day-operations)

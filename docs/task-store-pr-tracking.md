@@ -57,8 +57,8 @@ census sweep uses to avoid re-scanning the same PRs every run.
 
 **Known gap:** a PR that never goes through the `pr_open` transition, `POST /prs/claim`, or the
 census sweep has no PullRequest row at all, and therefore no `origin`. As of POF-3.1, this gap
-has been closed for `deploy.md`'s canary-revert PR: immediately after `gh pr create` succeeds,
-Step 6 calls `POST /prs/census` directly with `origin: "shipwright"` and `state: "open"` to
+was closed for the (since removed) deploy command's canary-revert PR: immediately after `gh pr create` succeeded,
+the command called `POST /prs/census` directly with `origin: "shipwright"` and `state: "open"` to
 stamp the revert PR at creation time, avoiding any reliance on the census sweep to classify it.
 Older canary-revert PRs that merged before POF-3.1 shipped may have `origin=null` (`unknown`),
 though the census sweep will eventually backfill them as `human` (via author login) once it runs.

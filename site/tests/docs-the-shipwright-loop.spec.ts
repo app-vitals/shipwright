@@ -48,7 +48,7 @@ test("the-shipwright-loop page names the five phase toggles", async ({
   expect(body).toContain("shipwright-dev-task");
   expect(body).toContain("shipwright-review");
   expect(body).toContain("shipwright-patch");
-  expect(body).toContain("shipwright-deploy");
+  expect(body).toContain("shipwright-merge");
 });
 
 // PDR-4.1 — `plan` is the fifth loop-dispatched phase, and unlike the other

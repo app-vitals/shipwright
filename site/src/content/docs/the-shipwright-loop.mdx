@@ -13,7 +13,7 @@ import StepFlow from '../../components/StepFlow.astro'
 
 `shipwright-loop` is the one cron that drives the entire autonomous delivery loop. Instead of
 scheduling `shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and
-`shipwright-deploy` as five independent crons that race each other on their own timers, the loop
+`shipwright-merge` as five independent crons that race each other on their own timers, the loop
 wraps all five behind
 a single tick: it reads which phases are enabled, collects candidate work from each, picks the
 single oldest ready item across the whole set, claims it, dispatches the matching one-shot command,
@@ -32,15 +32,15 @@ Each tick of `shipwright-loop` runs the following sequence. Step 4 hands off to
 <StepFlow steps={[
   {
     label: "Read the five phase toggles",
-    detail: "The loop reads five independent booleans — one per pipeline phase — off child cron rows named shipwright-plan, shipwright-dev-task, shipwright-review, shipwright-patch, and shipwright-deploy, all parented under the shipwright-loop cron. Each toggle is resolved and enabled/disabled entirely independently of the others. The plan phase is the one exception to 'the toggle alone decides': it is double-gated, so its candidates are only ever collected when the SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED env var is also set — with that unset, the tick behaves exactly as the four-phase loop did. The loop deliberately never reads shipwright-review-patch's flag or invokes /shipwright:review-patch — the loop's own per-tick selection across all five phases supersedes that command's internal review-vs-patch decision.",
+    detail: "The loop reads five independent booleans — one per pipeline phase — off child cron rows named shipwright-plan, shipwright-dev-task, shipwright-review, shipwright-patch, and shipwright-merge, all parented under the shipwright-loop cron. Each toggle is resolved and enabled/disabled entirely independently of the others. The plan phase is the one exception to 'the toggle alone decides': it is double-gated, so its candidates are only ever collected when the SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED env var is also set — with that unset, the tick behaves exactly as the four-phase loop did. The loop deliberately never reads shipwright-review-patch's flag or invokes /shipwright:review-patch — the loop's own per-tick selection across all five phases supersedes that command's internal review-vs-patch decision.",
   },
   {
     label: "Qualify candidates per enabled phase",
-    detail: "For each enabled phase, the loop calls that phase's own qualification function to get structured candidates: dev-task candidates are tasks ready to build, plan candidates are PRD tasks a human flagged for autonomous planning, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase contributes nothing — its qualification function is never called, so a phase with no candidates never even shows up as an empty run.",
+    detail: "For each enabled phase, the loop calls that phase's own qualification function to get structured candidates: dev-task candidates are tasks ready to build, plan candidates are PRD tasks a human flagged for autonomous planning, and review/patch/merge candidates are PRs ready for that phase. A disabled phase contributes nothing — its qualification function is never called, so a phase with no candidates never even shows up as an empty run.",
   },
   {
     label: "Merge into one candidate list",
-    detail: "The PR candidates from every enabled phase (review, patch, deploy) are merged into a single flat array. The task candidates from the two task-producing phases (dev-task and plan) are merged into their own single list, deduped by task id so a task that qualifies for both is dispatched as a planning session rather than as a build. Both lists feed the same selection step below.",
+    detail: "The PR candidates from every enabled phase (review, patch, merge) are merged into a single flat array. The task candidates from the two task-producing phases (dev-task and plan) are merged into their own single list, deduped by task id so a task that qualifies for both is dispatched as a planning session rather than as a build. Both lists feed the same selection step below.",
   },
   {
     label: "Run a single FIFO work-selector",
@@ -56,7 +56,7 @@ Each tick of `shipwright-loop` runs the following sequence. Step 4 hands off to
   },
   {
     label: "Dispatch the matching one-shot command",
-    detail: "Once pre-claimed, the loop dispatches the one-shot command for that item: a task item dispatches /shipwright:dev-task, or /shipwright:plan-session {repo} {session} --autonomous {task-id} when the task came from the plan phase; a PR item dispatches /shipwright:review, /shipwright:patch, or /shipwright:deploy depending on which phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the claimed record's id and commit SHA to the dispatched command string, so the downstream command can recognize the loop already holds the claim instead of re-claiming (and conflicting with itself).",
+    detail: "Once pre-claimed, the loop dispatches the one-shot command for that item: a task item dispatches /shipwright:dev-task, or /shipwright:plan-session {repo} {session} --autonomous {task-id} when the task came from the plan phase; a PR item dispatches /shipwright:review, /shipwright:patch, or /shipwright:merge depending on which phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the claimed record's id and commit SHA to the dispatched command string, so the downstream command can recognize the loop already holds the claim instead of re-claiming (and conflicting with itself).",
   },
   {
     label: "Repeat immediately — drain until dry",
@@ -76,12 +76,12 @@ age-based FIFO across both tasks and PRs, with no phase-priority bias.**
 Concretely, the selector is handed the merged task list and merged PR list from step 3 above, and
 picks whichever single candidate — task or PR, regardless of phase — has the oldest age. Tasks are
 aged by their creation time; PRs are aged by whenever they first became ready for their current
-phase (review, patch, or deploy). There's no rule that says "always drain dev-task before review"
+phase (review, patch, or merge). There's no rule that says "always drain dev-task before review"
 or "PRs always win over tasks" — the oldest ready item wins, full stop, whichever bucket it came
 from.
 
 This matters in practice: if a task has sat in the queue longer than any open PR needs review,
-the loop dispatches `/shipwright:dev-task` for that task first, even with review/patch/deploy all
+the loop dispatches `/shipwright:dev-task` for that task first, even with review/patch/merge all
 enabled. The reverse is equally true — a PR that's been waiting for review longer than the oldest
 pending task gets picked before that task does. Nothing about the selection is weighted by phase;
 age alone decides.
@@ -103,6 +103,6 @@ sane:
 
 Whether a phase's toggle is on at all is an autonomy decision, not a dispatch-mechanics one. See
 [Configuring Autonomy](/docs/configuring-autonomy) for the ramp-up path — starting with
-`shipwright-dev-task` alone and adding review, patch, and deploy as you gain confidence — and for
-how the agent's policy settings (edited in the admin UI) control what the review and deploy phases are allowed to do once
+`shipwright-dev-task` alone and adding review, patch, and merge as you gain confidence — and for
+how the agent's policy settings (edited in the admin UI) control what the review and merge phases are allowed to do once
 they're enabled.

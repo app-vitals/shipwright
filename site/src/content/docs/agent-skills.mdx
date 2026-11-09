@@ -18,7 +18,7 @@ Each entry's description below is read directly from that skill's `SKILL.md` fro
 
 ## Core / Delivery Loop
 
-The one skill every other command in the spec → plan → execute → review → deploy loop depends
+The one skill every other command in the spec → plan → execute → review → merge loop depends
 on for task-queue reads and writes.
 
 ### task-store
@@ -28,7 +28,7 @@ and append new tasks. Use whenever you need to read from or write to the task qu
 task store HTTP API directly via curl.
 
 *Invocation:* Auto-triggered by the agent's own judgment whenever a task-store read or write is
-needed — `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`, `/shipwright:deploy`,
+needed — `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`, `/shipwright:merge`,
 and `/shipwright:plan-session` all invoke it internally, but there is no standalone
 `/shipwright:task-store` command.
 
