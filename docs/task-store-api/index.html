@@ -63,13 +63,13 @@ repos list — allowing agents to pick up shared work without requiring an expli
 <span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string-expression)"> &#39;.total&#39;</span></span></code></pre>
 <h2 id="task-status-lifecycle">Task Status Lifecycle</h2>
 <p>Tasks move through a defined set of statuses from creation to completion:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>pending → in_progress → pr_open → approved → merged → deploying → deployed</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>pending → in_progress → pr_open → approved → merged → deployed | released</span></span></code></pre>
 <p>Branch statuses that can occur at any point:</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>blocked    — dependency not met, or manually paused (HITL)</span></span>
 <span class="line"><span>cancelled  — permanently abandoned</span></span>
 <span class="line"><span>done       — completed without a PR (direct task, no deploy path)</span></span></code></pre>
 <p>Terminal statuses (dependency resolution treats these as satisfied):
-<code>merged</code>, <code>done</code>, <code>deploying</code>, <code>deployed</code>, <code>cancelled</code></p>
+<code>merged</code>, <code>done</code>, <code>deployed</code>, <code>released</code>, <code>cancelled</code></p>
 <table>
 <thead>
 <tr>
@@ -99,12 +99,12 @@ repos list — allowing agents to pick up shared work without requiring an expli
 <td>PR merged to main; <code>mergedAt</code> should be set</td>
 </tr>
 <tr>
-<td><code>deploying</code></td>
-<td>Deploy pipeline is running; <code>deployingAt</code> should be set</td>
-</tr>
-<tr>
 <td><code>deployed</code></td>
 <td>Successfully deployed to production; <code>deployedAt</code> should be set</td>
+</tr>
+<tr>
+<td><code>released</code></td>
+<td>Shipped through a package/release flow (tag, chart or library publish); <code>releasedAt</code> should be set</td>
 </tr>
 <tr>
 <td><code>blocked</code></td>
@@ -150,7 +150,7 @@ for all other queries.</p>
 </tr>
 <tr>
 <td><code>state=closed</code></td>
-<td>Filter to closed tasks (merged, done, deploying, deployed, cancelled)</td>
+<td>Filter to closed tasks (merged, done, deployed, released, cancelled)</td>
 </tr>
 <tr>
 <td><code>state=in_progress</code></td>
@@ -334,7 +334,7 @@ Use when an agent is shutting down or voluntarily giving up a task.</p>
 <tbody>
 <tr>
 <td>1</td>
-<td>Dependency status is <code>merged</code>, <code>done</code>, <code>deploying</code>, <code>deployed</code>, or <code>cancelled</code></td>
+<td>Dependency status is <code>merged</code>, <code>done</code>, <code>deployed</code>, <code>released</code>, or <code>cancelled</code></td>
 <td>Satisfied</td>
 </tr>
 <tr>
@@ -573,14 +573,14 @@ relevant status transition.</p>
 <td>→ <code>merged</code></td>
 </tr>
 <tr>
-<td><code>deployingAt</code></td>
-<td>string?</td>
-<td>→ <code>deploying</code></td>
-</tr>
-<tr>
 <td><code>deployedAt</code></td>
 <td>string?</td>
 <td>→ <code>deployed</code></td>
+</tr>
+<tr>
+<td><code>releasedAt</code></td>
+<td>string?</td>
+<td>→ <code>released</code></td>
 </tr>
 <tr>
 <td><code>completedAt</code></td>
