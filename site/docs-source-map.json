@@ -24,7 +24,7 @@
   "cron-jobs.mdx": [
     "docs/agent-ops.md",
     "docs/platform/agent-ops.md",
-    "plugins/shipwright/skills/investigate-cron/SKILL.md"
+    "plugins/shipwright/skills/investigate-stuck/SKILL.md"
   ],
   "day-to-day-operations.mdx": [
     "docs/agent-web-ui.md",

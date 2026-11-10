@@ -99,7 +99,7 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 | Skill | What it does |
 |-------|--------------|
 | `agent-admin` | Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins |
-| `investigate-cron` | Diagnose why a cron run behaved unexpectedly — finds the session transcript by cron name and time |
+| `investigate-stuck` | Diagnose why a specific PR or task didn't proceed — checks the work queue, task-store and live GitHub state, then explains each dispatch from its session transcript |
 | `learning-capture` | Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly |
 | `task-store` | Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks |
 
