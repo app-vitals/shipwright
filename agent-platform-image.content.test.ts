@@ -9,6 +9,8 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDefaultPlugins } from "@app-vitals/agent-lib/default-plugins";
+import { CODING_SPECIALTY_DEFAULTS } from "./admin/src/coding/coding-specialty-defaults.ts";
 
 const ROOT = import.meta.dir;
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
@@ -95,5 +97,13 @@ describe("platform-based shipwright-agent image (AGR-4.3b)", () => {
     ]) {
       expect(job).toContain(needle);
     }
+  });
+
+  it("seeds agent-platform@app-vitals-agent into the coding agents' default plugin set (APP-3.1)", () => {
+    // The pinned platform prepends its own plugin to the coding specialty's
+    // plugins at create time, so coding agents get it next to `shipwright`.
+    const plugins = resolveDefaultPlugins(CODING_SPECIALTY_DEFAULTS.plugins);
+    expect(plugins).toContain("agent-platform@app-vitals-agent");
+    expect(plugins).toContain("shipwright");
   });
 });
