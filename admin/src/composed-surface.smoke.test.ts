@@ -13,6 +13,13 @@
 
 import { describe, expect, it } from "bun:test";
 import { buildPlatformAdminSpec } from "@app-vitals/agent-admin/admin-spec";
+import { makeSessionCookie } from "@app-vitals/agent-admin/admin-ui.fixtures";
+import { parseAdminApiKeys } from "@app-vitals/agent-admin/api-auth";
+import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
+import {
+  createCodingTestApp,
+  makeCodingMockDeps,
+} from "./coding/admin-ui-coding.fixtures.ts";
 import {
   codingContribution,
   composedOpenApi,
@@ -113,5 +120,61 @@ describe("coding extension composes into the platform admin (AGR-4.2)", async ()
       expect(pages[label]?.status).toBe(200);
       expect(pages[label]?.body).toContain(marker);
     }
+  });
+});
+
+describe("enterprise GitHub apps surface composes unconfigured (GHE-1.7)", () => {
+  const ADMIN_KEY = "tok-ghe-17";
+  const api = createGithubEnterpriseApp({
+    // No apps configured: the optional feature is off.
+    appService: { list: async () => [], get: async () => null } as never,
+    agentService: {} as never,
+    agentEnvService: {} as never,
+    sessionSecret: "test-secret-32chars-for-ghe-api!!",
+    adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_KEY}:*`),
+    agentTokenService: { validate: async () => null },
+  });
+  const githubEnterpriseApi = (path: string, init?: RequestInit) =>
+    api.request(path, {
+      ...init,
+      headers: {
+        ...(init?.headers ?? {}),
+        Authorization: `Bearer ${ADMIN_KEY}`,
+      },
+    });
+
+  it("mounts the settings page and shows the empty state alongside the coding pages", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      githubEnterpriseApi,
+    });
+    const cookie = `admin_session=${await makeSessionCookie()}`;
+    const res = await app.request("/admin/settings/github-enterprise", {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Installer app");
+    expect(html).toContain("Not configured");
+    const tasks = await app.request("/admin/tasks", {
+      headers: { Cookie: cookie },
+    });
+    expect(tasks.status).toBe(200);
+  });
+
+  it("mounts the status route and it reports no apps configured", async () => {
+    const res = await githubEnterpriseApi("/github-enterprise/apps");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body) ? body : (body.apps ?? [])).toEqual([]);
+  });
+
+  it("is invisible when the platform does not wire the API", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const cookie = `admin_session=${await makeSessionCookie()}`;
+    const res = await app.request("/admin/settings/github-enterprise", {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(404);
   });
 });

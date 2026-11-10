@@ -201,6 +201,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/platform/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)
 - **docs/agent-api-resources.md** — the admin CRUD API (D), per-agent resources: allowed-tools list, API tokens, plugins, chat-token-usage endpoints, and the work-queue snapshot
 - **docs/platform/github-multi-org.md** — multi-org GitHub App: one App installed on several orgs, discovery and per-owner token routing, operator and org-admin setup, the admin installations card, and troubleshooting
+- **docs/platform/github-enterprise-apps.md** — enterprise GitHub apps (optional, per deployment): the installer and lookup Apps, exact permissions, setup, why there is no shared published App, the admin isolation exception, key storage, and the admin settings page
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/task-store-pr-tracking.md** — task store PR origin metrics, verification checks, skip tracking, same-branch exclusivity guard, and session archive sweep
