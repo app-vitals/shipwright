@@ -183,6 +183,8 @@ describe("diagnoseReviewCandidacy", () => {
       check: "task-blocked",
       hitl: true,
       taskStatus: "pr_open",
+      taskIds: [],
+      skipReason: "task-blocked",
     });
   });
 
@@ -267,6 +269,8 @@ describe("formatTraceOutput", () => {
       check: "task-blocked",
       hitl: true,
       taskStatus: "pr_open",
+      taskIds: [],
+      skipReason: "task-blocked",
     });
     expect(eligible).not.toEqual(excluded);
     expect(eligible).toContain("ELIGIBLE");
