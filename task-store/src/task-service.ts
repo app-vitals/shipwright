@@ -890,7 +890,7 @@ export class TaskService implements TaskServiceLike {
    * table, so this is functionally unchanged for callers not using session.
    */
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       let task: Task;
       try {
         task = await tx.task.create({ data });
@@ -912,6 +912,44 @@ export class TaskService implements TaskServiceLike {
       await this.webhookDispatcher("task.write", [task]);
       return task;
     }, WEBHOOK_TX_OPTIONS);
+    await this.warnOnPrCollision(created);
+    return created;
+  }
+
+  /**
+   * TLH-2.1: best-effort, warn-only check run AFTER a write that set `pr` has
+   * committed. Logs when another non-terminal task in the same repo/account
+   * already holds this PR number on a different `branch` (same-branch
+   * bundle-mates, terminal tasks, other repos and the task itself are
+   * ignored). Compares Task.branch — never PR headRef, which is null on open,
+   * unclaimed PRs. Never throws: a failure here must not fail the write.
+   */
+  private async warnOnPrCollision(task: Task): Promise<void> {
+    if (task.pr === null || task.repo === null) return;
+    try {
+      const holders = await this.prisma.task.findMany({
+        where: {
+          accountId: task.accountId,
+          repo: task.repo,
+          pr: task.pr,
+          id: { not: task.id },
+          status: { notIn: [...CLOSED_STATUSES] },
+        },
+        select: { id: true, branch: true },
+      });
+      const colliding = holders.filter((h) => h.branch !== task.branch);
+      if (colliding.length === 0) return;
+      console.warn(
+        `[task-store] pr collision: task ${task.id} (branch: ${task.branch ?? "none"}) set pr #${task.pr} in ${task.repo}, already held by non-terminal task(s) on a different branch: ${colliding
+          .map((h) => `${h.id} (${h.branch ?? "none"})`)
+          .join(", ")}`,
+      );
+    } catch (err: unknown) {
+      console.error(
+        `[task-store] pr collision check failed for task ${task.id}:`,
+        err,
+      );
+    }
   }
 
   /**
@@ -985,6 +1023,7 @@ export class TaskService implements TaskServiceLike {
       },
       { timeout: bulkTxTimeoutMs(tasks.length) },
     );
+    for (const row of createdRows) await this.warnOnPrCollision(row);
     // skipped is always [] on success now — kept only for response-shape
     // backward compatibility (AC4); collisions hard-fail the whole batch via
     // ConflictError above instead of populating it.
@@ -1093,8 +1132,9 @@ export class TaskService implements TaskServiceLike {
     // wrapper form), so reading fields off `data` as a loose record is safe
     // here, mirroring how routes/tasks.ts already treats PATCH bodies.
     const patch = data as Record<string, unknown>;
+    let updated: Task;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      updated = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.task.findUnique({ where: { id } });
 
         // POM-1.1: the resulting (status, pr, repo) after this PATCH is
@@ -1174,6 +1214,8 @@ export class TaskService implements TaskServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
+    if (patch.pr !== undefined) await this.warnOnPrCollision(updated);
+    return updated;
   }
 
   /**
