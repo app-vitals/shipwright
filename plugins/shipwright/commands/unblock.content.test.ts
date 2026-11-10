@@ -139,9 +139,9 @@ describe("unblock.md — phase inference (AC2)", () => {
     expect(content).toContain("skipCount");
   });
 
-  it("notes there is no dedicated reset endpoint for the PR-side consecutiveCiFailureCount streak", () => {
-    const lower = content.toLowerCase();
-    expect(lower).toContain("no dedicated reset");
+  it("notes POST /prs/:id/unblock resets the PR-side consecutiveCiFailureCount streak", () => {
+    expect(content).toContain("POST /prs/:id/unblock");
+    expect(content).toContain("resets the streak counter");
   });
 
   it("attributes dev-task reasons to the dev-task phase, patch reasons to patch, merge reasons to merge", () => {
@@ -158,62 +158,33 @@ describe("unblock.md — phase inference (AC2)", () => {
 });
 
 describe("unblock.md — retry logic (AC3)", () => {
-  it("distinguishes task.pr-having tasks (status:pr_open) from no-PR tasks (status:pending via unblock)", () => {
-    expect(content).toContain("pr_open");
-    expect(content).toContain("/tasks/:id/unblock");
+  it("retries a task with a single POST /tasks/:id/unblock call and documents the optional `to` override", () => {
+    expect(content).toMatch(/\/tasks\/\$TASK_ID\/unblock/);
+    expect(content).toContain('"to"');
+    expect(content).toContain("409");
   });
 
-  it("uses POST /tasks/:id/unblock for the no-PR retry case as a single atomic call, not the old release+PATCH two-step", () => {
-    const lower = content.toLowerCase();
-    expect(lower).toMatch(/\/tasks\/\$task_id\/unblock/);
-    // The old two-step (release, then a follow-up PATCH clearing blockedReason/blockedAt)
-    // must be gone from the no-PR retry path.
-    expect(content).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/release");
-    expect(lower).toContain("409");
+  it("retries a PR-only record with a single POST /prs/:id/unblock call", () => {
+    expect(content).toMatch(/\/prs\/\$PR_ID\/unblock/);
   });
 
-  it("PATCHes status:pr_open directly (not release) when task.pr is set", () => {
-    expect(content).toMatch(/status.{0,20}pr_open/s);
+  it("has removed the hand-written pr_open PATCH branch, the PATCH /prs blocked:false retry, and the 6d skip/reset step", () => {
+    expect(content).not.toMatch(/"status": "pr_open"/);
+    expect(content).not.toMatch(/blocked.{0,5}: false/);
+    expect(content).not.toContain("/skip/reset");
+    expect(content).not.toContain("/tasks/$TASK_ID/release");
+    expect(content).not.toContain("will re-block");
+    expect(content).not.toContain("no dedicated reset");
   });
 
-  it("clears blockedReason and blockedAt on retry", () => {
-    expect(content).toContain("blockedReason");
-    expect(content).toContain("blockedAt");
-    const lower = content.toLowerCase();
-    expect(lower).toContain("clear");
+  it("makes no PATCH call against /prs in the retry path", () => {
+    expect(content).not.toMatch(/PATCH[^\n]*\/prs\//);
+    expect(content).not.toMatch(/-X PATCH[\s\S]{0,200}\/prs\//);
   });
 
-  it("resets skipCount/lastSkippedAt automatically via POST /tasks/:id/unblock for a blocked task, with no separate reset call needed", () => {
-    expect(content).toContain("Auto-blocked after");
-    expect(content).toContain("skipCount");
-    expect(content).toContain("lastSkippedAt");
-    const lower = content.toLowerCase();
-    expect(lower).toContain("automatically");
-    // The old task-side purpose-built reset endpoint call must be gone — /unblock
-    // folds this in as part of its single atomic update.
-    expect(content).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/skip/reset");
-  });
-
-  it("also resets skipCount via POST /prs/:id/skip/reset for a PR-only record hit by the skip-count spin-detection variant", () => {
-    expect(content).toMatch(/\/prs\/(\{|\$)[A-Za-z0-9_]*\}?\/skip\/reset/);
-    const lower = content.toLowerCase();
-    // The skip-count row/step must not be described as task-only, since PullRequest
-    // carries its own skipCount/lastSkippedAt and recordSkip() produces the identical
-    // blockedReason string on a PR-only record.
-    expect(lower).not.toContain("task-only, tracked via `skipcount`");
-  });
-
-  it("retries PR-only records (no linked task) via PATCH /prs/:id with blocked:false", () => {
-    expect(content).toMatch(/PATCH.{0,200}\/prs\/(\{|\$)/s);
-    expect(content).toContain("blocked");
-    expect(content).toMatch(/blocked.{0,20}false/s);
-  });
-
-  it("distinguishes the three retry destinations explicitly: pr_open, pending via release, and PR blocked:false", () => {
-    const lower = content.toLowerCase();
-    expect(lower).toContain("pr_open");
-    expect(lower).toContain("no pr");
-    expect(lower).toContain("pr-only");
+  it("has exactly one unblock call per item type in the default retry examples", () => {
+    expect(content.match(/\/tasks\/\$TASK_ID\/unblock"/g)?.length).toBe(2); // default + `to` override
+    expect(content.match(/\/prs\/\$PR_ID\/unblock"/g)?.length).toBe(1);
   });
 });
 
