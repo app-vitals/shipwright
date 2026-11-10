@@ -261,9 +261,10 @@ posted message is the cron’s own summary of its conclusion. If the outcome was
 <code>skipped</code>, there is no Slack post to read, which is itself informative (see below).</p>
 <p>For a deeper narrative — the actual prompt, Claude’s reasoning, and the specific commands it ran —
 ask the agent to investigate on your behalf via Slack chat. The agent has a dedicated
-<code>/shipwright:investigate-cron</code> tool for exactly this: given a cron name and approximate time, or a
-specific PR/task id, it resolves the matching run and reads the underlying session transcript to
-explain what happened in plain language. You don’t need transcript or log access yourself — just
+<code>/shipwright:investigate-stuck</code> tool for exactly this: given a specific PR/task id, it checks the
+work queue and task/PR records, resolves the matching runs and reads the underlying session
+transcripts to explain what happened in plain language (for a cron by name and approximate time,
+the platform’s <code>agent-platform:investigate-cron</code> does the same). You don’t need transcript or log access yourself — just
 ask the agent to run it, and it will report back the prompt, the key steps taken, and its
 conclusion.</p>
 <h3 id="two-outcomes-that-are-expected-not-bugs">Two outcomes that are expected, not bugs</h3>
