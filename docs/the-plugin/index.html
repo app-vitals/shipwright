@@ -176,10 +176,6 @@ maintenance patrol and planning/research commands not listed here.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>agent-admin</code></td>
-<td>Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins</td>
-</tr>
-<tr>
 <td><code>investigate-stuck</code></td>
 <td>Diagnose why a specific PR or task didn’t proceed — checks the work queue, task-store and live GitHub state, then explains each dispatch from its session transcript</td>
 </tr>
@@ -216,7 +212,7 @@ maintenance patrol and planning/research commands not listed here.</p>
 <p>The plugin lives at <code>plugins/shipwright/</code> in the repo and is structured around four directories:</p>
 <ul>
 <li><strong><code>commands/</code></strong> — every slash command listed above, as individual TypeScript files</li>
-<li><strong><code>skills/</code></strong> — autonomous behavior scripts (<code>agent-admin</code>, <code>entropy-scan</code>, <code>test-readiness</code>, and more)</li>
+<li><strong><code>skills/</code></strong> — autonomous behavior scripts (<code>entropy-scan</code>, <code>test-readiness</code>, and more)</li>
 <li><strong><code>scripts/</code></strong> — task-store adapters, <code>check-docs-freshness.ts</code>, and supporting tooling</li>
 <li><strong><code>references/</code></strong> — schemas and recipes (<code>metrics-schema.md</code>, <code>task-store.md</code>, <code>doc-refresh-recipe.md</code>, <code>reviews-schema.md</code>)</li>
 </ul>
