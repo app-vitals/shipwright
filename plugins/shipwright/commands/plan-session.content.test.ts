@@ -289,10 +289,10 @@ describe("plan-session.md — Step 4 `--autonomous` mode (PDR-3.1)", () => {
     expect(lower).not.toContain("patch");
   });
 
-  it("hard contradiction escapes via PATCH to blocked with hitl:true and blockedReason, then stops before Step 5", () => {
+  it("hard contradiction escapes via PATCH to blocked without hitl, with blockedReason, then stops before Step 5", () => {
     const autoSection = extractAutonomousSubsection(extractStep4Section(content));
     expect(autoSection).toContain('"status": "blocked"');
-    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).not.toContain('"hitl": true');
     expect(autoSection).toContain("blockedReason");
     expect(autoSection).toContain("plan_session_autonomous_hard_contradiction");
     expect(autoSection.toLowerCase()).toContain("do not proceed to step 5");
@@ -334,7 +334,7 @@ describe("plan-session.md — Step 5 `--autonomous` mode (PDR-3.1)", () => {
   it("hard contradiction escapes via the same PATCH-to-blocked pattern, stopping before Step 5.5", () => {
     const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
     expect(autoSection).toContain('"status": "blocked"');
-    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).not.toContain('"hitl": true');
     expect(autoSection).toContain("blockedReason");
     expect(autoSection.toLowerCase()).toContain("do not proceed to step 5.5");
   });
@@ -412,11 +412,11 @@ describe("plan-session.md — Step 1 `--autonomous` spec materialization from th
     expect(sub.toLowerCase()).toMatch(/strip|remove|drop/);
   });
 
-  it("blocks the task with hitl:true and a plan_session_autonomous_no_spec reason when no spec can be found", () => {
+  it("blocks the task with a plan_session_autonomous_no_spec reason when no spec can be found", () => {
     const sub = extractAutonomousSubsection(content);
     expect(sub).toContain("plan_session_autonomous_no_spec");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
   });
 
@@ -857,12 +857,12 @@ describe("plan-session.md — Configured Methodology Dispatch: malformed or fail
     expect(lower).not.toMatch(/fall back to an inline/);
   });
 
-  it("under --autonomous, PATCHes the task to blocked/hitl with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
+  it("under --autonomous, PATCHes the task to blocked with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("--autonomous");
     expect(sub).toContain("plan_session_methodology_dispatch_failed");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
     expect(sub.toLowerCase()).toContain("stop before step 6");
   });
@@ -883,7 +883,7 @@ describe("plan-session.md — Configured Methodology Dispatch: hard contradictio
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("plan_session_autonomous_hard_contradiction");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("blockedReason");
     expect(sub.toLowerCase()).toContain("stop before step 6");
   });
@@ -963,7 +963,7 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("plan_session_methodology_schema_invalid");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     const lower = sub.toLowerCase();
     expect(lower).toContain("interactive");
     expect(lower).toMatch(/never proceed to step 6/);
