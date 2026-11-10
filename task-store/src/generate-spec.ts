@@ -133,6 +133,9 @@ const stubPrService: PullRequestServiceLike = {
   async resetSkip() {
     return {} as never;
   },
+  async unblock() {
+    return {} as never;
+  },
   async claimNext() {
     return null;
   },

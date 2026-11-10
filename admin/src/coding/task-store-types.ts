@@ -923,7 +923,7 @@ export interface paths {
         put?: never;
         /**
          * Record a skip — increments skipCount, auto-blocks at threshold
-         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.
+         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.
          */
         post: {
             parameters: {
@@ -2114,6 +2114,65 @@ export interface paths {
                 };
                 /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prs/{id}/unblock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak
+         * @description Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unblocked PR */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PullRequest"];
+                    };
+                };
+                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — the PR is not currently blocked */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };

@@ -437,6 +437,27 @@ function fakePrService(
       return updated;
     },
 
+    async unblock(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      if (!existing.blocked) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const updated = {
+        ...existing,
+        blocked: false,
+        blockedReason: null,
+        blockedHeadSha: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+        consecutiveCiFailureCount: 0,
+        lastCiFailureSignature: null,
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
     async resetSkip(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
@@ -1890,6 +1911,7 @@ describe("/prs routes (smoke)", () => {
     { name: "release", method: "POST", path: "/prs/pr-1/release" },
     { name: "skip", method: "POST", path: "/prs/pr-1/skip" },
     { name: "skip-reset", method: "POST", path: "/prs/pr-1/skip/reset" },
+    { name: "unblock", method: "POST", path: "/prs/pr-1/unblock" },
     {
       name: "findings",
       method: "POST",
@@ -2130,6 +2152,58 @@ describe("/prs routes (smoke)", () => {
       prService: fakePrService({ store: new Map() }),
     });
     const res = await app.request("/prs/missing/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /prs/:id/unblock resets the block, skip and CI-streak fields", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        blocked: true,
+        blockedReason: "Auto-blocked after 3 consecutive patch cycles",
+        blockedHeadSha: "abc1234",
+        skipCount: 2,
+        lastSkippedAt: new Date().toISOString(),
+        consecutiveCiFailureCount: 3,
+        lastCiFailureSignature: "sig-a",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/unblock", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.blocked).toBe(false);
+    expect(body.blockedReason).toBeNull();
+    expect(body.skipCount).toBe(0);
+    expect(body.consecutiveCiFailureCount).toBe(0);
+    expect(body.lastCiFailureSignature).toBeNull();
+  });
+
+  it("POST /prs/:id/unblock returns 409 when the pr is not blocked", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", blocked: false }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+    const res = await app.request("/prs/pr-1/unblock", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /prs/:id/unblock returns 404 when pr not found", async () => {
+    const app = makeApp({
+      prService: fakePrService({ store: new Map() }),
+    });
+    const res = await app.request("/prs/missing/unblock", {
       method: "POST",
       headers: adminAuth(),
     });

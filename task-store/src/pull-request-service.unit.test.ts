@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
-import { BadRequestError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { deriveOrigin } from "./pr-origin-derivation.ts";
 import {
@@ -2829,5 +2829,101 @@ describe("PullRequestService.claim() origin stamping (POM-1.2)", () => {
     );
 
     expect(record.origin).toBe("ci" as never);
+  });
+});
+
+describe("PullRequestService.unblock() (UBL-1.2)", () => {
+  const NOW = new Date("2026-07-21T09:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  const blockedPr = {
+    id: "pr-1",
+    blocked: true,
+    blockedReason: "Auto-blocked after 3 consecutive patch cycles",
+    blockedHeadSha: "abc1234",
+    skipCount: 3,
+    lastSkippedAt: "2026-07-21T08:00:00.000Z",
+    consecutiveCiFailureCount: 3,
+    lastCiFailureSignature: "npm-test-failed",
+    claimedBy: null,
+  } as Partial<PullRequest>;
+
+  function makeUnblockDouble(row: Partial<PullRequest> | null, count = 1) {
+    const updateManyCalls: Array<{
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }> = [];
+    let current = row;
+    const prisma = attachEventStub({
+      pullRequest: {
+        findUnique(_args: unknown) {
+          return Promise.resolve(current);
+        },
+        updateMany(args: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) {
+          updateManyCalls.push(args);
+          if (count > 0) current = { ...current, ...args.data };
+          return Promise.resolve({ count });
+        },
+      },
+      _updateManyCalls: updateManyCalls,
+    });
+    return prisma as typeof prisma & {
+      _updateManyCalls: typeof updateManyCalls;
+    };
+  }
+
+  test("resets exactly the block/skip/CI-streak field set in one conditional updateMany", async () => {
+    const prisma = makeUnblockDouble(blockedPr);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.unblock("pr-1");
+
+    expect(prisma._updateManyCalls).toHaveLength(1);
+    const { where, data } = prisma._updateManyCalls[0];
+    expect(where).toEqual({ id: "pr-1", blocked: true });
+    expect(data).toEqual({
+      blocked: false,
+      blockedReason: null,
+      blockedHeadSha: null,
+      skipCount: 0,
+      lastSkippedAt: null,
+      consecutiveCiFailureCount: 0,
+      lastCiFailureSignature: null,
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.consecutiveCiFailureCount).toBe(0);
+  });
+
+  test("records PullRequestEvent rows attributed to the unblock method", async () => {
+    const prisma = makeUnblockDouble(blockedPr);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.unblock("pr-1");
+
+    expect(prisma._eventCalls.length).toBeGreaterThan(0);
+    for (const e of prisma._eventCalls) {
+      expect(e.data.method).toBe("unblock");
+    }
+    const fields = prisma._eventCalls.map((e) => e.data.field);
+    expect(fields).toContain("blocked");
+    expect(fields).toContain("consecutiveCiFailureCount");
+  });
+
+  test("throws ConflictError when the PR is not blocked (updateMany matches 0 rows)", async () => {
+    const prisma = makeUnblockDouble({ id: "pr-1", blocked: false }, 0);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.unblock("pr-1")).rejects.toBeInstanceOf(ConflictError);
+    expect(prisma._eventCalls).toHaveLength(0);
+  });
+
+  test("throws NotFoundError when the PR is missing", async () => {
+    const prisma = makeUnblockDouble(null, 0);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.unblock("nope")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

@@ -27,6 +27,7 @@
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0; also clears blocked/blockedReason
  *                                but only when blockedReason matches the skip-auto-block pattern
+ *   POST   /prs/:id/unblock   atomically clear any block + skip/CI-streak counters (409 unless blocked, 404 when missing)
  *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
  *                              — source:"patch" may only submit disposition:"rejected" (400
  *                              otherwise); source:"review" may submit any disposition
@@ -420,6 +421,34 @@ const skipResetRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
       description:
         "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+    },
+  },
+});
+
+const unblockRoute = createRoute({
+  method: "post",
+  path: "/:id/unblock",
+  tags: ["PRs"],
+  summary:
+    "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+  description:
+    "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Unblocked PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Conflict — the PR is not currently blocked",
     },
   },
 });
@@ -965,6 +994,14 @@ export function createPrsRoutes(
   app.openapi(skipResetRoute, async (c): Promise<any> => {
     await loadScopedPr(c);
     const pr = await prService.resetSkip(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Unblock ───────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(unblockRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
+    const pr = await prService.unblock(c.req.param("id"));
     return c.json(pr, 200);
   });
 

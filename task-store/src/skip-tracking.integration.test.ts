@@ -20,7 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import { NotFoundError } from "./errors.ts";
+import { ConflictError, NotFoundError } from "./errors.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { TaskService } from "./task-service.ts";
@@ -559,5 +559,77 @@ describeOrSkip("PullRequestService.recordSkip/resetSkip (integration)", () => {
       expect(reset.lastAutoBlockReason).toBe(blocked.blockedReason);
       expect(reset.lastAutoBlockedAt).toBe(NOW.toISOString());
     });
+  });
+});
+
+describeOrSkip("PullRequestService.unblock() (integration, UBL-1.2)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await prisma.pullRequestEvent.deleteMany();
+    await prisma.prFinding.deleteMany();
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("a CI-streak-blocked PR is unblocked, does not re-block on the next patch() with a different signature, and writes events", async () => {
+    const service = new PullRequestService(
+      prisma,
+      FixedClock(new Date("2026-07-21T09:00:00.000Z")),
+    );
+    const pr = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 9101 },
+    });
+    await service.patch(pr.id, undefined, "sig-a");
+    await service.patch(pr.id, undefined, "sig-a");
+    const blocked = await service.patch(pr.id, undefined, "sig-a");
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.consecutiveCiFailureCount).toBe(3);
+    await prisma.pullRequest.update({
+      where: { id: pr.id },
+      data: { blockedHeadSha: "abc1234", skipCount: 2, lastSkippedAt: "x" },
+    });
+
+    const unblocked = await service.unblock(pr.id);
+    expect(unblocked.blocked).toBe(false);
+    expect(unblocked.blockedReason).toBeNull();
+    expect(unblocked.blockedHeadSha).toBeNull();
+    expect(unblocked.skipCount).toBe(0);
+    expect(unblocked.lastSkippedAt).toBeNull();
+    expect(unblocked.consecutiveCiFailureCount).toBe(0);
+    expect(unblocked.lastCiFailureSignature).toBeNull();
+
+    const next = await service.patch(pr.id, undefined, "sig-b");
+    expect(next.blocked).toBe(false);
+    expect(next.consecutiveCiFailureCount).toBe(1);
+    expect(next.lastCiFailureSignature).toBe("sig-b");
+
+    const events = await prisma.pullRequestEvent.findMany({
+      where: { prRecordId: pr.id, method: "unblock" },
+    });
+    const byField = Object.fromEntries(events.map((e) => [e.field, e]));
+    expect(byField.blocked).toMatchObject({
+      oldValue: "true",
+      newValue: "false",
+    });
+    expect(byField.consecutiveCiFailureCount).toMatchObject({
+      oldValue: "3",
+      newValue: "0",
+    });
+  });
+
+  it("throws ConflictError for a non-blocked PR and NotFoundError for a missing one", async () => {
+    const service = new PullRequestService(prisma);
+    const pr = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 9102 },
+    });
+    await expect(service.unblock(pr.id)).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.unblock("does-not-exist")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
