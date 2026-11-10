@@ -37,11 +37,11 @@ auto-block, and several skills PATCH `blocked` + `hitl:true`.
 **3. `unblock.md` Step 6** collapses to one call per item (task → task unblock,
 PR-only → PR unblock); human may override `to`.
 
-**4. Blocking no longer sets `hitl`.** Drop `data.hitl = true` from `recordSkip()`
-(`task-store/src/task-service.ts`) and the matching `skipData.hitl = true` in the
-stale-claim reaper (`task-store/src/stale-claim-reaper.ts`), which auto-blocks when
-`computeSkipStreak` crosses the threshold; update the stale comments that describe
-the auto-block as setting `hitl` in both files;
+**4. Blocking no longer sets `hitl`.** `recordSkip()` (`task-store/src/task-service.ts`)
+already dropped `data.hitl = true` (UBL-3.1, shipped as #4937). Still to do: drop the matching
+`skipData.hitl = true` in the stale-claim reaper (`task-store/src/stale-claim-reaper.ts`), which
+auto-blocks when `computeSkipStreak` crosses the threshold, and update its stale comment
+(UBL-3.3);
 drop `"hitl": true` from the block PATCHes in `plan-session.md` (6 places),
 `dev-task/task-lifecycle.md`, and the plan-session methodology contract. Already-blocked
 tasks with `hitl:true` are not backfilled. Blocked tasks stay out of the ready set via
@@ -62,15 +62,18 @@ Safe to deploy standalone: yes (all tasks).
 | UBL-1.1 | feat: add `to` target and PR-state inference to `POST /tasks/:id/unblock` | API | sonnet | — |
 | UBL-1.2 | feat: add `POST /prs/:id/unblock` | API | sonnet | 1.1 |
 | UBL-2.1 | docs: collapse `unblock.md` Step 6 to one call per item | CLI | haiku | 1.1, 1.2 |
-| UBL-3.1 | fix: stop setting `hitl` when `recordSkip()` or the stale-claim reaper auto-blocks (update tests + stale comments) | API | haiku | — |
-| UBL-3.2 | docs: drop `hitl:true` from block PATCHes in skills | CLI | haiku | 3.1 |
+| UBL-3.1 | fix: stop setting `hitl` when `recordSkip()` auto-blocks — **shipped (#4937)** | API | haiku | — |
+| UBL-3.3 | fix: drop `skipData.hitl` in the stale-claim reaper; update its tests and the stale comment | API | haiku | — |
+| UBL-3.2 | docs: drop `hitl:true` from block PATCHes in skills | CLI | haiku | 3.1, 3.3 |
 
 ```
 [START]
   ├─ UBL-1.1
   │     └─ UBL-1.2 (serialized after 1.1: both regenerate the admin types file)
   │           └─ UBL-2.1 (needs 1.1, 1.2)
-  └─ UBL-3.1
+  ├─ UBL-3.1 (shipped)
+  │     └─ UBL-3.2 (needs 3.1, 3.3)
+  └─ UBL-3.3
         └─ UBL-3.2
 ```
 
