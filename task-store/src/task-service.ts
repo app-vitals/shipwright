@@ -53,7 +53,7 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /**
  * Skip-count auto-block threshold: once a task's skipCount reaches this
- * value, recordSkip() also sets status:'blocked' + hitl:true + blockedReason
+ * value, recordSkip() also sets status:'blocked' + blockedReason
  * so the loop orchestrator stops re-selecting it. Mirrors
  * SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts:179 —
  * duplicated here (not imported) since agent/ and task-store/ are separate
@@ -1457,7 +1457,7 @@ export class TaskService implements TaskServiceLike {
    * increments; when it differs (including from no prior reason), a new
    * streak starts at skipCount=1. Either way sets lastSkippedAt to now. When
    * the (possibly-reset) skipCount crosses SKIP_BLOCK_THRESHOLD (3), also
-   * sets status:'blocked', hitl:true, and a blockedReason naming the
+   * sets status:'blocked' (hitl untouched) and a blockedReason naming the
    * consecutive count and reason, in the same update — mirrors fail()'s
    * status=blocked+reason pattern above. Every call re-evaluates the streak
    * from the task's current state (not a guard), so a prior resetSkip() or a
@@ -1491,7 +1491,6 @@ export class TaskService implements TaskServiceLike {
         };
         if (streak.blocked) {
           data.status = "blocked";
-          data.hitl = true;
           data.blockedReason = streak.blockedReason;
         }
         const updated = await tx.task.update({ where: { id }, data });
