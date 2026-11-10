@@ -2,7 +2,7 @@
 
 Repo: app-vitals/shipwright (work spans app-vitals/agent and app-vitals/shipwright)
 Spec: none (design agreed interactively with the maintainers, 2026-11-09)
-Scope: Phase 1 of three. Phases 2 (bind a GitHub user to an agent) and 3 (reconcile repos, dry-run then commit) are planned in later sessions and extend this one.
+Scope: Phases 1 and 2 are planned (Phase 2 section below). Phase 3 (reconcile repos, dry-run then commit) and Phase 4 (create the apps via manifest) are planned in later sessions and extend this one.
 
 ## Summary
 
@@ -89,8 +89,88 @@ Unit for the JWT signer, client and UI rendering; integration for the service on
                                       └─ GHE-1.8 prod verify, HITL (needs 1.7)
 ```
 
+## Phase 2 — Bind a GitHub username to an agent (planned 2026-11-10)
+
+Scope: a platform admin binds a GitHub username to an agent and can preview what that user can reach. Identity binding only: no tokens are stored for the user, and nothing about the agent's installation or repos changes yet (that is Phase 3). All code is in `app-vitals/agent`; the one Shipwright task is a live check.
+
+### Decisions
+
+- **Binding is platform-admin only.** Admins already set up agents and configure members and the owner; the GitHub username joins them. `PATCH /agents/:id` is open to admins and session members, and `platform.ops` keys may call it, so `githubUsername` follows the `accountId` / `specialty` precedent with an extra `isAdmin` check. Session members, ops keys and agent keys get a 403. The preview route has the same gate.
+  - Why: the platform does not verify that a username belongs to the person typing it. If a non-admin could set it, they could rebind the agent to a more privileged account and raise its ceiling.
+  - An agent that holds the `*` admin key could rebind itself, and in Phase 3 apply a reconcile, which defeats the cap. The rule is also operational: agents do not get the `*` key. The docs say so.
+- **A non-admin owner has no binding.** With no bound username Phase 3 reconcile does not run for that agent, and nothing changes. That is the safe default. Owner self-serve needs a verified GitHub identity (sign-in or device flow) and is a later phase.
+- **Save validates syntax only** (GitHub login rules); there is no GitHub call on save, so saving works with nothing configured. The preview checks that the user exists and reports "user not found" there.
+- **No second release gate.** The only Shipwright task here is HITL, and its first human step is the pin check, so a separate gate task adds nothing. (The Phase 1 gate, GHE-1.6, has not run yet at the time of writing.)
+- **The field lives in the existing Owner & Anthropic identity card**, renamed "Owner & identities", not a new card. The card's GitHub row shows only when the enterprise apps are configured. The access preview is its own section below it.
+- **Audit trail is a log line** with the caller's name. No new columns.
+- A user can be bound to several agents (no uniqueness).
+- **Unknown is never "none".** The resolver reports per-org status and a `complete` flag; a 403 or 429 marks the org partial. Phase 3 reuses it and relies on this.
+- Push-capable means admin, maintain or write. Triage and read are not. Phase 3 caps the installation at push-capable repos.
+
+### Findings that shaped the design
+
+- Owner, members and the new username are three separate things. `ownerEmail` is unverified metadata for per-agent Anthropic identity (the provisioner requires it to create the service account and federation rule); nothing reads it for access. `AgentMember` is the access list (caller scope in admin, Slack gating). `githubUsername` is the identity whose access caps the agent's repos. It is one value per agent, so it cannot live on the member set.
+- `ownerEmail` is set only at create (the session user, or an admin key whose name is an email). An agent-created agent via an admin key gets no owner, which fails provisioning in per-agent identity mode. That is an existing gap unrelated to this feature and is tracked separately.
+- The Phase 1 client covers the installer role only. The lookup side (per-org installation token, repo listing, collaborator permission) is new here.
+- Existing nullable-field pattern to follow: `trialExpiresAt` / `ownerEmail` (optional through the service types, PATCH body, response, OpenAPI and lib types), so shipwright's test doubles keep compiling.
+
+### Technical design
+
+**GHE-2.1 data and PATCH.** Nullable `Agent.githubUsername`, additive migration, no uniqueness. Stored lower-cased. Optional in the PATCH body, response, OpenAPI and `@app-vitals/agent-lib` types. Admin-only gate as above; syntax validation only; the change is logged with the caller name.
+
+**GHE-2.2 lookup client.** Extends the Phase 1 client (or a sibling sharing the JWT signer): per-org installation token for the lookup app, paginated installation repository listing, `GET /repos/{o}/{r}/collaborators/{user}/permission` (role mapped to admin, maintain, write, triage or read), user lookup, org membership. Hand-authored cassettes from GitHub's OpenAPI description; typed errors for 403, 404, 422, 429 and 5xx; no token in any error or log.
+
+**GHE-2.3 resolver.** `UserRepoAccessResolver`: for each org where the lookup app is installed and the org is installable, list repos and resolve the bound user's level with bounded concurrency. Per-org status (ok, lookup app not installed, rate-limited, partial, error) and a `complete` flag. A 403 or 429 stops that org's remaining calls and marks it partial.
+
+**GHE-2.4 route.** `GET /agents/:id/github-access`, platform-admin only, read-only, no persistence. Checks the user exists first. Returns an unconfigured status when the apps are not set up and a clear 4xx when no username is bound. No tokens in responses or logs. `openapi.json` regenerated.
+
+**GHE-2.5 UI.** The GitHub identity row in the Owner & identities card (username field, save and clear) shown only when the enterprise apps are configured, plus a "Preview access" section with a table grouped by org, per-org status badges and a "partial results" warning.
+
+**GHE-2.6 docs.** Binding and preview, the admin-only rule and why, the push-capable levels, unknown-is-not-none, and the "agents do not hold the `*` key" note. States what owner, members and GitHub username are each for.
+
+**GHE-2.7 live verify (HITL, shipwright).** First step: `scripts/check-platform-pin.sh` to confirm the release is pinned and deployed. Then bind a real user to a test agent, run the preview and compare against GitHub's own view of that user.
+
+### Breaking change safety
+
+Everything is additive: a nullable column, an optional PATCH field and a new route. The `@app-vitals/agent-lib` contract change is optional-only, so there is no Migrate task. Safe to deploy standalone: yes, for every task. The producer `feat:` commits cut the release.
+
+### Test layers
+
+Integration for the migration and set/clear, and for the resolver and client against cassettes (complete, partial and rate-limited runs); unit for syntax validation, role mapping and the unknown-is-not-none rule; smoke via `app.request()` for the PATCH gating (admin 200; session member, ops key and agent key 403) and the preview route; unit and smoke for the card. No `mock.module()`, no global `fetch` overrides.
+
+### Complexity risks accepted
+
+- Preview cost is one permission call per repo. Bounded concurrency and the partial status keep it safe; there is no caching in v1.
+- The lookup app's permission needs (Administration vs Metadata read for the collaborator lookup) are settled in GHE-1.2 and confirmed live in GHE-2.7.
+
+### Phase 2 tasks
+
+| ID | Repo | Title | Layer | Deps | Cx / model | Hrs | HITL |
+|---|---|---|---|---|---|---|---|
+| GHE-2.1 | app-vitals/agent | feat: add githubUsername to Agent with admin-only PATCH and response support | Database | — | 3 / sonnet | 4 | |
+| GHE-2.2 | app-vitals/agent | feat: add lookup-app org token, repo listing and collaborator permission to the GitHub client | Shared | GHE-1.2 | 4 / sonnet | 5 | |
+| GHE-2.3 | app-vitals/agent | feat: add completeness-aware UserRepoAccessResolver | Shared | GHE-2.2, GHE-1.1 | 4 / sonnet | 5 | |
+| GHE-2.4 | app-vitals/agent | feat: add github-access preview route for the bound GitHub user | API | GHE-2.1, GHE-2.3, GHE-1.3 | 4 / sonnet | 5 | |
+| GHE-2.5 | app-vitals/agent | feat: add GitHub identity row and access preview to the agent detail page | Frontend | GHE-2.4 | 3 / sonnet | 5 | |
+| GHE-2.6 | app-vitals/agent | docs: document username binding and the access preview | Shared | GHE-2.5 | 2 / haiku | 2 | |
+| GHE-2.7 | app-vitals/shipwright | chore: bind a real user to an agent and verify the access preview | Shared | GHE-2.6, GHE-1.8 | 2 / sonnet | 2 | HITL |
+
+### Phase 2 dependency map
+
+```
+[PHASE 1]  GHE-1.1 (merged), GHE-1.2 (merged), GHE-1.3, GHE-1.8
+[START]
+  ├─ GHE-2.1 githubUsername column + admin-only PATCH (no deps)
+  └─ GHE-2.2 lookup-app client calls (needs GHE-1.2)
+        └─ GHE-2.3 UserRepoAccessResolver (needs 2.2, GHE-1.1)
+              └─ GHE-2.4 preview route (needs 2.1, 2.3, GHE-1.3)
+                    └─ GHE-2.5 identity row + preview UI (needs 2.4)
+                          └─ GHE-2.6 docs (needs 2.5)
+                                └─ GHE-2.7 live verify, HITL (needs 2.6, GHE-1.8)
+```
+
 ## Later phases
 
-- Phase 2: bind a GitHub username to an agent (identity only, no tokens); validate user and org membership; read-only preview of resolved repo access via the lookup app.
-- Phase 3: reconcile as plan (dry-run diff for the installation and the agent config) then apply (installation first, then config; idempotent; audit entry). Never remove from an incomplete or failed listing; cap removals; agent repos are always a subset of installation repos; newly accessible repos are not auto-added; open tasks and PRs on removed repos are surfaced to the admin, not auto-blocked.
-- Later: a "create via manifest" button for the two apps; a scheduled drift check.
+- **Phase 3 — Reconcile:** plan (dry-run diff for the installation and the agent config) then apply (installation first, then config; idempotent; audit entry with caller). Platform-admin only for both. Never remove from an incomplete or failed listing (the resolver's `complete` flag); cap removals; agent repos are always a subset of installation repos; newly accessible repos are not auto-added; open tasks and PRs on removed repos are surfaced to the admin, not auto-blocked. An agent with no bound username is skipped.
+- **Phase 4 — Create the apps from admin (manifest):** lookup app via the manifest flow (a normal org app; reuse `buildAgentAppManifest` and `exchangeManifestCode` with a different permission set); the installer app too if GitHub allows it. GitHub's manifest docs mention only personal and organization targets, nothing for enterprise or enterprise-level permissions, so assume paste-only for the installer until GHE-1.8's live check says otherwise. Extends the Phase 1 settings page; can start once GHE-1.4 is merged.
+- **Later, unscheduled:** a scheduled drift check; webhook triggers; verified owner self-serve binding (GitHub sign-in or device flow); unifying owner, members and GitHub identity into one model; filing the admin-key-created-agent owner gap; a sessions-page signal for a PR with red CI and no patch activity.
