@@ -93,7 +93,7 @@ When `--autonomous {task-id}` was passed, the spec arrives through the originati
    curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-     -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_no_spec: no planning/{session}/PRODUCT-SPEC.md in the worktree and the task description is empty"}' | jq .
+     -d '{"status": "blocked", "blockedReason": "plan_session_autonomous_no_spec: no planning/{session}/PRODUCT-SPEC.md in the worktree and the task description is empty"}' | jq .
    ```
    Print `⚠ Task {task-id} has no spec to plan from — blocked for human triage (plan_session_autonomous_no_spec).` and stop. Do not continue to Step 2.
 
@@ -242,7 +242,7 @@ Apply a loose ambiguity bar with exactly two cases:
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+    -d '{"status": "blocked", "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
   ```
   Then stop the command entirely — do not proceed to Step 5.
 
@@ -381,7 +381,7 @@ When `--autonomous {task-id}` was passed, apply the same loose ambiguity bar fro
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+    -d '{"status": "blocked", "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
   ```
   Then stop the command entirely — do not proceed to Step 5.5.
 
@@ -535,7 +535,7 @@ inline as a substitute for the configured methodology, and do not re-dispatch a 
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_methodology_dispatch_failed: {subagent_type} failed after retry"}' | jq .
+    -d '{"status": "blocked", "blockedReason": "plan_session_methodology_dispatch_failed: {subagent_type} failed after retry"}' | jq .
   ```
   Print `⚠ Task {task-id} blocked — configured plan-session methodology {subagent_type} failed after retry (plan_session_methodology_dispatch_failed).` and stop.
 - **Interactive** — print a clear abort message naming the failed `{subagent_type}` and stop.
@@ -552,7 +552,7 @@ resolve. `tasks[]`/`planMarkdown` are empty or omitted in that case — do not s
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+    -d '{"status": "blocked", "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
   ```
 - **Interactive** — the contract states `hardContradiction` is always `null` outside
   `--autonomous`, so a non-null value here is the configured subagent violating its own
@@ -667,7 +667,7 @@ tasks — failed: {check}
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_methodology_schema_invalid: {summary}"}' | jq .
+    -d '{"status": "blocked", "blockedReason": "plan_session_methodology_schema_invalid: {summary}"}' | jq .
   ```
 - **Interactive** — print the error above and stop.
 

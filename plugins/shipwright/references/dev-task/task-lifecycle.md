@@ -8,7 +8,7 @@ Mechanics for `commands/dev-task.md`. Auth header on all calls: `Authorization: 
 ## PRD-shaped guard
 Block when ANY holds: id matches `^prd-`; description opens with
 `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session`; `branch == "main"` with empty `acceptanceCriteria`.
-`PATCH /tasks/{id}` `{"status":"blocked","hitl":true,"blockedReason":"misrouted_needs_plan_session_not_dev_task"}`; stop.
+`PATCH /tasks/{id}` `{"status":"blocked","blockedReason":"misrouted_needs_plan_session_not_dev_task"}`; stop.
 
 ## Dependency check (pending only)
 Satisfied when dep status ∈ {merged, done, deployed, released, cancelled}; or same-branch dep in
