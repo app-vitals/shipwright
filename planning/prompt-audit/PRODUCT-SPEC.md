@@ -97,7 +97,7 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 **Requirements**:
 - Precondition: ≥ 2 weeks or ≥ 20 runs per phase of Feature 1 series on `claude-sonnet-4-6`.
 - Change `DEFAULT_ANTHROPIC_MODEL` in `lib/default-agent-env.ts` and the runtime fallback in `agent/src/config.ts` / `agent/src/claude.ts` to `claude-sonnet-5-5`; move the bare pricing aliases to 5.5; update `docs/configuration-agent.md`.
-- Existing agents keep their seeded `ANTHROPIC_MODEL` env, so the task includes a HITL step: update each agent's env via the admin API (`shipwright:agent-admin` skill) and record the cutover date.
+- Existing agents keep their seeded `ANTHROPIC_MODEL` env, so the task includes a HITL step: update each agent's env via the admin API (`agent-platform:agent-admin` skill) and record the cutover date.
 - Measurement: `baselines` and `/outcomes` split by `baselineModel`; report cost per completed task, first-turn context tokens (a different count on identical markdown is expected: new tokenizer), turns, failure/skip rates, patch cycles, per phase; keep or revert on evidence.
 - Rule inherited by every later feature: token deltas for a markdown edit are only valid same-model; the scan reports both models until the fleet is fully on 5.5.
 
