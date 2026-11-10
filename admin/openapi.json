@@ -247,6 +247,16 @@
             ],
             "format": "date-time"
           },
+          "bakedMarketplaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "example-marketplace",
+              "shipwright"
+            ]
+          },
           "autoPostReviews": {
             "type": "boolean",
             "example": true
@@ -3291,6 +3301,45 @@
         "required": [
           "reportedAt",
           "installations"
+        ],
+        "additionalProperties": false
+      },
+      "BakedMarketplacesResult": {
+        "type": "object",
+        "properties": {
+          "bakedMarketplaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "example-marketplace"
+            ]
+          }
+        },
+        "required": [
+          "bakedMarketplaces"
+        ]
+      },
+      "PutBakedMarketplacesBody": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "maxItems": 100,
+            "example": [
+              "example-marketplace",
+              "shipwright"
+            ]
+          }
+        },
+        "required": [
+          "names"
         ],
         "additionalProperties": false
       },
@@ -6879,6 +6928,84 @@
           },
           "404": {
             "description": "No snapshot reported yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/baked-marketplaces": {
+      "put": {
+        "summary": "Report the marketplaces baked into the agent's image",
+        "description": "Runtime-only report, authenticated with the agent's own key. Overwrites the stored list of baked marketplace names (the image's current state); it is exposed read-only as `bakedMarketplaces` on GET /agents/{id}. Other callers, including another agent's key, get 403.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutBakedMarketplacesBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Baked marketplaces stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BakedMarketplacesResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — only the agent's own key may report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {
