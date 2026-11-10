@@ -2371,6 +2371,58 @@
         }
       }
     },
+    "/prs/{id}/unblock": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+        "description": "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unblocked PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the PR is not currently blocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/prs/{id}/findings": {
       "post": {
         "tags": [

@@ -11,7 +11,7 @@
 import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError, NotFoundError } from "../errors.ts";
+import { ApiError, ConflictError, NotFoundError } from "../errors.ts";
 import type { PullRequest } from "../index.ts";
 import type {
   CensusEntryInput,
@@ -177,6 +177,27 @@ function fakePrService(
         ...existing,
         skipCount: (existing.skipCount ?? 0) + 1,
         lastSkippedAt: new Date().toISOString(),
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
+    async unblock(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      if (!existing.blocked) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const updated = {
+        ...existing,
+        blocked: false,
+        blockedReason: null,
+        blockedHeadSha: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+        consecutiveCiFailureCount: 0,
+        lastCiFailureSignature: null,
         updatedAt: new Date(),
       } as PullRequest;
       store.set(id, updated);
@@ -560,6 +581,14 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     store.set("pr-1", makePr({ id: "pr-1" }));
     const app = createPrsRoutes(fakePrService({ store }));
     const res = await app.request("/pr-1/skip/reset", { method: "POST" });
+    expect(res.status).not.toBe(404);
+  });
+
+  it("POST /:id/unblock route is registered", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/unblock", { method: "POST" });
     expect(res.status).not.toBe(404);
   });
 

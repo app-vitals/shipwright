@@ -367,6 +367,7 @@ export interface PullRequestServiceLike {
   release(id: string): Promise<PullRequest>;
   recordSkip(id: string): Promise<PullRequest>;
   resetSkip(id: string): Promise<PullRequest>;
+  unblock(id: string): Promise<PullRequest>;
   claimNext(
     agentId: string,
     maxConcurrent: number,
@@ -1309,6 +1310,53 @@ export class PullRequestService implements PullRequestServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
+  }
+
+  /**
+   * Human-driven unblock (UBL-1.2): atomically clears a block regardless of
+   * which mechanism set it. A single conditional updateMany (WHERE id AND
+   * blocked=true) resets blocked, blockedReason, blockedHeadSha, skipCount,
+   * lastSkippedAt, consecutiveCiFailureCount and lastCiFailureSignature —
+   * the CI-streak counter/signature must go too, otherwise the next patch()
+   * would re-trip the threshold. Throws NotFoundError when the PR is missing
+   * and ConflictError when it is not currently blocked (never a silent
+   * no-op). The preserved lastAutoBlock* history is left untouched. Records
+   * PullRequestEvent rows (method "unblock") in the same transaction.
+   */
+  async unblock(id: string): Promise<PullRequest> {
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.pullRequest.findUnique({ where: { id } });
+      if (!before) {
+        throw new NotFoundError("pr not found");
+      }
+      const { count } = await tx.pullRequest.updateMany({
+        where: { id, blocked: true },
+        data: {
+          blocked: false,
+          blockedReason: null,
+          blockedHeadSha: null,
+          skipCount: 0,
+          lastSkippedAt: null,
+          consecutiveCiFailureCount: 0,
+          lastCiFailureSignature: null,
+        },
+      });
+      if (count === 0) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const after = await tx.pullRequest.findUnique({ where: { id } });
+      if (!after) {
+        throw new NotFoundError("pr not found");
+      }
+      await this.recordTransition(
+        tx,
+        before,
+        after,
+        "unblock",
+        before.claimedBy ?? "system",
+      );
+      return after;
+    });
   }
 
   /**
