@@ -53,6 +53,17 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([]);
   });
 
+  it("excludes a skip-blocked task (status blocked, hitl false) even if otherwise ready", async () => {
+    const task = makeTask({
+      id: "t1",
+      status: "blocked",
+      hitl: false,
+      blockedReason: "3 consecutive skips: reason-a",
+    });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([]);
+  });
+
   it("excludes a task with kind === 'prd' even if otherwise ready (TKD-1.1)", async () => {
     const task = makeTask({ id: "t1", kind: "prd" });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
