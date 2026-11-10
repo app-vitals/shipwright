@@ -165,9 +165,10 @@ posted message is the cron's own summary of its conclusion. If the outcome was `
 
 For a deeper narrative — the actual prompt, Claude's reasoning, and the specific commands it ran —
 ask the agent to investigate on your behalf via Slack chat. The agent has a dedicated
-`/shipwright:investigate-cron` tool for exactly this: given a cron name and approximate time, or a
-specific PR/task id, it resolves the matching run and reads the underlying session transcript to
-explain what happened in plain language. You don't need transcript or log access yourself — just
+`/shipwright:investigate-stuck` tool for exactly this: given a specific PR/task id, it checks the
+work queue and task/PR records, resolves the matching runs and reads the underlying session
+transcripts to explain what happened in plain language (for a cron by name and approximate time,
+the platform's `agent-platform:investigate-cron` does the same). You don't need transcript or log access yourself — just
 ask the agent to run it, and it will report back the prompt, the key steps taken, and its
 conclusion.
 

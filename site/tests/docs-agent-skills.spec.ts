@@ -62,7 +62,7 @@ const allSkillNames = [
   "error-fix",
   "error-resolve",
   "error-scan",
-  "investigate-cron",
+  "investigate-stuck",
   "learning-capture",
   "pull-requests",
   "repo-config",

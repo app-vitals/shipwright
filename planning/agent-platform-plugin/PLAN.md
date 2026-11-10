@@ -76,7 +76,7 @@ Cross-repo sequence (additive, then migrate, then contract):
 
 ## Breaking Change Safety
 
-- Removing `/shipwright:agent-admin`, `/shipwright:slack-say` and `/shipwright:investigate-cron`
+- Removing the `agent-admin`, `slack-say` and `investigate-cron` skills (`/shipwright:<name>`)
   is a removal of skill names. Consumers: README, `references/user-guide.md`, cron prompts
   and agent memory/docs that cite `shipwright:agent-admin`. APP-4.1 and APP-4.2 each grep for
   consumers and update them in the same PR (atomic), and both run only after APP-3.1 is
