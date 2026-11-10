@@ -1600,6 +1600,151 @@ describe("createTaskStatusQuery", () => {
     const result = await query("acme/example-repo", 42);
     expect(isTaskBlockedForDispatch(result)).toBe(true);
   });
+
+  test("terminal done hitl:true task alongside pr_open hitl:false task does not block (TLH-1.1)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Task 1",
+              status: "done",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: true,
+            },
+            {
+              id: "T-2",
+              title: "Task 2",
+              status: "pr_open",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: false,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(false);
+  });
+
+  test("terminal merged hitl:true task listed after pr_open hitl:false task does not block (TLH-1.1)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Task 1",
+              status: "pr_open",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Task 2",
+              status: "merged",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: true,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(false);
+  });
+
+  test("non-terminal hitl:true task still blocks alongside a done task (TLH-1.1)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Task 1",
+              status: "done",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Task 2",
+              status: "pr_open",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: true,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
+
+  test("non-terminal blocked status still blocks alongside a done task (TLH-1.1)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Task 1",
+              status: "done",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Task 2",
+              status: "blocked",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: false,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
+
+  test("all-terminal linked tasks keep prior behavior: hitl:true still blocks (TLH-1.1)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Task 1",
+              status: "done",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: true,
+            },
+            {
+              id: "T-2",
+              title: "Task 2",
+              status: "merged",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: false,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
