@@ -28,6 +28,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
+import { ConflictError } from "./errors.ts";
 import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -154,5 +155,92 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
     });
     expect(task.status).toBe("pending");
     expect(task.claimedBy).toBeNull();
+  });
+
+  // UBL-1.1: every unblock target clears claim + skip fields atomically and
+  // satisfies the pending/claimedBy CHECK against a real DB.
+  for (const to of [
+    "pending",
+    "pr_open",
+    "merged",
+    "deployed",
+    "released",
+  ] as const) {
+    it(`TaskService.unblock({to:'${to}'}) clears claim+skip fields in one UPDATE (UBL-1.1)`, async () => {
+      const id = `t-ubl11-${to}`;
+      const stamp = new Date().toISOString();
+      await prisma.task.create({
+        data: {
+          id,
+          title: `blocked -> ${to}`,
+          status: "blocked",
+          repo: "org/repo",
+          pr: 4242,
+          claimedBy: "some-agent",
+          claimedAt: stamp,
+          heartbeatAt: stamp,
+          blockedAt: stamp,
+          blockedReason: "spun out",
+          skipCount: 3,
+          lastSkippedAt: stamp,
+          lastSkipReason: "dev-task:deferred",
+          hitl: true,
+        },
+      });
+
+      const result = await new TaskService(prisma).unblock(id, { to });
+
+      const row = await prisma.task.findUniqueOrThrow({ where: { id } });
+      expect(result.status).toBe(to);
+      expect(row.status).toBe(to);
+      expect(row.claimedBy).toBeNull();
+      expect(row.claimedAt).toBeNull();
+      expect(row.heartbeatAt).toBeNull();
+      expect(row.blockedAt).toBeNull();
+      expect(row.blockedReason).toBeNull();
+      expect(row.skipCount).toBe(0);
+      expect(row.lastSkippedAt).toBeNull();
+      expect(row.lastSkipReason).toBeNull();
+      expect(row.hitl).toBe(true);
+      if (to === "merged" || to === "deployed" || to === "released") {
+        expect(row.mergedAt).not.toBeNull();
+      }
+      if (to === "deployed" || to === "released") {
+        expect(row.deployedAt).not.toBeNull();
+      }
+      if (to === "released") expect(row.releasedAt).not.toBeNull();
+    });
+  }
+
+  it("TaskService.unblock() infers pr_open / merged / 409 from the PullRequest row against a real DB (UBL-1.1)", async () => {
+    const service = new TaskService(prisma);
+    for (const [state, prNumber] of [
+      ["open", 9001],
+      ["merged", 9002],
+      ["closed", 9003],
+    ] as const) {
+      await prisma.pullRequest.create({
+        data: { repo: "org/repo", prNumber, state },
+      });
+      await prisma.task.create({
+        data: {
+          id: `t-ubl11-infer-${state}`,
+          title: "blocked",
+          status: "blocked",
+          repo: "org/repo",
+          pr: prNumber,
+          claimedBy: "some-agent",
+        },
+      });
+    }
+    expect((await service.unblock("t-ubl11-infer-open")).status).toBe(
+      "pr_open",
+    );
+    expect((await service.unblock("t-ubl11-infer-merged")).status).toBe(
+      "merged",
+    );
+    await expect(service.unblock("t-ubl11-infer-closed")).rejects.toThrow(
+      ConflictError,
+    );
   });
 });

@@ -94,6 +94,7 @@ import {
   TaskListQuerySchema,
   TaskListResponseSchema,
   TaskSchema,
+  UnblockBodySchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
@@ -101,6 +102,8 @@ import {
   MAX_BULK_TASKS,
   MAX_PATCH_BY_PR_NUMBERS,
   type TaskServiceLike,
+  UNBLOCK_TARGETS,
+  type UnblockTarget,
 } from "../task-service.ts";
 import { isOrgRepo, normalizePr } from "../validate.ts";
 
@@ -889,11 +892,16 @@ const unblockRoute = createRoute({
   method: "post",
   path: "/:id/unblock",
   tags: ["tasks"],
-  summary: "Atomically unblock a task back to pending",
+  summary:
+    "Atomically unblock a task to pending, pr_open, merged, deployed or released",
   description:
-    "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).",
+    "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.",
   request: {
     params: TaskIdParamSchema,
+    body: {
+      required: false,
+      content: { "application/json": { schema: UnblockBodySchema } },
+    },
   },
   responses: {
     200: {
@@ -912,8 +920,14 @@ const unblockRoute = createRoute({
       description: "Not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    400: {
+      description:
+        "Bad request — unknown `to`, or a non-pending `to` on a task with no `pr`",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     409: {
-      description: "Conflict — task is not currently blocked",
+      description:
+        "Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -1424,7 +1438,27 @@ export function createTasksRoutes(
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.unblock(c.req.param("id"));
+    // Body is optional: an absent/empty body is the legacy no-arg call.
+    // `required: false` skips zod validation when no JSON content-type is
+    // sent, so read defensively and let the service reject unknown targets.
+    let to: UnblockTarget | undefined;
+    const raw = await c.req.text();
+    if (raw.trim() !== "") {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new BadRequestError("body must be valid JSON");
+      }
+      const result = UnblockBodySchema.safeParse(parsed);
+      if (!result.success) {
+        throw new BadRequestError(
+          `invalid unblock body: \`to\` must be one of ${UNBLOCK_TARGETS.join(", ")}`,
+        );
+      }
+      to = result.data.to;
+    }
+    const task = await taskService.unblock(c.req.param("id"), { to });
     return c.json(task, 200);
   });
 

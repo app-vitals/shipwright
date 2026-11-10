@@ -340,6 +340,16 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   return true;
 }
 
+/** UBL-1.1: statuses `POST /tasks/:id/unblock` may land a task in. */
+export const UNBLOCK_TARGETS = [
+  "pending",
+  "pr_open",
+  "merged",
+  "deployed",
+  "released",
+] as const;
+export type UnblockTarget = (typeof UNBLOCK_TARGETS)[number];
+
 /**
  * True when `accountId` restricts a query to one account (SSP-6.5). Any
  * string counts — including NO_ACCESS_ACCOUNT_ID (""), which deliberately
@@ -540,7 +550,7 @@ export interface TaskServiceLike {
   release(id: string): Promise<Task>;
   recordSkip(id: string, reason?: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
-  unblock(id: string): Promise<Task>;
+  unblock(id: string, opts?: { to?: UnblockTarget }): Promise<Task>;
   getEvents(
     id: string,
     opts?: { limit?: number; offset?: number },
@@ -1530,34 +1540,79 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Atomically unblock a blocked task, returning it to 'pending'.
+   * Atomically unblock a blocked task (UBL-1.1).
    *
    * Single conditional UPDATE — `WHERE id = $1 AND status = 'blocked'` —
-   * mirroring claim()'s pattern above. If 0 rows are affected the task is
-   * either missing or not currently blocked: distinguish the two with a
-   * follow-up read so callers get 404 vs 409, exactly like claim().
+   * mirroring claim()'s pattern, with the target status parameterized. If 0
+   * rows are affected the task is either missing or not currently blocked:
+   * distinguish the two with a follow-up read so callers get 404 vs 409.
+   * Never a silent no-op on a non-blocked task.
    *
-   * Deliberately does NOT silently no-op on a non-blocked task the way
-   * release()'s pre-atomic-guard behavior did (CRT-1.1): the whole point of
-   * this endpoint is a hard 409 when the precondition isn't met, so a caller
-   * can't mistake "nothing happened" for "task unblocked".
+   * Target: explicit `opts.to`, else inferred from task.pr and the
+   * PullRequest row (see inferUnblockTarget). Targets other than 'pending'
+   * need a non-null task.pr (400). Terminal targets stamp
+   * mergedAt/deployedAt/releasedAt when still empty.
    *
-   * On success, clears every field an agent's failed/blocked attempt could
-   * have left behind — blockedReason/blockedAt, claimedBy/claimedAt/
-   * heartbeatAt, and the skip-tracking triple (skipCount/lastSkippedAt/
-   * lastSkipReason) — in the same statement that flips status back to
-   * 'pending', so the row can
-   * never land in an intermediate state that violates the DB-level
-   * status='pending' iff claimedBy IS NULL invariant (see
-   * task-claim-status-invariant.integration.test.ts).
+   * Every target clears blockedReason/blockedAt, claimedBy/claimedAt/
+   * heartbeatAt and the skip triple in the same statement, so the row can
+   * never violate the DB-level status='pending' => claimedBy IS NULL CHECK
+   * (see task-claim-status-invariant.integration.test.ts).
    */
-  async unblock(id: string): Promise<Task> {
+  async unblock(id: string, opts: { to?: UnblockTarget } = {}): Promise<Task> {
+    const requested = opts.to;
+    if (requested !== undefined && !UNBLOCK_TARGETS.includes(requested)) {
+      throw new BadRequestError(
+        `invalid unblock target '${String(requested)}' — expected one of ${UNBLOCK_TARGETS.join(", ")}`,
+      );
+    }
     return await this.prisma.$transaction(async (tx) => {
       const before = await tx.task.findUnique({ where: { id } });
+      if (!before) throw new NotFoundError("task not found");
+      if (before.status !== "blocked") {
+        throw new ConflictError("task is not currently blocked");
+      }
+
+      let target: UnblockTarget;
+      if (requested !== undefined) {
+        if (requested !== "pending" && before.pr === null) {
+          throw new BadRequestError(
+            `cannot unblock to '${requested}': task has no pr`,
+          );
+        }
+        target = requested;
+      } else if (before.pr === null) {
+        target = "pending";
+      } else {
+        const prRow = before.repo
+          ? await tx.pullRequest.findFirst({
+              where: {
+                repo: before.repo,
+                prNumber: before.pr,
+                accountId: before.accountId,
+              },
+              select: { state: true },
+            })
+          : null;
+        if (prRow?.state === "closed") {
+          throw new ConflictError(
+            "PR is closed without merging — pass an explicit `to` target",
+          );
+        }
+        target = prRow?.state === "merged" ? "merged" : "pr_open";
+      }
+
+      const now = this.clock.now().toISOString();
+      const stampMerged = ["merged", "deployed", "released"].includes(target)
+        ? now
+        : null;
+      const stampDeployed = ["deployed", "released"].includes(target)
+        ? now
+        : null;
+      const stampReleased = target === "released" ? now : null;
 
       const affected = await tx.$executeRaw`
         UPDATE "Task"
-        SET status = 'pending',
+        SET status = ${target}::"TaskStatus",
             "blockedReason" = NULL,
             "blockedAt" = NULL,
             "claimedBy" = NULL,
@@ -1566,12 +1621,15 @@ export class TaskService implements TaskServiceLike {
             "skipCount" = 0,
             "lastSkippedAt" = NULL,
             "lastSkipReason" = NULL,
+            "mergedAt" = COALESCE("mergedAt", ${stampMerged}),
+            "deployedAt" = COALESCE("deployedAt", ${stampDeployed}),
+            "releasedAt" = COALESCE("releasedAt", ${stampReleased}),
             "updatedAt" = now()
         WHERE id = ${id} AND status = 'blocked'
       `;
 
       if (affected === 0) {
-        if (!before) throw new NotFoundError("task not found");
+        // Lost a race between the read above and the guarded UPDATE.
         throw new ConflictError("task is not currently blocked");
       }
 
@@ -1583,7 +1641,7 @@ export class TaskService implements TaskServiceLike {
         before,
         after,
         "unblock",
-        before?.claimedBy ?? "system",
+        before.claimedBy ?? "system",
       );
 
       // Same rollback-on-throw contract as create()/update()/claim() above.

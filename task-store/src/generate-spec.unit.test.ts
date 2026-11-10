@@ -31,6 +31,26 @@ describe("buildTaskStoreSpec", () => {
     expect(tokenPaths.length).toBeGreaterThan(0);
   });
 
+  it("documents the optional {to} body and 400 response on POST /tasks/{id}/unblock (UBL-1.1)", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: walking an untyped spec document
+    const spec = buildTaskStoreSpec() as any;
+    const op = spec.paths["/tasks/{id}/unblock"].post;
+    expect(op.requestBody.required).toBeFalsy();
+    const schema = op.requestBody.content["application/json"].schema;
+    const resolved = schema.$ref
+      ? spec.components.schemas[schema.$ref.split("/").pop()]
+      : schema;
+    expect(resolved.properties.to.enum).toEqual([
+      "pending",
+      "pr_open",
+      "merged",
+      "deployed",
+      "released",
+    ]);
+    expect(op.responses["400"]).toBeDefined();
+    expect(op.responses["409"]).toBeDefined();
+  });
+
   it("includes /prs paths", () => {
     const spec = buildTaskStoreSpec() as { paths: Record<string, unknown> };
     const paths = Object.keys(spec.paths ?? {});

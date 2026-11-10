@@ -58,6 +58,6 @@ scripts/check-platform-pin.sh <package> <minVersion>
 - **Bump PR `CONFLICTING`.** The workflow re-dispatches itself once; after that, re-dispatch by hand with the command above.
 - **No release cut.** The producer commit lacked a `feat:`/`fix:`/`perf:` prefix.
 - **Force-push refused (non-bot commits).** The bump branch has an open PR and holds commits not authored by the bump bot (from a patch pass or a human fix). The `platform-release` workflow refuses to force-push over them to prevent data loss. Merge or rebase the PR by hand, then re-dispatch. (If the branch has no open PR — a stale leftover — the force-push proceeds.)
-- **Never** use `POST /tasks/:id/unblock` on a task whose PR already merged — it resets the task to `pending` and it can be re-run. Set it to `deployed`/`done` instead.
+- **Unblock with a target:** if a task's PR already merged and you need to unblock it, use `POST /tasks/:id/unblock { to: "deployed" }` (or `released`) to avoid resetting to `pending`. Omitting the `to` target may reset to `pending` and trigger a re-run — use PATCH to set status directly if that's not desired.
 
 See also [Local cross-repo development](./local-platform-development.md) for how the platform bump works.

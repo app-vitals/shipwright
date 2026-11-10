@@ -1062,8 +1062,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Atomically unblock a task back to pending
-         * @description Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).
+         * Atomically unblock a task to pending, pr_open, merged, deployed or released
+         * @description Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.
          */
         post: {
             parameters: {
@@ -1074,7 +1074,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UnblockBody"];
+                };
+            };
             responses: {
                 /** @description Unblocked task */
                 200: {
@@ -1083,6 +1087,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Bad request — unknown `to`, or a non-pending `to` on a task with no `pr` */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
                 /** @description Unauthorized */
@@ -1112,7 +1125,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Conflict — task is not currently blocked */
+                /** @description Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -2855,6 +2868,13 @@ export interface components {
         SkipBody: {
             /** @example dev-task:deferred:unmet-hidden-requirement */
             reason?: string;
+        };
+        UnblockBody: {
+            /**
+             * @description Target status. Omit to infer from task.pr and the PR record (never deployed/released).
+             * @enum {string}
+             */
+            to?: "pending" | "pr_open" | "merged" | "deployed" | "released";
         };
         TaskEventsResponse: {
             /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
