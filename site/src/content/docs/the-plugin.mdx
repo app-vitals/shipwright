@@ -98,7 +98,6 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 
 | Skill | What it does |
 |-------|--------------|
-| `agent-admin` | Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins |
 | `investigate-cron` | Diagnose why a cron run behaved unexpectedly — finds the session transcript by cron name and time |
 | `learning-capture` | Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly |
 | `task-store` | Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks |
@@ -115,7 +114,7 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 The plugin lives at `plugins/shipwright/` in the repo and is structured around four directories:
 
 - **`commands/`** — every slash command listed above, as individual TypeScript files
-- **`skills/`** — autonomous behavior scripts (`agent-admin`, `entropy-scan`, `test-readiness`, and more)
+- **`skills/`** — autonomous behavior scripts (`entropy-scan`, `test-readiness`, and more)
 - **`scripts/`** — task-store adapters, `check-docs-freshness.ts`, and supporting tooling
 - **`references/`** — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`)
 

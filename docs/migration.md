@@ -149,7 +149,7 @@ are two callers of a single creation function, not two separate implementations.
 - **For humans**: no change — the web form at `/admin/agents/new` still works exactly as before
   and remains the friendlier path with guided UI for Slack/GitHub provisioning and credentials.
 - **For scripted/API callers**: you can now use `POST /agents` with a JSON body instead of
-  `POST /admin/agents` with a form body. See the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md)
+  `POST /admin/agents` with a form body. See the `agent-platform:agent-admin`
   skill for practical curl examples. Both paths work and use the same implementation — pick
   whichever suits your caller better.
 

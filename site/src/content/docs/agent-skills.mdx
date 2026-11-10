@@ -239,17 +239,6 @@ instead of auto-remediating it. Requires security-scan to have run first.
 General-purpose and diagnostic skills that don't belong to the delivery loop, the test-readiness
 pipeline, or the maintenance patrols.
 
-### agent-admin
-
-Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions,
-API tokens, and plugins. Use to configure the running agent, manage its schedules, inspect
-another agent's config, or provision a new agent. Its own `SKILL.md` explicitly scopes it out of
-the delivery loop: "For delivery pipeline work... use the task-store, dev-task, review, or deploy
-skills. This skill is for agent lifecycle management only."
-
-*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
-`/shipwright:agent-admin` command.
-
 ### investigate-cron
 
 Diagnose why a cron run behaved unexpectedly — looks up the exact run via the admin cron-runs
