@@ -18,6 +18,7 @@ import {
   createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
+  formatTaskBlockedReason,
   getCurrentUser,
   hasSelfApproveReview,
   isPrRecordBlockedForDispatch,
@@ -201,7 +202,12 @@ export async function getMergeCandidates(
           );
           continue;
         }
-        if (isTaskBlockedForDispatch(linkedTask)) continue;
+        if (isTaskBlockedForDispatch(linkedTask)) {
+          console.log(
+            `[check-merge] ${JSON.stringify({ repo, pr: pr.number, check: "task-blocked", hitl: linkedTask?.hitl, taskStatus: linkedTask?.status, taskIds: (linkedTask?.blockingTasks ?? []).map((t) => t.id), skipReason: formatTaskBlockedReason(linkedTask) })}`,
+          );
+          continue;
+        }
       }
 
       if (deps.isBundleComplete) {

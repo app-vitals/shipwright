@@ -2388,6 +2388,8 @@ describe("traceReviewCandidacyDecision", () => {
       check: "task-blocked",
       hitl: true,
       taskStatus: "pr_open",
+      taskIds: [],
+      skipReason: "task-blocked",
     });
   });
 
@@ -2398,6 +2400,27 @@ describe("traceReviewCandidacyDecision", () => {
       check: "task-blocked",
       hitl: false,
       taskStatus: "blocked",
+      taskIds: [],
+      skipReason: "task-blocked",
+    });
+  });
+
+  test("task-blocked: trace names the blocking task ids and skipReason (TLH-1.2)", () => {
+    const linkedTask: LinkedTaskInfo = {
+      status: "blocked",
+      hitl: true,
+      blockingTasks: [
+        { id: "T-1", status: "pr_open", hitl: true },
+        { id: "T-2", status: "blocked" },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ linkedTask }));
+    expect(trace).toEqual({
+      check: "task-blocked",
+      hitl: true,
+      taskStatus: "blocked",
+      taskIds: ["T-1", "T-2"],
+      skipReason: "task-blocked:T-1(hitl,status=pr_open),T-2(status=blocked)",
     });
   });
 
@@ -2999,6 +3022,8 @@ describe("traceReviewCandidacyDecision", () => {
       check: "task-blocked",
       hitl: true,
       taskStatus: "pr_open",
+      taskIds: [],
+      skipReason: "task-blocked",
     });
   });
 
@@ -3091,6 +3116,8 @@ describe("traceReviewCandidacyDecision", () => {
       check: "task-blocked",
       hitl: true,
       taskStatus: "blocked",
+      taskIds: [],
+      skipReason: "task-blocked",
     });
   });
 });

@@ -22,6 +22,7 @@ import {
   createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
+  formatTaskBlockedReason,
   hasAnyReviewAtHead,
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
@@ -1488,6 +1489,35 @@ describe("createTaskStatusQuery", () => {
   // isTaskBlockedForDispatch on the returned LinkedTaskInfo must be true if
   // ANY matched task is hitl:true or status:"blocked", regardless of which
   // position it appears in.
+
+  test("bundle: blockingTasks carries the ids of the hitl/blocked tasks only (TLH-1.2)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            { id: "T-1", title: "a", status: "pr_open", hitl: false },
+            { id: "T-2", title: "b", status: "pr_open", hitl: true },
+            { id: "T-3", title: "c", status: "blocked" },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result?.blockingTasks).toEqual([
+      { id: "T-2", status: "pr_open", hitl: true },
+      { id: "T-3", status: "blocked", hitl: undefined },
+    ]);
+    expect(formatTaskBlockedReason(result)).toBe(
+      "task-blocked:T-2(hitl,status=pr_open),T-3(status=blocked)",
+    );
+  });
+
+  test("formatTaskBlockedReason falls back to bare task-blocked without ids", () => {
+    expect(formatTaskBlockedReason(null)).toBe("task-blocked");
+    expect(formatTaskBlockedReason({ blockingTasks: [] })).toBe("task-blocked");
+  });
 
   test("bundle: only the SECOND of two matched tasks is hitl:true — result still reports hitl:true (OR across all matches)", async () => {
     const fakeFetch = (async () =>

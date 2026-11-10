@@ -36,7 +36,6 @@ import {
   isSelfCleanApprove,
 } from "../../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
-import { hasSelfApproveReview } from "./check-helpers.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
@@ -45,6 +44,8 @@ import {
   createPrRecordQuery,
   createPrSkipResetter,
   createTaskStatusQuery,
+  formatTaskBlockedReason,
+  hasSelfApproveReview,
   isMergeOnlyUpdate,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
@@ -688,7 +689,12 @@ export async function getPatchCandidates(
     // gate, an escalated/blocked PR whose CI stays red for the same
     // already-known reason gets re-selected as a candidate on every drain
     // tick, indefinitely, until a human clears the flag).
-    if (isTaskBlockedForDispatch(linkedTask)) continue;
+    if (isTaskBlockedForDispatch(linkedTask)) {
+      console.log(
+        `[check-patch] ${JSON.stringify({ repo: pr.repo, pr: pr.number, check: "task-blocked", hitl: linkedTask?.hitl, taskStatus: linkedTask?.status, taskIds: (linkedTask?.blockingTasks ?? []).map((t) => t.id), skipReason: formatTaskBlockedReason(linkedTask) })}`,
+      );
+      continue;
+    }
 
     if (deps.isBundleComplete) {
       const bundleComplete = await deps

@@ -900,6 +900,36 @@ export interface LinkedTaskInfo {
    * (CBD-2.2), before the PR ever reaches the loop orchestrator.
    */
   hitl?: boolean;
+  /**
+   * The linked tasks that contributed to a hitl/blocked signal (TLH-1.2), so
+   * a task-blocked skip can name the offending task ids instead of leaving a
+   * stale linked task invisible. Empty/absent when nothing gates the PR.
+   */
+  blockingTasks?: BlockingTaskRef[];
+}
+
+/** A linked task that gates its PR (hitl:true or status:"blocked"). */
+export interface BlockingTaskRef {
+  id: string;
+  status: TaskStatus;
+  hitl?: boolean;
+}
+
+/**
+ * Format the task-blocked skip reason, in the same `phase:reason:detail` style
+ * as the `review:deferred:...` skip-reasons, e.g.
+ * `task-blocked:TLH-1.2(hitl,status=pr_open),X-1(status=blocked)` (TLH-1.2).
+ * Falls back to the bare `task-blocked` when no contributing ids are known.
+ */
+export function formatTaskBlockedReason(
+  task: Pick<LinkedTaskInfo, "blockingTasks"> | null | undefined,
+): string {
+  const refs = task?.blockingTasks ?? [];
+  if (refs.length === 0) return "task-blocked";
+  const parts = refs.map(
+    (t) => `${t.id}(${t.hitl === true ? "hitl," : ""}status=${t.status})`,
+  );
+  return `task-blocked:${parts.join(",")}`;
 }
 
 /**
@@ -1081,6 +1111,9 @@ function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
   const primary = gating[0] ?? first;
   const anyBlockedStatus = gating.some((t) => t.status === "blocked");
   const anyHitl = gating.some((t) => t.hitl === true);
+  const blockingTasks = gating
+    .filter((t) => t.hitl === true || t.status === "blocked")
+    .map((t) => ({ id: t.id, status: t.status, hitl: t.hitl }));
   return {
     status:
       anyBlockedStatus && primary.status !== "blocked"
@@ -1091,6 +1124,7 @@ function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
     // (including undefined) unless a bundle-mate is hitl:true, in which case
     // the merged result must report hitl:true.
     hitl: anyHitl ? true : primary.hitl,
+    blockingTasks: blockingTasks.length > 0 ? blockingTasks : undefined,
   };
 }
 
