@@ -3578,6 +3578,300 @@
         "required": [
           "error"
         ]
+      },
+      "GithubEnterpriseStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "installer": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          },
+          "lookup": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          }
+        },
+        "required": [
+          "configured",
+          "installer",
+          "lookup"
+        ]
+      },
+      "GithubEnterpriseApp": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "example": "installer"
+          },
+          "appId": {
+            "type": "string",
+            "example": "12345"
+          },
+          "slug": {
+            "type": "string",
+            "example": "example-installer"
+          },
+          "enterpriseSlug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "acme"
+          },
+          "keySet": {
+            "type": "boolean",
+            "description": "True when a private key is stored. The key is never returned."
+          },
+          "lastValidationStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "valid"
+          },
+          "lastValidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastValidationError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "appId",
+          "slug",
+          "enterpriseSlug",
+          "keySet",
+          "lastValidationStatus",
+          "lastValidatedAt",
+          "lastValidationError",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PutGithubEnterpriseAppBody": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "example": "12345"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+            "example": "example-installer"
+          },
+          "enterpriseSlug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+            "description": "Required for the installer role.",
+            "example": "acme"
+          },
+          "privateKey": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PEM private key. Write-only: encrypted at rest, never returned."
+          }
+        },
+        "required": [
+          "appId",
+          "slug",
+          "privateKey"
+        ]
+      },
+      "GithubEnterpriseValidateResult": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "missing_permission",
+              "error"
+            ]
+          },
+          "requiredPermission": {
+            "type": "string"
+          },
+          "grantedPermissions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          }
+        },
+        "required": [
+          "role",
+          "ok",
+          "status",
+          "requiredPermission",
+          "grantedPermissions",
+          "error",
+          "app"
+        ]
+      },
+      "GithubEnterpriseOrgs": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "agentAppSlug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "login": {
+                  "type": "string"
+                },
+                "lookupAppInstalled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Null when no lookup App is configured."
+                },
+                "agentAppInstalled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Null when no agentId (or no slug) was given."
+                }
+              },
+              "required": [
+                "id",
+                "login",
+                "lookupAppInstalled",
+                "agentAppInstalled"
+              ]
+            }
+          }
+        },
+        "required": [
+          "configured",
+          "orgs"
+        ]
+      },
+      "GithubEnterpriseInstallResult": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "False when the App was already installed."
+          },
+          "installation": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "appSlug": {
+                "type": "string"
+              },
+              "accountLogin": {
+                "type": "string"
+              },
+              "repositorySelection": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "selected",
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "appSlug",
+              "accountLogin",
+              "repositorySelection"
+            ]
+          }
+        },
+        "required": [
+          "org",
+          "created",
+          "installation"
+        ]
+      },
+      "GithubEnterpriseInstallBody": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "example": "agent-id"
+          },
+          "repositorySelection": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "none"
+            ],
+            "default": "all"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "agentId"
+        ]
       }
     },
     "parameters": {}
@@ -7067,6 +7361,499 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps": {
+      "get": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "GitHub Enterprise App status",
+        "description": "Admin-only. Metadata and key-set flag per role; never the key. Returns configured=false with null roles when nothing is set.",
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps/{role}": {
+      "put": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Create or replace the App for a role",
+        "description": "Admin-only. Stores the App id, slug, enterprise slug (installer) and the encrypted private key, and resets validation state. 422 when SHIPWRIGHT_ENCRYPTION_KEY is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutGithubEnterpriseAppBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved (metadata only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid key, or encryption unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Remove the App for a role",
+        "description": "Admin-only. No-op when the role is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps/{role}/validate": {
+      "post": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Validate the App for a role",
+        "description": "Admin-only. Authenticates as the App and checks the required permission (installer: enterprise_organization_installations write; lookup: metadata read). The outcome is persisted and returned; GitHub failures are reported as status=error with a generic message.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseValidateResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Role not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/orgs": {
+      "get": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "List installable organizations",
+        "description": "Admin-only. Lists the enterprise's installable organizations, whether each has the lookup App installed, and (with agentId) whether each has that agent's App installed. Returns configured=false and no orgs when the installer App is not set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseOrgs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (or not found at GitHub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused or rejected by GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "GitHub refused the configured App credentials or permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "GitHub rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/orgs/{org}/install": {
+      "post": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Install an agent's App on an organization",
+        "description": "Admin-only. Resolves the agent's stored GH_APP_SLUG, looks the App up through the public GET /apps/{slug} to get its client id, and installs it on the org with the installer App. 422 for an agent with no slug and for a private App (not visible to the public lookup); 409 when the installer App is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+              "example": "example-org"
+            },
+            "required": true,
+            "name": "org",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubEnterpriseInstallBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Installed (or already installed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseInstallResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (or not found at GitHub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Installer App not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused or rejected by GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "GitHub refused the configured App credentials or permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "GitHub rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
