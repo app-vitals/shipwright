@@ -100,7 +100,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
 
     expect(third.skipCount).toBe(3);
     expect(third.status).toBe("blocked");
-    expect(third.hitl).toBe(false);
+    expect(third.hitl).not.toBe(true);
     expect(third.blockedReason).toBeTruthy();
     expect(third.blockedReason).toContain("3");
   });
@@ -285,7 +285,7 @@ describeOrSkip("TaskService.recordSkip() reason-aware streak (SRB-1.1)", () => {
 
     expect(third.skipCount).toBe(3);
     expect(third.status).toBe("blocked");
-    expect(third.hitl).toBe(false);
+    expect(third.hitl).not.toBe(true);
     expect(third.blockedReason).toContain("3");
     expect(third.blockedReason).toContain(
       "dev-task:deferred:unmet-hidden-requirement",

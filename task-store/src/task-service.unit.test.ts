@@ -3228,7 +3228,7 @@ describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
 
     expect(updateData[0]?.skipCount).toEqual({ increment: 1 });
     expect(updateData[0]?.status).toBe("blocked");
-    expect(updateData[0]?.hitl).toBe(true);
+    expect(updateData[0]?.hitl).toBeUndefined();
     expect(updateData[0]?.blockedReason).toContain("reason-a");
     expect(updated.skipCount).toBe(3);
   });

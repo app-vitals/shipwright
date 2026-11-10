@@ -109,7 +109,7 @@ model Task {
   // skipCount increments each time the loop orchestrator dispatches this task
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
   // mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts)
-  // auto-sets hitl+blockedReason so the task stops being re-selected forever.
+  // auto-sets status=blocked + blockedReason so the task stops being re-selected forever.
   skipCount     Int     @default(0)
   lastSkippedAt String?
   // lastSkipReason records the skip-reason text ([skip-reason:...] marker, or
