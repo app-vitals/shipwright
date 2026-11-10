@@ -8,7 +8,7 @@ Scheduling and execution-history endpoints for the [Agent Admin API](./agent-api
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
-**Full endpoint reference** — every route, parameter, request/response shape, and status code — lives in the generated [`admin/openapi.json`](../admin/openapi.json) spec. **Practical usage** lives in the `agent-platform:agent-admin` skill.
+**Full endpoint reference** — every route, parameter, request/response shape, and status code — lives in the generated [`admin/openapi.json`](../admin/openapi.json) spec. **Practical usage** lives in the [`agent-admin`](https://github.com/app-vitals/shipwright/blob/main/plugins/shipwright/skills/agent-admin/SKILL.md) skill.
 
 This page covers only behavioral nuance the spec doesn't carry.
 
