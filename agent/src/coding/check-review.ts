@@ -47,6 +47,7 @@ import {
   createPrRecordQuery,
   createPrSkipResetter,
   createTaskStatusQuery,
+  formatTaskBlockedReason,
   getCurrentUser,
   ghGraphql as ghGraphqlDefault,
   hasAnyReviewAtHead,
@@ -233,7 +234,13 @@ export type ReviewCandidacyTrace =
       classifiedState: "approved" | "posted" | null;
       hasFreshAuthorReply: boolean;
     }
-  | { check: "task-blocked"; hitl?: boolean; taskStatus?: string }
+  | {
+      check: "task-blocked";
+      hitl?: boolean;
+      taskStatus?: string;
+      taskIds: string[];
+      skipReason: string;
+    }
   | { check: "bundle-incomplete"; branch: string }
   | { check: "claimed"; claimedBy: string }
   | { check: "pr-record-blocked" }
@@ -350,6 +357,8 @@ export function traceReviewCandidacyDecision(args: {
       check: "task-blocked",
       hitl: linkedTask?.hitl,
       taskStatus: linkedTask?.status,
+      taskIds: (linkedTask?.blockingTasks ?? []).map((t) => t.id),
+      skipReason: formatTaskBlockedReason(linkedTask),
     };
   }
 

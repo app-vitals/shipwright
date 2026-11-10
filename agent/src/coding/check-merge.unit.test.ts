@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CiRun, GhPr, GhReview } from "./check-merge.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
+import type { CiRun, GhPr, GhReview } from "./check-merge.ts";
 import {
   type CheckMergeDeps,
   getMergeCandidates,
@@ -139,6 +139,31 @@ describe("getMergeCandidates", () => {
   test("excludes PRs whose linked task is blocked", async () => {
     const deps = makeDeps({ task: { status: "blocked" } });
     expect(await getMergeCandidates(deps)).toEqual([]);
+  });
+
+  test("logs the blocking task ids and skipReason when excluding a task-blocked PR (TLH-1.2)", async () => {
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => {
+      logs.push(a.join(" "));
+    };
+    try {
+      const deps = makeDeps({
+        task: {
+          status: "pr_open",
+          hitl: true,
+          blockingTasks: [{ id: "T-9", status: "pr_open", hitl: true }],
+        },
+      });
+      await getMergeCandidates(deps);
+    } finally {
+      console.log = orig;
+    }
+    const line = logs.find((l) => l.startsWith("[check-merge]"));
+    expect(line).toContain('"taskIds":["T-9"]');
+    expect(line).toContain(
+      '"skipReason":"task-blocked:T-9(hitl,status=pr_open)"',
+    );
   });
 
   test("excludes PRs whose linked task is hitl:true while pr_open", async () => {

@@ -1110,6 +1110,31 @@ describe("getPatchCandidates", () => {
     expect(result).toHaveLength(0);
   });
 
+  test("logs the blocking task ids and skipReason when excluding a task-blocked PR (TLH-1.2)", async () => {
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => {
+      logs.push(a.join(" "));
+    };
+    try {
+      const deps = makeDeps({
+        ownPrs: [makeOwnPr({ number: 10 })],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+      });
+      deps.queryTaskStatus = async () => ({
+        status: "blocked",
+        blockingTasks: [{ id: "T-9", status: "blocked" }],
+      });
+      await getPatchCandidates(deps);
+    } finally {
+      console.log = orig;
+    }
+    const line = logs.find((l) => l.startsWith("[check-patch]"));
+    expect(line).toContain('"taskIds":["T-9"]');
+    expect(line).toContain('"skipReason":"task-blocked:T-9(status=blocked)"');
+  });
+
   test("a PR is still an eligible candidate when the linked task has hitl:false or no linked task exists", async () => {
     const pr = makeOwnPr({ number: 10 });
     const deps = makeDeps({
