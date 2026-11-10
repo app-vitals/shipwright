@@ -27,6 +27,7 @@ import {
   parseAdminApiKeys,
 } from "@app-vitals/agent-admin/agents-api";
 import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { adminExtensions } from "./main.ts";
 
@@ -466,6 +467,19 @@ function buildSpecApp() {
   const root = new OpenAPIHono();
   root.route("/agents", runtimeApp);
   root.route("/", adminApp);
+  // The /github-enterprise routes live in their own app, mounted at the root
+  // by the platform's admin-boot (agent-admin >= 1.14.0).
+  root.route(
+    "/",
+    createGithubEnterpriseApp({
+      appService: {} as never,
+      agentService: {} as never,
+      agentEnvService: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+    }),
+  );
   root.doc("/doc", {
     openapi: "3.1.0",
     info: { title: "Shipwright Admin API", version: "0.1.0" },
