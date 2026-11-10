@@ -161,9 +161,10 @@ Work through these in order:
 3. **Find the exact item.** Cron Logs rows show a **Phase** (which of the five phases ran) and
    an **Item** badge (the exact Task/PR dispatched). Filter/scan by Item rather than trying to
    line up timestamps.
-4. **Ask the agent to investigate.** Use `/shipwright:investigate-cron` (a dedicated tool) with
-   a cron name + approximate time, or a specific PR/task id — it reads the underlying session
-   transcript and explains what happened in plain language, no raw log access needed.
+4. **Ask the agent to investigate.** For a specific PR/task id, use `/shipwright:investigate-stuck` — it checks the work
+   queue, task-store and live GitHub state, then reads the underlying session transcripts and explains
+   what happened in plain language. For a cron by name + approximate time, use
+   `agent-platform:investigate-cron`. No raw log access needed.
 5. **Cross-check the work queue.** Admin console → agent detail → **Work Queue** shows the
    agent's self-reported ranked queue across all five phases, with age — useful for seeing
    what the agent thinks is next versus what actually ran.
