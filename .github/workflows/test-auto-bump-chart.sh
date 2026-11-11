@@ -578,6 +578,167 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Transient-error merge retry (mirrors the same step's merge loop)
+#
+# On 2026-11-09 a transient GitHub GraphQL error ("Something went wrong while
+# executing your query") made the loop give up on attempt 1, leaving the bump
+# PR open. Transient GitHub errors are now retried alongside the stale-base
+# race, and after the last attempt the PR state is re-read — a MERGED PR means
+# the merge landed despite the errored response. Everything else fails fast.
+# ---------------------------------------------------------------------------
+
+# Mirrors the functions of the same names inlined in auto-bump-chart.yml's
+# "Wait for checks and merge" step. Keep both copies in sync.
+is_transient_github_error() {
+  local output="$1"
+  if echo "$output" | grep -qiE "Something went wrong while executing your query|HTTP 5[0-9]{2}|Bad Gateway|Service Unavailable|Gateway Time-?out|Internal Server Error"; then
+    return 0
+  fi
+  return 1
+}
+
+is_retryable_merge_error() {
+  is_stale_base_error "$1" || is_transient_github_error "$1"
+}
+
+merge_with_retry() {
+  local max_attempts="$1" attempt merge_output
+  for attempt in $(seq 1 "$max_attempts"); do
+    merge_output=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
+      echo "$merge_output"
+      echo "Merged ${PR_URL}."
+      return 0
+    }
+
+    echo "$merge_output" >&2
+
+    if ! is_retryable_merge_error "$merge_output"; then
+      # A retry after an earlier transient error whose merge landed fails
+      # with a non-transient "already merged" message — re-read the PR state
+      # before giving up.
+      if [ "$attempt" -gt 1 ] && [ "$(gh pr view "$PR_URL" --json state -q .state 2>/dev/null)" = "MERGED" ]; then
+        echo "Merge retry failed but ${PR_URL} is MERGED — treating as success."
+        return 0
+      fi
+      echo "Merge failed on attempt ${attempt}/${max_attempts} — not retrying (not a stale-base or transient GitHub error)."
+      return 1
+    fi
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      echo "Retryable merge error (attempt ${attempt}/${max_attempts}) — retrying in $((attempt * 5))s..."
+      sleep $((attempt * 5))
+    fi
+  done
+
+  if [ "$(gh pr view "$PR_URL" --json state -q .state 2>/dev/null)" = "MERGED" ]; then
+    echo "Merge call failed but ${PR_URL} is MERGED — treating as success."
+    return 0
+  fi
+  echo "Merge failed after ${max_attempts} attempts." >&2
+  return 1
+}
+
+echo ""
+echo "=== is_transient_github_error tests ==="
+
+GQL_ERR="GraphQL: Something went wrong while executing your query. Please include ABCD:1234 when reporting this issue. (mergePullRequest)"
+if is_transient_github_error "$GQL_ERR"; then
+  pass "transient GraphQL 'Something went wrong' error → true"
+else
+  fail "transient GraphQL 'Something went wrong' error → true" "true (match)" "false (no match)"
+fi
+
+for code in 500 502 503 504; do
+  if is_transient_github_error "HTTP ${code}: Server Error (https://api.github.com/graphql)"; then
+    pass "HTTP ${code} → true"
+  else
+    fail "HTTP ${code} → true" "true (match)" "false (no match)"
+  fi
+done
+
+for msg in "GraphQL: the base branch policy prohibits the merge (mergePullRequest)" \
+           "GraphQL: Pull Request is not mergeable (mergePullRequest)" \
+           "HTTP 401: Bad credentials (https://api.github.com/graphql)" \
+           "failed to merge pull request #5021" \
+           ""; do
+  if is_transient_github_error "$msg"; then
+    fail "non-transient '${msg}' → false" "false (no match)" "true (match)"
+  else
+    pass "non-transient '${msg}' → false"
+  fi
+done
+
+echo ""
+echo "=== merge_with_retry tests ==="
+
+PR_URL="https://github.com/o/r/pull/1"
+sleep() { :; }  # no real backoff in tests
+GH_CALLS_FILE=$(mktemp)  # call counter lives in a file: gh runs inside $(...) subshells
+GH_MERGE_OUTPUTS=()      # per-call output; an "OK" entry means success
+GH_PR_STATE="OPEN"
+
+# Stub for the gh CLI: `pr merge` replays GH_MERGE_OUTPUTS (last entry repeats),
+# `pr view` prints GH_PR_STATE.
+gh() {
+  if [[ "$1 $2" == "pr merge" ]]; then
+    local n; n=$(cat "$GH_CALLS_FILE")
+    echo $(( n + 1 )) > "$GH_CALLS_FILE"
+    local last=$(( ${#GH_MERGE_OUTPUTS[@]} - 1 ))
+    local out="${GH_MERGE_OUTPUTS[$(( n < last ? n : last ))]}"
+    [[ "$out" == "OK" ]] && return 0
+    echo "$out"
+    return 1
+  fi
+  [[ "$1 $2" == "pr view" ]] && { echo "$GH_PR_STATE"; return 0; }
+  return 1
+}
+
+run_merge() {  # run_merge <state> <outputs...>; sets MERGE_RC and GH_MERGE_CALLS
+  GH_PR_STATE="$1"; shift
+  GH_MERGE_OUTPUTS=("$@")
+  echo 0 > "$GH_CALLS_FILE"
+  MERGE_RC=0
+  merge_with_retry 3 >/dev/null 2>&1 || MERGE_RC=$?
+  GH_MERGE_CALLS=$(cat "$GH_CALLS_FILE")
+}
+
+run_merge OPEN "$GQL_ERR" "OK"
+assert_eq "transient GraphQL error is retried and then succeeds (rc)" "0" "$MERGE_RC"
+assert_eq "transient GraphQL error is retried and then succeeds (calls)" "2" "$GH_MERGE_CALLS"
+
+run_merge OPEN "HTTP 502: Bad Gateway" "HTTP 503: Service Unavailable" "OK"
+assert_eq "5xx responses are retried until success (rc)" "0" "$MERGE_RC"
+assert_eq "5xx responses are retried until success (calls)" "3" "$GH_MERGE_CALLS"
+
+run_merge OPEN "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)" "OK"
+assert_eq "stale-base error is still retried (calls)" "2" "$GH_MERGE_CALLS"
+
+run_merge MERGED "$GQL_ERR"
+assert_eq "already-MERGED after exhausted attempts is success (rc)" "0" "$MERGE_RC"
+assert_eq "already-MERGED after exhausted attempts uses all attempts" "3" "$GH_MERGE_CALLS"
+
+run_merge OPEN "$GQL_ERR"
+assert_eq "transient error persisting with PR still OPEN fails (rc)" "1" "$MERGE_RC"
+assert_eq "transient error persisting uses all attempts" "3" "$GH_MERGE_CALLS"
+
+run_merge OPEN "GraphQL: the base branch policy prohibits the merge (mergePullRequest)"
+assert_eq "non-transient error fails (rc)" "1" "$MERGE_RC"
+assert_eq "non-transient error is not retried" "1" "$GH_MERGE_CALLS"
+
+run_merge MERGED "$GQL_ERR" "GraphQL: Pull request Pull Request is already merged (mergePullRequest)"
+assert_eq "transient error that landed the merge then 'already merged' on retry is success (rc)" "0" "$MERGE_RC"
+assert_eq "transient-then-already-merged stops retrying" "2" "$GH_MERGE_CALLS"
+
+run_merge OPEN "$GQL_ERR" "GraphQL: the base branch policy prohibits the merge (mergePullRequest)"
+assert_eq "transient then non-transient error with PR still OPEN fails (rc)" "1" "$MERGE_RC"
+
+run_merge MERGED "HTTP 401: Bad credentials"
+assert_eq "non-transient error on attempt 1 fails even if state is MERGED (no re-check)" "1" "$MERGE_RC"
+
+unset -f sleep gh
+rm -f "$GH_CALLS_FILE"
+
+# ---------------------------------------------------------------------------
 # Required-check failure retry logic (mirrors the "Wait for checks and
 # merge" step's checks-watch retry)
 #
