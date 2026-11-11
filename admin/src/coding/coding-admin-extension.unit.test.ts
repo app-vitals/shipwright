@@ -197,3 +197,28 @@ describe("taskStoreServiceIntegration", () => {
     expect(NoopTaskStoreProvisioningClient).toBeDefined();
   });
 });
+
+describe("codingAdminExtension open-work port (GHE-3.6)", () => {
+  it("supplies the open-work seam when the task-store is configured", () => {
+    const configured = {
+      ...ctx,
+      env: {
+        SHIPWRIGHT_TASK_STORE_URL: "http://task-store.test",
+        SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin-token",
+      },
+    } as unknown as AdminExtensionContext;
+    const { openWork } = resolveAdminExtensions(
+      [codingAdminExtension],
+      configured,
+    );
+    expect(typeof openWork?.listOpenWork).toBe("function");
+    expect(typeof openWork?.blockOpenWork).toBe("function");
+  });
+
+  it("supplies no open-work port without a task-store configuration, or without the extension", () => {
+    expect(
+      resolveAdminExtensions([codingAdminExtension], ctx).openWork,
+    ).toBeUndefined();
+    expect(resolveAdminExtensions([], ctx).openWork).toBeUndefined();
+  });
+});
