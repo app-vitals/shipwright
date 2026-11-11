@@ -209,3 +209,9 @@ GHE-1.11 and GHE-1.12 share the branch `feat/ghe-settings-cards-guidance`. GHE-2
 
 ### Breaking change safety
 All additive: a new fallback in install, warnings alongside the existing validate result, new page copy and an optional upload. Safe to deploy standalone: yes, for every task.
+
+### Addendum: GHE-2.7 finding (2026-11-11)
+
+The live access-preview check passed for admin and push-capable levels, and showed partial-results with "lookup app not installed" when the lookup app was uninstalled. It also showed a gap: with the lookup app installed on **selected repositories only**, the preview silently lists just those repos with no warning, so it looks complete. The doc requires all repositories, but nothing enforces or flags it.
+
+**GHE-2.8** (app-vitals/agent, API + Frontend, no dependencies, 3 / sonnet, 3h): when the lookup app's installation on an org has `repository_selection: "selected"`, the resolver marks that org partial with a reason, and the preview shows it in the existing partial-results banner; the lookup card guidance gains one line saying all repositories are required. Additive; an `all` installation is unchanged. Tests: resolver unit test and integration cassette for a selected installation, plus a preview page assertion; nothing retired. Unverified before the task starts: that the call the resolver makes returns `repository_selection` for the lookup app's own installation, and the exact preview wording.
