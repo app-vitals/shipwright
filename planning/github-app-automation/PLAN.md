@@ -196,14 +196,14 @@ Scope: polish and gaps found while configuring both apps on a real enterprise an
 - **No release gate task.** Releases move quickly; the HITL task's first step is the pin check, as in GHE-2.7.
 
 ### Tasks
-| ID | Repo | Title | Layer | Depends | Cx / model | Hrs |
-|----|------|-------|-------|---------|------------|-----|
-| GHE-1.9 | app-vitals/agent | feat: install and check-agent prefer the agent's stored GH_APP_CLIENT_ID | API | — | 3 / sonnet | 3 |
-| GHE-1.10 | app-vitals/agent | feat: specific validate errors and permission warnings for both apps | API | — | 3 / sonnet | 4 |
-| GHE-1.11 | app-vitals/agent | feat: add enterprise-required notice, setup steps and field guidance to the settings cards | Frontend | GHE-1.10 | 3 / sonnet | 4 |
-| GHE-1.12 | app-vitals/agent | feat: accept a .pem file upload on the key field | Frontend | GHE-1.11 | 3 / sonnet | 3 |
-| GHE-1.13 | app-vitals/agent | docs: update enterprise apps doc for both permissions, setup and the installations-card prerequisite | Shared | GHE-1.9, GHE-1.12 | 2 / haiku | 2 |
-| GHE-1.14 | app-vitals/shipwright | chore: verify private-app install via stored client id and the installations card (HITL) | Shared | GHE-1.13 | 2 / sonnet | 2 |
+| ID | Repo | Title | Layer | Deps | Cx / model | Hrs | HITL |
+|---|---|---|---|---|---|---|---|
+| GHE-1.9 | app-vitals/agent | feat: install and check-agent prefer the agent's stored GH_APP_CLIENT_ID | API | — | 3 / sonnet | 3 |  |
+| GHE-1.10 | app-vitals/agent | feat: specific validate errors and permission warnings for both apps | API | — | 3 / sonnet | 4 |  |
+| GHE-1.11 | app-vitals/agent | feat: add enterprise-required notice, setup steps and field guidance to the settings cards | Frontend | GHE-1.10 | 3 / sonnet | 4 |  |
+| GHE-1.12 | app-vitals/agent | feat: accept a .pem file upload on the key field | Frontend | GHE-1.11 | 3 / sonnet | 3 |  |
+| GHE-1.13 | app-vitals/agent | docs: update enterprise apps doc for both permissions, setup and the installations-card prerequisite | Shared | GHE-1.9, GHE-1.12 | 2 / haiku | 2 |  |
+| GHE-1.14 | app-vitals/shipwright | chore: verify private-app install via stored client id and the installations card (HITL) | Shared | GHE-1.13 | 2 / sonnet | 2 | HITL |
 
 GHE-1.11 and GHE-1.12 share the branch `feat/ghe-settings-cards-guidance`. GHE-2.7 is unaffected; its prerequisite GHE-1.8 is done.
 
