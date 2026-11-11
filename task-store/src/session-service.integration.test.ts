@@ -944,3 +944,171 @@ describeOrSkip("SessionService.update() (integration)", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── Cross-session dependencies (RCD-1.1) ───────────────────────────────────
+
+describeOrSkip(
+  "SessionService cross-session dependency resolution (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let taskService: TaskService;
+    let sessionService: SessionService;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      taskService = new TaskService(prisma);
+      sessionService = new SessionService(prisma);
+      await prisma.taskEvent.deleteMany();
+      await prisma.task.deleteMany();
+      await prisma.session.deleteMany();
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    /** Wrap prisma so task.findMany calls are counted (no global mocks). */
+    function countingService(): {
+      service: SessionService;
+      calls: () => number;
+    } {
+      let count = 0;
+      const taskProxy = new Proxy(prisma.task, {
+        get(target, prop, receiver) {
+          const value = Reflect.get(target, prop, receiver);
+          if (prop !== "findMany") {
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+          return (...args: unknown[]) => {
+            count++;
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        },
+      });
+      const proxied = new Proxy(prisma, {
+        get(target, prop, receiver) {
+          if (prop === "task") return taskProxy;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PrismaClient;
+      return { service: new SessionService(proxied), calls: () => count };
+    }
+
+    async function seed(depStatus: "done" | "pending"): Promise<void> {
+      await taskService.create({
+        id: "rcd-dep",
+        title: "dep in session A",
+        status: depStatus,
+        session: "rcd-a",
+      });
+      await taskService.create({
+        id: "rcd-gated",
+        title: "hitl task in session B",
+        status: "pending",
+        hitl: true,
+        dependencies: ["rcd-dep"],
+        session: "rcd-b",
+      });
+    }
+
+    it("get() reports a hitl task waiting when its cross-session dependency is closed", async () => {
+      await seed("done");
+      const result = await sessionService.get("rcd-b");
+      expect(result?.state).toBe("waiting");
+      expect(result?.waitingTasks).toEqual([{ id: "rcd-gated", kind: "hitl" }]);
+      // External dep is never counted.
+      expect(result?.counts).toEqual({ total: 1, open: 1, closed: 0 });
+    });
+
+    it("list() reports a hitl task waiting when its cross-session dependency is closed", async () => {
+      await seed("done");
+      const result = await sessionService.list({ state: "all" });
+      const b = result.sessions.find((s) => s.slug === "rcd-b");
+      expect(b?.state).toBe("waiting");
+      expect(b?.waitingTasks).toEqual([{ id: "rcd-gated", kind: "hitl" }]);
+      expect(b?.counts).toEqual({ total: 1, open: 1, closed: 0 });
+    });
+
+    it("an open cross-session dependency suppresses waiting in get() and list()", async () => {
+      await seed("pending");
+      const got = await sessionService.get("rcd-b");
+      expect(got?.waitingTasks).toEqual([]);
+      expect(got?.state).toBe("active");
+
+      const listed = await sessionService.list({ state: "all" });
+      const b = listed.sessions.find((s) => s.slug === "rcd-b");
+      expect(b?.waitingTasks).toEqual([]);
+      expect(b?.state).toBe("active");
+    });
+
+    it("a dependency id that does not exist stays unmet", async () => {
+      await taskService.create({
+        id: "rcd-orphan",
+        title: "gated on a missing task",
+        status: "pending",
+        hitl: true,
+        dependencies: ["no-such-task"],
+        session: "rcd-b",
+      });
+      const got = await sessionService.get("rcd-b");
+      expect(got?.waitingTasks).toEqual([]);
+    });
+
+    it("does not resolve a dependency from another account", async () => {
+      await taskService.create({
+        id: "rcd-other-acct-dep",
+        title: "closed dep in account B",
+        status: "done",
+        session: "rcd-a",
+        accountId: "acct-b",
+      });
+      await taskService.create({
+        id: "rcd-acct-a-gated",
+        title: "hitl task in account A",
+        status: "pending",
+        hitl: true,
+        dependencies: ["rcd-other-acct-dep"],
+        session: "rcd-b",
+        accountId: "acct-a",
+      });
+
+      const got = await sessionService.get("rcd-b", undefined, "acct-a");
+      expect(got?.waitingTasks).toEqual([]);
+
+      const listed = await sessionService.list({ state: "all" });
+      const a = listed.sessions.find(
+        (s) => s.accountId === "acct-a" && s.slug === "rcd-b",
+      );
+      expect(a?.waitingTasks).toEqual([]);
+    });
+
+    it("list() fetches external dependencies with one batched query", async () => {
+      await seed("done");
+      await taskService.create({
+        id: "rcd-gated-2",
+        title: "another hitl task in session C",
+        status: "pending",
+        hitl: true,
+        dependencies: ["rcd-dep"],
+        session: "rcd-c",
+      });
+      const { service, calls } = countingService();
+      await service.list({ state: "all" });
+      // One findMany for session tasks + one for all external dependencies.
+      expect(calls()).toBe(2);
+    });
+
+    it("skips the external query when there are no cross-session dependencies", async () => {
+      await taskService.create({
+        id: "rcd-solo",
+        title: "no deps",
+        status: "pending",
+        session: "rcd-a",
+      });
+      const { service, calls } = countingService();
+      await service.list({ state: "all" });
+      expect(calls()).toBe(1);
+    });
+  },
+);

@@ -1,7 +1,7 @@
 /**
  * task-store/src/session-rollup.ts
  *
- * Pure helper: computeSessionRollup(tasks, prBlockedSet, clock, session?) →
+ * Pure helper: computeSessionRollup(tasks, prBlockedSet, clock, session?, externalTasks?) →
  * SessionRollup
  *
  * Summarizes a session's task set into a single rollup: overall state,
@@ -18,6 +18,16 @@
  * 3-arg call shape) means "not archived"; passing `{ archivedAt }` satisfies
  * AC3. `archived` is computed independently of `state`, so both are always
  * reportable together — including for an empty task list.
+ *
+ * ─── Cross-session dependencies ─────────────────────────────────────────────
+ * A task's `dependencies` may name tasks in a different session. Since
+ * `tasks` holds only this session's rows, such deps would resolve as
+ * "unknown" (never satisfied) and a hitl task gated on a closed cross-session
+ * dep would never count as waiting. `externalTasks` (5th, OPTIONAL param) is
+ * the set of out-of-session tasks the caller fetched for those dependency
+ * ids. It is used ONLY for dependency resolution in the waiting
+ * classification; counts, state, agentIds, repos and lastActivityAt remain
+ * derived from `tasks` alone. Ids absent from both sets stay unmet.
  *
  * ─── Waiting definition (reuses computeBlockedBy semantics) ────────────────
  * A task counts as "waiting" when, among its open (non-terminal) tasks:
@@ -109,7 +119,7 @@ function isArchived(session?: SessionRollupSessionLike): boolean {
  */
 function classifyWaiting(
   task: SessionRollupTaskLike,
-  allTasks: SessionRollupTaskLike[],
+  dependencyPool: SessionRollupTaskLike[],
   prBlockedSet: Set<number>,
 ): WaitingKind | null {
   if (task.status === "blocked") {
@@ -121,7 +131,7 @@ function classifyWaiting(
   }
 
   if (task.hitl === true) {
-    const blockedBy = computeBlockedBy(task, allTasks);
+    const blockedBy = computeBlockedBy(task, dependencyPool);
     const hasUnmetDependency = blockedBy.some(
       (entry) => entry.type === "dependency",
     );
@@ -144,12 +154,16 @@ function classifyWaiting(
  *                       fields; current fields are all derived from task
  *                       timestamps, not wall-clock time).
  * @param session       Optional session metadata, used only for `archived`.
+ * @param externalTasks Optional tasks from OTHER sessions, used only to
+ *                       resolve cross-session dependencies when classifying
+ *                       "waiting". Never counted in any other field.
  */
 export function computeSessionRollup(
   tasks: SessionRollupTaskLike[],
   prBlockedSet: Set<number>,
   clock: Clock,
   session?: SessionRollupSessionLike,
+  externalTasks: SessionRollupTaskLike[] = [],
 ): SessionRollup {
   void clock;
   const archived = isArchived(session);
@@ -170,9 +184,11 @@ export function computeSessionRollup(
   const openTasks = tasks.filter((t) => !CLOSED_STATUS_SET.has(t.status));
   const closedCount = tasks.length - openTasks.length;
 
+  const dependencyPool =
+    externalTasks.length > 0 ? [...tasks, ...externalTasks] : tasks;
   const waitingTasks: WaitingTaskEntry[] = [];
   for (const task of openTasks) {
-    const kind = classifyWaiting(task, tasks, prBlockedSet);
+    const kind = classifyWaiting(task, dependencyPool, prBlockedSet);
     if (kind) {
       waitingTasks.push({ id: task.id, kind });
     }
