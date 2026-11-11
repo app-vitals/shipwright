@@ -453,7 +453,7 @@ test.describe("Dashboard — page load", () => {
     const panels = page.locator(
       '[aria-label="Pipeline quality"] .quality-panel',
     );
-    await expect(panels).toHaveCount(4);
+    await expect(panels).toHaveCount(5);
   });
 
   test("renders efficiency stats section", async ({ page }) => {

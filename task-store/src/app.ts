@@ -13,28 +13,43 @@
  *   * /*               — bearer auth middleware (everything else)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
+ *   * /verification-checks/* — record/list structured per-check verification outcomes
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
 
-import { sentry } from "@sentry/hono/bun";
-import { callerLabel } from "@shipwright/lib/request-context";
+import { hostname } from "node:os";
+import {
+  currentRouteContext,
+  isPoolTimeoutError,
+  type PoolLike,
+  poolErrorContext,
+  routeContextMiddleware,
+} from "@app-vitals/agent-lib/pool-observability";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
 import {
   buildSentryInitOptions,
   type ErrorCapturingClient,
-} from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/sentry";
+import { sentry } from "@sentry/hono/bun";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createBearerAuthMiddleware, type TaskStoreAuthEnv } from "./auth.ts";
+import {
+  createBearerAuthMiddleware,
+  type ScopeResolver,
+  type TaskStoreAuthEnv,
+} from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { VerificationCheckServiceLike } from "./verification-check-service.ts";
 
 /** No-op PullRequestService used when the feature is not wired up in a test context. */
 const noopPrService: PullRequestServiceLike = {
@@ -68,6 +83,9 @@ const noopPrService: PullRequestServiceLike = {
   async resetSkip(_id) {
     return {} as never;
   },
+  async unblock(_id) {
+    return {} as never;
+  },
   async claimNext(_agentId, _maxConcurrent, _repos?) {
     return null;
   },
@@ -80,7 +98,7 @@ const noopPrService: PullRequestServiceLike = {
   async lookupBlockedPrNumbers(_pairs) {
     return new Set();
   },
-  async stampOrigin(_repo, _prNumber, _data, _client?) {
+  async stampOrigin(_repo, _prNumber, _data, _client?, _accountId?) {
     return {} as never;
   },
   async census(_entries) {
@@ -91,13 +109,30 @@ const noopPrService: PullRequestServiceLike = {
   },
 };
 
+/** No-op VerificationCheckService used when the feature is not wired up in a test context. */
+const noopVerificationCheckService: VerificationCheckServiceLike = {
+  async record(_data) {
+    return {} as never;
+  },
+  async listForTask(_taskId, _opts?) {
+    return { checks: [], total: 0 };
+  },
+  async listForPr(_prId, _opts?) {
+    return { checks: [], total: 0 };
+  },
+  async listByRepoAndCheck(_repo, _checkName, _opts?) {
+    return { checks: [], total: 0 };
+  },
+};
+
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
+  verificationCheckService?: VerificationCheckServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
-  scopeResolver?: (agentId: string) => Promise<string[]>;
+  scopeResolver?: ScopeResolver;
   /**
    * Optional Sentry client for reporting unhandled errors. Undefined means
    * Sentry is not initialized (SENTRY_DSN unset) — onError simply skips the
@@ -113,6 +148,34 @@ export interface TaskStoreDeps {
    * inject it are unaffected.
    */
   checkDbReady?: () => Promise<boolean>;
+  /**
+   * Optional pg pool. When present, pool-timeout errors captured in onError
+   * carry pool stats (`pg_pool` context) plus `route` / `server_name` tags.
+   */
+  pool?: PoolLike;
+}
+
+/**
+ * Reports an unhandled error to Sentry. Pool-timeout errors additionally carry
+ * pool stats and route/server_name tags; all other errors are captured as-is.
+ */
+function captureUnhandled(deps: TaskStoreDeps, err: unknown): void {
+  const client = deps.sentryClient;
+  if (!client) return;
+  if (!deps.pool || !client.withScope || !isPoolTimeoutError(err)) {
+    client.captureException(err);
+    return;
+  }
+  const pool = deps.pool;
+  const route = currentRouteContext();
+  // The callback runs synchronously up to its first await, so the capture
+  // happens before onError returns.
+  void client.withScope(async (scope) => {
+    scope.setContext?.("pg_pool", poolErrorContext(pool));
+    if (route) scope.setTag("route", `${route.method} ${route.route}`);
+    scope.setTag("server_name", hostname());
+    client.captureException(err);
+  });
 }
 
 export function createTaskStoreApp(
@@ -132,6 +195,10 @@ export function createTaskStoreApp(
     app.use("*", sentry(app, sentryInitOptions));
   }
 
+  // Records method + matched route per request (AsyncLocalStorage) so pool
+  // holds and pool-timeout errors can be attributed to a route.
+  app.use("*", routeContextMiddleware());
+
   // Map typed errors to responses; everything else is a 500.
   app.onError((err, c) => {
     if (err instanceof ApiError) {
@@ -147,7 +214,7 @@ export function createTaskStoreApp(
     if (err instanceof HTTPException && err.status < 500) {
       return c.json({ error: err.message }, err.status as 400);
     }
-    deps.sentryClient?.captureException(err);
+    captureUnhandled(deps, err);
     console.error(
       `[task-store] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
       err,
@@ -186,6 +253,12 @@ export function createTaskStoreApp(
   app.route("/tokens", createTokensRoutes(deps.tokenService));
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
   app.route("/sessions", createSessionsRoutes(deps.sessionService));
+  app.route(
+    "/verification-checks",
+    createVerificationChecksRoutes(
+      deps.verificationCheckService ?? noopVerificationCheckService,
+    ),
+  );
 
   return app;
 }

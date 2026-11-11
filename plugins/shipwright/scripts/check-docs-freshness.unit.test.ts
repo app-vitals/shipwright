@@ -26,6 +26,7 @@ interface MakeDepsOptions {
   readSyncAnchor?: (dir: string) => string | null;
   getCommitsSince?: (dir: string, sha: string) => string[] | null;
   getChangedFilesSince?: (dir: string, sha: string) => string[] | null;
+  resolveScopedRepos?: () => Promise<string[]>;
 }
 
 const SINGLE_REPO: RepoDir = {
@@ -34,14 +35,18 @@ const SINGLE_REPO: RepoDir = {
 };
 
 function makeDeps(overrides: MakeDepsOptions = {}) {
+  const repos = overrides.repos ?? [SINGLE_REPO];
   return {
-    repos: overrides.repos ?? [SINGLE_REPO],
+    repos,
     hasDocsDir: overrides.hasDocsDir ?? (() => true),
     readSyncAnchor: overrides.readSyncAnchor ?? (() => "abc123"),
     getCommitsSince:
       overrides.getCommitsSince ?? ((_dir: string, _sha: string) => []),
     getChangedFilesSince:
       overrides.getChangedFilesSince ?? ((_dir: string, _sha: string) => []),
+    resolveScopedRepos:
+      overrides.resolveScopedRepos ??
+      (() => Promise.resolve(repos.map((r) => r.repo))),
   };
 }
 
@@ -347,5 +352,26 @@ describe("check-docs-freshness — multi repo", () => {
     expect(result.exit).toBe(0);
     // Repo identity must be present in the output, not just bare file paths.
     expect(result.output).toContain("acme/repo-a");
+  });
+
+  test("excludes a repo that's cloned locally but absent from the agent's configured repos[]", async () => {
+    const repoA: RepoDir = { repo: "acme/repo-a", dir: "/repos/repo-a" };
+    const repoB: RepoDir = { repo: "acme/repo-b", dir: "/repos/repo-b" };
+
+    const deps = makeDeps({
+      repos: [repoA, repoB],
+      readSyncAnchor: () => "sha",
+      getCommitsSince: () => ["def789 change"],
+      getChangedFilesSince: () => ["src/handler.ts"],
+      // Only repo-a is in the agent's configured repos[] — repo-b is cloned
+      // locally but unconfigured and must be excluded from output even
+      // though it would otherwise qualify.
+      resolveScopedRepos: () => Promise.resolve(["acme/repo-a"]),
+    });
+
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("acme/repo-a");
+    expect(result.output).not.toContain("acme/repo-b");
   });
 });

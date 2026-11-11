@@ -29,16 +29,16 @@ import * as yaml from "js-yaml";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type WatchedPathSource = "renovate" | "dependabot" | "both" | "fallback";
+type WatchedPathSource = "renovate" | "dependabot" | "both" | "fallback";
 
-export type ResolveDependencyWatchedPathsInput = {
+type ResolveDependencyWatchedPathsInput = {
   /** Raw text contents of the target repo's renovate.json, or undefined if absent. */
   renovateJson: string | undefined;
   /** Raw text contents of the target repo's .github/dependabot.yml, or undefined if absent. */
   dependabotYml: string | undefined;
 };
 
-export type ResolveDependencyWatchedPathsResult = {
+type ResolveDependencyWatchedPathsResult = {
   /** De-duplicated list of watched file paths (repo-root-relative). */
   paths: string[];
   /** Which input(s) produced this set. */

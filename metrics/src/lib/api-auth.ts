@@ -16,15 +16,15 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
+import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
-import type { Caller } from "@shipwright/lib/request-context";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { AccountsClient } from "./accounts-client.ts";
 import { ForbiddenError } from "./errors.ts";
 
 // Re-exported so existing `import type { Caller } from "./api-auth.ts"` call
-// sites keep working; the shared shape now lives in lib/request-context.ts.
+// sites keep working; the shared shape now lives in @app-vitals/agent-lib/request-context.
 export type { Caller };
 
 // Hono env type for routes that use the auth middleware

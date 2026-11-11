@@ -15,7 +15,7 @@
 //   bun run scripts/check-coverage-gate.ts '{"featurePct":92,"featureSource":"...","linePct":87,"lineSource":"..."}'
 // or pipe the same JSON blob via stdin.
 
-export type CoverageGateTargets = {
+type CoverageGateTargets = {
   feature: number;
   line: number;
 };
@@ -30,7 +30,7 @@ export type ComputeCoverageGateInput = {
   verdict?: string;
 };
 
-export type CoverageGate = {
+type CoverageGate = {
   feature_coverage_pct: number;
   feature_coverage_source: string;
   line_coverage_pct: number;

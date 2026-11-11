@@ -19,7 +19,7 @@
  *   bun run scripts/wait-for-agent.ts [--db-url <url>]
  */
 
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,11 +27,11 @@ import { parseFlags } from "../lib/cli-flags.ts";
 export interface FoundAgent {
   id: string;
   name: string;
-  typeName: string;
+  specialty: string;
 }
 
 /** Minimal Prisma interface needed by the poll function — injected for testability. */
-export interface WaitPrisma {
+interface WaitPrisma {
   agent: {
     findFirst(args: {
       orderBy: { createdAt: "asc" };
@@ -76,7 +76,7 @@ export async function waitForAgent(deps: WaitDeps): Promise<string> {
   }
 
   logStatus(
-    `[wait-for-agent] found agent "${found.name}" (${found.id}, type: ${found.typeName}) — proceeding.`,
+    `[wait-for-agent] found agent "${found.name}" (${found.id}, specialty: ${found.specialty}) — proceeding.`,
   );
   writeResult(found.id);
   return found.id;
@@ -86,7 +86,7 @@ export async function waitForAgent(deps: WaitDeps): Promise<string> {
 
 if (import.meta.main) {
   const { createAdminPrismaClient } = await import(
-    "../admin/src/prisma-client.ts"
+    "@app-vitals/agent-admin/prisma-client"
   );
 
   const argv = process.argv.slice(2);

@@ -3,11 +3,11 @@
 //
 // Extracts the "dedup to latest run per workflow, then require every
 // deduped run to be green" logic documented in
-// plugins/shipwright/commands/dev-task.md's Step 9b.2 CI Gate into a pure,
+// plugins/shipwright/references/dev-task/push-and-ci.md's CI gate into a pure,
 // standalone function, plus a CLI entrypoint that takes the same JSON shape
 // returned by `gh api repos/{owner}/{repo}/actions/runs?head_sha=...`.
 //
-// Deliberately has no dependency on @shipwright/lib or any other workspace
+// Deliberately has no dependency on @app-vitals/agent-lib or any other workspace
 // package — plugins/shipwright must stay installable standalone into other
 // repos (see plugins/shipwright/CLAUDE.md).
 //

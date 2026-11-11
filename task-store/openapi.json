@@ -18,7 +18,7 @@
           "tasks"
         ],
         "summary": "List tasks",
-        "description": "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.",
+        "description": "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
         "parameters": [
           {
             "schema": {
@@ -76,10 +76,11 @@
                   }
                 }
               ],
-              "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match)."
             },
             "required": false,
+            "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
             "name": "repo",
             "in": "query"
           },
@@ -96,10 +97,11 @@
                   }
                 }
               ],
-              "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
-              "example": "org"
+              "example": "org",
+              "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter."
             },
             "required": false,
+            "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
             "name": "org",
             "in": "query"
           },
@@ -173,6 +175,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "true",
                 "false"
@@ -190,10 +203,11 @@
                 "dev",
                 "prd"
               ],
-              "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
-              "example": "prd"
+              "example": "prd",
+              "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally."
             },
             "required": false,
+            "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
             "name": "kind",
             "in": "query"
           },
@@ -213,10 +227,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
-              "example": "2026-01-01T00:00:00.000Z"
+              "example": "2026-01-01T00:00:00.000Z",
+              "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor."
             },
             "required": false,
+            "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
             "name": "updatedSince",
             "in": "query"
           }
@@ -249,7 +264,7 @@
           "tasks"
         ],
         "summary": "Create a task",
-        "description": "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).",
+        "description": "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -289,6 +304,26 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden — the agent token's account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -299,7 +334,7 @@
           "tasks"
         ],
         "summary": "Bulk insert tasks",
-        "description": "Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it.",
+        "description": "Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's `accountId` is stamped from the caller exactly as for `POST /tasks`; an agent token's id collision returns the generic `task id unavailable` 409 body.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -340,8 +375,18 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden — the agent token's account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "409": {
-            "description": "Conflict — a task id in the batch already exists; the entire batch was rolled back",
+            "description": "Conflict — a task id in the batch is unavailable; the entire batch was rolled back",
             "content": {
               "application/json": {
                 "schema": {
@@ -352,6 +397,86 @@
           },
           "502": {
             "description": "Webhook delivery failed; the entire batch was rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/by-pr": {
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Mark merged tasks deployed or released by PR number",
+        "description": "For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of `repo` whose `pr` is in `prNumbers` and whose status is `merged` is moved to `status` (`deployed` | `released`) and its `deployedAt`/`releasedAt` is stamped with `at` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported `unchanged` (idempotent); tasks in any other status are `skipped` with their status and never modified. At most 100 PR numbers per call. Equivalent manual flow: `GET /tasks?pr=&repo=` then `PATCH /tasks/:id`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchTasksByPrBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-task outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchTasksByPrResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — empty or more than 100 prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — a task changed status concurrently; the whole call was rolled back, retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Webhook delivery failed; the whole call was rolled back",
             "content": {
               "application/json": {
                 "schema": {
@@ -400,7 +525,7 @@
           "tasks"
         ],
         "summary": "Get a task by ID",
-        "description": "Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.",
+        "description": "Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.",
         "parameters": [
           {
             "schema": {
@@ -944,7 +1069,7 @@
           "tasks"
         ],
         "summary": "Record a skip — increments skipCount, auto-blocks at threshold",
-        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason=\"Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)\"` to halt further dispatches.",
+        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `\"unspecified\"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.",
         "parameters": [
           {
             "schema": {
@@ -956,6 +1081,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Updated task",
@@ -1062,6 +1197,98 @@
         }
       }
     },
+    "/tasks/{id}/unblock": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Atomically unblock a task to pending, pr_open, merged, deployed or released",
+        "description": "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnblockBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unblocked task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — unknown `to`, or a non-pending `to` on a task with no `pr`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tasks/{id}/events": {
       "get": {
         "tags": [
@@ -1082,20 +1309,22 @@
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           }
@@ -1365,7 +1594,7 @@
           "PRs"
         ],
         "summary": "List pull requests",
-        "description": "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).",
+        "description": "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
         "parameters": [
           {
             "schema": {
@@ -1380,10 +1609,11 @@
                   }
                 }
               ],
-              "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos."
             },
             "required": false,
+            "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
             "name": "repo",
             "in": "query"
           },
@@ -1400,20 +1630,22 @@
                   }
                 }
               ],
-              "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
-              "example": "org"
+              "example": "org",
+              "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND)."
             },
             "required": false,
+            "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
             "name": "org",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "PR number (parsed as integer)",
-              "example": "42"
+              "example": "42",
+              "description": "PR number (parsed as integer)"
             },
             "required": false,
+            "description": "PR number (parsed as integer)",
             "name": "prNumber",
             "in": "query"
           },
@@ -1453,30 +1685,33 @@
                 "true",
                 "false"
               ],
-              "description": "Filter by staged flag",
-              "example": "false"
+              "example": "false",
+              "description": "Filter by staged flag"
             },
             "required": false,
+            "description": "Filter by staged flag",
             "name": "staged",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           },
@@ -1487,10 +1722,11 @@
                 "true",
                 "false"
               ],
-              "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
-              "example": "true"
+              "example": "true",
+              "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does."
             },
             "required": false,
+            "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
             "name": "ready",
             "in": "query"
           },
@@ -1501,10 +1737,11 @@
                 "true",
                 "false"
               ],
-              "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
-              "example": "true"
+              "example": "true",
+              "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open)."
             },
             "required": false,
+            "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
             "name": "blocked",
             "in": "query"
           },
@@ -1515,30 +1752,33 @@
                 "asc",
                 "desc"
               ],
-              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
-              "example": "asc"
+              "example": "asc",
+              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering."
             },
             "required": false,
+            "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
             "name": "sort",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
-              "example": "2026-01-01T00:00:00.000Z"
+              "example": "2026-01-01T00:00:00.000Z",
+              "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor."
             },
             "required": false,
+            "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
             "name": "updatedSince",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
-              "example": "shipwright,ci"
+              "example": "shipwright,ci",
+              "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values."
             },
             "required": false,
+            "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
             "name": "origin",
             "in": "query"
           }
@@ -1563,7 +1803,7 @@
           "PRs"
         ],
         "summary": "Claim a pull request (atomic)",
-        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.",
+        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1596,7 +1836,7 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1668,7 +1908,7 @@
           "PRs"
         ],
         "summary": "Batch upsert PR origin/author/branch/title/state metadata",
-        "description": "Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.",
+        "description": "Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1724,10 +1964,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Repository in org/repo format.",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Repository in org/repo format."
             },
             "required": true,
+            "description": "Repository in org/repo format.",
             "name": "repo",
             "in": "query"
           }
@@ -1772,7 +2013,7 @@
           "PRs"
         ],
         "summary": "Fetch a single pull request",
-        "description": "Fetches a single PR record by its ID. Returns `404` if not found.",
+        "description": "Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.",
         "parameters": [
           {
             "schema": {
@@ -1796,7 +2037,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1812,7 +2053,7 @@
           "PRs"
         ],
         "summary": "Update pull request fields",
-        "description": "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+        "description": "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
         "parameters": [
           {
             "schema": {
@@ -1856,7 +2097,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1896,6 +2137,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1930,7 +2181,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1982,7 +2233,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2024,7 +2275,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2066,7 +2317,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2084,7 +2335,7 @@
           "PRs"
         ],
         "summary": "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
-        "description": "Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains \"consecutive skips\"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.",
+        "description": "Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains \"consecutive skips\") or starting with the patch no-progress escalation prefix (\"patch dispatch made no progress\"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.",
         "parameters": [
           {
             "schema": {
@@ -2108,7 +2359,59 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/{id}/unblock": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+        "description": "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unblocked PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the PR is not currently blocked",
             "content": {
               "application/json": {
                 "schema": {
@@ -2170,7 +2473,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2202,20 +2505,22 @@
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           }
@@ -2232,7 +2537,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2250,7 +2555,7 @@
           "sessions"
         ],
         "summary": "List sessions",
-        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.",
+        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
         "parameters": [
           {
             "schema": {
@@ -2263,10 +2568,11 @@
                 "archived",
                 "all"
               ],
-              "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
-              "example": "waiting"
+              "example": "waiting",
+              "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering."
             },
             "required": false,
+            "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
             "name": "state",
             "in": "query"
           },
@@ -2277,20 +2583,22 @@
                 "waitingSince",
                 "lastActivityAt"
               ],
-              "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
-              "example": "waitingSince"
+              "example": "waitingSince",
+              "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last."
             },
             "required": false,
+            "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
             "name": "sort",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Only sessions whose rollup.agentIds includes this agent.",
-              "example": "agent-id-123"
+              "example": "agent-id-123",
+              "description": "Only sessions whose rollup.agentIds includes this agent."
             },
             "required": false,
+            "description": "Only sessions whose rollup.agentIds includes this agent.",
             "name": "agentId",
             "in": "query"
           },
@@ -2307,10 +2615,11 @@
                   }
                 }
               ],
-              "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b)."
             },
             "required": false,
+            "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
             "name": "repo",
             "in": "query"
           },
@@ -2327,21 +2636,34 @@
                   }
                 }
               ],
-              "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
-              "example": "org"
+              "example": "org",
+              "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`)."
             },
             "required": false,
+            "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
             "name": "org",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Case-insensitive substring match against slug OR title.",
-              "example": "launch"
+              "example": "launch",
+              "description": "Case-insensitive substring match against slug OR title."
             },
             "required": false,
+            "description": "Case-insensitive substring match against slug OR title.",
             "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
             "in": "query"
           },
           {
@@ -2393,7 +2715,7 @@
           "sessions"
         ],
         "summary": "Get a session by slug",
-        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.",
+        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
         "parameters": [
           {
             "schema": {
@@ -2403,6 +2725,17 @@
             "required": true,
             "name": "slug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2443,7 +2776,7 @@
           "sessions"
         ],
         "summary": "Rename/archive a session — admin-only",
-        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.",
+        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
         "parameters": [
           {
             "schema": {
@@ -2453,6 +2786,17 @@
             "required": true,
             "name": "slug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "requestBody": {
@@ -2507,10 +2851,201 @@
           }
         }
       }
+    },
+    "/verification-checks": {
+      "post": {
+        "tags": [
+          "Verification Checks"
+        ],
+        "summary": "Record a single per-check verification outcome",
+        "description": "Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted. Agent tokens are scoped (SSP-6.10): `repo` must be in the token's repos (else `403`), and the parent task/PR must be in the token's repos and account (else `404`, indistinguishable from missing). The row is stamped with the parent's `accountId`. Admin tokens are unrestricted.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVerificationCheckBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded verification check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — the referenced task/pr does not exist or is outside the token's repo/account scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Verification Checks"
+        ],
+        "summary": "List verification checks for a task, a PR, or a repo+checkName pair",
+        "description": "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890",
+              "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required."
+            },
+            "required": false,
+            "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
+            "name": "taskId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": false,
+            "name": "prId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo",
+              "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak."
+            },
+            "required": false,
+            "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "unit",
+              "description": "Paired with ?repo= — supplying only one of the pair is 400."
+            },
+            "required": false,
+            "description": "Paired with ?repo= — supplying only one of the pair is 400.",
+            "name": "checkName",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50",
+              "description": "Max records to return"
+            },
+            "required": false,
+            "description": "Max records to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0",
+              "description": "Pagination offset"
+            },
+            "required": false,
+            "description": "Pagination offset",
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification check history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationCheckListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "TaskListResponse": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "scopeDegraded": {
+            "type": "boolean",
+            "example": false,
+            "description": "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens."
+          }
+        },
+        "required": [
+          "tasks",
+          "total",
+          "scopeDegraded"
+        ]
+      },
       "Task": {
         "type": "object",
         "properties": {
@@ -2531,8 +3066,8 @@
               "approved",
               "merged",
               "done",
-              "deploying",
               "deployed",
+              "released",
               "blocked",
               "cancelled"
             ],
@@ -2684,19 +3219,19 @@
             ],
             "example": "2026-01-05T00:00:00.000Z"
           },
-          "deployingAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
           "deployedAt": {
             "type": [
               "string",
               "null"
             ],
             "example": "2026-01-06T00:00:00.000Z"
+          },
+          "releasedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
           },
           "ciFixAttempts": {
             "type": [
@@ -2761,14 +3296,14 @@
               "prd"
             ],
             "default": "dev",
-            "description": "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.",
-            "example": "dev"
+            "example": "dev",
+            "description": "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set."
           },
           "skipCount": {
             "type": "integer",
             "default": 0,
-            "description": "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
-            "example": 0
+            "example": 0,
+            "description": "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3)."
           },
           "lastSkippedAt": {
             "type": [
@@ -2776,6 +3311,14 @@
               "null"
             ],
             "example": "2026-01-02T00:00:00.000Z"
+          },
+          "lastSkipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task:deferred:unmet-hidden-requirement",
+            "description": "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here."
           },
           "claimedBy": {
             "type": [
@@ -2925,31 +3468,6 @@
           "updatedAt"
         ]
       },
-      "TaskListResponse": {
-        "type": "object",
-        "properties": {
-          "tasks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Task"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "example": 10
-          },
-          "scopeDegraded": {
-            "type": "boolean",
-            "description": "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.",
-            "example": false
-          }
-        },
-        "required": [
-          "tasks",
-          "total",
-          "scopeDegraded"
-        ]
-      },
       "Error": {
         "type": "object",
         "properties": {
@@ -2998,6 +3516,10 @@
             "type": "string",
             "example": "feat/feature-x"
           },
+          "pr": {
+            "example": 42,
+            "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
+          },
           "dependencies": {
             "type": "array",
             "items": {
@@ -3034,10 +3556,11 @@
               "dev",
               "prd"
             ],
-            "description": "What the task is (TKD-1.1). Defaults to `dev`.",
-            "example": "dev"
+            "example": "dev",
+            "description": "What the task is (TKD-1.1). Defaults to `dev`."
           }
-        }
+        },
+        "additionalProperties": {}
       },
       "BulkInsertResponse": {
         "type": "object",
@@ -3055,8 +3578,8 @@
             "items": {
               "type": "string"
             },
-            "description": "Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.",
-            "example": []
+            "example": [],
+            "description": "Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility."
           }
         },
         "required": [
@@ -3086,11 +3609,102 @@
                 "null"
               ],
               "example": "org/repo"
+            },
+            "pr": {
+              "example": 42,
+              "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
             }
-          }
+          },
+          "additionalProperties": {}
         },
         "maxItems": 500,
         "description": "Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it."
+      },
+      "PatchTasksByPrResponse": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of `merged` tasks moved to the requested status."
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of tasks already at the requested status (no-op)."
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ]
+            },
+            "description": "Matching tasks in any other status; never modified. Carries their current status."
+          }
+        },
+        "required": [
+          "updated",
+          "unchanged",
+          "skipped"
+        ]
+      },
+      "PatchTasksByPrBody": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1,
+            "example": "org/repo"
+          },
+          "prNumbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "example": [
+              101,
+              102
+            ],
+            "description": "PR numbers of `repo`, 1 to 100 positive integers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "deployed",
+              "released"
+            ],
+            "example": "deployed"
+          },
+          "at": {
+            "type": "string",
+            "minLength": 1,
+            "example": "2026-07-02T00:00:00.000Z",
+            "description": "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now."
+          }
+        },
+        "required": [
+          "repo",
+          "prNumbers",
+          "status"
+        ]
       },
       "DistinctResponse": {
         "type": "object",
@@ -3131,6 +3745,12 @@
       },
       "UpdateTaskBody": {
         "type": "object",
+        "properties": {
+          "pr": {
+            "example": 42,
+            "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
+          }
+        },
         "additionalProperties": {}
       },
       "ClaimBody": {
@@ -3150,6 +3770,61 @@
             "example": "build failed"
           }
         }
+      },
+      "SkipBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "dev-task:deferred:unmet-hidden-requirement"
+          }
+        }
+      },
+      "UnblockBody": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pr_open",
+              "merged",
+              "deployed",
+              "released"
+            ],
+            "description": "Target status. Omit to infer from task.pr and the PR record (never deployed/released)."
+          }
+        }
+      },
+      "TaskEventsResponse": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskEvent"
+            },
+            "description": "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "events",
+          "total",
+          "limit",
+          "offset"
+        ]
       },
       "TaskEvent": {
         "type": "object",
@@ -3211,36 +3886,6 @@
           "method",
           "at",
           "createdAt"
-        ]
-      },
-      "TaskEventsResponse": {
-        "type": "object",
-        "properties": {
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskEvent"
-            },
-            "description": "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first)."
-          },
-          "total": {
-            "type": "integer",
-            "example": 1
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "events",
-          "total",
-          "limit",
-          "offset"
         ]
       },
       "TaskToken": {
@@ -3315,6 +3960,377 @@
           }
         }
       },
+      "PrListResponse": {
+        "type": "object",
+        "properties": {
+          "prs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequest"
+            },
+            "description": "Array of pull requests"
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "prs",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "PullRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "prNumber": {
+            "type": "integer",
+            "example": 42
+          },
+          "staged": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "merged",
+              "closed"
+            ],
+            "default": "open",
+            "example": "open"
+          },
+          "reviewState": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "posted",
+              "approved"
+            ],
+            "default": "pending",
+            "example": "pending"
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "reviewedCommitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456",
+            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping."
+          },
+          "patchCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 1
+          },
+          "reviewCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 0
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "reviewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-03T00:00:00.000Z"
+          },
+          "patchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "mergedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "prCreatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter."
+          },
+          "claimedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "review",
+              "patch",
+              "merge",
+              null
+            ],
+            "example": "review"
+          },
+          "readyForReviewAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "readyForPatchAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "readyForMergeAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "blocked": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "no linked task"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shipwright",
+              "ci",
+              "dependency_bot",
+              "human",
+              "unknown",
+              null
+            ],
+            "example": "shipwright",
+            "description": "Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all)."
+          },
+          "authorLogin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "octocat"
+          },
+          "headRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "feat/some-branch"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Add the origin metrics dimension"
+          },
+          "commitCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12,
+            "description": "Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic."
+          },
+          "commitsDocsRefresh": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1,
+            "description": "Commits attributed to the docs-refresher subagent (CPP-1.1)."
+          },
+          "commitsReviewPatch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3,
+            "description": "Commits attributed to the review/patch cycle (CPP-1.1)."
+          },
+          "commitsCiFix": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2,
+            "description": "Commits attributed to CI-fix cycles (CPP-1.1)."
+          },
+          "commitsImplementation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 6,
+            "description": "Commits attributed to the initial implementation (CPP-1.1)."
+          },
+          "skipCount": {
+            "type": "integer",
+            "default": 0,
+            "example": 0,
+            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips') or starts with the patch no-progress escalation prefix ('patch dispatch made no progress'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched."
+          },
+          "lastSkippedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "lastCiFailureSignature": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "npm-test-failed-foo.unit.test.ts",
+            "description": "Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure."
+          },
+          "consecutiveCiFailureCount": {
+            "type": "integer",
+            "default": 0,
+            "example": 0,
+            "description": "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3)."
+          },
+          "blockedHeadSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then."
+          },
+          "blockedReviewId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed."
+          },
+          "blockedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO timestamp of the most recent skip auto-block (PSL-3.1)."
+          },
+          "lastAutoBlockReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1)."
+          },
+          "lastAutoBlockedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrFinding"
+            },
+            "description": "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestEvent"
+            },
+            "description": "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "prNumber",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "PrFinding": {
         "type": "object",
         "properties": {
@@ -3360,8 +4376,8 @@
               "string",
               "null"
             ],
-            "description": "Agent instance that triaged this finding, if any.",
-            "example": "agent-abc123"
+            "example": "agent-abc123",
+            "description": "Agent instance that triaged this finding, if any."
           },
           "createdAt": {
             "type": "string",
@@ -3443,361 +4459,82 @@
           "createdAt"
         ]
       },
-      "PullRequest": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "clx0987654321"
-          },
-          "repo": {
-            "type": "string",
-            "example": "org/repo"
-          },
-          "prNumber": {
-            "type": "integer",
-            "example": 42
-          },
-          "staged": {
-            "type": "boolean",
-            "default": false,
-            "example": false
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "open",
-              "merged",
-              "closed"
-            ],
-            "default": "open",
-            "example": "open"
-          },
-          "reviewState": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "in_progress",
-              "posted",
-              "approved"
-            ],
-            "default": "pending",
-            "example": "pending"
-          },
-          "commitSha": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "abc123def456"
-          },
-          "reviewedCommitSha": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
-            "example": "abc123def456"
-          },
-          "patchCycles": {
-            "type": "integer",
-            "default": 0,
-            "example": 1
-          },
-          "reviewCycles": {
-            "type": "integer",
-            "default": 0,
-            "example": 0
-          },
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "agent-id-123"
-          },
-          "reviewedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-03T00:00:00.000Z"
-          },
-          "patchedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "mergedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "prCreatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "claimedBy": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "agent-id-123"
-          },
-          "claimedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "heartbeatAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-06T12:00:00.000Z"
-          },
-          "phase": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "review",
-              "patch",
-              "deploy"
-            ],
-            "example": "review"
-          },
-          "readyForReviewAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "readyForPatchAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "readyForDeployAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "blocked": {
-            "type": "boolean",
-            "default": false,
-            "example": false
-          },
-          "blockedReason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "no linked task"
-          },
-          "origin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "shipwright",
-              "ci",
-              "dependency_bot",
-              "human",
-              "unknown"
-            ],
-            "description": "Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).",
-            "example": "shipwright"
-          },
-          "authorLogin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "octocat"
-          },
-          "headRef": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "feat/some-branch"
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "Add the origin metrics dimension"
-          },
-          "skipCount": {
-            "type": "integer",
-            "default": 0,
-            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
-            "example": 0
-          },
-          "lastSkippedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "lastCiFailureSignature": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.",
-            "example": "npm-test-failed-foo.unit.test.ts"
-          },
-          "consecutiveCiFailureCount": {
-            "type": "integer",
-            "default": 0,
-            "description": "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
-            "example": 0
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-06T12:00:00.000Z"
-          },
-          "findings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PrFinding"
-            },
-            "description": "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PullRequestEvent"
-            },
-            "description": "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
-          }
-        },
-        "required": [
-          "id",
-          "repo",
-          "prNumber",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "PrListResponse": {
-        "type": "object",
-        "properties": {
-          "prs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PullRequest"
-            },
-            "description": "Array of pull requests"
-          },
-          "total": {
-            "type": "integer",
-            "example": 1
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "prs",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
       "ClaimPrBody": {
         "type": "object",
         "properties": {
           "repo": {
             "type": "string",
-            "description": "Repository in org/repo format",
-            "example": "org/repo"
+            "example": "org/repo",
+            "description": "Repository in org/repo format"
           },
           "prNumber": {
             "type": "integer",
-            "description": "Pull request number",
-            "example": 42
+            "example": 42,
+            "description": "Pull request number"
           },
           "commitSha": {
             "type": "string",
-            "description": "Commit SHA to associate",
-            "example": "abc123def456"
+            "example": "abc123def456",
+            "description": "Commit SHA to associate"
           },
           "claimedBy": {
             "type": "string",
-            "description": "Agent claiming this PR (admin tokens only)",
-            "example": "agent-id-123"
+            "example": "agent-id-123",
+            "description": "Agent claiming this PR (admin tokens only)"
           },
           "phase": {
             "type": "string",
             "enum": [
               "review",
               "patch",
-              "deploy"
+              "merge"
             ],
-            "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)",
-            "example": "patch"
+            "example": "patch",
+            "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)"
           },
           "prCreatedAt": {
             "type": "string",
-            "description": "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
-            "example": "2026-01-01T00:00:00.000Z"
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set."
           },
           "authorLogin": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
-            "example": "octocat"
+            "example": "octocat",
+            "description": "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim."
           },
           "headRef": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
-            "example": "feat/some-branch"
+            "example": "feat/some-branch",
+            "description": "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim."
           },
           "title": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR title (POM-1.2). Refreshed unconditionally on every claim.",
-            "example": "Add the origin metrics dimension"
+            "example": "Add the origin metrics dimension",
+            "description": "PR title (POM-1.2). Refreshed unconditionally on every claim."
+          },
+          "authorIsBot": {
+            "type": "boolean",
+            "example": true,
+            "description": "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching."
+          },
+          "hasAutomatedLabel": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`."
+          },
+          "hasShipwrightLabel": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required."
           }
         },
         "required": [
@@ -3817,7 +4554,7 @@
             "enum": [
               "review",
               "patch",
-              "deploy"
+              "merge"
             ],
             "example": "review"
           }
@@ -3832,13 +4569,13 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent ID (admin tokens only; agent tokens use token identity)",
-            "example": "agent-id-123"
+            "example": "agent-id-123",
+            "description": "Agent ID (admin tokens only; agent tokens use token identity)"
           },
           "maxConcurrent": {
             "type": "integer",
-            "description": "Maximum concurrent PRs to claim",
-            "example": 1
+            "example": 1,
+            "description": "Maximum concurrent PRs to claim"
           }
         }
       },
@@ -3856,6 +4593,14 @@
         "required": [
           "prs"
         ]
+      },
+      "CensusBody": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CensusEntry"
+        },
+        "maxItems": 200,
+        "description": "Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400."
       },
       "CensusEntry": {
         "type": "object",
@@ -3877,8 +4622,8 @@
               "human",
               "unknown"
             ],
-            "description": "First-write-wins: only applied when the row's existing origin is currently null.",
-            "example": "unknown"
+            "example": "unknown",
+            "description": "First-write-wins: only applied when the row's existing origin is currently null."
           },
           "authorLogin": {
             "type": [
@@ -3923,20 +4668,47 @@
               "null"
             ],
             "example": "2026-01-01T00:00:00.000Z"
+          },
+          "commitCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12
+          },
+          "commitsDocsRefresh": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1
+          },
+          "commitsReviewPatch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3
+          },
+          "commitsCiFix": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2
+          },
+          "commitsImplementation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 6
           }
         },
         "required": [
           "repo",
           "prNumber"
         ]
-      },
-      "CensusBody": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CensusEntry"
-        },
-        "maxItems": 200,
-        "description": "Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400."
       },
       "CensusCursorResponse": {
         "type": "object",
@@ -3946,8 +4718,8 @@
               "string",
               "null"
             ],
-            "description": "Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.",
-            "example": "2026-01-04T00:00:00.000Z"
+            "example": "2026-01-04T00:00:00.000Z",
+            "description": "Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists."
           }
         },
         "required": [
@@ -3963,13 +4735,13 @@
         "properties": {
           "commitSha": {
             "type": "string",
-            "description": "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
-            "example": "abc123def456"
+            "example": "abc123def456",
+            "description": "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior)."
           },
           "ciFailureSignature": {
             "type": "string",
-            "description": "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
-            "example": "npm-test-failed-foo.unit.test.ts"
+            "example": "npm-test-failed-foo.unit.test.ts",
+            "description": "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched."
           }
         }
       },
@@ -3978,8 +4750,8 @@
         "properties": {
           "ref": {
             "type": "string",
-            "description": "Identifier for the finding (e.g. file:line or a slug).",
-            "example": "src/foo.ts:42"
+            "example": "src/foo.ts:42",
+            "description": "Identifier for the finding (e.g. file:line or a slug)."
           },
           "disposition": {
             "type": "string",
@@ -3988,8 +4760,8 @@
               "superseded",
               "rejected"
             ],
-            "description": "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
-            "example": "resolved"
+            "example": "resolved",
+            "description": "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value."
           },
           "source": {
             "type": "string",
@@ -3997,8 +4769,8 @@
               "review",
               "patch"
             ],
-            "description": "Which pipeline phase is recording this finding.",
-            "example": "review"
+            "example": "review",
+            "description": "Which pipeline phase is recording this finding."
           },
           "evidence": {
             "type": "string",
@@ -4006,13 +4778,13 @@
           },
           "at": {
             "type": "string",
-            "description": "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
-            "example": "2026-08-17T12:00:00.000Z"
+            "example": "2026-08-17T12:00:00.000Z",
+            "description": "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted."
           },
           "agentId": {
             "type": "string",
-            "description": "Agent instance that triaged this finding.",
-            "example": "agent-abc123"
+            "example": "agent-abc123",
+            "description": "Agent instance that triaged this finding."
           }
         },
         "required": [
@@ -4052,12 +4824,46 @@
           "offset"
         ]
       },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "sessions",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "Session": {
         "type": "object",
         "properties": {
           "slug": {
             "type": "string",
             "example": "shipwright-may-launch"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently."
           },
           "title": {
             "type": [
@@ -4192,6 +4998,7 @@
         },
         "required": [
           "slug",
+          "accountId",
           "createdAt",
           "updatedAt",
           "state",
@@ -4204,18 +5011,223 @@
           "archived"
         ]
       },
-      "SessionListResponse": {
+      "SessionPatchBody": {
         "type": "object",
         "properties": {
-          "sessions": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "May launch prep",
+            "description": "Omitted: title untouched. A string: set. null: clears the title."
+          },
+          "archived": {
+            "type": "boolean",
+            "example": true,
+            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
+          }
+        }
+      },
+      "VerificationCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxvcheck1234567"
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "prRecordId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "checkName": {
+            "type": "string",
+            "example": "unit"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran_passed",
+              "ran_failed",
+              "skipped",
+              "timed_out"
+            ],
+            "example": "ran_passed",
+            "description": "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem."
+          },
+          "reasonCategory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip",
+              null
+            ],
+            "example": null,
+            "description": "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'."
+          },
+          "learnedFromCategory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip",
+              null
+            ],
+            "example": null,
+            "description": "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification."
+          },
+          "durationMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 4200
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-09-24T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-24T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "prRecordId",
+          "repo",
+          "checkName",
+          "status",
+          "reasonCategory",
+          "learnedFromCategory",
+          "durationMs",
+          "at",
+          "createdAt"
+        ]
+      },
+      "CreateVerificationCheckBody": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "example": "clx1234567890",
+            "description": "Exactly one of taskId/prId is required — supplying neither or both is 400."
+          },
+          "prId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "checkName": {
+            "type": "string",
+            "example": "unit",
+            "description": "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran_passed",
+              "ran_failed",
+              "skipped",
+              "timed_out"
+            ],
+            "example": "ran_passed"
+          },
+          "reasonCategory": {
+            "type": "string",
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "example": "missing_tool",
+            "description": "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400."
+          },
+          "learnedFromCategory": {
+            "type": "string",
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "example": "missing_tool",
+            "description": "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'."
+          },
+          "durationMs": {
+            "type": "integer",
+            "example": 4200
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-09-24T12:00:00.000Z",
+            "description": "ISO timestamp of when the check completed. Defaults to the current time when omitted."
+          }
+        },
+        "required": [
+          "repo",
+          "checkName",
+          "status"
+        ]
+      },
+      "VerificationCheckListResponse": {
+        "type": "object",
+        "properties": {
+          "checks": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Session"
-            }
+              "$ref": "#/components/schemas/VerificationCheck"
+            },
+            "description": "Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode."
           },
           "total": {
             "type": "integer",
-            "example": 10
+            "example": 1
           },
           "limit": {
             "type": "integer",
@@ -4227,29 +5239,11 @@
           }
         },
         "required": [
-          "sessions",
+          "checks",
           "total",
           "limit",
           "offset"
         ]
-      },
-      "SessionPatchBody": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Omitted: title untouched. A string: set. null: clears the title.",
-            "example": "May launch prep"
-          },
-          "archived": {
-            "type": "boolean",
-            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
-            "example": true
-          }
-        }
       }
     }
   }

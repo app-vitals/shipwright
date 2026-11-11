@@ -121,8 +121,39 @@ service_for_tag() {
     metrics-v*) echo "metrics" ;;
     agent-v*) echo "agent" ;;
     task-store-v*) echo "task-store" ;;
-    chat-v*) echo "chat" ;;
+    agent-chat-v*) echo "chat" ;;
     *) echo "" ;;
+  esac
+}
+
+# The chat service is released by app-vitals/agent (ghcr.io/app-vitals/agent-chat)
+# at the platform version pinned in agent/Dockerfile, not by a git tag here: its
+# synthesized release tag is agent-chat-vX.Y.Z and chat.image.tag holds the bare
+# X.Y.Z. Mirrors lib/chart-tag-utils.sh's platform_chat_tag() /
+# latest_tag_for_service() / pin_value_for_tag() — keep both copies in sync.
+platform_chat_tag() {
+  local version
+  version=$(sed -n 's/^ARG PLATFORM_VERSION=//p' agent/Dockerfile 2>/dev/null | head -n1)
+  [ -n "$version" ] && printf 'agent-chat-v%s\n' "$version"
+  return 0
+}
+
+latest_tag_for_service() {
+  local service="$1" tags
+  if [ "$service" = "chat" ]; then
+    platform_chat_tag
+    return 0
+  fi
+  tags=$(git tag -l "${service}-v*")
+  [ -z "$tags" ] && return 0
+  highest_semver_tag $tags
+}
+
+pin_value_for_tag() {
+  local tag="$1"
+  case "$tag" in
+    agent-chat-v*) echo "${tag#agent-chat-v}" ;;
+    *) echo "$tag" ;;
   esac
 }
 
@@ -359,18 +390,17 @@ read_pinned_tag() {
 compute_batch_from_drift() {
   local values_yaml="$1"
   local services=("agent" "admin" "metrics" "task-store" "chat")
-  local service tags latest_tag primary_path pinned_tag
+  local service latest_tag primary_path pinned_tag
   local batch=()
 
   for service in "${services[@]}"; do
-    tags=$(git tag -l "${service}-v*")
-    [ -z "$tags" ] && continue
-    latest_tag=$(highest_semver_tag $tags)
+    latest_tag=$(latest_tag_for_service "$service")
+    [ -z "$latest_tag" ] && continue
 
     primary_path=$(values_paths_for_service "$service" | head -n1)
     pinned_tag=$(read_pinned_tag "$values_yaml" "$primary_path")
 
-    if [ "$latest_tag" != "$pinned_tag" ]; then
+    if [ "$(pin_value_for_tag "$latest_tag")" != "$pinned_tag" ]; then
       batch+=("$latest_tag")
     fi
   done
@@ -828,7 +858,7 @@ make_values_yaml() {
   local agent_tag="${3:-agent-v0.172.0}"
   local agent_prov_tag="${4:-agent-v0.172.0}"
   local task_store_tag="${5:-task-store-v0.86.0}"
-  local chat_tag="${6:-chat-v0.38.0}"
+  local chat_tag="${6:-0.38.0}"
   local path="$TMPDIR_TEST/values-$$-${RANDOM}.yaml"
   cat > "$path" <<EOF
 admin:
@@ -866,7 +896,7 @@ taskStore:
 chat:
   enabled: false
   image:
-    repository: ghcr.io/app-vitals/shipwright-chat
+    repository: ghcr.io/app-vitals/agent-chat
     tag: ${chat_tag}
     pullPolicy: ""
 EOF
@@ -971,7 +1001,8 @@ assert_eq "admin-v0.188.0 → admin" "admin" "$(service_for_tag 'admin-v0.188.0'
 assert_eq "metrics-v0.150.0 → metrics" "metrics" "$(service_for_tag 'metrics-v0.150.0')"
 assert_eq "agent-v0.172.0 → agent" "agent" "$(service_for_tag 'agent-v0.172.0')"
 assert_eq "task-store-v0.86.0 → task-store" "task-store" "$(service_for_tag 'task-store-v0.86.0')"
-assert_eq "chat-v0.38.0 → chat" "chat" "$(service_for_tag 'chat-v0.38.0')"
+assert_eq "agent-chat-v0.38.0 → chat" "chat" "$(service_for_tag 'agent-chat-v0.38.0')"
+assert_eq "legacy chat-v0.38.0 no longer maps to a service (build-chat.yml was removed)" "" "$(service_for_tag 'chat-v0.38.0')"
 assert_eq "unrecognized prefix → empty" "" "$(service_for_tag 'unknown-v1.0.0')"
 
 # ---------------------------------------------------------------------------
@@ -1000,7 +1031,7 @@ assert_eq "single tag is a no-op" "agent-v0.144.0" "$(highest_semver_tag 'agent-
 assert_eq "picks higher patch" "admin-v0.156.1" "$(highest_semver_tag 'admin-v0.156.0' 'admin-v0.156.1')"
 assert_eq "picks higher patch regardless of arg order" "admin-v0.156.1" "$(highest_semver_tag 'admin-v0.156.1' 'admin-v0.156.0')"
 assert_eq "picks higher minor" "metrics-v0.151.0" "$(highest_semver_tag 'metrics-v0.150.9' 'metrics-v0.151.0')"
-assert_eq "picks higher major" "chat-v1.0.0" "$(highest_semver_tag 'chat-v0.99.9' 'chat-v1.0.0')"
+assert_eq "picks higher major" "agent-chat-v1.0.0" "$(highest_semver_tag 'agent-chat-v0.99.9' 'agent-chat-v1.0.0')"
 assert_eq "double-digit patch beats single-digit (not lexicographic)" "agent-v0.172.10" "$(highest_semver_tag 'agent-v0.172.2' 'agent-v0.172.10')"
 assert_eq "three-way batch picks the max" "task-store-v0.86.2" "$(highest_semver_tag 'task-store-v0.86.0' 'task-store-v0.86.2' 'task-store-v0.86.1')"
 
@@ -1025,8 +1056,8 @@ assert_eq "same-service batch picks highest semver, not last-seen" \
 assert_eq "mixed batch: multi-tag service resolved to highest, single-tag services pass through" \
   "admin=admin-v0.156.2
 agent=agent-v0.144.0
-chat=chat-v0.38.0" \
-  "$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,chat-v0.38.0')"
+chat=agent-chat-v0.38.0" \
+  "$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,agent-chat-v0.38.0')"
 
 # ---------------------------------------------------------------------------
 # Tests: update_values_tag
@@ -1055,16 +1086,16 @@ update_values_tag "$v3" "taskStore.image.tag" "task-store-v9.0.0"
 TASKSTORE_TAG=$(sed -n '/^taskStore:/,/^chat:/p' "$v3" | grep 'tag:' | sed 's/^\s*tag: //')
 assert_eq "taskStore.image.tag updated" "task-store-v9.0.0" "$TASKSTORE_TAG"
 CHAT_TAG_UNCHANGED=$(sed -n '/^chat:/,$p' "$v3" | grep 'tag:' | sed 's/^\s*tag: //')
-assert_eq "sibling service (chat) untouched by taskStore update" "chat-v0.38.0" "$CHAT_TAG_UNCHANGED"
+assert_eq "sibling service (chat) untouched by taskStore update" "0.38.0" "$CHAT_TAG_UNCHANGED"
 
 # Full multi-service batch pin: exercises select_pinned_tags() output feeding
 # straight into update_values_tag() for every path, mirroring how the
 # workflow step chains the two.
 v4=$(make_values_yaml)
-PINNED=$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,chat-v0.38.1')
+PINNED=$(select_pinned_tags 'admin-v0.156.0,agent-v0.144.0,admin-v0.156.2,agent-chat-v0.38.1')
 while IFS='=' read -r service tag; do
   while IFS= read -r path; do
-    update_values_tag "$v4" "$path" "$tag"
+    update_values_tag "$v4" "$path" "$(pin_value_for_tag "$tag")"
   done < <(values_paths_for_service "$service")
 done <<< "$PINNED"
 
@@ -1078,7 +1109,7 @@ TASKSTORE_FINAL=$(sed -n '/^taskStore:/,/^chat:/p' "$v4" | grep 'tag:' | sed 's/
 assert_eq "batch pin: admin resolved to highest semver" "admin-v0.156.2" "$ADMIN_FINAL"
 assert_eq "batch pin: agent.image.tag pinned" "agent-v0.144.0" "$AGENT_TOP_FINAL"
 assert_eq "batch pin: agent.provisioning.image.tag pinned" "agent-v0.144.0" "$AGENT_PROV_FINAL"
-assert_eq "batch pin: chat pinned" "chat-v0.38.1" "$CHAT_FINAL"
+assert_eq "batch pin: chat pinned to the bare image tag" "0.38.1" "$CHAT_FINAL"
 assert_eq "batch pin: metrics untouched (not in this batch)" "metrics-v0.150.0" "$METRICS_FINAL"
 assert_eq "batch pin: taskStore untouched (not in this batch)" "task-store-v0.86.0" "$TASKSTORE_FINAL"
 
@@ -1178,7 +1209,7 @@ taskStore:
     tag: task-store-v0.85.0
 chat:
   image:
-    tag: chat-v0.37.0
+    tag: 0.37.0
 EOF
   git add -A
   GIT_AUTHOR_DATE="2026-07-06T09:00:00-07:00" GIT_COMMITTER_DATE="2026-07-06T09:00:00-07:00" \
@@ -1204,6 +1235,28 @@ if echo "$BATCHED" | grep -q "metrics"; then
 else
   pass "service already in sync (tag matches pin) is not batched"
 fi
+
+# agent-chat follows the platform pin in agent/Dockerfile (delivered by the
+# platform-release dispatch), not a git tag: a Dockerfile ahead of the chat
+# pin batches the synthesized agent-chat tag; a matching pin does not.
+GIT_TEST_DIR_CHAT="$TMPDIR_TEST/git-batch-chat"
+cp -R "$GIT_TEST_DIR" "$GIT_TEST_DIR_CHAT"
+mkdir -p "$GIT_TEST_DIR_CHAT/agent"
+printf 'ARG PLATFORM_VERSION=0.38.0\nFROM ghcr.io/app-vitals/agent:${PLATFORM_VERSION}\n' > "$GIT_TEST_DIR_CHAT/agent/Dockerfile"
+BATCHED_CHAT=$(cd "$GIT_TEST_DIR_CHAT" && compute_batch_from_drift charts/shipwright/values.yaml)
+assert_eq "platform pin ahead of chat.image.tag batches agent-chat-vX.Y.Z alongside git-tagged drift" \
+  "admin-v0.156.0,agent-chat-v0.38.0,agent-v0.144.0" "$BATCHED_CHAT"
+
+printf 'ARG PLATFORM_VERSION=0.37.0\n' > "$GIT_TEST_DIR_CHAT/agent/Dockerfile"
+BATCHED_CHAT_SYNC=$(cd "$GIT_TEST_DIR_CHAT" && compute_batch_from_drift charts/shipwright/values.yaml)
+if echo "$BATCHED_CHAT_SYNC" | grep -q "chat"; then
+  fail "platform pin equal to chat.image.tag is not batched" "no agent-chat entry" "$BATCHED_CHAT_SYNC"
+else
+  pass "platform pin equal to chat.image.tag is not batched"
+fi
+
+assert_eq "pin_value_for_tag strips the agent-chat-v prefix to the bare image tag" "0.38.0" "$(pin_value_for_tag 'agent-chat-v0.38.0')"
+assert_eq "pin_value_for_tag leaves other services' tags untouched" "admin-v0.156.0" "$(pin_value_for_tag 'admin-v0.156.0')"
 
 # Fully in sync (every service's highest git tag matches its values.yaml
 # pin) → empty batch. This is the AC #4 "nothing drifted" case the resolve
@@ -1233,15 +1286,16 @@ taskStore:
     tag: task-store-v1.0.0
 chat:
   image:
-    tag: chat-v1.0.0
+    tag: 1.0.0
 EOF
+  mkdir -p agent
+  printf 'ARG PLATFORM_VERSION=1.0.0\n' > agent/Dockerfile
   git add -A
   git commit -q -m "init"
   git tag admin-v1.0.0
   git tag metrics-v1.0.0
   git tag agent-v1.0.0
   git tag task-store-v1.0.0
-  git tag chat-v1.0.0
 )
 
 INSYNC_BATCH=$(cd "$GIT_TEST_DIR_INSYNC" && compute_batch_from_drift charts/shipwright/values.yaml)
@@ -1262,7 +1316,7 @@ assert_eq "fully in sync across all five services → empty batch (nothing to bu
 # only "does values.yaml's current pin match the highest live tag" — so
 # nothing is dropped regardless of how the batches/PRs interleave in time.
 #
-# Real incident shape: a 5-tag batch (admin-v1.186.0, chat-v1.102.0,
+# Real incident shape: a 5-tag batch (admin-v1.186.0, agent-chat-v1.102.0,
 # mcp-server-v0.100.0, metrics-v1.107.0, task-store-v1.139.0) landed at the
 # same instant; only metrics-v1.107.0 was ever credited. admin-v1.186.0 was
 # never pinned (values.yaml's admin pin jumped straight from v1.185.0 to
@@ -1285,6 +1339,9 @@ mkdir -p "$GIT_TEST_DIR_INCIDENT/charts/shipwright"
   git config user.email "test@test.com"
   git config user.name "test"
 
+  mkdir -p agent
+  printf 'ARG PLATFORM_VERSION=1.101.0\n' > agent/Dockerfile
+
   # Starting pinned state, before either batch lands.
   cat > charts/shipwright/values.yaml <<'EOF'
 admin:
@@ -1304,7 +1361,7 @@ taskStore:
     tag: task-store-v1.138.0
 chat:
   image:
-    tag: chat-v1.101.0
+    tag: 1.101.0
 EOF
   git add -A
   GIT_AUTHOR_DATE="2026-09-16T08:00:00Z" GIT_COMMITTER_DATE="2026-09-16T08:00:00Z" \
@@ -1313,7 +1370,9 @@ EOF
   # Batch 1 lands: four tracked-service tags at the same instant (the real
   # incident's burst, minus the untracked mcp-server-v0.100.0).
   GIT_COMMITTER_DATE="2026-09-16T09:00:00Z" git tag -a admin-v1.186.0 -m "x"
-  GIT_COMMITTER_DATE="2026-09-16T09:00:00Z" git tag -a chat-v1.102.0 -m "x"
+  # chat is not git-tagged here: agent-chat follows the platform pin in
+  # agent/Dockerfile, which the platform-release bump moves to 1.102.0.
+  printf 'ARG PLATFORM_VERSION=1.102.0\n' > agent/Dockerfile
   GIT_COMMITTER_DATE="2026-09-16T09:00:00Z" git tag -a metrics-v1.107.0 -m "x"
   GIT_COMMITTER_DATE="2026-09-16T09:00:00Z" git tag -a task-store-v1.139.0 -m "x"
 )
@@ -1324,7 +1383,7 @@ EOF
 # drifted services.
 BATCH_1=$(cd "$GIT_TEST_DIR_INCIDENT" && compute_batch_from_drift charts/shipwright/values.yaml)
 assert_eq "batch 1: every drifted service credited while its own PR is still open" \
-  "admin-v1.186.0,chat-v1.102.0,metrics-v1.107.0,task-store-v1.139.0" \
+  "admin-v1.186.0,agent-chat-v1.102.0,metrics-v1.107.0,task-store-v1.139.0" \
   "$BATCH_1"
 
 # Batch 2 lands while batch 1's PR is STILL open: a second, unrelated
@@ -1343,7 +1402,7 @@ assert_eq "batch 1: every drifted service credited while its own PR is still ope
 
 BATCH_2=$(cd "$GIT_TEST_DIR_INCIDENT" && compute_batch_from_drift charts/shipwright/values.yaml)
 assert_eq "batch 2: every tag from BOTH batches still credited — task-store resolves to its new highest tag, nothing dropped" \
-  "admin-v1.186.0,chat-v1.102.0,metrics-v1.107.0,task-store-v1.140.0" \
+  "admin-v1.186.0,agent-chat-v1.102.0,metrics-v1.107.0,task-store-v1.140.0" \
   "$BATCH_2"
 
 if echo "$BATCH_2" | grep -q "task-store-v1.139.0"; then
@@ -1419,7 +1478,7 @@ taskStore:
     tag: task-store-v0.1.0
 chat:
   image:
-    tag: chat-v0.37.0
+    tag: 0.37.0
 EOF
     git add -A
     GIT_AUTHOR_DATE="2026-07-06T09:00:00-07:00" GIT_COMMITTER_DATE="2026-07-06T09:00:00-07:00" \
@@ -1595,6 +1654,119 @@ if grep -q "metrics-v0.5.0" "$f6" && grep -q "admin-v0.5.1" "$f6"; then
   pass "pipeline: both batched tags appear in annotation"
 else
   fail "pipeline: both batched tags appear in annotation" "metrics-v0.5.0 and admin-v0.5.1 in annotation" "not found"
+fi
+
+# ---------------------------------------------------------------------------
+# Library chart pin bump (CHM-3.5): the chart-release dispatch from
+# app-vitals/agent re-pins the agent-platform dependency and bumps the chart.
+# Logic lives in lib/library-pin.sh (sourced by library-chart-release.yml).
+# ---------------------------------------------------------------------------
+
+# shellcheck source=lib/library-pin.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/library-pin.sh"
+
+echo ""
+echo "=== library pin bump tests ==="
+
+make_chart_dir() {
+  local lib_version="${1:-0.3.0}" chart_version="${2:-1.30.0}"
+  local dir
+  dir="$(mktemp -d)"
+  cat > "$dir/Chart.yaml" <<EOF
+apiVersion: v2
+name: shipwright
+version: ${chart_version}
+appVersion: "0.1.0"
+annotations:
+  licenses: MIT
+  artifacthub.io/changes: |
+    - kind: changed
+      description: "previous change"
+dependencies:
+  - name: agent-platform
+    version: "${lib_version}"
+    repository: https://app-vitals.github.io/agent
+  - name: postgresql
+    version: "18.12.4"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+EOF
+  cat > "$dir/Chart.lock" <<EOF
+dependencies:
+- name: agent-platform
+  repository: https://app-vitals.github.io/agent
+  version: ${lib_version}
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 18.12.4
+digest: sha256:abc
+generated: "2026-10-27T00:00:00Z"
+EOF
+  cat > "$dir/CHANGELOG.md" <<EOF
+# Changelog
+
+Preamble.
+
+## [${chart_version}] - 2026-10-26
+
+### Changed
+
+- previous change
+EOF
+  echo "$dir"
+}
+
+d=$(make_chart_dir 0.3.0 1.30.0)
+bump_library_pin "$d" "0.4.0" "2026-10-28"
+assert_eq "library bump: Chart.yaml dependency pin" "0.4.0" "$(library_pin_from_chart "$d/Chart.yaml")"
+assert_eq "library bump: Chart.lock pin" "0.4.0" "$(library_pin_from_lock "$d/Chart.lock")"
+assert_eq "library bump: chart version patch-bumped" "1.30.1" "$(read_chart_version "$d/Chart.yaml")"
+assert_eq "library bump: postgresql pin untouched in Chart.yaml" "1" "$(grep -c '"18.12.4"' "$d/Chart.yaml")"
+assert_eq "library bump: postgresql pin untouched in Chart.lock" "1" "$(grep -c 'version: 18.12.4' "$d/Chart.lock")"
+assert_eq "library bump: artifacthub entry replaced" "1" "$(grep -c 'agent-platform library chart to 0.4.0' "$d/Chart.yaml")"
+assert_eq "library bump: old artifacthub entry dropped" "0" "$(grep -c 'previous change' "$d/Chart.yaml")"
+assert_eq "library bump: dependencies key intact after annotation rewrite" "1" "$(grep -c '^dependencies:' "$d/Chart.yaml")"
+assert_eq "library bump: changelog entry inserted for new version" "1" "$(grep -c '^## \[1.30.1\] - 2026-10-28' "$d/CHANGELOG.md")"
+assert_eq "library bump: changelog keeps old entry" "1" "$(grep -c '^## \[1.30.0\]' "$d/CHANGELOG.md")"
+assert_eq "library bump: new changelog entry precedes old" "[1.30.1]" "$(awk '/^## \[/{print $2; exit}' "$d/CHANGELOG.md")"
+CL_DESC=$(grep 'agent-platform library chart to' "$d/CHANGELOG.md" | sed 's/^- //')
+AH_DESC=$(grep 'agent-platform library chart to' "$d/Chart.yaml" | sed 's/^ *description: "//; s/"$//')
+assert_eq "library bump: changelog mirrors artifacthub annotation" "$CL_DESC" "$AH_DESC"
+printf 'entries:\n  agent-platform:\n  - version: 0.4.0\n' > "$d/index.yaml"
+assert_eq "library bump: no drift against the version just pinned" "" \
+  "$(compute_library_drift "$d/Chart.yaml" "$d/Chart.lock" "$d/index.yaml")"
+
+# Idempotent: re-bumping to the pinned version changes nothing.
+d2=$(make_chart_dir 0.4.0 1.30.1)
+cp "$d2/Chart.yaml" "$d2/Chart.yaml.orig"
+bump_library_pin "$d2" "0.4.0" "2026-10-28"
+assert_eq "library bump: same version is a no-op (Chart.yaml)" "" "$(diff "$d2/Chart.yaml" "$d2/Chart.yaml.orig")"
+assert_eq "library bump: same version is a no-op (chart version)" "1.30.1" "$(read_chart_version "$d2/Chart.yaml")"
+
+# A stale (older) dispatch must not downgrade the pin.
+d3=$(make_chart_dir 0.5.0 1.31.0)
+bump_library_pin "$d3" "0.4.0" "2026-10-28" 2>/dev/null
+assert_eq "library bump: older version does not downgrade" "0.5.0" "$(library_pin_from_chart "$d3/Chart.yaml")"
+assert_eq "library bump: older version does not bump chart" "1.31.0" "$(read_chart_version "$d3/Chart.yaml")"
+
+# Version arrives from an external event: strict X.Y.Z only.
+for bad in "" "1.2" "v1.2.3" "1.2.3-rc1" '1.2.3"; rm -rf /' "1.2.3 "; do
+  d4=$(make_chart_dir 0.3.0 1.30.0)
+  if bump_library_pin "$d4" "$bad" "2026-10-28" 2>/dev/null; then
+    fail "library bump: rejects invalid version '$bad'" "non-zero exit" "exit 0"
+  else
+    pass "library bump: rejects invalid version '$bad'"
+  fi
+  assert_eq "library bump: invalid version '$bad' leaves Chart.yaml untouched" "1.30.0" "$(read_chart_version "$d4/Chart.yaml")"
+done
+
+# Missing dependency is an error, not a silent no-op.
+d5=$(make_chart_dir 0.3.0 1.30.0)
+sed -i 's/name: agent-platform/name: other/' "$d5/Chart.yaml"
+if bump_library_pin "$d5" "0.4.0" "2026-10-28" 2>/dev/null; then
+  fail "library bump: errors when agent-platform dependency is missing" "non-zero exit" "exit 0"
+else
+  pass "library bump: errors when agent-platform dependency is missing"
 fi
 
 # ---------------------------------------------------------------------------

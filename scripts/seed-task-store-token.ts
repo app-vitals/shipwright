@@ -18,11 +18,11 @@
  *
  * Pure helpers (hashRawToken) and the upsert (seedTaskStoreAdminToken) are
  * exported for unit testing; the import.meta.main block wires real I/O. CLI
- * flags are parsed via the shared lib/cli-flags.ts#parseFlags helper.
+ * flags are parsed via the shared @app-vitals/agent-lib/cli-flags#parseFlags helper.
  */
 
 import { createHash } from "node:crypto";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in
@@ -57,7 +57,11 @@ export async function seedTaskStoreAdminToken(opts: {
   const hashed = hashRawToken(opts.rawToken);
   await opts.prisma.taskToken.upsert({
     where: { token: hashed },
-    create: { token: hashed, label: opts.label ?? null, agentId: opts.agentId ?? null },
+    create: {
+      token: hashed,
+      label: opts.label ?? null,
+      agentId: opts.agentId ?? null,
+    },
     update: {},
   });
 }

@@ -6,11 +6,12 @@
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
  * - Org/repo resolution from repos/ dir
+ * - Config-driven scoped-repo resolution (agent config repos[] ∩ filesystem scan)
  * - gh CLI execution helper
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // ─── Task types ───────────────────────────────────────────────────────────────
@@ -22,8 +23,8 @@ export type TaskStatus =
   | "approved"
   | "merged"
   | "done"
-  | "deploying"
   | "deployed"
+  | "released"
   | "blocked"
   | "cancelled";
 
@@ -54,8 +55,8 @@ export interface Task {
   file?: string;
   cancelledAt?: string;
   completedAt?: string;
-  deployingAt?: string;
   deployedAt?: string;
+  releasedAt?: string;
   ciFixAttempts?: number;
   mergeCommit?: string;
   prNumber?: number;
@@ -67,27 +68,6 @@ export interface Task {
   complexity?: number;
   hitl?: boolean;
   hitlNotifiedAt?: string;
-}
-
-// ─── Policy helpers ───────────────────────────────────────────────────────────
-
-export function parseAllowSelfReview(content: string): boolean {
-  const match = content.match(
-    /`?\*{0,2}\ballow_self_review\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
-  );
-  return match?.[1] === "true"; // default false if missing/unparseable
-}
-
-export function readAllowSelfReview(workspacePath: string): boolean {
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseAllowSelfReview(content);
-  } catch {
-    return false;
-  }
 }
 
 // ─── Workspace path ───────────────────────────────────────────────────────────
@@ -248,6 +228,60 @@ export function resolveRepoDirs(workspacePath: string): RepoDir[] {
   return [];
 }
 
+// ─── Scoped repo resolution (agent config intersection) ──────────────────────
+
+/**
+ * Resolve the "owner/repo" strings this agent is scoped to: the intersection
+ * of the agent's configured `repos[]` (read from the admin API's
+ * `GET /agents/{id}/config`) and the repos actually cloned into the
+ * workspace (resolveRepos()).
+ *
+ * Fails closed. If any of SHIPWRIGHT_API_URL, SHIPWRIGHT_AGENT_ID, or
+ * SHIPWRIGHT_AGENT_API_KEY is missing/empty, this returns [] without
+ * attempting a fetch. If the fetch throws (network error, bad JSON) or the
+ * response is non-2xx, this also returns []. There is no fallback to the
+ * unfiltered filesystem scan on any failure path — callers that want "all
+ * cloned repos regardless of scope" should call resolveRepos()/
+ * resolveAllRepos() directly instead.
+ *
+ * `deps.fetchFn` is injectable so callers (and tests) can supply a double
+ * instead of relying on the global `fetch`.
+ */
+export async function resolveScopedRepos(
+  workspacePath: string,
+  deps: { fetchFn?: typeof fetch } = {},
+): Promise<string[]> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const apiUrl = (process.env.SHIPWRIGHT_API_URL ?? "").trim();
+  const agentId = (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim();
+  const apiKey = (process.env.SHIPWRIGHT_AGENT_API_KEY ?? "").trim();
+  if (!apiUrl || !agentId || !apiKey) return [];
+
+  const baseUrl = apiUrl.replace(/\/$/, "");
+  try {
+    const res = await fetchFn(`${baseUrl}/agents/${agentId}/config`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return [];
+
+    const data = (await res.json()) as unknown;
+    const rawRepos =
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).repos)
+        ? (data as Record<string, unknown>).repos
+        : [];
+    const configuredRepos = (rawRepos as unknown[]).filter(
+      (r): r is string => typeof r === "string",
+    );
+
+    const cloned = new Set(resolveRepos(workspacePath));
+    return configuredRepos.filter((r) => cloned.has(r));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Merge-only detection ────────────────────────────────────────────────────
 
 export interface CommitInfo {
@@ -285,6 +319,11 @@ export async function isMergeOnlyUpdate(
 
 // ─── Task store HTTP client ───────────────────────────────────────────────────
 
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 /**
  * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
  * environment, validates they are present, and returns a minimal fetch client
@@ -293,7 +332,7 @@ export async function isMergeOnlyUpdate(
  * Exits with code 1 if either variable is missing so callers (precheck scripts)
  * get a clean error rather than a confusing undefined/TypeError at call-time.
  */
-export function createTaskStoreClient(): {
+export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
 } {
@@ -308,6 +347,7 @@ export function createTaskStoreClient(): {
     process.exit(1);
   }
   const baseUrl = taskStoreUrl.replace(/\/$/, "");
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
   const headers = {
     Authorization: `Bearer ${taskStoreToken}`,
     "Content-Type": "application/json",
@@ -315,7 +355,7 @@ export function createTaskStoreClient(): {
 
   return {
     async query(params: URLSearchParams): Promise<Task[]> {
-      const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
       const data = (await res.json()) as unknown;
@@ -332,7 +372,7 @@ export function createTaskStoreClient(): {
       );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
-      const res = await fetch(`${baseUrl}/tasks/${id}`, {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(fields),
@@ -381,11 +421,14 @@ export function ghRun(args: string[]): void {
 
 /**
  * Run a gh API graphql command and return the raw response.
+ *
+ * `owner` pins the repo owner for the `gh` wrapper's token routing by setting
+ * SHIPWRIGHT_GH_OWNER in the spawned env; omitted, the env is untouched.
  */
-export function ghGraphql<T>(query: string): T {
+export function ghGraphql<T>(query: string, owner?: string): T {
   const result = spawnSync("gh", ["api", "graphql", "-f", `query=${query}`], {
     encoding: "utf-8",
-    env: process.env,
+    env: owner ? { ...process.env, SHIPWRIGHT_GH_OWNER: owner } : process.env,
   });
   if (result.status !== 0) {
     throw new Error(

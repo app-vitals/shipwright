@@ -1,0 +1,163 @@
+/**
+ * admin/src/coding/phase-methodology-runtime-config.integration.test.ts
+ * Integration tests for the runtime API (GET /:id/config) against a real
+ * PostgreSQL DB, using real services (not mocks) end-to-end. Relocated from
+ * admin/src/api.integration.test.ts (AEP-3.2): the phase-methodology write
+ * route now lives in the coding admin API (agents-api-coding.ts).
+ *
+ * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
+ *
+ * Complements api.smoke.test.ts (mocked services) — this file exercises the
+ * real Prisma-backed AgentPhaseMethodologyService wired through the actual
+ * coding admin route (PUT /agents/:id/phase-methodology/:phase) and verifies
+ * the runtime GET /:id/config route reflects those writes (PMC-1.1).
+ */
+
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { AgentCronJobService } from "@app-vitals/agent-admin/agent-cron-jobs";
+import { AgentEnvService } from "@app-vitals/agent-admin/agent-envs";
+import { AgentPluginService } from "@app-vitals/agent-admin/agent-plugins";
+import { AgentTokenService } from "@app-vitals/agent-admin/agent-tokens";
+import { AgentService } from "@app-vitals/agent-admin/agents";
+import { parseAdminApiKeys } from "@app-vitals/agent-admin/agents-api";
+import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
+import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
+import { makeTokenCrypto } from "@app-vitals/agent-admin/token-crypto";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { createCodingAdminApiApp } from "./agents-api-coding.ts";
+
+const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
+const describeOrSkip = TEST_DB ? describe : describe.skip;
+
+const SESSION_SECRET = "test-runtime-session-secret-32bytes!";
+const ADMIN_API_KEY = "test-runtime-admin-key";
+const REAL_KEY =
+  "0000000000000000000000000000000000000000000000000000000000000001";
+
+function makePrisma(): PrismaClient {
+  return createAdminPrismaClient(TEST_DB as string);
+}
+
+async function createAgent(
+  prisma: PrismaClient,
+  name = "Test Agent",
+): Promise<string> {
+  const agent = await prisma.agent.create({ data: { name } });
+  return agent.id;
+}
+
+describeOrSkip(
+  "runtime GET /:id/config + admin PUT /phase-methodology (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let agentId: string;
+    let runtimeApp: ReturnType<typeof createAgentRuntimeApp>;
+    let adminApp: ReturnType<typeof createCodingAdminApiApp>;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      await prisma.agentPhaseMethodology.deleteMany();
+      await prisma.agentPlugin.deleteMany();
+      await prisma.agentToken.deleteMany();
+      await prisma.agentCronJob.deleteMany();
+      await prisma.agentTool.deleteMany();
+      await prisma.agentEnv.deleteMany();
+      await prisma.agentMember.deleteMany();
+      await prisma.agent.deleteMany();
+
+      agentId = await createAgent(prisma);
+
+      const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+      process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
+      const crypto = makeTokenCrypto();
+      if (savedKey === undefined) {
+        delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+      } else {
+        process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+      }
+
+      const agentEnvService = new AgentEnvService(prisma, crypto);
+      const agentCronJobService = new AgentCronJobService(prisma);
+      const agentService = new AgentService(prisma);
+      const agentPluginService = new AgentPluginService(prisma);
+      const agentPhaseMethodologyService = new AgentPhaseMethodologyService(
+        prisma,
+      );
+      const agentTokenService = new AgentTokenService(prisma);
+      const adminApiKeys = parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`);
+
+      runtimeApp = createAgentRuntimeApp({
+        agentEnvService,
+        agentCronJobService,
+        agentService,
+        agentPluginService,
+        agentPhaseMethodologyService,
+        sessionSecret: SESSION_SECRET,
+        adminApiKeys,
+        agentTokenService,
+      });
+
+      // Minimal real coding admin API wired with the same real
+      // agentPhaseMethodologyService, so PUT writes are visible to the
+      // runtime app's GET /:id/config read against the same DB.
+      adminApp = createCodingAdminApiApp({
+        agentService,
+        agentPhaseMethodologyService,
+        agentWorkQueueService: {
+          push: async () => {
+            throw new Error("not implemented");
+          },
+          get: async () => null,
+        },
+        agentTokenService,
+        agentMemberService: { listByEmail: async () => [] },
+        sessionSecret: SESSION_SECRET,
+        adminApiKeys,
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    it("GET /:id/config returns phaseMethodology with all six phases defaulting to null when no overrides exist", async () => {
+      const res = await runtimeApp.request(`/${agentId}/config`, {
+        headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.phaseMethodology).toEqual({
+        prd: null,
+        "plan-session": null,
+        review: null,
+        patch: null,
+        deploy: null,
+        "dev-task": null,
+      });
+    });
+
+    it("GET /:id/config reflects a real PUT /agents/:id/phase-methodology/:phase write", async () => {
+      const putRes = await adminApp.request(
+        `/agents/${agentId}/phase-methodology/patch`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ subagentType: "shipwright:patcher" }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${ADMIN_API_KEY}`,
+          },
+        },
+      );
+      expect(putRes.status).toBe(200);
+
+      const res = await runtimeApp.request(`/${agentId}/config`, {
+        headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.phaseMethodology.patch).toBe("shipwright:patcher");
+      expect(body.phaseMethodology.review).toBeNull();
+    });
+  },
+);

@@ -27,7 +27,7 @@ export type ChildConfig = {
   env?: Record<string, string>;
 };
 
-export type ChildHandle = {
+type ChildHandle = {
   label: string;
   kill: (signal?: string) => void;
   exited: Promise<void>;
@@ -35,7 +35,7 @@ export type ChildHandle = {
 
 type SpawnFn = (config: ChildConfig) => ChildHandle;
 
-export type Supervisor = {
+type Supervisor = {
   start(): Promise<void>;
   shutdownWithChildren(handles: ChildHandle[]): Promise<void>;
 };

@@ -33,7 +33,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     phase: null,
     readyForReviewAt: null,
     readyForPatchAt: null,
-    readyForDeployAt: null,
+    readyForMergeAt: null,
     blocked: false,
     blockedReason: null,
     skipCount: 0,
@@ -108,6 +108,25 @@ describe("computePrTransitionDiff()", () => {
     expect(changes).toEqual([
       { field: "reviewState", oldValue: "pending", newValue: "in_progress" },
     ]);
+  });
+
+  test("merge-phase claim records phase and readyForMergeAt (MPD-1.1)", () => {
+    const changes = computePrTransitionDiff(
+      pr({ phase: null, readyForMergeAt: null }),
+      pr({ phase: "merge", readyForMergeAt: "2026-01-07T00:00:00.000Z" }),
+    );
+    const byField = Object.fromEntries(changes.map((c) => [c.field, c]));
+    expect(changes).toHaveLength(2);
+    expect(byField.phase).toEqual({
+      field: "phase",
+      oldValue: null,
+      newValue: "merge",
+    });
+    expect(byField.readyForMergeAt).toEqual({
+      field: "readyForMergeAt",
+      oldValue: null,
+      newValue: "2026-01-07T00:00:00.000Z",
+    });
   });
 
   test("null → value transition records oldValue null", () => {

@@ -96,6 +96,9 @@ between when the report was generated and when this skill runs — a human may h
 reviewed a prior `consolidation-fix` PR and added a new accepted-debt entry since.
 Never trust the report's promotion decision as still current; re-check live.
 
+See `references/decisions-registry.md` for the shared decisions-registry pattern this
+mirrors.
+
 1. Check for `.claude/shipwright/consolidation-decisions.md` in the project root.
 2. **If it does not exist**, treat this as "no suppressions configured" — the same
    graceful no-op `consolidation-scan` uses. Print: "No consolidation-decisions.md

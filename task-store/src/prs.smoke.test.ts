@@ -27,6 +27,8 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
+import type { ScopeResolver } from "./auth.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrFinding, PullRequest, PullRequestEvent } from "./index.ts";
 import type {
@@ -66,6 +68,7 @@ const SCOPED_REPO = "acme-inc/backend-api";
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: "pr-1",
+    accountId: DEFAULT_ACCOUNT_ID,
     repo: ADMIN_REPO,
     prNumber: 42,
     staged: false,
@@ -86,7 +89,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     phase: null,
     readyForReviewAt: null,
     readyForPatchAt: null,
-    readyForDeployAt: null,
+    readyForMergeAt: null,
     skipCount: 0,
     lastSkippedAt: null,
     lastCiFailureSignature: null,
@@ -191,10 +194,11 @@ function fakeAgentTokenService(): TokenServiceLike {
   };
 }
 
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 /** Captured args from each fakePrService.claim() call — for asserting phase forwarding. */
@@ -203,11 +207,14 @@ interface CapturedClaimCall {
   prNumber: number;
   commitSha: string;
   claimedBy: string;
-  phase?: "review" | "patch" | "deploy";
+  phase?: "review" | "patch" | "merge";
   prCreatedAt?: string;
   authorLogin?: string | null;
   headRef?: string | null;
   title?: string | null;
+  authorIsBot?: boolean;
+  hasAutomatedLabel?: boolean;
+  hasShipwrightLabel?: boolean;
 }
 
 /** Captured args from each fakePrService.appendFinding() call. */
@@ -230,7 +237,7 @@ function fakePrService(
     listResult?: PullRequest[];
     claimNextResult?: {
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge";
     } | null;
     claimCalls?: CapturedClaimCall[];
     appendFindingCalls?: CapturedAppendFindingCall[];
@@ -269,6 +276,8 @@ function fakePrService(
           orgs.some((org) => p.repo.startsWith(`${org}/`)),
         );
       }
+      if (filters?.repoScope)
+        prs = prs.filter((p) => filters.repoScope?.includes(p.repo));
       if (filters?.staged !== undefined)
         prs = prs.filter((p) => p.staged === filters.staged);
       return {
@@ -301,11 +310,14 @@ function fakePrService(
       prNumber: number,
       commitSha: string,
       claimedBy: string,
-      phase?: "review" | "patch" | "deploy",
+      phase?: "review" | "patch" | "merge",
       prCreatedAt?: string,
       authorLogin?: string | null,
       headRef?: string | null,
       title?: string | null,
+      authorIsBot?: boolean,
+      hasAutomatedLabel?: boolean,
+      hasShipwrightLabel?: boolean,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
       opts.claimCalls?.push({
         repo,
@@ -317,6 +329,9 @@ function fakePrService(
         authorLogin,
         headRef,
         title,
+        authorIsBot,
+        hasAutomatedLabel,
+        hasShipwrightLabel,
       });
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;
@@ -422,13 +437,42 @@ function fakePrService(
       return updated;
     },
 
+    async unblock(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      if (!existing.blocked) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const updated = {
+        ...existing,
+        blocked: false,
+        blockedReason: null,
+        blockedHeadSha: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+        consecutiveCiFailureCount: 0,
+        lastCiFailureSignature: null,
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
     async resetSkip(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
+      // Mirrors PullRequestService.resetSkip's block-clearing rule.
+      const clearsBlock =
+        existing.blocked &&
+        (existing.blockedReason?.includes("consecutive skips") ||
+          existing.blockedReason?.startsWith(
+            "patch dispatch made no progress",
+          ));
       const updated = {
         ...existing,
         skipCount: 0,
         lastSkippedAt: null,
+        ...(clearsBlock ? { blocked: false, blockedReason: null } : {}),
         updatedAt: new Date(),
       } as PullRequest;
       store.set(id, updated);
@@ -441,7 +485,7 @@ function fakePrService(
       _repos?: string[],
     ): Promise<{
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge";
     } | null> {
       if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
       return null;
@@ -597,6 +641,9 @@ function fakePrService(
 /** Minimal TaskServiceLike fake for app construction. */
 function fakeTaskService(): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
@@ -639,6 +686,9 @@ function fakeTaskService(): TaskServiceLike {
     async resetSkip(_id) {
       return {} as never;
     },
+    async unblock(_id) {
+      return {} as never;
+    },
     async bulk() {
       return { inserted: 0, updated: 0, skipped: [] };
     },
@@ -655,7 +705,7 @@ function makeApp(
   deps: {
     prService?: PullRequestServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({
@@ -830,6 +880,63 @@ describe("/prs routes (smoke)", () => {
     expect(claimCalls[0]?.phase).toBe("patch");
   });
 
+  it('POST /prs/claim accepts and forwards phase:"merge" to service.claim() (MPD-1.1)', async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "merge",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.phase).toBe("merge");
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("merge");
+  });
+
+  it("POST /prs/claim rejects an unknown phase value with 400", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "bogus",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(claimCalls).toHaveLength(0);
+  });
+
+  it("POST /prs/claim rejects the dropped phase=deploy with 400 (MPD-3.5)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        phase: "deploy",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(claimCalls).toHaveLength(0);
+  });
+
   it("POST /prs/claim without a phase field leaves phase undefined (service default applies)", async () => {
     const claimCalls: CapturedClaimCall[] = [];
     const app = makeApp({ prService: fakePrService({ claimCalls }) });
@@ -912,6 +1019,50 @@ describe("/prs routes (smoke)", () => {
     expect(body.authorLogin).toBe("octocat");
     expect(body.headRef).toBe("feat/some-branch");
     expect(body.title).toBe("Add the origin metrics dimension");
+  });
+
+  it("POST /prs/claim forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel from the request body to service.claim() (POF-1.1)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        authorLogin: "app/renovate",
+        authorIsBot: true,
+        hasAutomatedLabel: false,
+        hasShipwrightLabel: false,
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorIsBot).toBe(true);
+    expect(claimCalls[0]?.hasAutomatedLabel).toBe(false);
+    expect(claimCalls[0]?.hasShipwrightLabel).toBe(false);
+  });
+
+  it("POST /prs/claim omits authorIsBot/hasAutomatedLabel/hasShipwrightLabel when not supplied (leaves them undefined, not coerced to false)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorIsBot).toBeUndefined();
+    expect(claimCalls[0]?.hasAutomatedLabel).toBeUndefined();
+    expect(claimCalls[0]?.hasShipwrightLabel).toBeUndefined();
   });
 
   it("POST /prs/claim passes an explicit null authorLogin/headRef/title through as null (not undefined)", async () => {
@@ -1179,6 +1330,62 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequestListResult;
     expect(body.prs.map((p) => p.repo).sort()).toEqual(["org-a/x", "org-b/y"]);
+  });
+
+  it("GET /prs with an agent token only returns PRs in the token's repos", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    const res = await app.request("/prs", { headers: agentAuth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.id)).toEqual(["pr-1"]);
+  });
+
+  it("GET /prs?repo=<out-of-scope> with an agent token returns an empty list", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    for (const q of ["repo=other-org/secret", "org=other-org"]) {
+      const res = await app.request(`/prs?${q}`, { headers: agentAuth() });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as PullRequestListResult;
+      expect(body.prs).toEqual([]);
+      expect(body.total).toBe(0);
+    }
+  });
+
+  it("GET /prs with an agent token whose scope is [] returns nothing; admin sees all", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const prService = fakePrService({ store });
+
+    const scoped = makeApp({
+      prService,
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([]),
+    });
+    const res = await scoped.request("/prs", { headers: agentAuth() });
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toEqual([]);
+    expect(body.total).toBe(0);
+
+    const admin = makeApp({ prService });
+    const adminRes = await admin.request("/prs", { headers: adminAuth() });
+    const adminBody = (await adminRes.json()) as PullRequestListResult;
+    expect(adminBody.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
   });
 
   it("GET /prs without repo/org leaves both filters undefined (not empty arrays)", async () => {
@@ -1564,7 +1771,6 @@ describe("/prs routes (smoke)", () => {
         phase: "review",
         readyForReviewAt: readyAt,
         readyForPatchAt: readyAt,
-        readyForDeployAt: readyAt,
       }),
     });
     expect(res.status).toBe(200);
@@ -1572,7 +1778,37 @@ describe("/prs routes (smoke)", () => {
     expect(body.phase).toBe("review");
     expect(body.readyForReviewAt).toBe(readyAt);
     expect(body.readyForPatchAt).toBe(readyAt);
-    expect(body.readyForDeployAt).toBe(readyAt);
+  });
+
+  it("PATCH /prs/:id rejects the dropped phase=deploy with 400 (MPD-3.5)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", phase: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ phase: "deploy" }),
+    });
+    expect(res.status).toBe(400);
+    expect(store.get("pr-1")?.phase).toBeNull();
+  });
+
+  it("PATCH /prs/:id accepts phase=merge and readyForMergeAt (MPD-1.1)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", phase: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const readyAt = "2026-07-02T00:00:00.000Z";
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ phase: "merge", readyForMergeAt: readyAt }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.phase).toBe("merge");
+    expect(body.readyForMergeAt).toBe(readyAt);
   });
 
   it("PATCH /prs/:id updates blocked and blockedReason", async () => {
@@ -1594,6 +1830,33 @@ describe("/prs routes (smoke)", () => {
     expect(body.blockedReason).toBe("no linked task");
   });
 
+  it("PATCH /prs/:id sets, preserves, and clears blockedHeadSha", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", blockedHeadSha: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+    const patch = (body: unknown) =>
+      app.request("/prs/pr-1", {
+        method: "PATCH",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    let res = await patch({ blockedHeadSha: "abc123" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBe("abc123");
+
+    res = await patch({ blockedReason: "escalated" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBe("abc123");
+
+    res = await patch({ blockedHeadSha: null });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBeNull();
+
+    res = await patch({ blockedHeadSha: 123 });
+    expect(res.status).toBe(400);
+  });
+
   it("PATCH /prs/:id can set and read back reviewedCommitSha", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", reviewedCommitSha: null }));
@@ -1609,7 +1872,7 @@ describe("/prs routes (smoke)", () => {
     expect(body.reviewedCommitSha).toBe("abc123def456");
   });
 
-  it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
+  it("PATCH /prs/:id returns 404 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));
     const app = makeApp({
@@ -1623,8 +1886,135 @@ describe("/prs routes (smoke)", () => {
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify({ staged: true }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
+
+  // ─── Shared :id scope guard (PRG-1.3) ─────────────────────────────────────
+
+  const ID_ROUTES: Array<{
+    name: string;
+    method: string;
+    path: string;
+    body?: unknown;
+  }> = [
+    { name: "GET /:id", method: "GET", path: "/prs/pr-1" },
+    { name: "GET /:id/events", method: "GET", path: "/prs/pr-1/events" },
+    {
+      name: "PATCH /:id",
+      method: "PATCH",
+      path: "/prs/pr-1",
+      body: { staged: true },
+    },
+    { name: "heartbeat", method: "POST", path: "/prs/pr-1/heartbeat" },
+    { name: "complete", method: "POST", path: "/prs/pr-1/complete" },
+    { name: "patch", method: "POST", path: "/prs/pr-1/patch", body: {} },
+    { name: "release", method: "POST", path: "/prs/pr-1/release" },
+    { name: "skip", method: "POST", path: "/prs/pr-1/skip" },
+    { name: "skip-reset", method: "POST", path: "/prs/pr-1/skip/reset" },
+    { name: "unblock", method: "POST", path: "/prs/pr-1/unblock" },
+    {
+      name: "findings",
+      method: "POST",
+      path: "/prs/pr-1/findings",
+      body: {
+        ref: "r",
+        disposition: "rejected",
+        source: "patch",
+        evidence: "e",
+      },
+    },
+  ];
+
+  function idRouteRequest(
+    app: ReturnType<typeof makeApp>,
+    r: (typeof ID_ROUTES)[number],
+    headers: Record<string, string>,
+  ) {
+    return app.request(r.path, {
+      method: r.method,
+      headers:
+        r.body !== undefined
+          ? { ...headers, "content-type": "application/json" }
+          : headers,
+      body: r.body !== undefined ? JSON.stringify(r.body) : undefined,
+    });
+  }
+
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: out-of-scope agent token and repos [] get 404 with no write; in-scope and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          ["pr-1", makePr({ id: "pr-1", repo: SCOPED_REPO })],
+        ]);
+      const snapshot = (m: Map<string, PullRequest>) =>
+        JSON.stringify(m.get("pr-1"));
+
+      for (const scope of [["other-org/other-repo"], []]) {
+        const store = mk();
+        const before = snapshot(store);
+        const app = makeApp({
+          tokenService: fakeAgentTokenService(),
+          scopeResolver: makeScopeResolver(scope),
+          prService: fakePrService({ store }),
+        });
+        const res = await idRouteRequest(app, r, agentAuth());
+        expect(res.status).toBe(404);
+        expect(snapshot(store)).toBe(before);
+      }
+
+      const inScope = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(inScope, r, agentAuth())).status).not.toBe(
+        404,
+      );
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
+
+  // SSP-6.6: a PR owned by another account is a 404 on every :id route, and
+  // the same row stays reachable for its own account and for an admin token.
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: another account's PR gets 404 with no write; own account and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          [
+            "pr-1",
+            makePr({ id: "pr-1", repo: SCOPED_REPO, accountId: "acct-b" }),
+          ],
+        ]);
+      const store = mk();
+      const before = JSON.stringify(store.get("pr-1"));
+      const other = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store }),
+      });
+      expect((await idRouteRequest(other, r, agentAuth())).status).toBe(404);
+      expect(JSON.stringify(store.get("pr-1"))).toBe(before);
+
+      const own = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: async () => ({
+          repos: [SCOPED_REPO],
+          accountId: "acct-b",
+        }),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(own, r, agentAuth())).status).not.toBe(404);
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
 
   // ─── reviewCycles ─────────────────────────────────────────────────────────
 
@@ -1706,6 +2096,46 @@ describe("/prs routes (smoke)", () => {
     expect(body.lastSkippedAt).toBeNull();
   });
 
+  it("POST /prs/:id/skip/reset clears a patch no-progress escalation block but leaves a human block", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        skipCount: 0,
+        blocked: true,
+        blockedReason:
+          "patch dispatch made no progress at abc1234 — still unsettled: ci",
+      }),
+    );
+    store.set(
+      "pr-2",
+      makePr({
+        id: "pr-2",
+        skipCount: 0,
+        blocked: true,
+        blockedReason: "Waiting on a human decision",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const cleared = await app.request("/prs/pr-1/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as PullRequest;
+    expect(clearedBody.blocked).toBe(false);
+    expect(clearedBody.blockedReason).toBeNull();
+
+    const kept = await app.request("/prs/pr-2/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    const keptBody = (await kept.json()) as PullRequest;
+    expect(keptBody.blocked).toBe(true);
+  });
+
   it("POST /prs/:id/skip returns 404 when pr not found", async () => {
     const app = makeApp({
       prService: fakePrService({ store: new Map() }),
@@ -1722,6 +2152,58 @@ describe("/prs routes (smoke)", () => {
       prService: fakePrService({ store: new Map() }),
     });
     const res = await app.request("/prs/missing/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /prs/:id/unblock resets the block, skip and CI-streak fields", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        blocked: true,
+        blockedReason: "Auto-blocked after 3 consecutive patch cycles",
+        blockedHeadSha: "abc1234",
+        skipCount: 2,
+        lastSkippedAt: new Date().toISOString(),
+        consecutiveCiFailureCount: 3,
+        lastCiFailureSignature: "sig-a",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/unblock", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.blocked).toBe(false);
+    expect(body.blockedReason).toBeNull();
+    expect(body.skipCount).toBe(0);
+    expect(body.consecutiveCiFailureCount).toBe(0);
+    expect(body.lastCiFailureSignature).toBeNull();
+  });
+
+  it("POST /prs/:id/unblock returns 409 when the pr is not blocked", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", blocked: false }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+    const res = await app.request("/prs/pr-1/unblock", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /prs/:id/unblock returns 404 when pr not found", async () => {
+    const app = makeApp({
+      prService: fakePrService({ store: new Map() }),
+    });
+    const res = await app.request("/prs/missing/unblock", {
       method: "POST",
       headers: adminAuth(),
     });

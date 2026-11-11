@@ -1,147 +1,38 @@
 # Agent Admin API — Agent Resources
 
-Per-agent resource endpoints for the [Agent Admin API](./agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot. See [`docs/agent-api.md`](./agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/agent-api-ops.md`](./agent-api-ops.md) for cron jobs and cron runs.
+> Coding half. The platform half is the vendored snapshot [`docs/platform/agent-api-resources.md`](./platform/agent-api-resources.md), sourced from `app-vitals/agent`.
+
+Per-agent resource endpoints for the [Agent Admin API](./platform/agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot. See [`docs/platform/agent-api.md`](./platform/agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/platform/agent-api-ops.md`](./platform/agent-api-ops.md) for cron jobs and cron runs.
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
 ---
 
-## Tools (allowed-tools list)
+## Phase Methodology
 
-The allowed-tools list controls which Claude Code tools the agent can call.
+Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, merge, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
 
-### Add tool
-
-```
-POST /agents/:id/tools
-```
-
-Body: `{ pattern: string, enabled?: boolean }`. Pattern is a glob or exact tool name (e.g. `"Read"`, `"Bash"`, `"mcp__*"`). Returns `201`.
-
-### List tools
+### List phase-methodology overrides
 
 ```
-GET /agents/:id/tools
+GET /agents/:id/phase-methodology
 ```
 
-Returns `{ tools: AgentTool[] }` where each entry has `id`, `pattern`, and `enabled`.
+Returns `{ phaseMethodology: AgentPhaseMethodology[] }` — an array of only the phases with explicit overrides. Phases not in this list are using their default methodology. To see all six phases with defaults filled in, use `GET /agents/:id/config` instead, which returns the full `phaseMethodology` map.
 
-### Update tool
-
-```
-PATCH /agents/:id/tools/:toolId
-```
-
-Body: `{ pattern?: string, enabled?: boolean }`. Returns the updated tool.
-
-### Delete tool
+### Set a phase's subagent-type override
 
 ```
-DELETE /agents/:id/tools/:toolId
+PUT /agents/:id/phase-methodology/{phase}
 ```
 
-Returns `204`.
+Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `merge`, or `dev-task`.
 
----
+Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
 
-## API tokens
+For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types (e.g. `"a,b"`). Entries are trimmed, duplicates are dropped (first occurrence wins), and empty entries are rejected. A multi-value list on any other phase, an empty entry, or more than 5 entries returns `400` with `{ error }`. Single values and `null` behave as before. `GET /agents/:id/config` still returns `phaseMethodology` values as strings (the normalized comma-joined list for `review`). Multi-reviewer behavior is owned by the `/shipwright:review` caller: reviewers run in parallel, findings are merged and de-duplicated (policy thresholds apply after the merge), and a fixed built-in `shipwright:finding-verifier` pass drops findings it cannot substantiate. The verifier is not configurable through `phaseMethodology`. See [review contract](../plugins/shipwright/references/methodology-contracts/review.md).
 
-Per-agent bearer tokens for scoped API access. The raw token is returned once at creation; only its SHA-256 hash is stored.
-
-### Create token
-
-```
-POST /agents/:id/tokens
-```
-
-Body (optional): `{ label?: string }`. Returns `201` with `{ id, label, createdAt, revokedAt, token }` where `token` is the raw value — save it immediately.
-
-### List tokens
-
-```
-GET /agents/:id/tokens
-```
-
-Returns `{ tokens: AgentToken[] }` with hash and metadata. Raw token values are never returned after creation.
-
-### Revoke token
-
-```
-DELETE /agents/:id/tokens/:tokenId
-```
-
-Soft-deletes the token (sets `revokedAt`). Returns `204`.
-
----
-
-## Plugins
-
-Plugins are Claude Code marketplace plugins installed for the agent.
-
-### Install plugin
-
-```
-POST /agents/:id/plugins
-```
-
-Body: `{ name: string, version?: string, enabled?: boolean }`. Returns `201`.
-
-### List plugins
-
-```
-GET /agents/:id/plugins
-```
-
-Returns `{ plugins: AgentPlugin[] }`.
-
-### Update plugin
-
-```
-PATCH /agents/:id/plugins
-```
-
-Query param: `name` (required). Body: `{ version?: string, enabled?: boolean }`. Returns the updated plugin.
-
-### Remove plugin
-
-```
-DELETE /agents/:id/plugins
-```
-
-Query param: `name` (required). Returns `204`.
-
----
-
-## Chat token usage
-
-Daily aggregate of Slack chat session token usage.
-
-### Record daily usage
-
-```
-POST /agents/:id/chat-tokens/daily
-```
-
-Atomic upsert — accumulates usage into the existing rows for `(agentId, date, model)` tuples if they exist. When a single day spans multiple models (e.g., agent tools using different Claude versions), supply a `modelBreakdown` array to split usage by model.
-
-Body:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `date` | yes | `YYYY-MM-DD` |
-| `modelBreakdown` | yes | Array of per-model usage entries. Each entry: `{ model: string, inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, costUsd?: number }` |
-
-Returns an array of updated daily rows (one per model in the breakdown).
-
-### Chat token stats
-
-```
-GET /agents/chat-tokens/daily/stats
-```
-
-Admin-only. Aggregated chat-token daily stats across all agents broken down by model. Query params: `from` and `to` (optional `YYYY-MM-DD` date strings).
-
-Returns `{ totals, byAgent, byModel, daily }` where each aggregate includes `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, and `costUsd`.
+Returns `200` with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
 
 ---
 
@@ -160,7 +51,7 @@ Body:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `computedAt` | yes | ISO timestamp when the agent computed this ranking |
-| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
+| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "merge", age: string }` (`age` is an ISO timestamp) |
 
 Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with:
 
@@ -170,7 +61,7 @@ Upserts the single row for this `agentId`, overwriting any prior snapshot. Retur
     "id": "string",
     "agentId": "string",
     "computedAt": "ISO timestamp",
-    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|deploy", "age": "ISO timestamp" }],
+    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|merge", "age": "ISO timestamp" }],
     "createdAt": "ISO timestamp"
   }
 }

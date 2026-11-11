@@ -257,7 +257,8 @@ body {
 
 /* ─── Simplify Breakdown Bars ───────────────────────────────────────────── */
 
-.simplify-breakdown {
+.simplify-breakdown,
+.pr-commits-breakdown {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;

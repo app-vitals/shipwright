@@ -53,12 +53,90 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /**
  * Skip-count auto-block threshold: once a task's skipCount reaches this
- * value, recordSkip() also sets status:'blocked' + blockedReason so the loop
- * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
- * agent/ and task-store/ are separate deployables.
+ * value, recordSkip() also sets status:'blocked' + blockedReason
+ * so the loop orchestrator stops re-selecting it. Mirrors
+ * SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts:179 —
+ * duplicated here (not imported) since agent/ and task-store/ are separate
+ * deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
+
+/** The subset of a skip-trackable record's state computeSkipStreak() reads. */
+interface SkipStreakState {
+  skipCount: number;
+  lastSkipReason: string | null;
+}
+
+/** computeSkipStreak()'s result: the next skipCount/lastSkipReason to write, plus whether this crossing trips the auto-block. */
+interface SkipStreakResult {
+  /**
+   * The *projected* post-write skipCount — i.e. what the column will hold if
+   * no concurrent skip interleaves. Used for the threshold check and the
+   * blockedReason message only; callers must write `skipCountUpdate` (not
+   * this) to the column.
+   */
+  skipCount: number;
+  /**
+   * The Prisma update value callers must write to the `skipCount` column: the
+   * atomic `{ increment: 1 }` when the streak continues, and the literal `1`
+   * when a new streak starts.
+   *
+   * Writing a literal computed `skipCount` on the increment branch would
+   * reintroduce a lost-update race: under Postgres's default Read Committed
+   * isolation two concurrent skips on the same record can both read the same
+   * prior skipCount and the second write silently clobbers the first,
+   * undercounting the streak and delaying the auto-block. `{ increment: 1 }`
+   * compiles to SQL `"skipCount" = "skipCount" + 1`, which the DB serializes
+   * per row. Mirrors PullRequestService.patch()'s consecutiveCiFailureCount
+   * handling. The reset branch is a plain assignment, so a literal is correct
+   * (and required) there.
+   */
+  skipCountUpdate: { increment: number } | number;
+  lastSkipReason: string;
+  blocked: boolean;
+  /** Descriptive message naming the consecutive count and reason; null unless `blocked`. */
+  blockedReason: string | null;
+}
+
+/**
+ * SRB-1.1: pure, reason-aware skip-streak computation shared by
+ * TaskService.recordSkip() and StaleClaimReaper.reap() (with reason
+ * "stale_claim_timeout") so both apply identical semantics rather than
+ * duplicating the increment/reset/threshold logic.
+ *
+ * When `reason` matches `current.lastSkipReason`, the streak continues:
+ * skipCount increments by 1. When it differs — including when
+ * `current.lastSkipReason` is null (no prior streak) — a new streak starts:
+ * skipCount resets to 1. Either way, crossing SKIP_BLOCK_THRESHOLD (3) sets
+ * `blocked:true` with a `blockedReason` naming the consecutive count and the
+ * reason. A reset (skipCount back down to 1) never trips the threshold, even
+ * if the prior streak's count was at/above it — matches
+ * PullRequestService.patch()'s consecutiveCiFailureCount pattern.
+ *
+ * The increment branch returns `skipCountUpdate: { increment: 1 }` rather than
+ * the literal projected `skipCount`, so the column write stays atomic at the
+ * DB level and concurrent same-record skips can't lost-update each other (see
+ * `SkipStreakResult.skipCountUpdate`). `skipCount` is still returned for the
+ * threshold decision and the blockedReason text — those are inherently
+ * read-derived, exactly as in PullRequestService.patch().
+ */
+export function computeSkipStreak(
+  current: SkipStreakState,
+  reason: string,
+): SkipStreakResult {
+  const continued = current.lastSkipReason === reason;
+  const skipCount = continued ? current.skipCount + 1 : 1;
+  const blocked = skipCount >= SKIP_BLOCK_THRESHOLD;
+  return {
+    skipCount,
+    skipCountUpdate: continued ? { increment: 1 } : 1,
+    lastSkipReason: reason,
+    blocked,
+    blockedReason: blocked
+      ? `Auto-blocked after ${skipCount} consecutive skips for reason: ${reason}`
+      : null,
+  };
+}
 
 /**
  * Explicit interactive-transaction `timeout` for every write path that now
@@ -130,6 +208,24 @@ export const BULK_TX_PER_TASK_TIMEOUT_MS = 100;
  * transaction left to time out.
  */
 export const MAX_BULK_TASKS = 500;
+
+/**
+ * Hard cap on `prNumbers` per `markMergedByPr()` call (MPD-1.2). Bounds the
+ * single transaction's work (and its scaled budget) the same way
+ * MAX_BULK_TASKS does for bulk(); over the cap is a clean 400.
+ */
+export const MAX_PATCH_BY_PR_NUMBERS = 100;
+
+/** Target statuses PATCH /tasks/by-pr may move a `merged` task to. */
+export const BY_PR_TARGET_STATUSES = ["deployed", "released"] as const;
+export type ByPrTargetStatus = (typeof BY_PR_TARGET_STATUSES)[number];
+
+/** Result of TaskService.markMergedByPr. */
+export interface MarkMergedByPrResult {
+  updated: string[];
+  unchanged: string[];
+  skipped: Array<{ id: string; status: string }>;
+}
 
 /**
  * Transaction budget for a `bulk()` call of `taskCount` tasks: the shared
@@ -244,6 +340,57 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   return true;
 }
 
+/** UBL-1.1: statuses `POST /tasks/:id/unblock` may land a task in. */
+export const UNBLOCK_TARGETS = [
+  "pending",
+  "pr_open",
+  "merged",
+  "deployed",
+  "released",
+] as const;
+export type UnblockTarget = (typeof UNBLOCK_TARGETS)[number];
+
+/**
+ * True when `accountId` restricts a query to one account (SSP-6.5). Any
+ * string counts — including NO_ACCESS_ACCOUNT_ID (""), which deliberately
+ * matches no rows. null/undefined = unrestricted (admin token).
+ */
+function isAccountScoped(
+  accountId: string | null | undefined,
+): accountId is string {
+  return typeof accountId === "string";
+}
+
+/** Keeps only the rows in `accountId` — dependencies never cross accounts. */
+function sameAccount(tasks: Task[], accountId: string): Task[] {
+  return tasks.filter((t) => t.accountId === accountId);
+}
+
+/**
+ * Partitions tasks by accountId, preserving each partition's input order, so
+ * an unrestricted (admin) whole-table load still resolves every dependency
+ * graph within a single account.
+ */
+function groupByAccount(tasks: Task[]): Map<string, Task[]> {
+  const groups = new Map<string, Task[]>();
+  for (const t of tasks) {
+    const group = groups.get(t.accountId);
+    if (group) group.push(t);
+    else groups.set(t.accountId, [t]);
+  }
+  return groups;
+}
+
+/** P2002 = Prisma unique-constraint violation (here: Task.id already exists). */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2002"
+  );
+}
+
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 
@@ -273,7 +420,7 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
  * structural change to which tasks are considered ready/blocked in the
  * first place.
  */
-export interface TaskListPostFilters {
+interface TaskListPostFilters {
   session?: string;
   source?: string;
   /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
@@ -336,6 +483,13 @@ export interface TaskListFilters {
    * A separate `?repo=X` filter still applies as an additional AND condition.
    */
   agentScope?: { agentId: string; repos: string[] };
+  /**
+   * Account (tenant) scope (SSP-6.5). A string restricts the result to rows
+   * with that accountId; null/undefined is unrestricted (admin token without
+   * `?accountId=`). Applied as an AND condition on top of every other
+   * filter, including agentScope.
+   */
+  accountId?: string | null;
 }
 
 /** Paginated list result from TaskService.list. */
@@ -347,7 +501,7 @@ export interface TaskListResult {
 }
 
 /** Result from TaskService.getEvents. */
-export interface GetTaskEventsResult {
+interface GetTaskEventsResult {
   events: TaskEvent[];
   total: number;
 }
@@ -359,22 +513,34 @@ export interface TaskServiceLike {
     agentId?: string,
     repos?: string[],
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<Task[]>;
   listBlocked(
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<TaskWithBlockedBy[]>;
   distinct(
     agentId?: string,
     scopeRepos?: string[],
+    accountId?: string | null,
   ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }>;
-  get(id: string): Promise<TaskWithBlockedBy | null>;
+  get(id: string, accountId?: string | null): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }>;
+  markMergedByPr(params: {
+    repo: string;
+    prNumbers: number[];
+    status: ByPrTargetStatus;
+    /** ISO timestamp for deployedAt/releasedAt; defaults to now. */
+    at?: string;
+    /** Account scope: string restricts to that account, null/undefined is unrestricted. */
+    accountId?: string | null;
+  }): Promise<MarkMergedByPrResult>;
   update(id: string, data: Prisma.TaskUpdateInput): Promise<Task>;
   remove(id: string): Promise<void>;
   claim(id: string, claimedBy: string): Promise<Task>;
@@ -382,8 +548,9 @@ export interface TaskServiceLike {
   complete(id: string): Promise<Task>;
   fail(id: string, reason?: string): Promise<Task>;
   release(id: string): Promise<Task>;
-  recordSkip(id: string): Promise<Task>;
+  recordSkip(id: string, reason?: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
+  unblock(id: string, opts?: { to?: UnblockTarget }): Promise<Task>;
   getEvents(
     id: string,
     opts?: { limit?: number; offset?: number },
@@ -481,6 +648,7 @@ export class TaskService implements TaskServiceLike {
       }
     }
     if (filters.assignee) where.assignee = filters.assignee;
+    if (isAccountScoped(filters.accountId)) where.accountId = filters.accountId;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -511,9 +679,12 @@ export class TaskService implements TaskServiceLike {
       ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
       : [];
 
+    // Dependencies only ever resolve within the dependent's own account —
+    // a same-id row in another account must never satisfy (or even
+    // describe) the dependency (SSP-6.5).
     const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
       ...t,
-      blockedBy: computeBlockedBy(t, allTasks),
+      blockedBy: computeBlockedBy(t, sameAccount(allTasks, t.accountId)),
     }));
 
     return { tasks, total, limit, offset };
@@ -545,17 +716,30 @@ export class TaskService implements TaskServiceLike {
     agentId?: string,
     repos?: string[],
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<Task[]> {
-    // Load all tasks so dependency resolution sees the full graph, then filter
-    // the result set to the caller's agent if one is specified.
+    // Load the caller's whole account graph (or every account, for an
+    // unrestricted admin caller) so dependency resolution sees every task it
+    // could depend on, then filter the result set to the caller's agent if
+    // one is specified. The accountId filter is applied BEFORE resolution
+    // (SSP-6.5) — and an unrestricted load is still resolved per account —
+    // so one tenant's task ids can never satisfy another tenant's
+    // dependencies or same-branch exclusivity check.
     const tasks = await this.prisma.task.findMany({
+      where: isAccountScoped(accountId) ? { accountId } : {},
       orderBy: { createdAt: "asc" },
     });
-    const ready = await resolveReadyTasks(
-      tasks,
-      async () => false,
-      () => this.clock.now(),
-    );
+    const readyIds = new Set<string>();
+    for (const accountTasks of groupByAccount(tasks).values()) {
+      const accountReady = await resolveReadyTasks(
+        accountTasks,
+        async () => false,
+        () => this.clock.now(),
+      );
+      for (const t of accountReady) readyIds.add(t.id);
+    }
+    // Re-derive from `tasks` to keep the global ascending createdAt order.
+    const ready = tasks.filter((t) => readyIds.has(t.id));
     const scoped = agentId
       ? ready.filter(
           (t) =>
@@ -602,16 +786,24 @@ export class TaskService implements TaskServiceLike {
     repos?: string[],
     sort?: "asc" | "desc",
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<TaskWithBlockedBy[]> {
+    // accountId narrows the graph BEFORE computeBlockedBy (SSP-6.5); an
+    // unrestricted load still resolves each task within its own account.
     const allTasks = await this.prisma.task.findMany({
+      where: isAccountScoped(accountId) ? { accountId } : {},
       orderBy: { createdAt: sort ?? "asc" },
     });
+    const byAccount = groupByAccount(allTasks);
     const useRepoScope =
       agentId !== undefined && repos !== undefined && repos.length > 0;
     const closedStatuses = new Set<string>(CLOSED_STATUSES);
     const effective = effectiveFilters(agentId, repos, filters);
     return allTasks
-      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
+      .map((t: Task) => ({
+        ...t,
+        blockedBy: computeBlockedBy(t, byAccount.get(t.accountId) ?? []),
+      }))
       .filter((t: TaskWithBlockedBy) => {
         if (agentId) {
           const ownedByAssignee = t.assignee === agentId;
@@ -629,6 +821,7 @@ export class TaskService implements TaskServiceLike {
   async distinct(
     agentId?: string,
     scopeRepos?: string[],
+    accountId?: string | null,
   ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }> {
     const useRepoScope =
       agentId !== undefined &&
@@ -640,6 +833,7 @@ export class TaskService implements TaskServiceLike {
         ? { OR: [{ assignee: agentId }, { repo: { in: scopeRepos } }] }
         : { assignee: agentId };
     }
+    if (isAccountScoped(accountId)) where = { ...where, accountId };
     const rows = await this.prisma.task.findMany({
       where,
       select: { session: true, repo: true },
@@ -671,14 +865,26 @@ export class TaskService implements TaskServiceLike {
     return { sessions, repos, orgs };
   }
 
-  async get(id: string): Promise<TaskWithBlockedBy | null> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+  /**
+   * `accountId` (SSP-6.5): when set, a task in any other account is reported
+   * as missing (null → 404 at the route), never as forbidden, so its
+   * existence isn't revealed. null/undefined = unrestricted (admin).
+   */
+  async get(
+    id: string,
+    accountId?: string | null,
+  ): Promise<TaskWithBlockedBy | null> {
+    // findUnique on the id PK plus a non-unique accountId filter (Prisma's
+    // extended unique where) — a row in another account reads as missing.
+    const task = await this.prisma.task.findUnique({
+      where: isAccountScoped(accountId) ? { id, accountId } : { id },
+    });
     if (!task) return null;
     // Scope the dependency lookup to only the IDs this task depends on —
     // avoids a full-table scan when GET /tasks/:id is called frequently.
     const allTasks = task.dependencies?.length
       ? await this.prisma.task.findMany({
-          where: { id: { in: task.dependencies } },
+          where: { id: { in: task.dependencies }, accountId: task.accountId },
         })
       : [];
     return { ...task, blockedBy: computeBlockedBy(task, allTasks) };
@@ -694,9 +900,20 @@ export class TaskService implements TaskServiceLike {
    * table, so this is functionally unchanged for callers not using session.
    */
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
-    return this.prisma.$transaction(async (tx) => {
-      const task = await tx.task.create({ data });
-      await this.sessionService.upsert(tx, task.session);
+    const created = await this.prisma.$transaction(async (tx) => {
+      let task: Task;
+      try {
+        task = await tx.task.create({ data });
+      } catch (err: unknown) {
+        // Same P2002 → 409 translation as bulk() below (SSP-6.5): previously
+        // an id collision here surfaced as an unhandled 500.
+        if (isUniqueViolation(err)) {
+          throw new ConflictError(`task '${data.id}' already exists`);
+        }
+        throw err;
+      }
+      // SSP-6.7: the Session row belongs to the task's own account.
+      await this.sessionService.upsert(tx, task.session, task.accountId);
       // Fires after the task row + its session upsert have both landed, still
       // inside this transaction — a thrown WebhookDeliveryError propagates
       // uncaught here, so Prisma rolls back the create (and the session
@@ -705,6 +922,44 @@ export class TaskService implements TaskServiceLike {
       await this.webhookDispatcher("task.write", [task]);
       return task;
     }, WEBHOOK_TX_OPTIONS);
+    await this.warnOnPrCollision(created);
+    return created;
+  }
+
+  /**
+   * TLH-2.1: best-effort, warn-only check run AFTER a write that set `pr` has
+   * committed. Logs when another non-terminal task in the same repo/account
+   * already holds this PR number on a different `branch` (same-branch
+   * bundle-mates, terminal tasks, other repos and the task itself are
+   * ignored). Compares Task.branch — never PR headRef, which is null on open,
+   * unclaimed PRs. Never throws: a failure here must not fail the write.
+   */
+  private async warnOnPrCollision(task: Task): Promise<void> {
+    if (task.pr === null || task.repo === null) return;
+    try {
+      const holders = await this.prisma.task.findMany({
+        where: {
+          accountId: task.accountId,
+          repo: task.repo,
+          pr: task.pr,
+          id: { not: task.id },
+          status: { notIn: [...CLOSED_STATUSES] },
+        },
+        select: { id: true, branch: true },
+      });
+      const colliding = holders.filter((h) => h.branch !== task.branch);
+      if (colliding.length === 0) return;
+      console.warn(
+        `[task-store] pr collision: task ${task.id} (branch: ${task.branch ?? "none"}) set pr #${task.pr} in ${task.repo}, already held by non-terminal task(s) on a different branch: ${colliding
+          .map((h) => `${h.id} (${h.branch ?? "none"})`)
+          .join(", ")}`,
+      );
+    } catch (err: unknown) {
+      console.error(
+        `[task-store] pr collision check failed for task ${task.id}:`,
+        err,
+      );
+    }
   }
 
   /**
@@ -757,19 +1012,18 @@ export class TaskService implements TaskServiceLike {
             // P2002 = unique constraint violation (id already exists) —
             // translate to ConflictError so it propagates uncaught and rolls
             // back the whole transaction, rather than being swallowed/skipped.
-            if (
-              typeof err === "object" &&
-              err !== null &&
-              "code" in err &&
-              (err as { code: string }).code === "P2002"
-            ) {
+            if (isUniqueViolation(err)) {
               throw new ConflictError(
                 `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
               );
             }
             throw err;
           }
-          await this.sessionService.upsert(tx, created.session);
+          await this.sessionService.upsert(
+            tx,
+            created.session,
+            created.accountId,
+          );
           rows.push(created);
         }
         // Fires once for the whole batch, after every row has landed, still
@@ -779,10 +1033,108 @@ export class TaskService implements TaskServiceLike {
       },
       { timeout: bulkTxTimeoutMs(tasks.length) },
     );
+    for (const row of createdRows) await this.warnOnPrCollision(row);
     // skipped is always [] on success now — kept only for response-shape
     // backward compatibility (AC4); collisions hard-fail the whole batch via
     // ConflictError above instead of populating it.
     return { inserted: createdRows.length, updated: 0, skipped: [] };
+  }
+
+  /**
+   * MPD-1.2: move every `merged` task linked to the given PRs of `repo` to
+   * `deployed`/`released`, stamping deployedAt/releasedAt (= `at` or now).
+   * One $transaction covers the lookup, every update, the TaskEvent rows and
+   * the single webhook dispatch, so a bundle of tasks on one PR is
+   * all-or-nothing. Tasks already at the target status are `unchanged`
+   * (idempotent); tasks in any other status are `skipped` and never touched.
+   * A concurrent status change between the lookup and an update (the update
+   * is guarded on status='merged') aborts the whole call with 409.
+   */
+  async markMergedByPr(params: {
+    repo: string;
+    prNumbers: number[];
+    status: ByPrTargetStatus;
+    at?: string;
+    accountId?: string | null;
+  }): Promise<MarkMergedByPrResult> {
+    const { repo, prNumbers, status, accountId } = params;
+    if (prNumbers.length === 0) {
+      throw new BadRequestError("prNumbers must not be empty");
+    }
+    if (prNumbers.length > MAX_PATCH_BY_PR_NUMBERS) {
+      throw new BadRequestError(
+        `prNumbers accepts at most ${MAX_PATCH_BY_PR_NUMBERS} entries per call (received ${prNumbers.length}) — split the batch`,
+      );
+    }
+    let stamp: string;
+    if (params.at !== undefined) {
+      const parsed = new Date(params.at);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestError(
+          `at '${params.at}' is not a valid ISO timestamp`,
+        );
+      }
+      stamp = parsed.toISOString();
+    } else {
+      stamp = this.clock.now().toISOString();
+    }
+    const stampField = status === "deployed" ? "deployedAt" : "releasedAt";
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const matched = await tx.task.findMany({
+          where: {
+            repo,
+            pr: { in: prNumbers },
+            ...(accountId ? { accountId } : {}),
+          },
+          orderBy: [{ pr: "asc" }, { id: "asc" }],
+        });
+        const result: MarkMergedByPrResult = {
+          updated: [],
+          unchanged: [],
+          skipped: [],
+        };
+        const rows: Task[] = [];
+        for (const before of matched) {
+          if (before.status === status) {
+            result.unchanged.push(before.id);
+            continue;
+          }
+          if (before.status !== "merged") {
+            result.skipped.push({ id: before.id, status: before.status });
+            continue;
+          }
+          const claimed = await tx.task.updateMany({
+            where: { id: before.id, status: "merged" },
+            data: { status, [stampField]: stamp },
+          });
+          if (claimed.count === 0) {
+            throw new ConflictError(
+              `task '${before.id}' changed status concurrently — retry`,
+            );
+          }
+          const after = await tx.task.findUnique({ where: { id: before.id } });
+          if (!after) throw new NotFoundError("task not found");
+          await this.recordTaskTransition(
+            tx,
+            before,
+            after,
+            "patch-by-pr",
+            before.claimedBy ?? "system",
+          );
+          result.updated.push(before.id);
+          rows.push(after);
+        }
+        // Same rollback-on-throw contract as bulk(): one dispatch for the
+        // whole batch, a WebhookDeliveryError rolls everything back.
+        if (rows.length > 0) {
+          await this.webhookDispatcher("task.write", rows);
+        }
+        return result;
+      },
+      { timeout: bulkTxTimeoutMs(MAX_PATCH_BY_PR_NUMBERS) },
+    );
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {
@@ -790,8 +1142,9 @@ export class TaskService implements TaskServiceLike {
     // wrapper form), so reading fields off `data` as a loose record is safe
     // here, mirroring how routes/tasks.ts already treats PATCH bodies.
     const patch = data as Record<string, unknown>;
+    let updated: Task;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      updated = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.task.findUnique({ where: { id } });
 
         // POM-1.1: the resulting (status, pr, repo) after this PATCH is
@@ -856,11 +1209,13 @@ export class TaskService implements TaskServiceLike {
           resultingPr !== null &&
           typeof resultingRepo === "string"
         ) {
+          // SSP-6.3: the PR row belongs to the task's own account.
           await this.pullRequestService.stampOrigin(
             resultingRepo,
             resultingPr,
             { origin: "shipwright" },
             tx,
+            record.accountId,
           );
         }
 
@@ -869,6 +1224,8 @@ export class TaskService implements TaskServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
+    if (patch.pr !== undefined) await this.warnOnPrCollision(updated);
+    return updated;
   }
 
   /**
@@ -1093,34 +1450,50 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Record a skip: atomically increments skipCount and sets lastSkippedAt.
-   * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
-   * status:'blocked' + a descriptive blockedReason in the same update —
-   * mirrors fail()'s status=blocked+reason pattern above. Every call
-   * increments regardless of current count (not a guard), and re-checks the
-   * threshold each time in case a prior resetSkip() brought the count back
-   * down.
+   * Record a skip: reason-aware streak update (SRB-1.1) via
+   * computeSkipStreak(). When `reason` (defaults to "unspecified" — the
+   * route also defaults it, this is a defense-in-depth fallback for direct
+   * callers) matches the task's current lastSkipReason, skipCount
+   * increments; when it differs (including from no prior reason), a new
+   * streak starts at skipCount=1. Either way sets lastSkippedAt to now. When
+   * the (possibly-reset) skipCount crosses SKIP_BLOCK_THRESHOLD (3), also
+   * sets status:'blocked' (hitl untouched) and a blockedReason naming the
+   * consecutive count and reason, in the same update — mirrors fail()'s
+   * status=blocked+reason pattern above. Every call re-evaluates the streak
+   * from the task's current state (not a guard), so a prior resetSkip() or a
+   * reason change correctly restarts counting from 1.
+   *
+   * The column write uses `streak.skipCountUpdate` — Prisma's atomic
+   * `{ increment: 1 }` on the continue branch, a literal `1` on the reset
+   * branch — so two concurrent skips on the same task can't lost-update each
+   * other under Read Committed. See `SkipStreakResult.skipCountUpdate`.
    */
-  async recordSkip(id: string): Promise<Task> {
+  async recordSkip(id: string, reason?: string): Promise<Task> {
+    const effectiveReason = reason ?? "unspecified";
     const now = this.clock.now().toISOString();
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Snapshot before the first update so the audit diff spans the whole
-        // recordSkip (both the increment and any threshold auto-block).
+        // Snapshot before the update — both for the audit diff and to read
+        // the current skipCount/lastSkipReason the streak computation needs.
         const before = await tx.task.findUnique({ where: { id } });
-        let updated = await tx.task.update({
-          where: { id },
-          data: { skipCount: { increment: 1 }, lastSkippedAt: now },
-        });
-        if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
-          updated = await tx.task.update({
-            where: { id },
-            data: {
-              status: "blocked",
-              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
-            },
-          });
+        if (!before) throw new NotFoundError("task not found");
+        const streak = computeSkipStreak(
+          {
+            skipCount: before.skipCount,
+            lastSkipReason: before.lastSkipReason,
+          },
+          effectiveReason,
+        );
+        const data: Prisma.TaskUpdateInput = {
+          skipCount: streak.skipCountUpdate,
+          lastSkippedAt: now,
+          lastSkipReason: streak.lastSkipReason,
+        };
+        if (streak.blocked) {
+          data.status = "blocked";
+          data.blockedReason = streak.blockedReason;
         }
+        const updated = await tx.task.update({ where: { id }, data });
         // Actor is the claim holder if any; recordSkip can fire on unclaimed
         // tasks (no actor in scope at the route), in which case attribute to
         // "system".
@@ -1140,14 +1513,14 @@ export class TaskService implements TaskServiceLike {
     }
   }
 
-  /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
+  /** Reset skip tracking — sets skipCount back to 0, lastSkippedAt/lastSkipReason back to null. */
   async resetSkip(id: string): Promise<Task> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
         const record = await tx.task.update({
           where: { id },
-          data: { skipCount: 0, lastSkippedAt: null },
+          data: { skipCount: 0, lastSkippedAt: null, lastSkipReason: null },
         });
         await this.recordTaskTransition(
           tx,
@@ -1163,6 +1536,118 @@ export class TaskService implements TaskServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
+  }
+
+  /**
+   * Atomically unblock a blocked task (UBL-1.1).
+   *
+   * Single conditional UPDATE — `WHERE id = $1 AND status = 'blocked'` —
+   * mirroring claim()'s pattern, with the target status parameterized. If 0
+   * rows are affected the task is either missing or not currently blocked:
+   * distinguish the two with a follow-up read so callers get 404 vs 409.
+   * Never a silent no-op on a non-blocked task.
+   *
+   * Target: explicit `opts.to`, else inferred from task.pr and the
+   * PullRequest row (see inferUnblockTarget). Targets other than 'pending'
+   * need a non-null task.pr (400). Terminal targets stamp
+   * mergedAt/deployedAt/releasedAt when still empty.
+   *
+   * Every target clears blockedReason/blockedAt, claimedBy/claimedAt/
+   * heartbeatAt and the skip triple in the same statement, so the row can
+   * never violate the DB-level status='pending' => claimedBy IS NULL CHECK
+   * (see task-claim-status-invariant.integration.test.ts).
+   */
+  async unblock(id: string, opts: { to?: UnblockTarget } = {}): Promise<Task> {
+    const requested = opts.to;
+    if (requested !== undefined && !UNBLOCK_TARGETS.includes(requested)) {
+      throw new BadRequestError(
+        `invalid unblock target '${String(requested)}' — expected one of ${UNBLOCK_TARGETS.join(", ")}`,
+      );
+    }
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.task.findUnique({ where: { id } });
+      if (!before) throw new NotFoundError("task not found");
+      if (before.status !== "blocked") {
+        throw new ConflictError("task is not currently blocked");
+      }
+
+      let target: UnblockTarget;
+      if (requested !== undefined) {
+        if (requested !== "pending" && before.pr === null) {
+          throw new BadRequestError(
+            `cannot unblock to '${requested}': task has no pr`,
+          );
+        }
+        target = requested;
+      } else if (before.pr === null) {
+        target = "pending";
+      } else {
+        const prRow = before.repo
+          ? await tx.pullRequest.findFirst({
+              where: {
+                repo: before.repo,
+                prNumber: before.pr,
+                accountId: before.accountId,
+              },
+              select: { state: true },
+            })
+          : null;
+        if (prRow?.state === "closed") {
+          throw new ConflictError(
+            "PR is closed without merging — pass an explicit `to` target",
+          );
+        }
+        target = prRow?.state === "merged" ? "merged" : "pr_open";
+      }
+
+      const now = this.clock.now().toISOString();
+      const stampMerged = ["merged", "deployed", "released"].includes(target)
+        ? now
+        : null;
+      const stampDeployed = ["deployed", "released"].includes(target)
+        ? now
+        : null;
+      const stampReleased = target === "released" ? now : null;
+
+      const affected = await tx.$executeRaw`
+        UPDATE "Task"
+        SET status = ${target}::"TaskStatus",
+            "blockedReason" = NULL,
+            "blockedAt" = NULL,
+            "claimedBy" = NULL,
+            "claimedAt" = NULL,
+            "heartbeatAt" = NULL,
+            "skipCount" = 0,
+            "lastSkippedAt" = NULL,
+            "lastSkipReason" = NULL,
+            "mergedAt" = COALESCE("mergedAt", ${stampMerged}),
+            "deployedAt" = COALESCE("deployedAt", ${stampDeployed}),
+            "releasedAt" = COALESCE("releasedAt", ${stampReleased}),
+            "updatedAt" = now()
+        WHERE id = ${id} AND status = 'blocked'
+      `;
+
+      if (affected === 0) {
+        // Lost a race between the read above and the guarded UPDATE.
+        throw new ConflictError("task is not currently blocked");
+      }
+
+      const after = await tx.task.findUnique({ where: { id } });
+      if (!after) throw new NotFoundError("task not found");
+
+      await this.recordTaskTransition(
+        tx,
+        before,
+        after,
+        "unblock",
+        before.claimedBy ?? "system",
+      );
+
+      // Same rollback-on-throw contract as create()/update()/claim() above.
+      await this.webhookDispatcher("task.write", [after]);
+
+      return after;
+    }, WEBHOOK_TX_OPTIONS);
   }
 
   /**

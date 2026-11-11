@@ -11,7 +11,7 @@ and steers each with a verb. No reviews are posted without an explicit "post it"
 This skill assumes `/shipwright:review` has already staged the reviews into the
 task store (`staged: true`) and written review files to `state/reviews/PR_REVIEW_{pr}.md`
 and `state/reviews/pr_review_{pr}.json`. It does **not** review new PRs and does
-**not** merge anything — merging is handled exclusively by `/shipwright:deploy`.
+**not** merge anything — merging is handled exclusively by `/shipwright:merge`.
 
 ---
 
@@ -38,10 +38,13 @@ fix (those records had their verdict omitted from the staging PATCH).
 
 If no staged records exist across all repos: print `No staged reviews. Run /shipwright:review to stage some.` and stop.
 
-Resolve the current GitHub user once and remember it for the rest of the run:
+Resolve the current GitHub identity once and remember it for the rest of the run. This is the
+canonical login (`app/` prefix and `[bot]` suffix stripped, lowercased) from the shared
+login-identity helper — the REST `/user` endpoint 403s under installation tokens — so compare it against
+canonicalized author logins:
 
 ```bash
-gh api /user -q '.login'
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts"
 ```
 
 ---
@@ -243,7 +246,7 @@ Done. {posted}/{N} posted, {skipped}/{N} skipped.
 ## Notes
 
 - This skill never auto-posts. Every post requires an explicit "post it" from the owner.
-- This skill never merges. Merging is handled exclusively by `/shipwright:deploy`.
+- This skill never merges. Merging is handled exclusively by `/shipwright:merge`.
 - This skill never re-reviews. If the head SHA has moved (current `headRefOid` differs from
   `record.reviewedCommitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
 - Use `gh` CLI for all GitHub interactions. Respect the active `GH_TOKEN` / `gh auth` context.

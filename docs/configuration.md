@@ -37,6 +37,18 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 ---
 
+## Self-Serve Provisioning
+
+Admin-service env vars (read once at startup by the `@app-vitals/agent-admin` package) controlling self-serve agent provisioning. With the flag unset, behavior is unchanged. Set via the Helm chart's `selfServe` values block. See [self-serve.md](./platform/self-serve.md) for the full model.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `SHIPWRIGHT_SELF_SERVE_ENABLED` | `string` | — | Set to `enabled` to turn self-serve provisioning on. Any other value (or unset) leaves it off. When on, anyone with access to an agent (owner or member) can edit its settings, manage its members and delete it; when off those routes stay admin-only. |
+| `SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS` | `int` | `0` | Default per-account agent quota. Must be an integer >= 0; an invalid value (negative, non-integer) logs a warning and falls back to `0`. |
+| `SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL` | `string` | `dan@app-vitals.com` | Contact address shown when a user needs more quota. |
+
+---
+
 ## Agent Config
 
 Configuration for the Shipwright agent runtime (`agent/` and `admin/`) — moved to
@@ -51,33 +63,32 @@ Each of `admin`, `metrics`, `task-store`, and `agent` reads its own `SENTRY_DSN`
 
 `SENTRY_DSN` / `SENTRY_ENVIRONMENT` are documented per-service rather than repeated here: see the `SENTRY_DSN` row under [Agent Config → Server](./configuration-agent.md#server) for the agent — including the pod-startup timing constraint, since `initSentry` runs once at module load, before the config sync loop — and the `SENTRY_DSN` row under [Agent Config → Metrics & Admin & Chat & Task-Store services](./configuration-agent.md#metrics--admin--chat--task-store-services) for `task-store`, `metrics`, and `admin`.
 
+Admin additionally exposes pg pool diagnostics overrides, `SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS` (default `2000`) and `SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS` (default `30000`); see the rows under [Agent Config → Metrics & Admin & Chat & Task-Store services](./configuration-agent.md#metrics--admin--chat--task-store-services) and [Pool starvation diagnostics](./observability.md#pool-starvation-diagnostics-admin).
+
 This is the write side (services reporting into Sentry). For the read side — the `SENTRY_ORG` / `SENTRY_AUTH_TOKEN` credentials (documented above under [Plugin Config](#plugin-config)) and how the `error-scan`, `error-fix`, and `error-resolve` skills query the Sentry Issues API — see [Read side](./observability.md#read-side) in `docs/observability.md`.
 
 ---
 
 ## Policy Config
 
-Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block, automatically seeded from a template when the workspace is provisioned. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. `auto_post_reviews` defaults to `true` (reviews post to GitHub automatically) on initial provisioning; set it to `false` to stage reviews locally for owner approval instead.
+Agent behavior is controlled by six policy fields stored on the agent record (`auto_post_reviews`, `allow_self_review`, `min_confidence`, `max_findings`, `cleanup_merged_worktrees`, `cleanup_after_days`). They are delivered to the running agent via `GET /agents/:id/config` and synced live on the agent's ~60s config-sync tick, so a change takes effect without a restart. Set them in the admin UI (Agent Policy card) or the admin API (`PATCH /agents/:id`); until the first successful sync the agent uses the hardcoded defaults below. There is no `state/agent-policy.md` file tier: new workspaces no longer seed that file, and an existing file on an agent volume is left in place but ignored.
 
 ### Fields
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `auto_post_reviews` | `bool` | `true` | Post review comments to GitHub automatically without manual approval. Set to `false` to stage reviews locally for owner approval instead. |
-| `allowed_events` | `string[]` | `["COMMENT", "APPROVE"]` | GitHub review event types the agent may emit. |
-| `review_external_prs` | `bool` | `true` | Currently unused — `/shipwright:review` always targets a single explicit PR (no repo-wide scan to filter), and no other command reads this field. |
-| `allow_self_review` | `bool` | `false` | Read by `agent/src/check-review.ts`'s `getReviewCandidates()` (the `shipwright-loop` cron's in-process review candidate provider) to decide whether the agent's own open PRs are review candidates. Self-review is excluded by default — the agent's own open PRs require a human reviewer. Set to `true` to opt in and let the agent review its own PRs. (Technical note: `false` is also the internal code-level fallback used if `state/agent-policy.md` is ever missing or unparseable — in normal operation the template-seeded `false` above is what's in effect either way, since every provisioned agent gets the policy file seeded on startup.) **Exception (RRR-1.1, extended to the allowlist by RRA-1.1):** when the agent is explicitly listed as a requested reviewer on a PR (via GitHub's "Request a reviewer" UI), the PR is included even if `allow_self_review=false` — an additive override allowing human-directed self-review — **and** even if the PR's author is excluded from the author allowlist (the `Agent.reviewAuthorAllowlist` DB field, synced via `reviewAuthorAllowlistRef`; local-dev equivalent `SHIPWRIGHT_HITL_AUTHORS`). For an already-allowlisted author this bypass has no observable effect, since `isAuthorAllowed` already includes them unconditionally; its only meaningful effect is widening eligibility for non-allowlisted authors. This is a known, accepted access-boundary loosening (confirmed with the team), not an oversight: any collaborator with repo write access can trigger an agent review by explicitly requesting one, which bypasses the allowlist for that PR. All other filters (draft status, automated-label, live-review dedup, task-store dedup, HITL/blocked, bundle-incomplete) remain unconditionally applied regardless of requested-reviewer status. Bot-authored PRs (Dependabot, Renovate) are no longer unconditionally excluded here either — DBR-3.3 removed that pre-filter, so they now fall through to the `isAuthorAllowed` gate like any other author. |
-| `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
-| `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
-| `cleanup_merged_worktrees` | `bool` | `true` | Read by the agent's background worktree reconciler to decide whether merged-PR worktrees are automatically removed (`agent/src/pr-state-reconciler.ts`'s `reconcileRecord()`). Not read by `/shipwright:review`. |
-| `cleanup_after_days` | `number` | `14` | Age threshold (days) before a worktree is eligible for automatic cleanup via `reconcileStaleWorktrees()` (`agent/src/worktree-reaper.ts`, run on the same background interval as `agent/src/pr-state-reconciler.ts`). Not read by `/shipwright:review`. |
+| Field | Type | Default | Source | Description |
+|---|---|---|---|---|
+| `auto_post_reviews` | `bool` | `true` | `GET /agents/:id/config` → hardcoded | Post review comments to GitHub automatically without manual approval. Set to `false` to stage reviews locally for owner approval instead. |
+| `allow_self_review` | `bool` | `false` | `GET /agents/:id/config` → hardcoded | Read by `agent/src/coding/check-review.ts`'s `getReviewCandidates()` (the `shipwright-loop` cron's in-process review candidate provider) to decide whether the agent's own open PRs are review candidates. Self-review is excluded by default — the agent's own open PRs require a human reviewer. Set to `true` to opt in and let the agent review its own PRs. (Technical note: `false` is also the code-level fallback used until the first config sync lands.) **Exception (RRR-1.1, extended to the allowlist by RRA-1.1):** when the agent is explicitly listed as a requested reviewer on a PR (via GitHub's "Request a reviewer" UI), the PR is included even if `allow_self_review=false` — an additive override allowing human-directed self-review — **and** even if the PR's author is excluded from the author allowlist (the `Agent.reviewAuthorAllowlist` DB field, synced via `reviewAuthorAllowlistRef`; local-dev equivalent `SHIPWRIGHT_HITL_AUTHORS`). For an already-allowlisted author this bypass has no observable effect, since `isAuthorAllowed` already includes them unconditionally; its only meaningful effect is widening eligibility for non-allowlisted authors. This is a known, accepted access-boundary loosening (confirmed with the team), not an oversight: any collaborator with repo write access can trigger an agent review by explicitly requesting one, which bypasses the allowlist for that PR. All other filters (draft status, automated-label, live-review dedup, task-store dedup, HITL/blocked, bundle-incomplete) remain unconditionally applied regardless of requested-reviewer status. Bot-authored PRs (Dependabot, Renovate) are no longer unconditionally excluded here either — DBR-3.3 removed that pre-filter, so they now fall through to the `isAuthorAllowed` gate like any other author. |
+| `min_confidence` | `number` | `75` | `GET /agents/:id/config` → hardcoded | Minimum confidence score (0–100) for a finding to be included in a review. |
+| `max_findings` | `number` | `5` | `GET /agents/:id/config` → hardcoded | Maximum number of findings to include in a single review. |
+| `cleanup_merged_worktrees` | `bool` | `true` | `GET /agents/:id/config` → hardcoded | Read by the agent's background worktree reconciler to decide whether merged-PR worktrees are automatically removed (`agent/src/coding/pr-state-reconciler.ts`'s `reconcileRecord()`, via `check-helpers.ts`'s `readCleanupMergedWorktrees()` — APM-1.6). Setting it via the admin UI/API now takes effect on the agent's next config-sync tick (~60s), no restart required. Not read by `/shipwright:review`. |
+| `cleanup_after_days` | `number` | `14` | `GET /agents/:id/config` → hardcoded | Age threshold (days) before a worktree is eligible for automatic cleanup. Read by `agent/src/coding/pr-state-reconciler.ts`'s `removeWorktree()`, via `check-helpers.ts`'s `readCleanupAfterDays()` — DB-first as of APM-1.6, takes effect on the agent's next config-sync tick (~60s). Also synced to the platform runtime for its own worktree cleanup. Not read by `/shipwright:review`. |
 
 ### Example
 
 ```markdown
 ---
 auto_post_reviews: true
-allowed_events: [COMMENT, APPROVE]
 allow_self_review: false
 min_confidence: 75
 max_findings: 5
@@ -85,8 +96,6 @@ cleanup_merged_worktrees: true
 cleanup_after_days: 14
 ---
 ```
-
-(`review_external_prs` is omitted above — see the table row: currently unused.)
 
 ---
 

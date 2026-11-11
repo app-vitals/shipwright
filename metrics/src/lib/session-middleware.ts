@@ -28,14 +28,14 @@ const ADMIN_LOGIN_PATH = "/admin/login";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface SessionPayload {
+interface SessionPayload {
   userId: string;
   email: string;
   name: string;
 }
 
 // Hono context variables type — services use this to type c.get('session')
-export type SessionEnv = { Variables: { session: SessionPayload } };
+type SessionEnv = { Variables: { session: SessionPayload } };
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 

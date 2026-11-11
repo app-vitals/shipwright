@@ -13,12 +13,12 @@
  *   const tasks = await client.listTasks({ from, to });
  */
 
-import type { components } from "@shipwright/lib/task-store-types";
+import type { components } from "../../../admin/src/coding/task-store-types.ts";
 
 // ─── Record types derived from the generated task-store schema ───────────────
 //
 // TaskRecord/PrRecord are Pick<>'d from the OpenAPI-generated
-// components["schemas"]["Task"] / ["PullRequest"] types (@shipwright/lib/
+// components["schemas"]["Task"] / ["PullRequest"] types (@app-vitals/agent-lib/
 // task-store-types) rather than hand-rolled — the field list below is exactly
 // the subset the metrics provider reads. The generated schema marks several
 // of these fields as required (e.g. Task.status/createdAt,
@@ -36,7 +36,7 @@ type TaskOptionalOverrides = Pick<TaskSchema, "createdAt">;
 
 /**
  * Slim Task record — only the fields the metrics provider reads. Terminal /
- * completed statuses are `merged | done | deployed | deploying`; `blocked` is
+ * completed statuses are `merged | done | deployed | released`; `blocked` is
  * blocked; `in_progress | pr_open | approved` are mid-flight.
  */
 export type TaskRecord = Pick<
@@ -91,10 +91,23 @@ type PrOptionalOverrides = Pick<
  * (`open | merged | closed`) and `origin` (POM-1.1's `shipwright | ci |
  * dependency_bot | human | unknown | null`) drive the merged-PRs-by-repo
  * metric (POM-2.1); `authorLogin`/`headRef`/`title` are carried through for
- * completeness but not currently read by any provider query.
+ * completeness but not currently read by any provider query. `commitCount`/
+ * `commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/
+ * `commitsImplementation` (CPP-1.1's census-sweep-only columns) drive the
+ * merged-PRs-by-repo commits-per-PR aggregation (CPP-1.3).
  */
 export type PrRecord = Pick<PullRequestSchema, "mergedAt"> &
-  Partial<PrOptionalOverrides>;
+  Partial<
+    PrOptionalOverrides &
+      Pick<
+        PullRequestSchema,
+        | "commitCount"
+        | "commitsDocsRefresh"
+        | "commitsReviewPatch"
+        | "commitsCiFix"
+        | "commitsImplementation"
+      >
+  >;
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 

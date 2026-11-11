@@ -18,6 +18,7 @@ import {
   ConflictError,
   NotFoundError,
   WebhookDeliveryError,
+  BadRequestError,
 } from "./errors.ts";
 import type { Task } from "./index.ts";
 import type { SessionServiceLike } from "./session-service.ts";
@@ -28,6 +29,7 @@ import type {
   TaskWithBlockedBy,
 } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
@@ -142,7 +144,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -171,12 +172,17 @@ function fakeTaskService(
   opts: {
     getResult?: Task | null;
     claimThrows?: Error;
+    unblockThrows?: Error;
+    onUnblock?: (id: string, opts?: { to?: string }) => void;
     listResult?: Task[];
     listReadyResult?: Task[];
     listBlockedResult?: Task[];
   } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?) {
       const tasks = (opts.listResult ?? []).map(withBlockedBy);
       return {
@@ -228,6 +234,19 @@ function fakeTaskService(
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
     },
+    async unblock(id: string, unblockOpts?: { to?: string }) {
+      opts.onUnblock?.(id, unblockOpts);
+      if (opts.unblockThrows) throw opts.unblockThrows;
+      return makeTask({
+        id,
+        status: (unblockOpts?.to ?? "pending") as Task["status"],
+        blockedReason: null,
+        blockedAt: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+      });
+    },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },
@@ -275,7 +294,7 @@ function makeApp(
   deps: {
     taskService?: TaskServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({
@@ -287,10 +306,11 @@ function makeApp(
 }
 
 /** Build a scope resolver that returns fixed repos for agent-1. */
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 function auth(token = VALID_TOKEN): Record<string, string> {
@@ -1250,5 +1270,365 @@ describe("task-store API (smoke)", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+
+  // ─── POST /tasks/:id/unblock (UNB-1.1) ─────────────────────────────────────
+
+  it("POST /tasks/:id/unblock returns 200 with status:'pending' when the task was blocked", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("pending");
+    expect(body.blockedReason).toBeNull();
+    expect(body.blockedAt).toBeNull();
+    expect(body.claimedBy).toBeNull();
+    expect(body.claimedAt).toBeNull();
+    expect(body.heartbeatAt).toBeNull();
+  });
+
+  it("POST /tasks/:id/unblock with no body passes no target (UBL-1.1)", async () => {
+    let seen: { to?: string } | undefined = { to: "sentinel" };
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+        onUnblock: (_id, o) => {
+          seen = o;
+        },
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    expect(seen?.to).toBeUndefined();
+  });
+
+  it("POST /tasks/:id/unblock forwards a valid {to} body to the service (UBL-1.1)", async () => {
+    let seen: { to?: string } | undefined;
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked", pr: 7 }),
+        onUnblock: (_id, o) => {
+          seen = o;
+        },
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "merged" }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen?.to).toBe("merged");
+    expect(((await res.json()) as Task).status).toBe("merged");
+  });
+
+  it("POST /tasks/:id/unblock returns 400 for an unknown `to` (UBL-1.1)", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "approved" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/:id/unblock surfaces service 400 (no pr) and 409 (closed PR) (UBL-1.1)", async () => {
+    for (const [err, status] of [
+      [new BadRequestError("task has no pr"), 400],
+      [new ConflictError("PR is closed without merging"), 409],
+    ] as const) {
+      const app = makeApp({
+        taskService: fakeTaskService({
+          getResult: makeTask({ id: "task-1", status: "blocked" }),
+          unblockThrows: err,
+        }),
+      });
+      const res = await app.request("/tasks/task-1/unblock", {
+        method: "POST",
+        headers: auth(),
+      });
+      expect(res.status).toBe(status);
+    }
+  });
+
+  it("POST /tasks/:id/unblock returns 409 when the task is not currently blocked", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "pending" }),
+        unblockThrows: new ConflictError("task is not currently blocked"),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /tasks/:id/unblock returns 403 when agent token tries to unblock a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({
+        getResult: makeTask({
+          id: "task-1",
+          status: "blocked",
+          assignee: "agent-2",
+        }),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /tasks/:id/unblock returns 404 when the task does not exist", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({ getResult: null }),
+    });
+
+    const res = await app.request("/tasks/missing/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── SSP-6.5: accountId context var → TaskService scope ──────────────────────
+
+describe("task-store API (smoke) — account scope (SSP-6.5)", () => {
+  interface ScopeCalls {
+    list: (string | null | undefined)[];
+    listReady: (string | null | undefined)[];
+    listBlocked: (string | null | undefined)[];
+    distinct: (string | null | undefined)[];
+    get: (string | null | undefined)[];
+    created: Record<string, unknown>[];
+  }
+
+  /** Wraps fakeTaskService, recording the account scope each call receives. */
+  function recordingTaskService(
+    opts: { createThrows?: Error; bulkThrows?: Error } = {},
+  ): { service: TaskServiceLike; calls: ScopeCalls } {
+    const base = fakeTaskService();
+    const calls: ScopeCalls = {
+      list: [],
+      listReady: [],
+      listBlocked: [],
+      distinct: [],
+      get: [],
+      created: [],
+    };
+    const service: TaskServiceLike = {
+      ...base,
+      async list(filters) {
+        calls.list.push(filters?.accountId);
+        return base.list(filters);
+      },
+      async listReady(agentId, repos, filters, accountId) {
+        calls.listReady.push(accountId);
+        return base.listReady(agentId, repos, filters, accountId);
+      },
+      async listBlocked(agentId, repos, sort, filters, accountId) {
+        calls.listBlocked.push(accountId);
+        return base.listBlocked(agentId, repos, sort, filters, accountId);
+      },
+      async distinct(agentId, repos, accountId) {
+        calls.distinct.push(accountId);
+        return base.distinct(agentId, repos, accountId);
+      },
+      async get(id, accountId) {
+        calls.get.push(accountId);
+        return base.get(id, accountId);
+      },
+      async create(data) {
+        if (opts.createThrows) throw opts.createThrows;
+        calls.created.push(data as Record<string, unknown>);
+        return base.create(data);
+      },
+      async bulk(tasks) {
+        if (opts.bulkThrows) throw opts.bulkThrows;
+        for (const t of tasks) calls.created.push(t as Record<string, unknown>);
+        return base.bulk(tasks);
+      },
+    };
+    return { service, calls };
+  }
+
+  const acctResolver: ScopeResolver = async () => ({
+    repos: ["org/repo"],
+    accountId: "acct-a",
+  });
+
+  function scopedApp(service: TaskServiceLike, agent = true) {
+    return {
+      app: makeApp({
+        taskService: service,
+        tokenService: agent ? fakeAgentTokenService() : fakeTokenService(),
+        scopeResolver: acctResolver,
+      }),
+      token: agent ? AGENT_TOKEN : VALID_TOKEN,
+    };
+  }
+
+  it("passes the agent's resolved accountId to every read, ignoring ?accountId=", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const h = auth(token);
+    await app.request("/tasks?accountId=acct-b", { headers: h });
+    await app.request("/tasks?ready=true&accountId=acct-b", { headers: h });
+    await app.request("/tasks?state=blocked", { headers: h });
+    await app.request("/tasks/distinct", { headers: h });
+    await app.request("/tasks/task-1", { headers: h });
+    await app.request("/tasks/task-1/claim", { method: "POST", headers: h });
+    expect(calls.list).toEqual(["acct-a"]);
+    expect(calls.listReady).toEqual(["acct-a"]);
+    expect(calls.listBlocked).toEqual(["acct-a"]);
+    expect(calls.distinct).toEqual(["acct-a"]);
+    expect(calls.get).toEqual(["acct-a", "acct-a"]);
+  });
+
+  it("admin tokens are unrestricted (null) unless ?accountId= narrows them", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service, false);
+    await app.request("/tasks", { headers: auth(token) });
+    await app.request("/tasks?accountId=acct-b", { headers: auth(token) });
+    await app.request("/tasks/task-1", { headers: auth(token) });
+    expect(calls.list).toEqual([null, "acct-b"]);
+    expect(calls.get).toEqual([null]);
+  });
+
+  it("POST /tasks and /tasks/bulk stamp accountId from the caller, overriding the body", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const task = {
+      title: "t",
+      status: "pending",
+      repo: "org/repo",
+      accountId: "acct-b",
+    };
+    await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify(task),
+    });
+    await app.request("/tasks/bulk", {
+      method: "POST",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify([task]),
+    });
+    expect(calls.created.map((t) => t.accountId)).toEqual(["acct-a", "acct-a"]);
+  });
+
+  it("POST /tasks/bulk rejects a task with missing or invalid status with 400", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const headers = { ...auth(token), "content-type": "application/json" };
+    const base = { title: "t", repo: "org/repo" };
+    for (const [task, error] of [
+      [base, "status is required"],
+      [{ ...base, status: "bogus" }, "invalid status: bogus"],
+    ] as const) {
+      const res = await app.request("/tasks/bulk", {
+        method: "POST",
+        headers,
+        body: JSON.stringify([{ ...base, status: "pending" }, task]),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error });
+    }
+    expect(calls.created).toEqual([]);
+  });
+
+  it("admin POST /tasks stamps ?accountId= or falls back to 'default'", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service, false);
+    const body = JSON.stringify({ title: "t", status: "pending", repo: null });
+    const headers = { ...auth(token), "content-type": "application/json" };
+    await app.request("/tasks", { method: "POST", headers, body });
+    await app.request("/tasks?accountId=acct-b", {
+      method: "POST",
+      headers,
+      body,
+    });
+    expect(calls.created.map((t) => t.accountId)).toEqual([
+      "default",
+      "acct-b",
+    ]);
+  });
+
+  it("agent-token id collisions on POST /tasks and /tasks/bulk return a generic 409", async () => {
+    const { service } = recordingTaskService({
+      createThrows: new ConflictError("task 'X' already exists"),
+      bulkThrows: new ConflictError("task 'X' already exists — rolled back"),
+    });
+    const { app, token } = scopedApp(service);
+    const headers = { ...auth(token), "content-type": "application/json" };
+    const task = { id: "X", title: "t", status: "pending", repo: "org/repo" };
+    for (const [path, body] of [
+      ["/tasks", task],
+      ["/tasks/bulk", [task]],
+    ] as const) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "task id unavailable" });
+    }
+  });
+
+  it("PATCH /tasks/:id rejects accountId from an agent token", async () => {
+    const { app, token } = scopedApp(
+      fakeTaskService({ getResult: makeTask({ assignee: "agent-1" }) }),
+    );
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify({ accountId: "acct-b" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects creates from an agent whose account scope could not be resolved", async () => {
+    const { service, calls } = recordingTaskService();
+    const app = makeApp({
+      taskService: service,
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: async () => {
+        throw new Error("agents service down");
+      },
+    });
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(AGENT_TOKEN), "content-type": "application/json" },
+      body: JSON.stringify({ title: "t", status: "pending", repo: null }),
+    });
+    expect(res.status).toBe(403);
+    expect(calls.created).toEqual([]);
   });
 });

@@ -4,17 +4,17 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import { callerLabel } from "@shipwright/lib/request-context";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import {
   ApiError,
   BadGatewayError,
   BadRequestError,
   ConflictError,
   ForbiddenError,
+  makeOnError,
   NotFoundError,
   UnprocessableEntityError,
-  makeOnError,
 } from "./errors.ts";
 
 describe("ApiError", () => {

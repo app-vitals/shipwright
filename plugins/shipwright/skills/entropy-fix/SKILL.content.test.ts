@@ -57,3 +57,27 @@ describe("entropy-fix — Step 6q.1 dedup query is pagination-safe", () => {
     ).toBe(true);
   });
 });
+
+describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () => {
+  const content = readSkill();
+
+  it("re-checks suppressions between filtering and dry-run/dedup", () => {
+    const step = content.indexOf("## Step 3.5: Re-check Suppressions");
+    expect(step).toBeGreaterThan(content.indexOf("## Step 3: Filter and Group Findings"));
+    expect(step).toBeLessThan(content.indexOf("## Step 4: Dry-Run Output"));
+  });
+
+  it("reads .shipwright/suppressions.yml via the shared script", () => {
+    expect(content).toContain(".shipwright/suppressions.yml");
+    expect(content).toContain('suppressions.ts" --filter');
+  });
+
+  it("uses a skip message distinct from the active/recently-closed ones", () => {
+    expect(content).toMatch(/Skipping .* suppressed in \.shipwright\/suppressions\.yml/);
+    expect(content).toContain("Skipped (suppressed in .shipwright/suppressions.yml)");
+  });
+
+  it("matches on file and symbol with rule entropy", () => {
+    expect(content).toContain('{rule: "entropy", file, symbol');
+  });
+});

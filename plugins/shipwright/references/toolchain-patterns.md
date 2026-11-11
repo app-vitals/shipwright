@@ -13,6 +13,8 @@ Before scanning config files, check whether the project's own docs already say h
 
 A project with no `CLAUDE.md`/`docs/`/`ai-docs/` just falls straight through to config-file detection — this step costs nothing extra in that case beyond checking those paths exist.
 
+**Record the source, not just the values.** When step 1 or 2 finds the authoritative commands section, record a `docsSource: { path, heading }` pointer to exactly where it was found (e.g. `{"path": "CLAUDE.md", "heading": "## Commands"}`) alongside the derived commands in the cache entry below — not just the commands themselves. This pointer is what lets the fingerprint (see "Caching Across Runs") scope itself to the one heading that actually matters instead of the whole file. When detection falls through to config-file scanning with nothing found in docs, omit `docsSource` entirely (never set it to `null`).
+
 ### Multi-Layer Test Detection
 
 Many projects have more than one test command — unit, integration, smoke, e2e, schema-conformance, contract, acceptance, etc. During detection, populate `tests` when distinct test layers are discovered:
@@ -38,8 +40,9 @@ state/toolchain-cache/{repo}.json
 
 ```json
 {
-  "fingerprint": "<git commit sha>",
+  "fingerprint": "<content hash or git commit sha — see Fingerprint below>",
   "detectedAt": "<ISO timestamp>",
+  "docsSource": { "path": "CLAUDE.md", "heading": "## Commands" },
   "commands": {
     "validate": "...",
     "test": "...",
@@ -47,6 +50,8 @@ state/toolchain-cache/{repo}.json
     "lint": "...",
     "lintScoped": "...",
     "typecheck": "...",
+    "typecheckScoped": "...",
+    "testScoped": "...",
     "build": "..."
   }
 }
@@ -54,22 +59,62 @@ state/toolchain-cache/{repo}.json
 
 - **`test`** — the fast default test command for TDD cycles (unit tests, or the project's main test runner). Always populated.
 - **`tests`** — optional object mapping layer names to commands, populated when the project has distinct test commands per layer. Keys are free-form (e.g., `unit`, `integration`, `smoke`, `e2e`, `schema-conformance`, `contract` — whatever the project calls them). When present, `test` should match one of these entries (typically the fastest layer). When absent or empty, `test` alone covers everything.
-- **`lintScoped`** — optional command template for scoping lint to only the changed files/packages in the current diff (see the Node.js "Scoped Lint Detection" rules below); populated when a monorepo tool or a changed-files fallback yields a usable command, omitted (never set to `null`) when no scoped command is available and the plain `lint` command is the only option.
+- **Scoped fields (`lintScoped`, `typecheckScoped`, `testScoped`)** — all follow the same pattern: an optional command template for scoping that check to only the changed files/packages/modules in the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Each is populated independently when a monorepo/affected-graph tool or a changed-files fallback yields a usable command for *that* check, and omitted (never set to `null`) when no scoped command is available for it — the plain (unscoped) command is then the only option, and that's fine. A project can have some scoped fields populated and others omitted (e.g. `lintScoped` set via eslint-on-changed-files but no equivalent `testScoped` fallback). Per-ecosystem detection rules for each scoped field live in the ecosystem sections below (see the Node.js "Scoped Check Detection" subsection, and the "Scoped Test Detection" subsections under Java, Rust, and Go).
+- **`docsSource`** — optional `{ path, heading }` pointer to exactly where Docs-First Discovery found the authoritative commands (e.g. `{"path": "CLAUDE.md", "heading": "## Commands"}`, or a `docs/*.md`/`ai-docs/*.md` file). Populated only when detection found commands in an existing doc; omitted (never set to `null`) when detection fell through to config-file scanning with no docs pointer to record. This is what the fingerprint below scopes itself to.
 
 One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
 
-**Fingerprint** — a cheap staleness check scoped only to the paths that can change the toolchain, so unrelated commits elsewhere in the repo don't force a redundant re-detection:
+**Fingerprint** — a cheap staleness check scoped only to the content that can actually change the *detected commands*, so unrelated commits — including a routine lockfile-only dependency bump — don't force a redundant re-detection. Lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Cargo.lock`, `go.sum`, `poetry.lock`, `Gemfile.lock`) are never part of either recipe below — a dependency-version bump touches only those files, never the commands themselves. Which recipe to use depends on whether `docsSource` was populated:
 
-```bash
-git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json package-lock.json yarn.lock pnpm-lock.yaml bun.lock bun.lockb Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts
-```
+- **`docsSource` populated** (Docs-First Discovery found the commands in an existing doc): hash the pointed-to heading's own content plus `package.json`'s `scripts` block — config-file fallback can still supplement docs-first for gaps the docs didn't cover, so the scripts block still matters even when a docs pointer exists, but nothing else in the pointed-to file (other headings) and no other doc file matters:
 
-`{repo-dir}` is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
+  ```bash
+  heading_content=$(awk -v h="{docsSource.heading}" '
+    BEGIN { match(h, /^#+/); level = RLENGTH }
+    $0 == h { found=1; next }
+    found && /^#+[ \t]/ { match($0, /^#+/); if (RLENGTH <= level) exit }
+    found { print }
+  ' {docsSource.path})
+  scripts_json=$(test -f package.json && jq -c '.scripts // {}' package.json || echo "{}")
+  fingerprint=$(printf '%s\n%s' "$heading_content" "$scripts_json" | sha256sum | cut -d' ' -f1)
+  ```
 
-1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above, reuse the cached `commands` (including `tests` if present) and skip both Docs-First Discovery and config-file scanning entirely.
-2. Otherwise — file missing, or a fingerprint mismatch (first run, or a toolchain-relevant file changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data).
+  **The section ends at the next heading of the same or shallower level — not at the next heading of *any* level.** `{docsSource.heading}` is stored as the literal heading line including its `#` markers (e.g. `## Commands`), so the recipe derives the target's level from it and only exits on a subsequent heading whose level is `<=` that. Nested subheadings *are* part of the section's own content: a monorepo whose commands doc is structured as `## Commands` → `### Build` / `### Test` must hash all of it. Exiting at the first heading of any level would capture only the intro prose before the first subsection, so an edit to a command nested under `### Test` would never change the hash — a silent false cache *hit* serving a stale command, which is strictly worse than the cache *miss* that is this design's intended worst case. (`#+` rather than `#{1,6}` also keeps the pattern working under awk implementations that don't enable ERE interval expressions; a run of 7+ `#` isn't a valid ATX heading anyway, and the level comparison already excludes it from ending a level-1–6 section.)
+
+- **No `docsSource`** (pure config-file detection): scope to the manifest/config files that directly define commands, still excluding lockfiles — this is the canonical "routine dependency bump" case the fingerprint targets. `CLAUDE.md`/`docs`/`ai-docs` stay in this pathspec even though docs-first found nothing this time, so a *later* addition of a commands section still invalidates the cache and gets picked up on the next run:
+
+  ```bash
+  git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts ':(exclude)docs/toolchain.md'
+  ```
+
+  The `':(exclude)docs/toolchain.md'` pathspec is the no-pointer half of the same self-invalidation guard already applied to lockfiles: `docs/toolchain.md` was the file a since-removed learned-facts write mechanism used to create for this exact case, and it lives inside the `docs` pathspec entry, so without the exclusion a learned-facts commit would have moved this recipe's `%H` and forced a cache miss on the next run. Nothing writes to that path anymore, so the exclusion is now a harmless no-op — left in place rather than removed, since removing it is out of scope here.
+
+`{repo-dir}` / `{docsSource.path}` (when relative) is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
+
+1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above (computed with whichever recipe matches the cached entry's own `docsSource` presence/absence), reuse the cached `commands` (including `tests` and `docsSource` if present) and skip both Docs-First Discovery and config-file scanning entirely.
+2. Otherwise — file missing, or a fingerprint mismatch (first run, or toolchain-relevant content changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + `docsSource` (if found) + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data). **Exception — broken `docsSource` pointer:** when the cached entry has a populated `docsSource` whose path/heading no longer resolves, "Relocation on Broken Pointer" below refines this step and governs instead; run its relocation attempt *first*, and only reach this step's config-file fallback / doc recreation if relocation also fails.
 
 A missing or stale cache never blocks progress — worst case is a cache miss, which costs exactly what a full detection would cost with no cache at all.
+
+### Relocation on Broken Pointer
+
+This subsection **refines step 2 above** — it is not a parallel alternative to it. A broken pointer *is* a fingerprint mismatch (the populated-`docsSource` recipe hashes the pointed-to heading's content, so a moved file or restructured heading changes the hash), so it enters step 2; what follows overrides step 2's routing for that one case only. Every other mismatch keeps step 2's behavior unchanged.
+
+A `docsSource` pointer can go stale in a more specific way than a generic fingerprint mismatch: the file was moved/renamed, or the heading was restructured, while the underlying commands still exist somewhere in the docs. Treat this as its own case rather than letting it fall silently into a full re-scan.
+
+**Broken-pointer check** — reuse doc-refresh-recipe.md's verification-table pattern (Part 1, "File path" and "Script" rows) rather than re-deriving it here:
+- `docsSource.path` no longer exists — the "File path" check (`Glob` for the path).
+- `docsSource.path` exists but `docsSource.heading` is no longer found in it — the same heading-extraction check the fingerprint recipe above already runs; an empty result means the heading is gone, the same failure mode the "Script" check covers for a renamed/removed script.
+
+Either condition means the pointer is broken.
+
+**On a broken pointer, attempt relocation before falling back.** Before treating `docsSource` as absent and running the full config-file fallback / doc recreation:
+
+1. Re-run Docs-First Discovery's search (`CLAUDE.md`, `docs/*.md`, `ai-docs/*.md` — see above) scoped to finding the same kind of commands section that was originally pointed to — same heading text, or a heading covering the same command keys (`validate`/`test`/`lint`/etc.) — elsewhere in the docs.
+2. **Relocation succeeds** — a new path/heading is found containing the same authoritative commands: update the stored `docsSource.path`/`docsSource.heading` to the new location and treat this as a cache refresh, not a full fallback — recompute the fingerprint from the new location and overwrite the cache entry. Do not run the config-file fallback or recreate the default doc; the pointer was found, just moved.
+3. **Relocation also fails** — no matching section is found anywhere in the docs: only now treat `docsSource` as absent. Run the full config-file fallback tables below, and (re)create/derive the default doc-less commands per the "No `docsSource`" fingerprint recipe above.
+
+Relocation is always attempted first — a broken pointer never immediately triggers doc recreation. Falling back to config-file detection / (re)creating the default doc is strictly the last resort, reached only when relocation also fails.
 
 **Known limitation, not addressed here:** the cache stores root-level commands only — the same granularity the config-file fallback already used before caching existed. A monorepo with genuinely different per-package toolchains (turborepo/nx/pnpm-workspaces) isn't newly broken by caching, but isn't specially handled either; per-package cache scoping is a candidate follow-up if it turns out to matter in practice.
 
@@ -107,18 +152,20 @@ Scan the project root for these files in priority order. A project may match mul
 
 **Per-package commands** (monorepo): `{manager} --filter {package} {script}`
 
-### Scoped Lint Detection
+### Scoped Check Detection (Lint, Test, Typecheck)
 
-Populates the `lintScoped` cache field (see "## Caching Across Runs" above) with a command that scopes lint to the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo lint on every change. Check signals in this priority order — first match wins, `{base}`/`{head}` are the diff's base and head refs:
+Populates the `lintScoped`, `testScoped`, and `typecheckScoped` cache fields (see "## Caching Across Runs" above) with commands that scope each check to the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Check signals in this priority order — first match wins, `{base}`/`{head}` are the diff's base and head refs — and apply the same priority order independently per check (a repo can resolve `lintScoped` via Turborepo and still have no `typecheckScoped` if the `typecheck` script isn't wired into `turbo.json`'s pipeline):
 
-| Priority | Signal | Command |
-|----------|--------|---------|
-| 1 | `turbo.json` present (Turborepo) | `turbo lint --filter=...[{base}...{head}]` |
-| 2 | `nx.json` present (Nx) | `nx affected --target=lint --base={base}` |
-| 3 | `pnpm-workspace.yaml` present (pnpm workspaces) | `pnpm --filter "...[{base}]" lint` |
-| 4 | No monorepo tool detected | Generic `eslint {changed files}` fallback — run against the git-diff-changed files that are lintable (JS/TS extensions eslint covers), not the whole repo |
+| Priority | Signal | `lintScoped` | `testScoped` | `typecheckScoped` |
+|----------|--------|---------------|---------------|---------------------|
+| 1 | `turbo.json` present (Turborepo) | `turbo lint --filter=...[{base}...{head}]` | `turbo test --filter=...[{base}...{head}]` | `turbo typecheck --filter=...[{base}...{head}]` |
+| 2 | `nx.json` present (Nx) | `nx affected --target=lint --base={base}` | `nx affected --target=test --base={base}` | `nx affected --target=typecheck --base={base}` |
+| 3 | `pnpm-workspace.yaml` present (pnpm workspaces) | `pnpm --filter "...[{base}]" lint` | `pnpm --filter "...[{base}]" test` | `pnpm --filter "...[{base}]" typecheck` |
+| 4 | No monorepo tool detected | Generic `eslint {changed files}` fallback — run against the git-diff-changed files that are lintable (JS/TS extensions eslint covers), not the whole repo | No generic fallback — a changed-files test run is unsound in JS/TS (a test can exercise code far from the file that changed); omit `testScoped` rather than guess | No generic fallback — `tsc` type-checks the whole project graph by design, so there's no sound per-file scoping; omit `typecheckScoped` rather than guess |
 
-When none of these signals produce a usable command (e.g. a non-Node ecosystem with no equivalent scoped-lint tool), omit `lintScoped` from the cache entirely — never set it to `null`.
+Priority 1–3 commands require the target script (`test`, `typecheck`) to actually be declared in the monorepo tool's pipeline/target config (e.g. `turbo.json`'s `pipeline`/`tasks`, or an `nx.json` target default) — a tool being present doesn't guarantee every check is wired into it. Verify the target exists before emitting the scoped command; if it doesn't, fall through to the next priority (or omit) for that check only.
+
+When none of these signals produce a usable command for a given check (e.g. a non-Node ecosystem with no equivalent scoped tool, or priority 4's "no sound fallback" cases above), omit that field from the cache entirely — never set it to `null`.
 
 ## Rust
 
@@ -137,6 +184,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 
 **Workspace detection:** `[workspace]` section in root `Cargo.toml`
 
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above). Rust has no ecosystem-standard affected-graph tool comparable to turbo/nx — there is no built-in "which crates does this diff affect" command, only per-crate scoping you construct yourself:
+
+| Signal | Command |
+|--------|---------|
+| `[workspace]` section in root `Cargo.toml`, and the diff's changed files map to a single member crate | `cargo test -p {crate}` — `{crate}` is the package name (from that crate's `Cargo.toml`) containing the changed paths |
+| Diff touches files in multiple member crates | Either run `cargo test -p {crate}` once per touched crate, or fall through to the plain `cargo test` (workspace-wide) — per-crate scoping doesn't compose into one command the way a graph-aware `affected` command would |
+| No workspace (single-crate repo), or changed paths don't map cleanly to one crate | Omit `testScoped` — the plain `cargo test` is the only option |
+
+**Caveat:** this is per-crate scoping, not a true dependency-affected-graph query — `cargo test -p {crate}` runs only that crate's own tests, it does not also run tests in crates that depend on the changed crate (Nx/Turbo's `affected` does traverse that graph). It also doesn't catch a workspace-wide integration test crate that indirectly exercises the changed code. Given Rust workspaces are typically small enough that a full `cargo test` is cheap, treat this as an available optimization, not a strong recommendation — falling through to the plain `test` command is a reasonable default, especially for smaller workspaces.
+
 ## Go
 
 | Signal | Detection |
@@ -153,6 +212,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 | `gofmt -l .` | Format check |
 
 **Workspace detection:** `go.work` file
+
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above). Like Rust, Go has no ecosystem-standard affected-graph tool — scoping is per-package, not dependency-graph-aware:
+
+| Signal | Command |
+|--------|---------|
+| Diff's changed files map to one or a small number of packages | `go test ./{changed-package}/...` — one invocation per changed package (or a comma-joined package list in one `go test` call) |
+| `go.work` present (multi-module workspace) and changes span multiple modules | Run the per-package command above scoped within each affected module, or fall through to `go test ./...` at the workspace root |
+| Changed paths span most of the tree, or don't map cleanly to specific packages | Omit `testScoped` — the plain `go test ./...` is the only option |
+
+**Caveat:** `go test ./{package}/...` tests the changed package and its subpackages, but not packages elsewhere in the module that import the changed package and could be affected by the change — there's no built-in "affected" resolution the way Nx/Turbo provide for Node. As with Rust, Go compiles and tests fast enough in most repos that a full `go test ./...` is often cheap; treat per-package scoping as an available option for large repos where the full run has become slow, not a default recommendation.
 
 ## Java
 
@@ -182,6 +253,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 - Maven: root `pom.xml` with `<modules>` section
 - Gradle: `settings.gradle` or `settings.gradle.kts` with `include(...)` statements
 
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above), for multi-module Maven/Gradle projects:
+
+| Tool | Signal | Command |
+|------|--------|---------|
+| Maven | `<modules>` section in root `pom.xml`, and the diff's changed files map to one or more member modules | `mvn test -pl {module} -am` (wrapper: `./mvnw test -pl {module} -am`) — `-pl` selects the changed module(s) (comma-separated for multiple), `-am` ("also make") builds their upstream dependencies first so the scoped run still reflects a consistent reactor build |
+| Gradle | `settings.gradle`/`settings.gradle.kts` `include(...)` statements, and the diff maps to one member module | `./gradlew :{module}:test` (global: `gradle :{module}:test`) — Gradle only rebuilds/retests the targeted module and its dependencies via its own up-to-date/dependency tracking |
+| Either | Diff spans most/all modules, or an affected-modules Gradle plugin isn't installed and changes don't map cleanly to a single module | Omit `testScoped` — the plain multi-module `test` command (full reactor / `./gradlew test`) is the only option |
+
+**Determining "changed module":** map each changed file path to the module/subproject whose root directory contains it — the module boundary is the directory holding that module's own `pom.xml` (Maven) or its entry in `settings.gradle`'s `include(...)` (Gradle). A diff touching files in more than one module's directory means more than one `{module}` value — either run the scoped command once per touched module, or fall through to the full multi-module command if that's simpler than composing several scoped invocations. A shared/root-level file changing (e.g. the parent `pom.xml`, `build.gradle` at the root, a shared BOM) should be treated as touching every module, since it can affect the reactor build for all of them — fall through to the full command in that case rather than scoping to just the file's own directory.
+
 **Mixed-language test suites** (common in Java projects):
 - `src/test/` in Java + `playwright.config.*` or `package.json` with Playwright → TypeScript E2E tests alongside Java unit tests
 - `requirements.txt` / `pyproject.toml` at root or in `tests/` → Python acceptance tests (e.g., pytest + requests)
@@ -206,6 +289,8 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 
 **Monorepo detection:** Multiple `pyproject.toml` files in subdirectories
 
+**Scoped detection:** not attempted. Python has no ecosystem-standard affected-graph tool comparable to turbo/nx (a monorepo of multiple `pyproject.toml` packages has no equivalent of `nx affected`/`turbo --filter` built into the standard tooling). Best-effort/full-suite is the default — `testScoped`/`lintScoped`/`typecheckScoped` are omitted for Python and the plain full-repo commands above are used, even in a multi-package layout.
+
 ## Ruby
 
 | Signal | Detection |
@@ -221,6 +306,8 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 | `bundle exec rake test` | Tests (Minitest) |
 | `bundle exec rubocop` | Lint |
 | `bundle exec standardrb` | Lint (Standard) |
+
+**Scoped detection:** not attempted, for the same reason as Python — no ecosystem-standard affected-graph tool exists for Ruby/Bundler. Best-effort/full-suite is the default; `testScoped`/`lintScoped`/`typecheckScoped` are omitted and the plain commands above are used.
 
 ## Generic / Makefile
 
@@ -277,6 +364,44 @@ bun run db:migrate    # via package.json scripts
 
 ---
 
+
+## Environment Passthrough to Install Children
+
+Package managers only honor a cache location if its env var actually survives the trip to the process doing the installing. Two layers can break that, and only one of them is under Shipwright's control.
+
+**Layer 1 — the agent's own spawn (verified fine).** `agent/src/claude.ts` spawns the `claude` CLI with `env: { ...process.env, ...extraEnv }` and strips exactly one variable, `SENTRY_DSN`. Everything else — `npm_config_cache`, `YARN_CACHE_FOLDER`, `PNPM_HOME`/`npm_config_store_dir`, `BUN_INSTALL_CACHE_DIR`, `PIP_CACHE_DIR`, `CARGO_HOME`, `GOMODCACHE`, `GRADLE_USER_HOME` — is inherited wholesale, and POSIX env inheritance carries it transparently through the CLI to the Bash-tool child and on to the install process it runs. Verified empirically two levels deep. Adding a cgroup to that spawn (see `agent/src/process-tree-kill.ts`) does not touch env; cgroup membership and environment are independent.
+
+**Layer 2 — the target repo's task runner (the real risk).** Monorepo task runners deliberately hash and whitelist the environment so task output is cacheable. Turborepo runs in `envMode: "strict"` by default (2.0+): a task's child process receives **only** the vars declared in `turbo.json`'s `env`/`globalEnv`, plus a small built-in passthrough list. Nx's `runtime`/`env` inputs behave similarly. An undeclared `npm_config_cache` is silently dropped — the install then writes to the default per-user cache, which in a fresh container means a full cold download on every run.
+
+```bash
+# RISKY — a strict-env task runner can strip npm_config_cache before the
+# install child ever sees it, silently defeating the warm cache.
+npm_config_cache=/cache/npm turbo run setup
+
+# SAFE — invoke the package manager directly; nothing sits in between.
+npm_config_cache=/cache/npm npm ci
+```
+
+```jsonc
+// OR declare it, if the install genuinely has to run through the task runner:
+// turbo.json
+{ "globalPassThroughEnv": ["npm_config_cache", "YARN_CACHE_FOLDER", "PIP_CACHE_DIR"] }
+```
+
+**Detection:** a `turbo.json` with no `envMode` (strict is the default) or `"envMode": "strict"`, or an `nx.json` with `namedInputs` declaring `runtime`/`env` entries. Confirm cheaply from inside the repo with `<runner> run <task>` wrapping `sh -c 'echo $npm_config_cache'` — an empty result means the var is being stripped, not that it was never set.
+
+**Rule for Shipwright**: run dependency installation as a direct package-manager invocation (`npm ci`, `bun install`, `pip install`, `cargo fetch`), never behind a monorepo task runner, unless the repo's runner config explicitly passes the cache vars through. Detected commands that bundle installation into a task-runner target (`turbo run setup`, `nx run-many -t install`) should be treated as cache-defeating and flagged, not silently used.
+
+
+## Never Run a Target the Diff Doesn't Touch
+
+This is a general rule, not specific to Node/monorepo tooling: never invoke a build, test, or export target whose declared source-path scope the current diff does not touch. The mechanism is the same regardless of ecosystem — compare the diff's changed file paths against each target's declared source-path scope, and only run targets whose scope overlaps the diff.
+
+"Declared source-path scope" means whatever the project's own tooling uses to say a target belongs to a given set of paths — a Turborepo/Nx/pnpm-workspace package boundary, a Maven/Gradle module directory, a Cargo/Go workspace member, a Makefile target's documented inputs, or a platform-specific build step (e.g. a mobile/native export step whose inputs are an `ios/`, `android/`, or platform-specific asset directory) are all instances of the same pattern. The mobile/native export step is one example among many, not a distinguished case — the same logic applies to, say, a docs-site build target scoped to `site/`, or a database-migration-generation target scoped to a `prisma/` or `migrations/` directory.
+
+Running an out-of-scope target isn't just wasted time: some targets have side effects (writing generated output, hitting external services, requiring credentials or platform-specific toolchains that may not even be installed in the current environment) that are actively harmful or simply fail outright when invoked without a reason tied to the diff. A native export step, for example, may require a full mobile toolchain (Xcode, Android SDK) unavailable in this environment — invoking it on a diff that never touched `ios/`/`android/` is both wasted effort and likely to fail for reasons unrelated to the change under test.
+
+This rule composes with, but is distinct from, scoped-check detection (`lintScoped`/`testScoped`/`typecheckScoped`) above: scoped-check detection narrows a check's *default* target set to just the affected packages/modules as an optimization; this rule is the harder constraint that a target outside the diff's scope should not run at all, regardless of whether a scoped or full command is otherwise in use.
 
 ## Multi-Ecosystem Projects
 

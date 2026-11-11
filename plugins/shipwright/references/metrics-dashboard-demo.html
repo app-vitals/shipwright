@@ -366,9 +366,9 @@
 
 <script>
 // =====================================================================
-// MOCK DATA — matches metrics-schema.md v1.4.0 exactly.
-// All rendering is driven from this array. Replace with real JSONL
-// records (parsed into an array) and the dashboard updates automatically.
+// MOCK DATA — a static, superseded design prototype. The live dashboard
+// (metrics/src/dashboard/) is served by the real Hono metrics service
+// and reads from the task store, not from this file's shape.
 // =====================================================================
 // Two-phase write pattern: dev-task writes all fields except review.
 // /review enriches the line with review data later. Tasks with

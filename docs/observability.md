@@ -1,35 +1,21 @@
 # Observability
 
-> Optional Sentry error/log reporting, wired identically across the admin, metrics, task-store, and agent services via the shared `lib/sentry.ts` helper.
+> Coding half. The platform half is the vendored snapshot [`docs/platform/observability.md`](./platform/observability.md), sourced from `app-vitals/agent`.
+
+> Optional Sentry error/log reporting, wired identically across the admin, metrics, task-store, and agent services via the shared `@app-vitals/agent-lib/sentry` helper.
 
 Everything below this line through [Configuration reference](#configuration-reference) covers the **write side**: services reporting their own errors/logs into Sentry via the SDK. See [Read side](#read-side) for the error-patrol skills, which query the Sentry Issues API in the opposite direction — pulling issues *out* of Sentry to drive automated fixes.
 
-## Overview
-
-Every Shipwright service (`admin`, `metrics`, `task-store`, `agent`) can report to Sentry when `SENTRY_DSN` is set in its own environment. Each service reads its own `SENTRY_DSN` — there is no shared/global toggle. When `SENTRY_DSN` is unset (the default), or when `NODE_ENV` is `"test"` (set via a `bunfig.toml` `[test]` preload script, `scripts/test-env-preload.ts`, before any test file loads for `bun test` runs whose cwd is the repo root — each subpackage's own `test` script additionally carries an explicit `NODE_ENV=test` prefix, since Bun does not apply a root `bunfig.toml`'s preload to `bun test` runs whose cwd is a subpackage directory), Sentry is fully inert: no init call, zero telemetry, zero overhead. The test guard prevents test error-path assertions from leaking to production Sentry as real events.
-
-All services share the same init options and scrub hooks via `buildSentryInitOptions()` / `initSentry()` in `lib/sentry.ts`, so behavior is identical regardless of which service reports.
-
 ## What is collected
-
-When `SENTRY_DSN` is set, a service reports to Sentry. Below is a summary of what data is captured and what is redacted:
 
 | Data | Captured by Sentry? |
 |---|---|
-| Unhandled exceptions and 5xx errors, with stack traces | Yes |
-| `console.log` / `console.warn` / `console.error` calls, forwarded as structured logs | Yes |
-| Request path and method for HTTP errors | Yes |
 | Caller identity — which admin or agent token triggered an error | Yes |
 | Tags (structured key-value metadata: `service`, `agent_id`, `item_type`, `item_id`) | Yes |
-| `Authorization` and `Cookie` header values | Redacted — replaced with `[Filtered]` regardless of configuration |
-| Request or response bodies | No — never attached to an event, with one narrow exception: see [Foreign response-body snippets](#foreign-response-body-snippets) |
-| The live value of any secret-shaped env var | Redacted — scrubbed wherever it appears, including nested inside longer strings |
-
-**Tags** are structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
 
 ### Foreign response-body snippets
 
-The one exception to "response bodies are never attached" is the agent's task-store client (`createTaskStoreClient().query()` in `agent/src/check-helpers.ts`). When a `GET /tasks` call returns a non-ok status, the response body is attached to the thrown `Error`'s message so a task-store 500 (e.g. its database being unreachable) is diagnosable from the Sentry Issue alone, instead of requiring a timestamp-correlated cross-reference against task-store's own events.
+The one exception to "response bodies are never attached" is the agent's task-store client (`createTaskStoreClient().query()` in `agent/src/coding/check-helpers.ts`). When a `GET /tasks` call returns a non-ok status, the response body is attached to the thrown `Error`'s message so a task-store 500 (e.g. its database being unreachable) is diagnosable from the Sentry Issue alone, instead of requiring a timestamp-correlated cross-reference against task-store's own events.
 
 Because the body comes from a *different* service, neither scrub hook above protects it: `stripSensitiveHeaders` only touches `event.request.headers`, and `redactSecrets` only masks *this* process's own live `SECRET_ENV_VARS` values by exact string match. Task-store's `onError` returns `{ error: err.message }` verbatim for any unhandled 500, so a dependency error that echoes its own credentials (a Prisma `P1013` connection-string validation error, for example) would otherwise reach Sentry unredacted.
 
@@ -42,24 +28,25 @@ Because the body comes from a *different* service, neither scrub hook above prot
 
 Redaction runs over a 2000-char window and the result is then truncated to 500 chars, so a secret straddling the truncation boundary is masked in full rather than half-emitted. What survives is the diagnostic remainder: status text, error class, Prisma error code, host and table names.
 
-### Claude session error classification
+### Task-store pool observability
 
-Every agent call site reporting a `claude` CLI runner error — `agent/src/cron-failure-reporter.ts`, `agent/src/health.ts`, `agent/src/loop-orchestrator.ts`, and `agent/src/slack.ts` — goes through `reportClaudeError(sentryClient, err)` (`agent/src/claude.ts`) instead of calling `sentryClient.captureException(err)` directly.
+The task-store instruments its `pg` pool to diagnose pool starvation (Sentry SENTRY-5T). It is observability only — pool size and queries are unchanged.
 
-`reportClaudeError` classifies the error before reporting it:
+- **Route context** — a middleware records each request's method and matched route pattern, so pool events can be attributed to a route.
+- **Connection holds** — a connection held longer than `SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, duration, and pool stats.
+- **Pool monitor** — every `SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS` (default 30000) the pool is checked and `pg pool has waiting clients` is logged when `waiting > 0`. It is stopped on graceful shutdown.
+- **Sentry** — when an unhandled error is a pool timeout (Prisma `P2028`, `Unable to start a transaction`, or a pg connection timeout), the captured event carries a `pg_pool` context (total/idle/waiting/max and route) and `route` / `server_name` tags. Other errors are captured unchanged.
 
-- A `ClaudeTimeoutError` with `reason: "ceiling"` — the intentional 1hr hard-ceiling backstop firing on a legitimately long-running session, not a defect — is downgraded to `sentryClient.captureMessage()`. This keeps the event visible in Sentry without creating an actionable Issue that error-patrol would otherwise keep re-flagging as "regressed" even though nothing is broken (VITALS-OS-46).
-- Every other error, including a `ClaudeTimeoutError` with `reason: "idle"` (a genuine hang), is reported unchanged via `sentryClient.captureException(err)`.
+Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in `@app-vitals/agent-lib/pool-observability`.
 
-Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
+### Pool starvation diagnostics (admin)
 
-## Disabling Sentry
+The admin service instruments its own `pg.Pool` (separate from task-store's) using `@app-vitals/agent-lib/pool-observability`. This is observability only: pool size and queries are unchanged.
 
-Unset `SENTRY_DSN` (or never set it) for the service in question. This is the default — no other configuration is required to keep a service fully offline from Sentry's perspective. Alternatively, `Sentry` is automatically disabled during test runs (when `NODE_ENV` is `"test"`, set either by the root `bunfig.toml` `[test]` preload script `scripts/test-env-preload.ts` for root-cwd `bun test` runs, or by the subpackage's own `NODE_ENV=test` script prefix for subpackage-cwd runs) even if `SENTRY_DSN` is present in the environment, preventing test assertions from polluting production Sentry with unintended error events.
-
-## Self-hosted Sentry
-
-`SENTRY_DSN` works with a self-hosted Sentry instance the same way it works with Sentry's SaaS offering — point it at your own instance/project's DSN instead of a sentry.io one. No other configuration changes are needed.
+- **Route context** — a middleware records the HTTP method and matched route pattern for each request.
+- **Hold tracking** — `pool.connect()` is wrapped so a connection held longer than `SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, `heldMs`, and pool stats.
+- **Monitor** — every `SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS` (default 30000) it logs `pg pool has waiting clients` while any client is queued. It is stopped during graceful shutdown.
+- **Sentry** — when an unhandled error captured by the admin API is a pool timeout (Prisma `P2028`, "Unable to start a transaction", or a pg connection timeout), the event carries a `pg_pool` context (`total`, `idle`, `waiting`, `max`, `route`) and `route` / `server_name` tags. Other errors are captured unchanged.
 
 ## Read side
 
@@ -84,13 +71,3 @@ Four surfaces read from Sentry, each with a distinct role in the error-patrol pi
 - **`check-error-patrol.ts`** (`plugins/shipwright/scripts/check-error-patrol.ts`) — the precheck for the `error-patrol-maintenance` cron. Fetches unresolved issues (`GET /organizations/{org}/issues/?query=is:unresolved`) and compares against the ledger to decide whether the cron has new/regressed work to do. Unlike the three skills above, a missing credential or failed fetch here exits permissively (runs the cron anyway) rather than skipping — an unknown state favors running the check over silently going quiet.
 
 All four share the same ledger at `state/error-patrol-ledger.json` and the same Bearer-token auth pattern; none of them ever log `$SENTRY_AUTH_TOKEN`.
-
-## Configuration reference
-
-See the `SENTRY_DSN` / `SENTRY_ENVIRONMENT` rows under [Observability](./configuration.md#observability) in `docs/configuration.md` for the full per-service env var reference, and the `SENTRY_ORG` / `SENTRY_AUTH_TOKEN` rows under [Plugin Config](./configuration.md#plugin-config) for the read-side credentials.
-
-## See also
-
-- [`docs/configuration.md`](./configuration.md) — full env var reference
-- [`lib/sentry.ts`](../lib/sentry.ts) — shared init options, scrub hooks, and secret allowlist
-- [`plugins/shipwright/skills/error-scan/SKILL.md`](../plugins/shipwright/skills/error-scan/SKILL.md), [`error-fix/SKILL.md`](../plugins/shipwright/skills/error-fix/SKILL.md), [`error-resolve/SKILL.md`](../plugins/shipwright/skills/error-resolve/SKILL.md) — the read-side skills

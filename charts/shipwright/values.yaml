@@ -222,7 +222,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.192.0
+    tag: admin-v1.325.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -284,6 +284,36 @@ admin:
       existingSecret: ""
       key: SENTRY_DSN
     environment: ""
+  # -- Agent ask feature configuration.
+  ask:
+    # -- Enable the ask feature (sets SHIPWRIGHT_AGENT_ASK_ENABLED).
+    enabled: false
+    # -- Allowlist of `fromAgentId>toAgentId` pairs permitted to ask (comma-joined in env). Empty means no agent may ask any agent.
+    allowlist: []
+  # -- Chat credential mint configuration.
+  chatCredentialMint:
+    # -- Enable chat credential minting (sets SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED).
+    enabled: false
+  # -- Admin documentation feature configuration.
+  doc:
+    # -- Enable the doc feature (sets SHIPWRIGHT_ADMIN_DOC_ENABLED).
+    enabled: false
+  # -- Pod ServiceAccount configuration.
+  podServiceAccount:
+    # -- Enable the pod ServiceAccount flag (sets SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED).
+    enabled: false
+  # -- Cron run-now configuration.
+  cronRunNow:
+    # -- Enable the cron run-now route (sets SHIPWRIGHT_CRON_RUN_NOW_ENABLED).
+    enabled: false
+  # -- Cron-run transcript API configuration.
+  transcriptApi:
+    # -- Enable the transcript API routes (sets SHIPWRIGHT_TRANSCRIPT_API_ENABLED).
+    enabled: false
+  # -- Agent repo-access check configuration.
+  repoAccessCheck:
+    # -- Enable the agent repo-access check (sets SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED).
+    enabled: false
   # -- Extra annotations for the admin pod template (spec.template.metadata.
   # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
   # above). Empty by default. On GKE Autopilot, set
@@ -294,6 +324,19 @@ admin:
   #   podAnnotations:
   #     cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
   podAnnotations: {}
+  # -- Extra labels for the admin pod template (spec.template.metadata.labels).
+  # Empty by default and purely additive — the chart's own
+  # `app.kubernetes.io/*` selector labels always win, so a colliding key here
+  # is dropped rather than breaking the Deployment's immutable selector.
+  # Use this to opt a single workload into a cluster policy that selects pods
+  # by label — a network policy, a scheduling or admission webhook, or a CNI
+  # feature such as an AWS `SecurityGroupPolicy` (see awsSecurityGroupPolicy
+  # below) — without widening it to every pod in the release. Values are
+  # rendered as strings, so `"true"` and `true` both produce a valid label.
+  # Example:
+  #   podLabels:
+  #     example.com/peer-datastore: "true"
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the admin workload. Off by default —
   # purely additive. Pairs with podAnnotations above to protect a
   # single-replica admin pod from voluntary disruption (cluster-autoscaler
@@ -316,7 +359,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.109.3
+    tag: metrics-v1.176.6
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -406,6 +449,18 @@ metrics:
       existingSecret: ""
       # -- Key in the secret for METRICS_INTERNAL_API_KEY.
       key: METRICS_INTERNAL_API_KEY
+  # -- Bearer API key registry for the authenticated /metrics/* routes
+  # (METRICS_API_KEYS). Format: comma-separated `name:token:scope` tuples, scope
+  # `*` = admin (full access), any other scope is rejected with 403 on metrics
+  # routes. Same format as the admin's SHIPWRIGHT_ADMIN_API_KEYS, so to accept the
+  # admin bearer point existingSecret at the Secret the admin reads that registry
+  # from (admin.extraEnv). Leave empty to omit the env var (session-cookie access
+  # only).
+  apiKeys:
+    # -- Name of an existing Secret holding the key registry.
+    existingSecret: ""
+    # -- Key in the secret for METRICS_API_KEYS.
+    existingSecretKey: METRICS_API_KEYS
   # -- Public read-only proof surface. When enabled, the metrics service mounts an
   # unauthenticated, repo-scoped /public/* surface (read-only dashboard + JSON)
   # ALONGSIDE the authenticated routes — it does not relax auth on existing routes.
@@ -432,7 +487,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.294.0
+    tag: agent-v1.458.2
     pullPolicy: ""
   service:
     port: 3000
@@ -455,10 +510,18 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.294.0
+      tag: agent-v1.458.2
+    # -- Per-specialty agent images, keyed by specialty name (e.g. `coding`). Each
+    # entry takes `repository` (required) and `tag`, same shape as `image`. The
+    # admin Deployment receives the map as JSON in SHIPWRIGHT_AGENT_IMAGES; agents of
+    # a listed specialty are provisioned with that image instead of `image`.
+    # Empty (default) → env var omitted and every agent uses `image`.
+    # Example: { coding: { repository: ghcr.io/acme/agent-coding, tag: v1 } }
+    images: {}
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
+    # Created in the agent namespace (agent.provisioning.namespace, else the release namespace).
     serviceAccount:
       # -- Whether to create the agent ServiceAccount (only when provisioning.enabled).
       create: true
@@ -489,12 +552,86 @@ agent:
         # -- Memory request override for the provisioned agent container, e.g. "3Gi".
         memory: ""
       limits:
+        # -- CPU limit override for TENANT agent pods only (agents owned by an
+        # account), e.g. "2". Empty keeps the provisioner's own default (2).
+        # Platform agents never get a CPU limit.
+        cpu: ""
         # -- Memory limit override for the provisioned agent container, e.g. "9Gi".
-        # No CPU limit is ever set (CPU contention throttles instead of evicting).
         memory: ""
       # -- ephemeral-storage override for the provisioned agent container,
       # applied to both request and limit, e.g. "5Gi".
       ephemeralStorage: ""
+    # -- Managed Claude Code policy for provisioned agent pods. OFF by default: no
+    # ConfigMap renders and no SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_* env is injected.
+    # When enabled, the chart renders a ConfigMap whose single key
+    # managed-settings.json is `settings` as JSON; the admin provisioner mounts it
+    # read-only at /etc/claude-code (file: /etc/claude-code/managed-settings.json)
+    # in agent pods. Requires agent.provisioning.enabled=true and non-empty
+    # settings. Only provisioned agent pods consume it; admin, task-store, chat,
+    # metrics and mcp-server never mount it. The ConfigMap renders into
+    # agent.provisioning.namespace (else the release namespace), which must
+    # already exist. Remote managed settings (Claude admin console) take
+    # precedence over this file. See docs/deploy-kubernetes-provisioning.md.
+    claudePolicy:
+      # -- Render the policy ConfigMap and inject the admin env that mounts it.
+      enabled: false
+      # -- Claude Code managed settings (free-form object), e.g.
+      # {"permissions": {"deny": ["Bash(curl:*)"]}}. A change to any value changes
+      # the SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH env var, which restarts admin;
+      # on startup admin reconciles policy drift and rolls only affected agents.
+      settings: {}
+    # -- Anthropic Workload Identity Federation for provisioned agent pods. OFF
+    # by default: no SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_* or
+    # SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT env is injected and agent pods are
+    # unchanged. When enabled, the admin provisioner runs agent pods as the agent
+    # ServiceAccount (agent.provisioning.serviceAccount) and mounts a projected
+    # service-account token read-only at /var/run/secrets/anthropic.com/token,
+    # plus the ANTHROPIC_* federation env, so the Anthropic client exchanges the
+    # token for short-lived access instead of using a long-lived key. Requires
+    # agent.provisioning.enabled=true, non-empty federationRuleId, organizationId
+    # and serviceAccountId, and an agent ServiceAccount (serviceAccount.create=true
+    # or a non-empty serviceAccount.name). See docs/deploy-kubernetes-provisioning.md.
+    #
+    # identityMode selects how agents authenticate. "shared" (default) is the
+    # behavior above: every agent pod shares one ServiceAccount and one Anthropic
+    # service account/rule. "perAgent" (opt-in) gives each agent its own identity;
+    # it requires organizationId, issuerId and adminFederation (the admin pod's own
+    # projected token + ANTHROPIC_* env, used to sign in to the Anthropic Admin API
+    # via an org:admin bootstrap rule) and does NOT use federationRuleId,
+    # serviceAccountId or the shared agent ServiceAccount.
+    anthropicFederation:
+      # -- Inject the federation env into the admin Deployment.
+      enabled: false
+      # -- Anthropic organization ID (ANTHROPIC_ORGANIZATION_ID in agent pods). Required when enabled.
+      organizationId: ""
+      # -- Optional Anthropic workspace ID (ANTHROPIC_WORKSPACE_ID). Empty → not set.
+      workspaceId: ""
+      # -- Anthropic service account ID (ANTHROPIC_SERVICE_ACCOUNT_ID). Required when enabled.
+      serviceAccountId: ""
+      # -- Anthropic federation rule ID (ANTHROPIC_FEDERATION_RULE_ID). Required when enabled.
+      federationRuleId: ""
+      # -- Audience of the projected service-account token.
+      audience: https://api.anthropic.com
+      # -- Lifetime of the projected token in seconds (the kubelet rotates it).
+      # Integer from 600 (the Kubernetes minimum) to 3600.
+      tokenExpirationSeconds: 600
+      # -- Identity mode: "shared" (one identity for all agents, default) or
+      # "perAgent" (each agent gets its own ServiceAccount and Anthropic identity).
+      identityMode: shared
+      # -- perAgent only: Anthropic issuer ID of this cluster's OIDC issuer (the
+      # issuer of the per-agent federation rules). Required in perAgent mode.
+      issuerId: ""
+      # -- perAgent only: suffix appended to per-agent resource names so clusters
+      # sharing one organization do not collide. Lowercase letters, digits and
+      # dashes. Empty → no suffix.
+      nameSuffix: ""
+      # -- perAgent only: the admin pod's own federation, used to sign in to the
+      # Anthropic Admin API. Both fields are required in perAgent mode.
+      adminFederation:
+        # -- org:admin bootstrap federation rule ID (ANTHROPIC_FEDERATION_RULE_ID in the admin pod).
+        ruleId: ""
+        # -- Anthropic service account ID the bootstrap rule is bound to (ANTHROPIC_SERVICE_ACCOUNT_ID in the admin pod).
+        serviceAccountId: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env
@@ -573,6 +710,30 @@ agent:
     groq:
       # -- Groq API key. Empty with provider=groq means STT is unconfigured.
       apiKey: ""
+
+# -- Self-serve agent provisioning (SSP-1.3). OFF by default: with `enabled`
+# false the chart injects NO self-serve env and admin behavior is unchanged.
+selfServe:
+  # -- Set true to inject SHIPWRIGHT_SELF_SERVE_ENABLED=enabled and the quota/contact env.
+  enabled: false
+  # -- Default per-account agent quota (integer >= 0).
+  defaultMaxAgents: 0
+  # -- Contact address shown when a user needs more quota.
+  contactEmail: dan@app-vitals.com
+  networkPolicy:
+    # -- Render a NetworkPolicy isolating tenant agent pods (label
+    # shipwright.dev/tenant=true) in the agent namespace: egress to DNS, the
+    # Shipwright services and the public internet only (RFC1918 + link-local
+    # blocked); ingress from the admin pods only. Only enforced if the cluster
+    # CNI supports NetworkPolicy. Enable before allowing any tenant agents.
+    enabled: false
+    # -- CIDRs of node-local / cluster DNS resolvers tenant pods may reach on
+    # port 53 (UDP and TCP), in addition to the kube-dns pods. Default is the
+    # GKE NodeLocal DNSCache address; set your cluster's resolver on other
+    # CNIs (find it with `cat /etc/resolv.conf` in any pod). Empty list
+    # renders no extra rule.
+    dnsCidrs:
+      - 169.254.20.10/32
 
 # -- Authentication mode for the admin service.
 auth:
@@ -809,7 +970,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.141.2
+    tag: task-store-v1.227.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -901,6 +1062,11 @@ taskStore:
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
   podAnnotations: {}
+  # -- Extra labels for the task-store pod template (spec.template.metadata.
+  # labels). Empty by default and purely additive; the chart's own
+  # `app.kubernetes.io/*` selector labels always win. See admin.podLabels for
+  # the full rationale and example.
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the task-store workload. Off by
   # default — purely additive. See admin.podDisruptionBudget for the full
   # rationale (cluster-autoscaler node churn). Recommended for prod single-replica
@@ -979,14 +1145,14 @@ mcpServer:
     # -- Name of the mcp-server ServiceAccount. Generated if empty and create=true.
     name: ""
 
-# -- Chat service (@shipwright/chat) — Thread/Message store + scoped tokens. Port 3000.
+# -- Chat service (ghcr.io/app-vitals/agent-chat, published by app-vitals/agent) — Thread/Message store + scoped tokens. Port 3000.
 # Disabled by default — purely additive, safe to deploy without this.
 chat:
   # -- Whether to render the chat Deployment and Service.
   enabled: false
   image:
-    repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.104.2
+    repository: ghcr.io/app-vitals/agent-chat
+    tag: 1.20.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.
@@ -1046,6 +1212,11 @@ chat:
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
   podAnnotations: {}
+  # -- Extra labels for the chat pod template (spec.template.metadata.labels).
+  # Empty by default and purely additive; the chart's own
+  # `app.kubernetes.io/*` selector labels always win. See admin.podLabels for
+  # the full rationale and example.
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the chat workload. Off by default —
   # purely additive. See admin.podDisruptionBudget for the full rationale
   # (cluster-autoscaler node churn). Recommended for prod single-replica installs:
@@ -1088,3 +1259,56 @@ cloudSqlProxy:
   # Default false — keeps the public chart compatible with clusters older
   # than 1.29; opt in once running on 1.29+.
   nativeSidecar: false
+
+# -- Optional AWS VPC CNI `SecurityGroupPolicy` (EKS only). Default OFF — with
+# `enabled: false` this chart renders nothing at all for this feature, so an
+# existing install is byte-identical before and after this block was added.
+#
+# WHAT IT DOES: on EKS with "security groups for pods" enabled, the VPC CNI
+# gives every pod matching `podSelector.matchLabels` a branch ENI carrying the
+# listed security groups, instead of only the node's. This is how a pod reaches
+# a resource whose own security group admits a specific *client* security group
+# rather than a CIDR — the common case being a managed database (or a database
+# proxy) in a peered VPC. Without it the pod's traffic leaves on the node SG,
+# the target rejects it on source-SG mismatch, and the connection hangs until
+# the client times out.
+#
+# REQUIREMENTS: the `vpcresources.k8s.aws/v1beta1` CRD must be installed —
+# it ships with the AWS VPC CNI on EKS. On any other Kubernetes distribution
+# leave this disabled; the resource would be rejected as an unknown kind.
+#
+# ATTACH THE NODE SG TOO: a branch ENI carries *only* the groups listed here,
+# so list the cluster's node security group alongside the group that opens the
+# path you want. Omitting it strips the pod of cluster-internal networking and
+# DNS.
+awsSecurityGroupPolicy:
+  # -- Whether to render the SecurityGroupPolicy. Opt-in; default false.
+  enabled: false
+  # -- Name for the rendered SecurityGroupPolicy. Empty → the chart fullname.
+  nameOverride: ""
+  # -- Extra labels merged into the resource's metadata, on top of the chart's
+  # common labels. Empty → common labels only.
+  extraLabels: {}
+  podSelector:
+    # -- Labels a pod must carry to receive these security groups. Empty
+    # (default) → the chart's own selector labels
+    # (`app.kubernetes.io/name` + `app.kubernetes.io/instance`), which match
+    # every pod this chart renders but NOT bundled subchart pods such as the
+    # bundled PostgreSQL — those carry the release's `instance` label under
+    # their own `name`. To cover subchart pods as well, select on the instance
+    # label alone, e.g.
+    #   matchLabels:
+    #     app.kubernetes.io/instance: my-release
+    # To scope the policy to a single service, add its component label, e.g.
+    #   matchLabels:
+    #     app.kubernetes.io/name: shipwright
+    #     app.kubernetes.io/instance: my-release
+    #     app.kubernetes.io/component: admin
+    matchLabels: {}
+  # -- Security group IDs to attach to matching pods. Required when enabled —
+  # the chart ships no defaults, because a security group ID is specific to one
+  # VPC in one account. Supply your own, e.g.
+  #   groupIds:
+  #     - sg-xxxxxxxxxxxxxxxxx   # cluster node security group
+  #     - sg-yyyyyyyyyyyyyyyyy   # client SG the database's SG admits
+  groupIds: []

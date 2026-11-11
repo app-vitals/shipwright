@@ -10,6 +10,13 @@
  * process.cwd()-based single-repo implementation would silently no-op for
  * every configured repo.
  *
+ * The filesystem-scanned repo list is further scoped down to the agent's
+ * configured repos[] via resolveScopedRepos (see check-helpers.ts) — a repo
+ * cloned locally but absent from that config is excluded from output. That
+ * resolution is fail-closed: any config-fetch failure yields an empty scoped
+ * set, which surfaces as this script's existing "no work this tick" result
+ * (exit 1, no output) rather than a crash or a fallback to the unfiltered scan.
+ *
  * For each repo:
  * - No docs/ directory → skip cleanly, no anchor read/write, no output
  * - Reads that repo's own state/docs-last-synced.json to get the
@@ -32,7 +39,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveRepoDirs, resolveWorkspacePath } from "./check-helpers.ts";
+import {
+  resolveRepoDirs,
+  resolveScopedRepos,
+  resolveWorkspacePath,
+} from "./check-helpers.ts";
 import type { RepoDir } from "./check-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,6 +54,7 @@ interface Deps {
   readSyncAnchor: (dir: string) => string | null;
   getCommitsSince: (dir: string, sha: string) => string[] | null;
   getChangedFilesSince: (dir: string, sha: string) => string[] | null;
+  resolveScopedRepos: () => Promise<string[]>;
 }
 
 interface RunResult {
@@ -118,8 +130,10 @@ function evaluateRepo(
 
 export async function run(deps: Deps): Promise<RunResult> {
   const findings: RepoFinding[] = [];
+  const scoped = new Set(await deps.resolveScopedRepos());
+  const scopedRepos = deps.repos.filter((repoDir) => scoped.has(repoDir.repo));
 
-  for (const repoDir of deps.repos) {
+  for (const repoDir of scopedRepos) {
     try {
       const result = evaluateRepo(repoDir, deps);
       if (result === "no-docs" || result === "no-change") continue;
@@ -156,6 +170,8 @@ function buildProductionDeps(): Deps {
 
   return {
     repos,
+
+    resolveScopedRepos: () => resolveScopedRepos(workspacePath),
 
     hasDocsDir: (dir: string): boolean => existsSync(join(dir, "docs")),
 

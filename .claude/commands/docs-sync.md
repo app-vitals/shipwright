@@ -29,7 +29,7 @@ Per-page sync anchors live at `state/site-docs-last-synced.json` — `{ "<page>.
 
 ### Step 1: Resolve the list of flagged pages
 
-**`--auto` mode:** This command is dispatched as the response to a `site-docs-freshness` cron whose `preCheck` is `plugins/shipwright/scripts/check-site-docs-freshness.ts` — per the agent type manifest's cron `preCheck` contract, the script's stdout becomes this prompt. Parse the flagged page names directly out of the invoking prompt (mirrors `research-docs.md` Step A0's "preCheck output becomes the prompt" pattern). Each qualifying page appears either with its changed-file summary, or — when it qualified with no changed-file detail (first run, or a permissive git-failure fallback) — the line `"{page}: no sync anchor found — run full docs check"`. Treat both forms as "this page is flagged"; don't require a changed-file list to proceed.
+**`--auto` mode:** This command is dispatched as the response to a `site-docs-freshness` cron whose `preCheck` is `plugins/shipwright/scripts/check-site-docs-freshness.ts` — per the specialty manifest's cron `preCheck` contract, the script's stdout becomes this prompt. Parse the flagged page names directly out of the invoking prompt (mirrors `research-docs.md` Step A0's "preCheck output becomes the prompt" pattern). Each qualifying page appears either with its changed-file summary, or — when it qualified with no changed-file detail (first run, or a permissive git-failure fallback) — the line `"{page}: no sync anchor found — run full docs check"`. Treat both forms as "this page is flagged"; don't require a changed-file list to proceed.
 
 **Interactive mode with no preCheck context (manual invocation):** Run the precheck directly and capture its output:
 

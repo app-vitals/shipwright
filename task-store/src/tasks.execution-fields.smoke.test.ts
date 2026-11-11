@@ -88,7 +88,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     deployedAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
@@ -132,6 +131,9 @@ function fakeTaskService(
   storedTasks: Map<string, Task> = new Map(),
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
@@ -214,6 +216,23 @@ function fakeTaskService(
       const existing = storedTasks.get(id);
       if (!existing) throw new Error("Task not found");
       const updated = { ...existing, skipCount: 0 };
+      storedTasks.set(id, updated);
+      return updated;
+    },
+    async unblock(id: string) {
+      const existing = storedTasks.get(id);
+      if (!existing) throw new Error("Task not found");
+      const updated = {
+        ...existing,
+        status: "pending" as const,
+        blockedReason: null,
+        blockedAt: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+      };
       storedTasks.set(id, updated);
       return updated;
     },

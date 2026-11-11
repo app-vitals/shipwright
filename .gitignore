@@ -33,7 +33,6 @@ state/dev-agent.env
 agent/prisma/client/
 admin/prisma/client/
 task-store/prisma/client/
-chat/prisma/client/
 
 # --- Dependencies ---
 node_modules/

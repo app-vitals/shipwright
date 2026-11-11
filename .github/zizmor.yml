@@ -25,7 +25,6 @@ rules:
     ignore:
       - build-admin.yml:3
       - build-agent.yml:3
-      - build-chat.yml:3
       - build-mcp-server.yml:3
       - build-metrics.yml:3
       - build-task-store.yml:3

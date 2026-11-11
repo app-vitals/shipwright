@@ -8,7 +8,7 @@
  * via the plain (non `--search`) `gh pr list`, classifies each PR via
  * pr-census.ts's `classifyPrOrigin()`, and POSTs the result to the existing
  * `POST /prs/census` task-store endpoint in <=200-entry chunks. See
- * agent/src/pr-origin-backfill.ts's module doc comment for the full
+ * agent/src/coding/pr-origin-backfill.ts's module doc comment for the full
  * rationale (why plain `gh pr list` instead of `--search`, idempotency,
  * per-repo error isolation).
  *
@@ -38,12 +38,16 @@
  *   --help             Print this usage and exit 0.
  *
  * Idempotent: safe to re-run (e.g. after a partial failure) — see the
- * module doc comment in agent/src/pr-origin-backfill.ts.
+ * module doc comment in agent/src/coding/pr-origin-backfill.ts.
  */
 
-import { ghJson } from "../src/check-helpers.ts";
-import type { CensusEntry, CensusTaskRecord } from "../src/pr-census.ts";
-import { type BackfillDeps, runBackfill } from "../src/pr-origin-backfill.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
+import { ghJson } from "../src/coding/check-helpers.ts";
+import type { CensusEntry, CensusTaskRecord } from "../src/coding/pr-census.ts";
+import {
+  type BackfillDeps,
+  runBackfill,
+} from "../src/coding/pr-origin-backfill.ts";
 
 const DEFAULT_DAYS = 90;
 const DEFAULT_TASK_PAGE_LIMIT = 50;
@@ -95,29 +99,26 @@ function reposFromEnv(): string[] {
 }
 
 function parseArgs(argv: string[]): { repos: string[]; days: number } {
-  const repos: string[] = [];
-  let days = DEFAULT_DAYS;
+  const flags = parseFlags(argv, ["--days"], { multi: ["--repo"] });
+  const repos = flags["--repo"];
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--repo") {
-      const val = argv[++i];
-      if (!val) {
-        console.error("Error: --repo requires a value (org/repo)\n");
-        console.error(USAGE);
-        process.exit(1);
-      }
-      repos.push(val);
-    } else if (arg === "--days") {
-      const val = argv[++i];
-      const parsed = val ? Number(val) : Number.NaN;
-      if (!val || Number.isNaN(parsed) || parsed <= 0) {
-        console.error("Error: --days requires a positive number\n");
-        console.error(USAGE);
-        process.exit(1);
-      }
-      days = parsed;
+  // parseFlags silently drops a trailing value-less `--repo`; keep the loud failure.
+  if (argv.at(-1) === "--repo" || repos.some((repo) => !repo)) {
+    console.error("Error: --repo requires a value (org/repo)\n");
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  let days = DEFAULT_DAYS;
+  if (argv.some((arg) => arg === "--days" || arg.startsWith("--days="))) {
+    const val = flags["--days"];
+    const parsed = val ? Number(val) : Number.NaN;
+    if (!val || Number.isNaN(parsed) || parsed <= 0) {
+      console.error("Error: --days requires a positive number\n");
+      console.error(USAGE);
+      process.exit(1);
     }
+    days = parsed;
   }
 
   const resolvedRepos = repos.length > 0 ? repos : reposFromEnv();

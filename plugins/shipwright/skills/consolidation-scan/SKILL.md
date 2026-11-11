@@ -43,6 +43,10 @@ Before starting, check if any flags were passed:
 
 ## Step 1: Load the Decisions Registry (Suppressions)
 
+See `references/decisions-registry.md` for the shared decisions-registry pattern this
+mirrors — the generic entry schema, ownership, and consumption contract that
+`.claude/shipwright/consolidation-decisions.md` is one concrete instance of.
+
 1. Check for `.claude/shipwright/consolidation-decisions.md` in the project root.
 2. **If it does not exist**, treat this as "no suppressions configured" — the same
    graceful no-op `entropy-scan` uses for a missing `.claude/shipwright/principles.md`

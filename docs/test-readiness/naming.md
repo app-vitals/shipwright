@@ -114,14 +114,14 @@ rename work landed since T-048:
 Still no cross-runner discovery gaps.
 
 **Re-confirmed (T-075):** re-ran the isolation check per-entry-point against the
-+18-file delta this cycle, which includes the 4 new Agent Type manifest test files
-(`admin/src/agent-type-manifest-loader.unit.test.ts`,
-`admin/src/agent-type-registry.unit.test.ts`,
-`admin/src/agent-type-registry.schema.unit.test.ts`,
-`agent-types/coding/manifest.content.test.ts`):
++18-file delta this cycle, which includes the 4 new Specialty manifest test files
+(`admin/src/specialty-manifest-loader.unit.test.ts`,
+`admin/src/specialty-registry.unit.test.ts`,
+`admin/src/specialty-registry.schema.unit.test.ts`,
+`specialties/coding/manifest.content.test.ts`):
 
 - `bun test unit` (positional pattern match) discovered 118 files, all matching
-  `*.unit.test.ts` — including the 3 new Agent Type unit test files above. `bun test
+  `*.unit.test.ts` — including the 3 new Specialty unit test files above. `bun test
   integration` discovered 56 files, all matching `*.integration.test.ts`. `bun test
   smoke` discovered 43 files, all matching `*.smoke.test.ts`. Zero cross-layer files in
   any of the three filtered scans.
@@ -137,7 +137,7 @@ Still no cross-runner discovery gaps.
 - `plugins/shipwright/test/test-naming-convention.content.test.ts` (the automated
   regression guard) passes: 11/11 tests.
 
-The 4 new Agent Type manifest test files landed inside the existing suffix convention,
+The 4 new Specialty manifest test files landed inside the existing suffix convention,
 not a parallel one. Still no cross-runner discovery gaps.
 
 ## Collision rules

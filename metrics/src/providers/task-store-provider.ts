@@ -20,7 +20,7 @@ import {
   calculateCost,
   normalizeModelToRateKey,
   OPUS_MODEL,
-} from "@shipwright/lib/pricing";
+} from "@app-vitals/agent-lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
 import {
   type AdminMetricsClient,
@@ -31,10 +31,12 @@ import {
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import { CoalescingCache } from "../lib/coalescing-cache.ts";
-import type {
-  PrRecord,
-  TaskRecord,
-  TaskStoreClient,
+import {
+  inWindow,
+  type PrRecord,
+  prAnchor,
+  type TaskRecord,
+  type TaskStoreClient,
 } from "../lib/task-store-client.ts";
 import type {
   MetricQuery,
@@ -45,7 +47,7 @@ import type {
 const DASHBOARD_TZ = "America/Los_Angeles";
 
 // Completed / terminal statuses (treated as "completed").
-const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "deploying"]);
+const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "released"]);
 const BLOCKED_STATUS = "blocked";
 
 // Task-store PR review-state that denotes an approved ("ship it") review. The
@@ -244,6 +246,8 @@ export class TaskStoreProvider implements MetricsProvider {
         return this.cycleRows(win, "merged");
       case "mergedPrsByRepo":
         return this.mergedPrsByRepo(win, q.groupBy);
+      case "prOutcomes":
+        return this.prOutcomes(win);
       case "tokensTotals":
         return this.tokensTotals(win);
       case "tokensBySessionType":
@@ -669,17 +673,26 @@ export class TaskStoreProvider implements MetricsProvider {
   }
 
   /**
-   * Merged PRs grouped by repo × origin × time bucket (POM-2.1). Calls
-   * listPrs with state:"merged" (server-side filter — excludes open/closed)
-   * and buckets each row's mergedAt into a day or week period. A null/
-   * unrecognized origin normalizes to "unknown"; a row missing both repo and
-   * mergedAt is skipped (shouldn't happen for a real merged-state row, but
-   * keeps the grouping crash-proof against partial fixtures).
+   * Merged PRs grouped by repo × origin × time bucket (POM-2.1), plus
+   * commits-per-PR sums for the same grouping (CPP-1.3). Calls listPrs with
+   * state:"merged" (server-side filter — excludes open/closed) and buckets
+   * each row's mergedAt into a day or week period. A null/unrecognized origin
+   * normalizes to "unknown"; a row missing both repo and mergedAt is skipped
+   * (shouldn't happen for a real merged-state row, but keeps the grouping
+   * crash-proof against partial fixtures).
    *
-   * Emits the finest grain (repo, origin, period, count) — api.ts's handler
-   * aggregates this into the repos[]/trend[] response shape, mirroring how
-   * every other query kind here returns a flat MetricTable for the handler
-   * to reshape.
+   * Commit-count qualification (CPP-1.3): a row contributes to
+   * commitSum/qualifyingCount/*Sum only when `origin === "shipwright"` AND
+   * `commitCount` is non-null — the same gate the /metrics/merged-prs
+   * response-shape docs describe. A qualifying row's own null breakdown
+   * field (e.g. `commitsDocsRefresh: null`) contributes 0 to that field's
+   * sum — commitCount being non-null is what gates qualification, not each
+   * breakdown field individually.
+   *
+   * Emits the finest grain (repo, origin, period, count, plus the commit
+   * sums) — api.ts's handler aggregates this into the repos[]/trend[]
+   * response shape, mirroring how every other query kind here returns a flat
+   * MetricTable for the handler to reshape.
    */
   private async mergedPrsByRepo(
     win: { from: string; to: string },
@@ -692,19 +705,63 @@ export class TaskStoreProvider implements MetricsProvider {
     });
 
     const bucket = groupBy === "week" ? weekBucket : dayBucket;
-    const counts = new Map<string, number>();
+
+    type Agg = {
+      count: number;
+      commitSum: number;
+      qualifyingCount: number;
+      docsRefreshSum: number;
+      reviewPatchSum: number;
+      ciFixSum: number;
+      implementationSum: number;
+    };
+    const aggs = new Map<string, Agg>();
     for (const p of prs) {
       if (!p.repo || !p.mergedAt) continue;
-      const key = [p.repo, normalizeOrigin(p.origin), bucket(p.mergedAt)].join(
-        "\0",
-      );
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const origin = normalizeOrigin(p.origin);
+      const key = [p.repo, origin, bucket(p.mergedAt)].join("\0");
+      const agg = aggs.get(key) ?? {
+        count: 0,
+        commitSum: 0,
+        qualifyingCount: 0,
+        docsRefreshSum: 0,
+        reviewPatchSum: 0,
+        ciFixSum: 0,
+        implementationSum: 0,
+      };
+      agg.count += 1;
+      if (origin === "shipwright" && p.commitCount != null) {
+        agg.qualifyingCount += 1;
+        agg.commitSum += p.commitCount;
+        agg.docsRefreshSum += p.commitsDocsRefresh ?? 0;
+        agg.reviewPatchSum += p.commitsReviewPatch ?? 0;
+        agg.ciFixSum += p.commitsCiFix ?? 0;
+        agg.implementationSum += p.commitsImplementation ?? 0;
+      }
+      aggs.set(key, agg);
     }
 
-    const columns = ["repo", "origin", "period", "count"];
-    const rows = [...counts.entries()].map(([key, count]) => [
+    const columns = [
+      "repo",
+      "origin",
+      "period",
+      "count",
+      "commitSum",
+      "qualifyingCount",
+      "docsRefreshSum",
+      "reviewPatchSum",
+      "ciFixSum",
+      "implementationSum",
+    ];
+    const rows = [...aggs.entries()].map(([key, agg]) => [
       ...key.split("\0"),
-      count,
+      agg.count,
+      agg.commitSum,
+      agg.qualifyingCount,
+      agg.docsRefreshSum,
+      agg.reviewPatchSum,
+      agg.ciFixSum,
+      agg.implementationSum,
     ]);
     return table(columns, rows);
   }
@@ -946,6 +1003,96 @@ export class TaskStoreProvider implements MetricsProvider {
       ],
       rows,
     );
+  }
+
+  /**
+   * prOutcomes (PAU-1.8) — read-only PR outcome aggregates per context
+   * fingerprint, derived from existing PullRequest fields. Each fingerprint's
+   * window is [min firstSeen, max lastSeen] across its admin baselines rows;
+   * every PR anchored (mergedAt ?? createdAt) in that window is aggregated.
+   * A time-window correlation, not per-PR attribution.
+   *
+   * Columns: context_fingerprint, window_from, window_to, prs, merged,
+   * approved, posted, other, avg_review_cycles, avg_patch_cycles,
+   * median_time_to_merge_ms.
+   */
+  private async prOutcomes(win: {
+    from: string;
+    to: string;
+  }): Promise<MetricTable> {
+    const columns = [
+      "context_fingerprint",
+      "window_from",
+      "window_to",
+      "prs",
+      "merged",
+      "approved",
+      "posted",
+      "other",
+      "avg_review_cycles",
+      "avg_patch_cycles",
+      "median_time_to_merge_ms",
+    ];
+    const cronStats = await this.safeCronStats(win);
+
+    const windows = new Map<string, { from: string; to: string }>();
+    for (const b of cronStats.baselines ?? []) {
+      if (!b.contextFingerprint) continue;
+      const w = windows.get(b.contextFingerprint);
+      if (!w) {
+        windows.set(b.contextFingerprint, {
+          from: b.firstSeen,
+          to: b.lastSeen,
+        });
+        continue;
+      }
+      if (b.firstSeen < w.from) w.from = b.firstSeen;
+      if (b.lastSeen > w.to) w.to = b.lastSeen;
+    }
+    if (windows.size === 0) return table(columns, []);
+
+    const all = [...windows.values()];
+    const prs = await this.taskStore.listPrs({
+      from: all.reduce((m, w) => (w.from < m ? w.from : m), all[0].from),
+      to: all.reduce((m, w) => (w.to > m ? w.to : m), all[0].to),
+      repo: this.repo,
+    });
+
+    const avg = (xs: number[]) =>
+      xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
+    const median = (xs: number[]) => {
+      if (xs.length === 0) return null;
+      const s = [...xs].sort((a, b) => a - b);
+      const mid = s.length >> 1;
+      return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    };
+
+    const rows = [...windows].map(([fingerprint, w]) => {
+      const inWin = prs.filter((p) => inWindow(prAnchor(p), w));
+      const timesToMerge = inWin.flatMap((p) => {
+        if (!p.mergedAt || !p.createdAt) return [];
+        const ms = Date.parse(p.mergedAt) - Date.parse(p.createdAt);
+        return Number.isNaN(ms) || ms < 0 ? [] : [ms];
+      });
+      const count = (state: string) =>
+        inWin.filter((p) => p.reviewState === state).length;
+      const approved = count("approved");
+      const posted = count("posted");
+      return [
+        fingerprint,
+        w.from,
+        w.to,
+        inWin.length,
+        inWin.filter((p) => p.mergedAt).length,
+        approved,
+        posted,
+        inWin.length - approved - posted,
+        avg(inWin.flatMap((p) => p.reviewCycles ?? [])),
+        avg(inWin.flatMap((p) => p.patchCycles ?? [])),
+        median(timesToMerge),
+      ];
+    });
+    return table(columns, rows);
   }
 
   // ─── Graceful degradation helpers ─────────────────────────────────────────

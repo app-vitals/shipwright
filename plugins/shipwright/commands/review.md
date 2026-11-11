@@ -5,7 +5,7 @@ argument-hint: "org/repo#number"
 
 # Review
 
-Evaluate open PRs and post findings. Scope: review only — no patching, merging, or deploying.
+Evaluate open PRs and post findings. Scope: review only — no patching or merging.
 
 PR tracking state — claimed commit SHAs, review state, and staging status — lives in the
 task store PR API (`$SHIPWRIGHT_TASK_STORE_URL/prs`). This is shared state across agents:
@@ -61,12 +61,32 @@ WORKSPACE_ROOT=$(pwd)
 Steps 9-11 and Step 14 use `$WORKSPACE_ROOT` to reference `state/reviews/` — that directory
 only ever exists at the workspace root, never inside a worktree.
 
-Read `state/agent-policy.md`. If the file doesn't exist, use these conservative defaults:
+Read policy DB-first — the agent's DB record via `GET /agents/:id/config`, then hardcoded
+defaults. There is no `state/agent-policy.md` file tier.
+
+1. **DB** — same config-fetch pattern as Step 14's `GET /agents/:id/config` call:
+   ```bash
+   POLICY_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config")
+   AUTO_POST_REVIEWS=$(echo "$POLICY_JSON" | jq -r '.autoPostReviews | select(. != null)')
+   ALLOW_SELF_REVIEW=$(echo "$POLICY_JSON" | jq -r '.allowSelfReview | select(. != null)')
+   MIN_CONFIDENCE=$(echo "$POLICY_JSON" | jq -r '.minConfidence | select(. != null)')
+   MAX_FINDINGS=$(echo "$POLICY_JSON" | jq -r '.maxFindings | select(. != null)')
+   ```
+   A `null` or absent field means the DB has no record yet (or that field isn't populated
+   yet) — fall through to the hardcoded default for that field, not an error.
+
+   Use `select(. != null)`, **not** `// empty`. jq's `//` alternative operator treats both
+   `null` *and* `false` as absent, so `// empty` would silently discard a deliberately-set
+   `autoPostReviews: false` or `allowSelfReview: false` from the DB and fall through to the
+   hardcoded default — the opposite of what the operator intended. `select(. != null)` filters
+   on null-ness only, so `false` survives as a real tier-1 value.
+2. **Hardcoded defaults** — for any field still unset after tier 1 (including when the config
+   fetch fails), use these conservative defaults:
 
 | Setting | Default |
 |---------|---------|
 | `auto_post_reviews` | true |
-| `allowed_events` | [COMMENT, APPROVE] |
 | `allow_self_review` | false |
 | `min_confidence` | 75 |
 | `max_findings` | 5 |
@@ -80,12 +100,17 @@ Policy: {staging|auto-posting} reviews
 
 ## Step 3: Resolve Current User and Target
 
-Resolve the current GitHub CLI user once and remember the value — substitute it directly
-into all subsequent commands that need it:
+Resolve the current GitHub identity once and remember the value — substitute it directly
+into all subsequent commands that need it. This is the **canonical** login (`app/` prefix and
+`[bot]` suffix stripped, lowercased) from the shared login-identity helper, which resolves it
+via GraphQL `viewer` — the REST `/user` endpoint 403s under installation tokens:
 
 ```bash
-gh api /user -q '.login'
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts"
 ```
+
+Every comparison against `CURRENT_USER` below compares canonical forms on both sides —
+canonicalize `author.login` / `PR_AUTHOR` the same way before testing equality.
 
 Staged reviews (`staged: true` records) are entirely out of scope for this command —
 listing, walking, and posting them is owned exclusively by `/shipwright:review-staged`.
@@ -188,6 +213,27 @@ A non-200 (e.g. a 403 when a linked task is assigned to a different agent — ta
 agent tokens are scoped) or zero matching tasks (still the common case today) leaves
 `TASK_MODEL` unset; Step 7 falls back to `'sonnet'`, unchanged from before.
 
+### Resolve the configured review-phase subagent (RVM-1.2)
+
+Runs once here too, same fail-soft, best-effort shape as the model-tier lookup above — any
+failure leaves `REVIEW_SUBAGENT_TYPE` at its built-in default, never a hard stop. Fetches the
+agent's configured phase-methodology override for the review phase (PMC-1.1) off the same
+`GET /agents/{id}/config` endpoint Step 14 already uses for bare-PR-number org/repo inference,
+and `patch.md`'s Step 1 uses for `patchAuthorAllowlist` — same endpoint, same auth header,
+just a different field:
+
+```bash
+REVIEW_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.review // "shipwright:code-reviewer"')
+REVIEW_SUBAGENT_TYPE=${REVIEW_SUBAGENT_TYPE:-shipwright:code-reviewer}
+```
+
+**Fail-closed, not fail-open.** On any curl failure (the `${...:-shipwright:code-reviewer}`
+default covers the case where the pipeline emits nothing) or when `.phaseMethodology.review`
+is absent or `null` (the jq `//` default covers this), `REVIEW_SUBAGENT_TYPE` resolves to the
+built-in `shipwright:code-reviewer` — identical to today's behavior when no override is
+configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
+
 ---
 
 ## Step 5: Gather Context
@@ -239,14 +285,14 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
    review objects only — blind to inline diff-line review comments and their `isResolved`
    state):
    ```bash
-   RESPONSE=$(gh api graphql -f query='
+   RESPONSE=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
    {
      repository(owner: "{org}", name: "{repo}") {
        pullRequest(number: {pr}) {
          headRefOid
          reviews(first: 50) {
            nodes {
-             author { login }
+             author { login __typename }
              state
              submittedAt
              commit { oid }
@@ -258,8 +304,9 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
              id
              isResolved
              comments(first: 20) {
+               totalCount
                nodes {
-                 author { login }
+                 author { login __typename }
                  body
                  path
                  line
@@ -270,7 +317,7 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
          }
          comments(first: 50) {
            nodes {
-             author { login }
+             author { login __typename }
              body
              createdAt
            }
@@ -304,6 +351,15 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
    `COMMENTS_JSON.nodes[]` holds each comment — the same shape patch.md's Step 3a extracts, and
    `LAST_PUSH_DATE` is the ISO-8601 `pushedDate` of the most recent commit at the current head.
    Used below by the Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
+
+   Also fetch the PR's durable findings ledger (PHS-1.2) — Step 9.5's `isResolvedByLedger`
+   (review-source `resolved`/`superseded`) and `isRejectedByPatchLedger` (patch-source
+   `rejected`, matched by `reviewRef` for review bodies and `threadRef` for inline threads)
+   both read it. Fail soft: an unreachable task store yields `[]`, exactly the pre-ledger behavior:
+   ```bash
+   PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" | jq -c '.findings // []' 2>/dev/null || echo '[]')
+   ```
 
    #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
 
@@ -429,8 +485,13 @@ pattern. It reuses `compute-unaddressed-findings.ts`'s exported
 `isAddressedByAuthorReply`/`isThreadAddressedByAuthorReply` helpers (CPF-2.3/URT-1.1) — so a
 `CHANGES_REQUESTED` review, a substantive top-level comment, or an unresolved inline thread
 that the PR author has already replied to and addressed does not count as substantive
-unresolved feedback, the same exclusion Step 9.5's hard gate below already applies. Before
-this fix, Step 5 ran this decision freehand and never applied that exclusion — since Step 5
+unresolved feedback, the same exclusion Step 9.5's hard gate below already applies. Bot/CI
+authors are excluded from counting as unresolved feedback the same way: the query above
+fetches `__typename` alongside `login` on every `author` block (RBD-1.1), and
+`isBotOrCiAuthor` checks `author.__typename === "Bot"` first as the authoritative GraphQL
+signal, falling back to the login-string heuristic (`[bot]` suffix or `KNOWN_CI_ACCOUNTS`)
+only when `__typename` is absent — e.g. an older cached fixture, or a caller whose query
+hasn't been upgraded to request it. Before this fix, Step 5 ran this decision freehand and never applied that exclusion — since Step 5
 runs earlier and stops the pipeline (deferring the review pass silently) on a match, its
 wrong answer won even when Step 9.5's later, correct, mechanized gate would have said the
 finding was resolved. Invoke it with the `reviews`, `comments`, and `reviewThreads` fetched above (no
@@ -626,10 +687,14 @@ Note which categories are present (even if "none") — this drives review focus.
 
 ## Step 7: Deep Review (dispatch `shipwright:code-reviewer` subagent)
 
-Delegate the per-file review to the bundled `shipwright:code-reviewer` subagent. This
-keeps review context isolated from the main thread (policy, queue, posting).
+Delegate the per-file review to `REVIEW_SUBAGENT_TYPE` — the bundled
+`shipwright:code-reviewer` subagent by default, or an operator-configured override resolved
+at the end of Step 4 (RVM-1.2). This keeps review context isolated from the main thread
+(policy, queue, posting); any compliant subagent, built-in or custom, accepts the same wire
+shape per `references/methodology-contracts/review.md` (RVM-1.1) — this step's inputs and
+output parsing below apply unchanged regardless of which one is dispatched.
 
-Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"`, passing
+Dispatch via the Agent tool with `subagent_type: REVIEW_SUBAGENT_TYPE`, passing
 `model: TASK_MODEL ?? 'sonnet'` (the linked task's model tier resolved at the end of Step 4,
 falling back to `'sonnet'` when no task is linked or the lookup failed) and
 `run_in_background: false`, and pass a single prompt block containing:
@@ -712,9 +777,124 @@ of `priorFindingsStatus[]`. A failed POST (non-2xx, timeout, or any other curl e
 non-fatal: log the warning shown above and continue — the actual review-posting logic must
 not be gated on ledger-write success.
 
-If the subagent returns malformed JSON, retry once with a reminder of the schema. If it
-still fails, fall back to an inline review in the main thread using the same rules
-(see `agents/code-reviewer.md` for the canonical rule set).
+#### Malformed or Failed Response (RVM-1.2)
+
+If the subagent returns malformed JSON, retry once with a reminder of the schema. Treat an
+outright failure of the Agent tool dispatch itself (e.g. it errors, or `REVIEW_SUBAGENT_TYPE`
+names an invalid/nonexistent `subagent_type` from a misconfigured override) identically to a
+malformed response for the purposes of this retry — the failure mode (no response vs. a
+garbled one) doesn't change the recovery path. The retry re-dispatches the exact same
+`REVIEW_SUBAGENT_TYPE` that failed.
+
+If the retry still fails, branch on what `REVIEW_SUBAGENT_TYPE` resolved to:
+- **Built-in default** (`REVIEW_SUBAGENT_TYPE` is `shipwright:code-reviewer` — no override
+  configured, or the override resolved to the built-in name): fall back to an inline review
+  in the main thread using the same rules (see `agents/code-reviewer.md` for the canonical
+  rule set) — unchanged from before this task.
+- **Configured override** (`REVIEW_SUBAGENT_TYPE` is a non-default, operator-configured
+  `subagent_type`): do not attempt an inline main-thread review of the failed override — the
+  main thread has no knowledge of a custom methodology's review rules. Instead, dispatch the
+  built-in `shipwright:code-reviewer` subagent fresh, as the safety net that guarantees the
+  pipeline always produces a valid response. Print a one-line note that the configured
+  subagent `{REVIEW_SUBAGENT_TYPE}` failed after retry and the built-in reviewer was used as
+  a fallback.
+
+  **If that fresh built-in dispatch also fails** (malformed JSON, or the dispatch itself
+  errors), it is governed by the **Built-in default** branch above, exactly as if it had been
+  the originally-resolved subagent: it gets its own single retry with a reminder of the
+  schema, and if that retry still fails, fall back to the inline main-thread review using
+  `agents/code-reviewer.md`'s canonical rule set. The inline review is the terminal fallback
+  — it runs in the main thread, so there is no further dispatch left to fail and the chain
+  always terminates. Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again, and do not loop past
+  this point: the sequence is at most override → override retry → built-in → built-in retry →
+  inline.
+
+Either way, Step 7 must end with SOME valid parsed response before Step 8 runs — never leave
+Step 7 without one. Steps 9-11's claim-owning PATCH calls (`reviewedCommitSha`/`reviewState`/
+`reviewedAt`) run unconditionally afterward regardless of which subagent path produced the
+response, so a hanging or unparsed Step 7 is never acceptable — that's what would otherwise
+leave the PR claim outstanding indefinitely.
+
+#### Multiple reviewers (MPS-2.1)
+
+**List parsing.** `REVIEW_SUBAGENT_TYPE` may hold a comma-separated list of `subagent_type`
+names (the API accepts up to 5 entries for the review phase). Split it on commas into
+`REVIEWERS`, trim whitespace around each entry, and ignore empty entries. If `REVIEWERS` has
+exactly one entry (including a list that resolves to one entry after trimming, such as
+`"shipwright:code-reviewer,"`), follow the single-reviewer path above unchanged — everything
+in this subsection applies only when `REVIEWERS` has more than one entry.
+
+**Parallel dispatch.** Dispatch every reviewer in ONE parallel Agent call: a single message
+containing one Agent tool use per entry in `REVIEWERS`, each with `subagent_type` set to that
+entry, the same `model: TASK_MODEL ?? 'sonnet'`, `run_in_background: false`, and the
+identical prompt block and contract inputs listed above. The fan-out is still synchronous and
+blocking — the call returns once every reviewer has returned its full JSON response, so there
+is no wakeup or poll step, exactly as for a single reviewer. Each response is parsed
+independently.
+
+**Per-reviewer failure.** A reviewer whose response is malformed, or whose dispatch itself
+fails, is retried once by re-dispatching the same `subagent_type` with a reminder of the
+schema. If the retry also fails, drop that reviewer and print a one-line note naming it
+(`reviewer {subagent_type} failed after retry and was dropped`). Do not substitute the
+built-in reviewer for an individual dropped reviewer while others survive.
+
+**All reviewers failed.** If every reviewer in `REVIEWERS` is dropped, fall back to the
+existing chain above using the built-in `shipwright:code-reviewer`: dispatch it fresh, retry
+once on failure, then fall back to the inline main-thread review — at most built-in → retry →
+inline, with the same terminal guarantee. If at least one reviewer succeeded, the review
+proceeds with the surviving responses.
+
+**Merge (MPS-2.2).** With more than one surviving response, merge them into ONE response
+before Step 8; a single surviving response (or the single-reviewer path) skips the merge and
+passes through unchanged. Merge BEFORE applying any policy threshold.
+
+- **Duplicate rule.** Two findings are duplicates when ALL of: (1) identical `file`; (2) lines
+  within a 3-line window (`abs(a.line - b.line) <= 3`; a `null` line matches only another
+  `null` line on the same file); (3) title similarity — after lowercasing and stripping
+  punctuation, one title contains the other, or the token sets share Jaccard overlap >= 0.6.
+  Group transitively (if A~B and B~C, all three are one group).
+- **Collapse each group** into one finding: keep the member with the highest `severity`
+  (`critical` > `important` > `suggestion`), breaking ties by highest `confidence`, and use
+  that member's `title`, `file`, `line`, `category`, `description`, and `suggestion`. Set the
+  merged `confidence` to the group's maximum. Conflicting severities never average — the
+  highest wins.
+- **Agreement count.** Record `agreement` = the number of DISTINCT reviewers that reported a
+  member of the group, in a main-thread side map keyed by the merged finding. It is NOT added
+  to the finding object (the review contract output shape is unchanged); use it only to break
+  ties when Step 8 trims to `max_findings` (higher `agreement` kept first among equal
+  `confidence`).
+- **Non-duplicates** pass through unchanged, with `agreement` = 1.
+- **`priorFindingsStatus[]`.** Merge conservatively, per `ref`: `resolved: true` only if EVERY
+  surviving reviewer that returned an entry for that `ref` attested `resolved: true`; if any
+  said `false`, the merged entry is `resolved: false` and its `evidence` is taken from a
+  `resolved: false` reviewer. A reviewer that omitted the `ref` does not count as attesting
+  resolved. Emit exactly one entry per input `ref`.
+- **Other fields.** `strengths[]` is the de-duplicated union; `recommendation` is `COMMENT` if
+  any surviving reviewer said `COMMENT`, else `APPROVE`; `summary` and
+  `recommendation_reason` come from the reviewer that supplied the highest-severity finding
+  (else the first surviving reviewer).
+
+The merged object conforms to the unchanged review contract shape (`summary`, `findings[]`,
+`strengths[]`, `recommendation`, `recommendation_reason`, `priorFindingsStatus[]`), so Steps
+8-11 consume it exactly as they would a single reviewer's response. Step 7 must still end with
+SOME valid parsed response (or the inline fallback) as required above.
+
+**Verify (MPS-2.3).** Runs only when `REVIEWERS` had more than one entry AND more than one
+surviving response was merged; a single-reviewer run, or a multi-reviewer run with a single
+survivor, skips verification entirely. It runs after the Merge and BEFORE any policy threshold.
+The verifier is a fixed built-in: dispatch `shipwright:finding-verifier` — never read it from
+config, and it has no `phaseMethodology` phase key or other knob — with `model: TASK_MODEL ??
+'sonnet'` and `run_in_background: false`, passing the diff, the changed-files list, and the
+merged `findings[]` each tagged with its `index`. It returns `{"verdicts": [{"index",
+"substantiated", "evidence"}]}`.
+
+- Drop every merged finding whose verdict is `substantiated: false`, and remove it from the
+  `agreement` side map. Findings with `substantiated: true`, or with no verdict, are kept.
+- The verifier can only drop findings: it never adds findings or alters `severity`,
+  `confidence`, or any other field, and the review contract output shape is unchanged.
+- **Non-fatal failure.** If the dispatch fails or the output is malformed (no retry), keep the
+  merged findings unverified and print a one-line note (`finding verifier failed; using
+  unverified merged findings`). Verifier failure never blocks Step 8.
 
 ---
 
@@ -722,7 +902,7 @@ still fails, fall back to an inline review in the main thread using the same rul
 
 The subagent has already applied confidence scoring and verification (pre-existing
 filter, CLAUDE.md endorsement check, silent-failure detection, breaking-API rule,
-acceptance-criteria check). This step applies policy thresholds from `state/agent-policy.md`.
+acceptance-criteria check). This step applies the policy thresholds resolved in Step 1.
 
 | Range | Category | Meaning |
 |-------|----------|---------|
@@ -731,9 +911,11 @@ acceptance-criteria check). This step applies policy thresholds from `state/agen
 | 50-74 | Suggestion | Valid concern, lower impact |
 | < 50 | Discard | Nitpick or false positive |
 
-Apply policy thresholds to the subagent's `findings[]`:
+Apply policy thresholds to the subagent's `findings[]` (for a multi-reviewer run, the MERGED
+`findings[]` from Step 7's Merge, minus any dropped by Verify — thresholds apply after merging, never per reviewer):
 - Drop findings below `min_confidence` (default 75)
-- Trim to `max_findings` (default 5), removing lowest confidence first
+- Trim to `max_findings` (default 5), removing lowest confidence first (ties: lowest merged
+  `agreement` first)
 - Group remaining findings by their `severity` field (`critical`, `important`, `suggestion`)
 
 **Keep it tight.** A good review has 2-5 actionable items. If the subagent returned
@@ -880,7 +1062,7 @@ subsection when there was nothing to check.
 Immediately before Step 10 finalizes the verdict, this step determines whether this PR has
 **unaddressed findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check
 for Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
-rather than re-deriving it (the drift PRB-2.1 previously fixed between `check-deploy.ts` and
+rather than re-deriving it (the drift PRB-2.1 previously fixed between `check-merge.ts` and
 `check-patch.ts`/`check-review.ts`).
 
 **This is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
@@ -899,16 +1081,17 @@ CURRENT_USER={the login resolved in Step 3}
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
   "$(jq -n --arg currentUser "$CURRENT_USER" \
     --arg prAuthor "$PR_AUTHOR" \
-    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --arg headRefOid "$HEAD_REF_OID" \
     --argjson reviews "$REVIEWS_JSON" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \
     --argjson priorFindingsStatus "$PRIOR_FINDINGS_STATUS_JSON" \
-    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus}')"
+    --argjson findings "$PR_FINDINGS_JSON" \
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus, findings: $findings}')"
 # -> {"unaddressedFindings":true|false}
 ```
 
-`HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, and `COMMENTS_JSON` are the
+`HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, `COMMENTS_JSON` (and `PR_FINDINGS_JSON`, the Step 5.5 ledger fetch) are the
 `headRefOid`, `reviews`, `reviewThreads`, and `comments` values from Step 5.5's GraphQL
 response — pass them through unchanged, do not re-fetch or re-shape them. `PRIOR_FINDINGS_STATUS_JSON`
 is the subagent's `priorFindingsStatus[]` array parsed in Step 7 (PVD-1.2's `{ ref, resolved, evidence }`
@@ -996,7 +1179,7 @@ Follow `references/post-review-guide.md` for the full mechanics.
 
 **The event/verdict decision is mechanical, not freehand.** Three inputs are already computed
 by this point in the procedure:
-- `selfReview` = `true` if `PR_AUTHOR == CURRENT_USER` (captured in Step 5 from the PR
+- `selfReview` = `true` if canonical `PR_AUTHOR == CURRENT_USER` (captured in Step 5 from the PR
   metadata's `author.login`), else `false`.
 - `unaddressedFindings` = the boolean Step 9.5's hard gate computed (real unresolved findings
   from BEFORE this review pass — unresolved prior GitHub review threads/comments — present at
@@ -1153,7 +1336,7 @@ BODY={the "body" string built for pr_review_{pr}.json above}
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
-  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}, \"body\": $(jq -Rs . <<< "$BODY")}"
+  "$(jq -n --arg body "$BODY" --argjson selfReview "$SELF_REVIEW" --argjson unaddressedFindings "$UNADDRESSED_FINDINGS" --argjson currentPassHasBlockingFindings "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" '{selfReview: $selfReview, unaddressedFindings: $unaddressedFindings, currentPassHasBlockingFindings: $currentPassHasBlockingFindings, body: $body}')"
 ```
 
 - If the result's `valid` field is `true`, proceed to Step 11.
@@ -1333,7 +1516,7 @@ curl -sf -X PATCH \
 fi
 ```
 
-**Never update task status when posting a review.** The deploy skill looks up tasks by PR number (expecting `status: 'pr_open'`) to perform post-deployment tracking — changing task status here breaks that linkage. Task status transitions are owned by the deploy skill (`pr_open` → `deployed`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
+**Never update task status when posting a review.** The merge command looks up tasks by PR number (expecting `status: 'pr_open'`) to mark them merged — changing task status here breaks that linkage. Task status transitions are owned by the merge command (`pr_open` → `merged`). This applies to the task store *task* record only; the PR *record* updates above (`complete`, `agentId`, `reviewState`) are expected.
 
 ---
 ## Step 14: Resolve and Claim the Target PR
@@ -1375,7 +1558,7 @@ CURRENT_USER={the login resolved in Step 3}
 ```
 
 ```bash
-precheck=$(gh api graphql -f query='
+precheck=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 {
   repository(owner: "{org}", name: "{repo}") {
     pullRequest(number: {pr}) {
@@ -1405,7 +1588,7 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' | jq --arg currentUser "$CURRENT_USER" '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end), authorLogin: $pr.author.login, title: $pr.title, headRefName: $pr.headRefName}')
+}' | jq --arg currentUser "$CURRENT_USER" 'def canon: sub("^app/"; "") | sub("\\[bot\\]$"; "") | ascii_downcase; .data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select((.author.login | canon) != ($currentUser | canon) and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end), authorLogin: $pr.author.login, title: $pr.title, headRefName: $pr.headRefName}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
 ```

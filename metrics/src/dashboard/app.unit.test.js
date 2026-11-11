@@ -11,10 +11,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 
 let fetchSequential;
+let computeFleetWeightedAvgCommits;
 
 beforeAll(async () => {
   await import("./app.js");
-  ({ fetchSequential } = globalThis.__dashboardAppTestExports);
+  ({ fetchSequential, computeFleetWeightedAvgCommits } = globalThis.__dashboardAppTestExports);
 });
 
 describe("fetchSequential", () => {
@@ -156,5 +157,180 @@ describe("fetchSequential", () => {
     const results = await fetchSequential([], fakeFetch);
     expect(results).toEqual([]);
     expect(called).toBe(false);
+  });
+});
+
+describe("computeFleetWeightedAvgCommits", () => {
+  test("single repo with avgCommitCount and commitBreakdown → returns weighted average (weight = byOrigin.shipwright)", () => {
+    const repos = [
+      {
+        repo: "org/alpha",
+        byOrigin: { shipwright: 5, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 4.0,
+        commitBreakdown: {
+          docsRefresh: 0.5,
+          reviewPatch: 1.5,
+          ciFix: 0.5,
+          implementation: 1.5,
+        },
+      },
+    ];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    expect(result.avgCommitCount).toBe(4.0);
+    expect(result.commitBreakdown).toEqual({
+      docsRefresh: 0.5,
+      reviewPatch: 1.5,
+      ciFix: 0.5,
+      implementation: 1.5,
+    });
+  });
+
+  test("multiple repos with different qualifying counts → computes fleet-wide weighted average", () => {
+    const repos = [
+      {
+        repo: "org/alpha",
+        byOrigin: { shipwright: 10, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 3.0,
+        commitBreakdown: {
+          docsRefresh: 0.3,
+          reviewPatch: 0.9,
+          ciFix: 0.6,
+          implementation: 1.2,
+        },
+      },
+      {
+        repo: "org/beta",
+        byOrigin: { shipwright: 5, ci: 2, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 4.0,
+        commitBreakdown: {
+          docsRefresh: 0.4,
+          reviewPatch: 1.2,
+          ciFix: 0.8,
+          implementation: 1.6,
+        },
+      },
+    ];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    // weighted avg = (10 * 3.0 + 5 * 4.0) / (10 + 5) = (30 + 20) / 15 = 3.33...
+    expect(result.avgCommitCount).toBeCloseTo(3.33, 2);
+
+    // weighted breakdown:
+    // docsRefresh: (10 * 0.3 + 5 * 0.4) / 15 = (3 + 2) / 15 = 0.333...
+    expect(result.commitBreakdown.docsRefresh).toBeCloseTo(0.333, 2);
+
+    // reviewPatch: (10 * 0.9 + 5 * 1.2) / 15 = (9 + 6) / 15 = 1.0
+    expect(result.commitBreakdown.reviewPatch).toBe(1.0);
+
+    // ciFix: (10 * 0.6 + 5 * 0.8) / 15 = (6 + 4) / 15 = 0.6666...
+    expect(result.commitBreakdown.ciFix).toBeCloseTo(0.667, 2);
+
+    // implementation: (10 * 1.2 + 5 * 1.6) / 15 = (12 + 8) / 15 = 1.333...
+    expect(result.commitBreakdown.implementation).toBeCloseTo(1.333, 2);
+  });
+
+  test("all repos with null avgCommitCount → returns null for avgCommitCount and commitBreakdown", () => {
+    const repos = [
+      {
+        repo: "org/alpha",
+        byOrigin: { shipwright: 5, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: null,
+        commitBreakdown: null,
+      },
+      {
+        repo: "org/beta",
+        byOrigin: { shipwright: 3, ci: 2, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: null,
+        commitBreakdown: null,
+      },
+    ];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    expect(result.avgCommitCount).toBeNull();
+    expect(result.commitBreakdown).toBeNull();
+  });
+
+  test("empty repos array → returns null for avgCommitCount and commitBreakdown", () => {
+    const repos = [];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    expect(result.avgCommitCount).toBeNull();
+    expect(result.commitBreakdown).toBeNull();
+  });
+
+  test("repos with no qualifying shipwright PRs (byOrigin.shipwright = 0) → skipped from weighting", () => {
+    const repos = [
+      {
+        repo: "org/alpha",
+        byOrigin: { shipwright: 10, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 5.0,
+        commitBreakdown: {
+          docsRefresh: 0.5,
+          reviewPatch: 1.5,
+          ciFix: 0.5,
+          implementation: 2.5,
+        },
+      },
+      {
+        repo: "org/beta",
+        byOrigin: { shipwright: 0, ci: 5, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 3.0,
+        commitBreakdown: {
+          docsRefresh: 0.3,
+          reviewPatch: 0.9,
+          ciFix: 0.6,
+          implementation: 1.2,
+        },
+      },
+    ];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    // Only org/alpha should count (org/beta has 0 shipwright PRs)
+    expect(result.avgCommitCount).toBe(5.0);
+    expect(result.commitBreakdown).toEqual({
+      docsRefresh: 0.5,
+      reviewPatch: 1.5,
+      ciFix: 0.5,
+      implementation: 2.5,
+    });
+  });
+
+  test("mixed case: some repos with null, some with data → uses only repos with data", () => {
+    const repos = [
+      {
+        repo: "org/alpha",
+        byOrigin: { shipwright: 10, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: 2.0,
+        commitBreakdown: {
+          docsRefresh: 0.2,
+          reviewPatch: 0.8,
+          ciFix: 0.4,
+          implementation: 0.6,
+        },
+      },
+      {
+        repo: "org/beta",
+        byOrigin: { shipwright: 5, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        avgCommitCount: null,
+        commitBreakdown: null,
+      },
+    ];
+
+    const result = computeFleetWeightedAvgCommits(repos);
+
+    // Only org/alpha should count (org/beta has null)
+    expect(result.avgCommitCount).toBe(2.0);
+    expect(result.commitBreakdown).toEqual({
+      docsRefresh: 0.2,
+      reviewPatch: 0.8,
+      ciFix: 0.4,
+      implementation: 0.6,
+    });
   });
 });

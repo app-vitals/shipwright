@@ -18,7 +18,7 @@ Each entry's description below is read directly from that skill's `SKILL.md` fro
 
 ## Core / Delivery Loop
 
-The one skill every other command in the spec → plan → execute → review → deploy loop depends
+The one skill every other command in the spec → plan → execute → review → merge loop depends
 on for task-queue reads and writes.
 
 ### task-store
@@ -28,7 +28,7 @@ and append new tasks. Use whenever you need to read from or write to the task qu
 task store HTTP API directly via curl.
 
 *Invocation:* Auto-triggered by the agent's own judgment whenever a task-store read or write is
-needed — `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`, `/shipwright:deploy`,
+needed — `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`, `/shipwright:merge`,
 and `/shipwright:plan-session` all invoke it internally, but there is no standalone
 `/shipwright:task-store` command.
 
@@ -239,26 +239,15 @@ instead of auto-remediating it. Requires security-scan to have run first.
 General-purpose and diagnostic skills that don't belong to the delivery loop, the test-readiness
 pipeline, or the maintenance patrols.
 
-### agent-admin
+### investigate-stuck
 
-Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions,
-API tokens, and plugins. Use to configure the running agent, manage its schedules, inspect
-another agent's config, or provision a new agent. Its own `SKILL.md` explicitly scopes it out of
-the delivery loop: "For delivery pipeline work... use the task-store, dev-task, review, or deploy
-skills. This skill is for agent lifecycle management only."
-
-*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
-`/shipwright:agent-admin` command.
-
-### investigate-cron
-
-Diagnose why a cron run behaved unexpectedly — looks up the exact run via the admin cron-runs
-API (by name+time or by PR/task id), finds the matching Claude Code session transcript, reads
-what the model did and why, and explains it in plain language. No log files needed; the
-transcript is the source of truth.
+Diagnose why a specific PR or task didn't proceed — snapshots the work queue, task-store PR/task
+records and live GitHub state (diffed against the cached view), resolves every `shipwright-loop`
+phase dispatch for the item via the admin cron-runs API, then delegates transcript extraction and
+the Sentry cross-check to `agent-platform:investigate-cron`. Takes `<org/repo#N|taskId>`.
 
 *Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
-`/shipwright:investigate-cron` command.
+`/shipwright:investigate-stuck` command.
 
 ### learning-capture
 

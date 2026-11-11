@@ -106,7 +106,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -131,11 +130,12 @@ function withBlockedBy(task: Task): TaskWithBlockedBy {
 }
 
 function fakeTaskService(
-  opts: {
-    getResult?: Task | null;
-  } = {},
+  opts: { getResult?: Task | null } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(_filters?: TaskListFilters): Promise<TaskListResult> {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
@@ -179,6 +179,9 @@ function fakeTaskService(
     },
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
+    },
+    async unblock(id: string) {
+      return makeTask({ id, status: "pending" });
     },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
@@ -237,7 +240,10 @@ function makeAgentApp(
     tokenService,
     sessionService: fakeSessionService(),
     // Scope resolver returns the repos the agent was configured with.
-    scopeResolver: async (_agentId: string) => scopedRepos,
+    scopeResolver: async (_agentId: string) => ({
+      repos: scopedRepos,
+      accountId: null,
+    }),
   });
 }
 

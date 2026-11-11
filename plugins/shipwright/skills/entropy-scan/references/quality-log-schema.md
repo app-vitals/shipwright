@@ -25,6 +25,7 @@ JSONL — one JSON object per line, append-only. Never rewrite or truncate the f
     "todo_fixme_hack": 5,
     "missing_test_file": 4
   },
+  "suppressed": 2,
   "reportPath": "entropy-report.md"
 }
 ```
@@ -38,6 +39,7 @@ JSONL — one JSON object per line, append-only. Never rewrite or truncate the f
 | `totalViolations` | number | Total findings across all rules |
 | `bySeverity` | object | Violation counts grouped by severity level (`high`, `medium`, `low`) |
 | `byRule` | object | Violation counts grouped by rule ID. Only includes rules with at least 1 finding. |
+| `suppressed` | number (optional) | Findings dropped by `.shipwright/suppressions.yml` this run. Not included in `totalViolations`, `bySeverity` or `byRule`. Omit when 0 or no suppressions file; older entries lack it. |
 | `reportPath` | string | Path to the report file written by this scan run (relative to project root) |
 
 ---

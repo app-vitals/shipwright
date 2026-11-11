@@ -30,16 +30,12 @@ export const DateRangeQuerySchema = z.object({
     }),
 });
 
-export type DateRangeQuery = z.infer<typeof DateRangeQuerySchema>;
-
 export const TrendsQuerySchema = DateRangeQuerySchema.extend({
   groupBy: z.enum(["day", "week", "hour"]).optional().openapi({
     description: "Time-series grouping granularity",
     example: "day",
   }),
 });
-
-export type TrendsQuery = z.infer<typeof TrendsQuerySchema>;
 
 // ─── Response schemas ─────────────────────────────────────────────────────────
 
@@ -82,7 +78,7 @@ export const SummaryResultSchema = z
   })
   .openapi("SummaryResult");
 
-export const TrendsPeriodSchema = z.object({
+const TrendsPeriodSchema = z.object({
   period: z.string(),
   tasksCompleted: z.number().int(),
   ciGates: z.number().int(),
@@ -117,7 +113,7 @@ export const TrendsResultSchema = z
   })
   .openapi("TrendsResult");
 
-export const FeatureMetricSchema = z
+const FeatureMetricSchema = z
   .object({
     prefix: z.string().openapi({ example: "MQ" }),
     tasksCompleted: z.number().int().openapi({ example: 3 }),
@@ -155,8 +151,6 @@ export const MergedPrsQuerySchema = DateRangeQuerySchema.extend({
   }),
 });
 
-export type MergedPrsQuery = z.infer<typeof MergedPrsQuerySchema>;
-
 const OriginBreakdownSchema = z
   .object({
     shipwright: z.number().int().openapi({ example: 4 }),
@@ -167,11 +161,26 @@ const OriginBreakdownSchema = z
   })
   .openapi("OriginBreakdown");
 
+// Commits-per-PR breakdown (CPP-1.3) — average commit count per qualifying
+// PR (origin:"shipwright", non-null commitCount), split by pipeline phase.
+// Distinct from the plugin's "CI first-pass rate" metric — see
+// docs/metrics.md's response-shape section for the full explanation.
+const CommitBreakdownSchema = z
+  .object({
+    docsRefresh: z.number().openapi({ example: 0.4 }),
+    reviewPatch: z.number().openapi({ example: 1.2 }),
+    ciFix: z.number().openapi({ example: 0.3 }),
+    implementation: z.number().openapi({ example: 2.1 }),
+  })
+  .openapi("CommitBreakdown");
+
 const MergedPrsRepoSchema = z
   .object({
     repo: z.string().openapi({ example: "org/repo" }),
     total: z.number().int().openapi({ example: 10 }),
     byOrigin: OriginBreakdownSchema,
+    avgCommitCount: z.number().nullable().openapi({ example: 4 }),
+    commitBreakdown: CommitBreakdownSchema.nullable(),
   })
   .openapi("MergedPrsRepo");
 
@@ -193,10 +202,41 @@ export const MergedPrsResultSchema = z
   })
   .openapi("MergedPrsResult");
 
-// ─── Tokens schemas ───────────────────────────────────────────────────────────
+// ─── PR outcomes schemas (PAU-1.8) ───────────────────────────────────────────
 
-export const TokensQuerySchema = DateRangeQuerySchema;
-export type TokensQuery = z.infer<typeof TokensQuerySchema>;
+const PrOutcomesSeriesSchema = z
+  .object({
+    contextFingerprint: z.string().openapi({ example: "a1b2c3d4" }),
+    windowFrom: z.string().openapi({ example: "2026-06-01T00:00:00.000Z" }),
+    windowTo: z.string().openapi({ example: "2026-06-07T23:59:59.999Z" }),
+    prs: z.number().int().openapi({ example: 12 }),
+    merged: z.number().int().openapi({ example: 10 }),
+    reviewState: z
+      .object({
+        approved: z.number().int(),
+        posted: z.number().int(),
+        other: z.number().int(),
+      })
+      .openapi({ description: "PR count per reviewState" }),
+    avgReviewCycles: z.number().nullable().openapi({ example: 1.4 }),
+    avgPatchCycles: z.number().nullable().openapi({ example: 0.6 }),
+    medianTimeToMergeMs: z.number().nullable().openapi({ example: 3600000 }),
+  })
+  .openapi("PrOutcomesSeries");
+
+export const PrOutcomesResultSchema = z
+  .object({
+    from: z.string().openapi({ example: "2026-06-01T00:00:00.000Z" }),
+    to: z.string().openapi({ example: "2026-06-07T23:59:59.999Z" }),
+    attribution: z.literal("window-correlation").openapi({
+      description:
+        "Each series aggregates every PR in the window between a context fingerprint's first and last seen — a time-window correlation, not per-PR attribution to that fingerprint.",
+    }),
+    series: z.array(PrOutcomesSeriesSchema),
+  })
+  .openapi("PrOutcomesResult");
+
+// ─── Tokens schemas ───────────────────────────────────────────────────────────
 
 const TokenTotalsSchema = z
   .object({
@@ -370,7 +410,7 @@ export const CostEfficiencyResultSchema = z
 
 // ─── Response envelope schema ─────────────────────────────────────────────────
 
-export const MetaSchema = z
+const MetaSchema = z
   .object({
     dateRange: z.object({
       from: z.string().openapi({ example: "2026-04-01T00:00:00.000Z" }),

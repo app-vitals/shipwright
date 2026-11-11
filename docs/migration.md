@@ -4,6 +4,157 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: task-store drops `deploying`, `deployingAt`, the `deploy` PR phase and `readyForDeployAt` _(MPD-3.5)_
+
+**Version**: next (MPD-3.5)
+
+**Who this affects**: any task-store API client that still writes or filters on the removed values.
+Shipwright's own loop, commands and admin/metrics stopped using them in MPD-3.1–3.4.
+
+- `TaskStatus` no longer has `deploying` and `Task.deployingAt` is gone. `status=deploying` on
+  `GET /tasks`, `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` returns `400`. A
+  `deployingAt` key in a task write body is silently stripped, like other removed fields.
+- `PrPhase` no longer has `deploy` and `PullRequest.readyForDeployAt` is gone. `phase=deploy` on
+  `POST /prs/claim` or `PATCH /prs/:id` returns `400`. `POST /prs/claim-next` now claims an
+  approved PR in phase `merge`, and approval (`reviewState=approved`) stamps `readyForMergeAt`.
+  FIFO aging is `COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt)`.
+- Migration `20261108000000_drop_deploying_status_deploy_phase` runs on task-store boot. It moves
+  every `deploying` task to `merged`, clears `phase` and the claim fields on every `phase=deploy`
+  PR, and copies `readyForDeployAt` into `readyForMergeAt` where that is unset, before it recreates
+  both enums and drops the two columns. Nothing to do by hand.
+
+---
+
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.7.1 _(AGR-4.2)_
+
+**Version**: next (AGR-4.2)
+
+**Who this affects**: anyone importing platform admin modules from `@shipwright/admin/*`, running
+admin Prisma commands with `--schema=prisma/schema`, or creating admin migrations in this repo.
+Deployments upgrade by rolling out the new admin image as usual.
+
+- The platform admin (API, UI, auth, Prisma schema, the single migration history) now comes from
+  the registry package `@app-vitals/agent-admin`, pinned to the same exact version as
+  `@app-vitals/agent-lib`. `admin/` keeps only `src/main.ts` (the composition root), `src/coding/`
+  (the coding extension), the composed `openapi.json` and `prisma.config.ts`.
+- `@shipwright/admin` now exports only `./main`, `./coding/*`, `./openapi.json`, `./prisma.config`
+  and `./package.json`. Import every other admin module from `@app-vitals/agent-admin/<module>`
+  (for example `@app-vitals/agent-admin/prisma-client`, `@app-vitals/agent-admin/admin-extension`).
+  `admin/openapi.platform.json` is gone; the package ships its own copy.
+- Admin Prisma commands run from `admin/` with no `--schema` flag: `admin/prisma.config.ts` points at
+  the schema and migrations inside the installed package. `task db:provision` is unchanged;
+  `task db:migrate` now exits with a pointer, because new admin migrations are created in the
+  platform repository.
+- On first boot the admin applies five new, additive migrations from the package:
+  `20261025000000_add_agent_ask`, `20261026000000_add_agent_pod_service_account`,
+  `20261027000000_add_cron_run_transcripts`, `20261028000000_add_cron_run_now` and
+  `20261028000000_add_repo_access_to_github_installations_snapshot` (new tables and nullable
+  columns only; existing migrations are unchanged).
+- New platform features are off unless their flag is `enabled`, and the chart sets none of them by
+  default: agent ask (`SHIPWRIGHT_AGENT_ASK_ENABLED`), chat-credential routes
+  (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`), the platform doc route (`SHIPWRIGHT_ADMIN_DOC_ENABLED`),
+  cron-run transcripts (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`), cron run-now
+  (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`), the per-agent pod ServiceAccount
+  (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`) and the runtime's per-repo GitHub access
+  check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Unflagged additions: the
+  `POST /agents/{id}/repos` and `DELETE /agents/{id}/repos/{owner}/{name}` routes (admin, the
+  agent's own key, or `platform.ops`), the `platform.read` / `platform.ops` API-key scopes, and the
+  "Signed commits" checkbox on the agent page of agents with a GitHub App.
+
+---
+
+## Behavior: entropy/security patrol crons gain a fail-closed repo-scope preCheck _(RSF-3.1)_
+
+**Version**: next (RSF-3.1)
+
+**Who this affects**: only agents that had **manually enabled** `entropy-patrol-maintenance` or
+`security-patrol-maintenance` (both ship `enabled: false`). Agents that left them off are
+unaffected — the new gate only runs when the cron ticks.
+
+`entropy-patrol-maintenance` and `security-patrol-maintenance` previously carried no `preCheck`
+and dispatched a bare prompt with no repo argument, leaving the agent to improvise which
+repo(s) under `repos/` to scan. Both now declare
+`preCheck: shipwright:check-patrol-scope.ts` in
+[`admin/src/coding/coding-specialty-defaults.ts`](../admin/src/coding/coding-specialty-defaults.ts), which resolves the
+agent's configured repos and emits the in-scope repo list as the cron's actual prompt.
+
+**What changed on upgrade**: `reconcileSystemCrons()` runs on every agent boot and keeps system
+crons in sync with the specialty defaults, including `preCheck`. It does not diff fields or preserve
+operator state beyond `enabled` and the row id, so the first boot after upgrading past this
+version rewrites these two crons' `preCheck` from `null` to `check-patrol-scope.ts` with no
+prompt and no log line. There is nothing to run by hand — but there is also no signal that it
+happened.
+
+**Impact**: `check-patrol-scope.ts` **fails closed**. If it resolves zero in-scope repos it
+exits 1 with no output, and per the `preCheck` contract that skips the tick *silently* — no
+Claude turn, no Slack message, no error. So an enabled patrol cron that was scanning every week
+can go quiet after the upgrade if any of the following is true for the agent:
+
+- the agent's `repos` list is empty (`GET /agents/:id/config` returns `repos: []`),
+- none of the configured repos is actually cloned into the workspace's `repos/` directory, or
+- the resolver can't reach the admin API — `SHIPWRIGHT_API_URL`, `SHIPWRIGHT_AGENT_ID`, or
+  `SHIPWRIGHT_AGENT_API_KEY` unset, or the config fetch returns non-2xx.
+
+For the common case — an agent with `repos` configured and those repos cloned — the cron keeps
+running, now scoped to exactly those repos instead of whatever it found on disk.
+
+**What to check after upgrading** (only if you had either cron enabled):
+
+1. Confirm the agent has repos configured and cloned:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq '.repos'
+   ```
+   Each entry must also exist as a clone under the workspace's `repos/` directory — the
+   resolver intersects the two, so a configured-but-uncloned repo contributes nothing.
+2. Run the precheck directly from the agent's workspace to see what it resolves:
+   ```bash
+   bun plugins/shipwright/scripts/check-patrol-scope.ts; echo "exit=$?"
+   ```
+   `exit=0` plus a `Repos in scope for this patrol:` list means the cron will fire. `exit=1`
+   with no output means it will silently no-op — fix the repo config or clones above.
+3. After the next scheduled tick, confirm the cron ran via the admin cron-logs UI or
+   `GET /agents/:id/crons/:cronId/runs`. A skipped tick still creates a run record, but with
+   `skipped: true` and `skipReason: "preCheck:no-output"` — look for that rather than a
+   missing run.
+
+---
+
+## Feature: `POST /agents` JSON API restored — programmatic agent creation _(APA-2.1)_
+
+**Version**: next (APA-2.1)
+
+**What this affects**: callers that want to create agents programmatically through the admin
+JSON API. The `POST /agents` JSON route is now available again, alongside the web UI form at
+`/admin/agents/new`. Both paths use the same underlying `createAgent()` implementation — they
+are two callers of a single creation function, not two separate implementations.
+
+**What changed**:
+
+- `POST /agents` is now available and fully documented in the OpenAPI spec
+  ([`admin/openapi.json`](../admin/openapi.json)). The route is **admin-only** (requires an
+  admin-level `Authorization: Bearer` token or session cookie; per-agent tokens cannot call it).
+- The request body is JSON (unlike the form's `application/x-www-form-urlencoded`), with required
+  fields `name` and `typeName`, plus optional `runtime` (`"in-cluster"` for managed agents; omit
+  or any other value means self-hosted), `reposRaw`, `authorAllowlistRaw`,
+  `patchAuthorAllowlistRaw`, `memberEmailsRaw` (all newline-separated lists), and
+  `restrictSlackToMembersRaw`.
+- The response is a `200` with the created agent object in the same shape as `GET /agents/:id`,
+  not a `302` redirect.
+- Creation is transactional: any failure (missing fields, invalid type, malformed repos/allowlists,
+  provisioning failure) leaves zero rows behind rather than a partial success.
+
+**Migration**:
+
+- **For humans**: no change — the web form at `/admin/agents/new` still works exactly as before
+  and remains the friendlier path with guided UI for Slack/GitHub provisioning and credentials.
+- **For scripted/API callers**: you can now use `POST /agents` with a JSON body instead of
+  `POST /admin/agents` with a form body. See the `agent-platform:agent-admin`
+  skill for practical curl examples. Both paths work and use the same implementation — pick
+  whichever suits your caller better.
+
+---
+
 ## Breaking: `POST /agents` JSON API retired — agent creation is UI-only _(ABF-3.2)_
 
 **Version**: next (ABF-3.2)
@@ -14,27 +165,27 @@ JSON API (`POST /agents`). Every other `/agents/*` route is unchanged — `GET`/
 sub-resources (envs, crons, tools, tokens, plugins) stay exactly as they were.
 
 The `POST /agents` route has been removed from the admin CRUD API
-([`admin/src/agents-api.ts`](../admin/src/agents-api.ts)), along with its OpenAPI schema entry
+(`@app-vitals/agent-admin/agents-api`), along with its OpenAPI schema entry
 and the corresponding generated types. Agent creation now happens exclusively through the admin
 console's HTML form at `/admin/agents/new`, which submits to `POST /admin/agents` in
-[`admin/src/admin-ui.ts`](../admin/src/admin-ui.ts). That form had already become the real
+(`@app-vitals/agent-admin/admin-ui`). That form had already become the real
 creation path — it is the only one that walks Slack app connection, GitHub auth, AI
 credentials, and runtime selection — leaving the JSON route as a second, partial implementation
 of the same seeding/provisioning logic that had to be kept in sync by hand.
 
 **What changed**:
 - `POST /agents` returns **404**. The route definition (`createAgentRoute`) and its handler are
-  gone from `admin/src/agents-api.ts`, and its now-unreferenced `CreateAgentBodySchema` request
+  gone from `@app-vitals/agent-admin/agents-api`, and its now-unreferenced `CreateAgentBodySchema` request
   body — along with the `AgentSchema` response shape it returned — is gone from
-  `admin/src/openapi-schemas.ts`.
+  `@app-vitals/agent-admin/openapi-schemas`.
 - `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
-  regenerated [`lib/admin-types.ts`](../lib/admin-types.ts) drops the matching
+  regenerated `@app-vitals/agent-lib/admin-types` drops the matching
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
-  from that file. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
-  the generated types in sync going forward.
-- `AdminDeps.agentTypeRegistry` is now unused by `agents-api.ts` and is retained only as an
+  from that package. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
+  the generated types in sync going forward (AGR-4.2: the test now verifies against the platform package's bundled schema).
+- `AdminDeps.specialtyRegistry` is now unused by `agents-api.ts` and is retained only as an
   optional field for backward-compatible construction; the admin UI carries its own
-  `agentTypeRegistry` dependency for manifest-driven seeding.
+  `specialtyRegistry` dependency for manifest-driven seeding.
 - `scripts/hitl.ts` (the `task hitl` bootstrap) now creates the local dev `hitl` agent via
   `POST /admin/agents` instead of `POST /agents`, minting an admin session through the dev
   auto-login route first.
@@ -49,7 +200,7 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
      production you can mint one via `GET /admin/dev-login` (dev-auth only); in production,
      drive it from a signed-in admin browser session.
   2. **Body** is `application/x-www-form-urlencoded`, not JSON. Field names:
-     `name`, `type` (agent type, required — no implicit `"coding"` default), `runtime`
+     `name`, `type` (specialty, required — no implicit `"coding"` default), `runtime`
      (`in-cluster` for a managed/provisioned agent; absent/anything else means self-hosted, the
      inverse of the old `selfHosted` boolean), `repos` / `authorAllowlist` /
      `patchAuthorAllowlist` / `memberEmails` (newline-separated lists), and
@@ -64,7 +215,7 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
 - **Seeding parity**: the form seeds `AgentTool`/`AgentPlugin` rows from the selected Agent
   Type manifest and rolls the agent row back on failure, exactly as the JSON route did. It does
   *not* seed `AgentMember` rows or merge `manifest.repos` into `repos` — those come from the
-  form's own `memberEmails`/`repos` fields. No shipped agent type declares non-empty
+  form's own `memberEmails`/`repos` fields. No shipped specialty declares non-empty
   `members`/`repos`, so this is a no-op difference today.
 - **Deploy order**: no constraint — the change is confined to the admin service, and the only
   in-repo caller (`scripts/hitl.ts`) ships in the same change.
@@ -137,7 +288,7 @@ currently needed by any live deployment).
 chart database, nothing changes.
 
 Prisma 7 removed the bundled Rust query engine. The admin service now connects through a
-`PrismaPg` driver adapter over a `pg.Pool` (`admin/src/prisma-client.ts`), so
+`PrismaPg` driver adapter over a `pg.Pool` (`@app-vitals/agent-admin/prisma-client`), so
 `DATABASE_URL_SHIPWRIGHT_ADMIN` is parsed at runtime by
 [`pg-connection-string`](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string)
 instead of by Prisma's engine. Two connection-string behaviors change as a result.
@@ -158,6 +309,16 @@ instead of by Prisma's engine. Two connection-string behaviors change as a resul
   Postgres fronted by a self-signed or private-CA certificate that connected fine under Prisma 6
   can now fail to connect at runtime — and it fails *after* `prisma migrate deploy` has already
   succeeded, because the CLI path runs first at boot.
+- **Legacy `sslmode` aliases are pinned to `verify-full` for `pg`.** `pg` 8 warns at startup
+  that `prefer` / `require` / `verify-ca` will adopt libpq semantics (for `require`: encrypt,
+  verify nothing) in its next major. So a `pg` upgrade can't silently weaken verification, admin,
+  task-store, and chat rewrite those three values to `sslmode=verify-full` in the string they hand
+  to `pg.Pool` (`@app-vitals/agent-lib/pg-sslmode`), which also silences the warning. The env var itself is
+  not modified, so the Prisma CLI still sees your original URL. An explicit
+  `uselibpqcompat=true` opts out and is left untouched. Keeping `sslmode=require` in the URL is
+  therefore the recommended form: the Prisma CLI's engine recognizes only
+  `disable` / `prefer` / `require` and reads any other value (including `verify-full` and
+  `no-verify`) as `prefer`.
 
 **Migration**:
 
@@ -239,7 +400,7 @@ dual-wrote/dual-read both; DBR-2.2 migrated the admin UI to write only
 is now the sole field — same shape, same validation (GitHub login strings).
 
 **What changed**:
-- The column is dropped from `admin/prisma/schema.prisma` by migration
+- The column is dropped from `admin/prisma/schema/` by migration
   `20260903150000_drop_agent_author_allowlist`.
 - `POST /agents` and `PATCH /agents/:id` no longer accept an `authorAllowlist` body field —
   use `reviewAuthorAllowlist`.
@@ -247,7 +408,7 @@ is now the sole field — same shape, same validation (GitHub login strings).
   schemas returned by `GET|PATCH /agents/:id` and `GET /agents/:id/config`.
 - `agent/src/index.ts`'s config-sync no longer falls back to `bundle.authorAllowlist`; it
   reads `bundle.reviewAuthorAllowlist` only. `resolveReviewAuthorAllowlist()` in
-  `agent/src/review-author-allowlist-ref.ts` dropped its `authorAllowlist` fallback
+  `agent/src/coding/review-author-allowlist-ref.ts` dropped its `authorAllowlist` fallback
   parameter accordingly.
 - `scripts/hitl.ts` now PATCHes `reviewAuthorAllowlist` (previously `authorAllowlist`) to
   keep the local dev `hitl` agent record's review-trigger allowlist in sync.
@@ -286,7 +447,7 @@ PR covering several tasks (the bundle case, ~7% of PR-linked task groups).
 - `GET /prs?blocked=true` still returns PRs whose linked task is blocked, but the link is
   now resolved live by `(Task.repo, Task.pr)` — so bundles work: any one blocked task
   blocks the PR.
-- `agent/src/pr-state-reconciler.ts` no longer opportunistically backfills the field after
+- `agent/src/coding/pr-state-reconciler.ts` no longer opportunistically backfills the field after
   confirming a merge.
 
 **Migration**:
@@ -344,12 +505,12 @@ organization prefixes extracted from the `repos` it already returns.
 
 **Version**: next (WLS-6.1)
 
-`dev-task`, `review`, `patch`, and `deploy` no longer self-discover work. Each is now an
-explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`deploy`
+`dev-task`, `review`, `patch`, and `merge` no longer self-discover work. Each is now an
+explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`merge`
 require an `org/repo#number` PR. Candidate selection — deciding *what* to work on — now
 happens exclusively upstream, in the `shipwright-loop` cron's in-process candidate
-providers (`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
-`check-deploy.ts`), which merge candidates and dispatch the winning item's command with its
+providers (`agent/src/coding/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
+`check-merge.ts`), which merge candidates and dispatch the winning item's command with its
 id/PR embedded directly in the prompt. No self-search fallback remains inside any of the
 four commands.
 
@@ -362,8 +523,8 @@ no Slack message, no work done.
 **What to update**: enable the `shipwright-loop` system cron (`PATCH
 /agents/:id/crons/:cronId` with `{"enabled": true}`, or via the admin UI). `dev-task`,
 `review`, and `patch` are enabled by default, so once the loop is on, they resume working
-automatically. `shipwright-deploy` remains an explicit opt-in — its per-phase cron ships
-`enabled: false`, so toggle it on separately if you also want deploys driven by the loop.
+automatically. `shipwright-merge` remains an explicit opt-in — its per-phase cron ships
+`enabled: false`, so toggle it on separately if you also want merges driven by the loop.
 
 ---
 
@@ -478,7 +639,7 @@ When `blockedBy` is empty, the task is ready to execute (assuming it has `status
 
 **What to update:**
 - Any code that calls `GET /tasks` and expects an array must unwrap `.tasks` from the response.
-- `check-helpers.ts` in the plugin is updated in this PR. Agent in-process code can import shared helpers directly from `agent/src/check-helpers.ts` (a ported native copy); custom plugin scripts still depend on the plugin version.
+- `check-helpers.ts` in the plugin is updated in this PR. Agent in-process code can import shared helpers directly from `agent/src/coding/check-helpers.ts` (a ported native copy); custom plugin scripts still depend on the plugin version.
 - Code that checks task readiness should use the `blockedBy` array instead of duplicating dependency logic.
 - `GET /tasks?ready=true` is unchanged — it still returns `Task[]` (filtered to ready tasks only, with `blockedBy` also present).
 
@@ -535,18 +696,22 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
   }
   ```
 
+- **`reconcile(agents, opts?: { policyOnly?: boolean })`**: the optional second parameter is **backward compatible**. `updated` now also covers drift in the Claude managed-policy wiring (the `claude-policy` volume, its `/etc/claude-code` mount, and the `shipwright.dev/claude-policy-hash` pod annotation) — including removing them when the policy is disabled. With `policyOnly: true`, existing Deployments are patched for policy drift and Anthropic federation wiring drift only; image, env, resource and tenant-label drift is ignored. `NoopAgentProvisioner` ignores the option.
+
+- **`reconcile(agents, opts?: { policyOnly?: boolean; dryRun?: boolean })`** (perAgent identity): targets are `ReconcileTarget` objects, which may also carry `ownerEmail`, `anthropicIdentityName`, `anthropicServiceAccountId`, `anthropicFederationRuleId` and `k8sServiceAccountName` (a bare `{ id }` still works: the identity is then read from the store). `ReconcileResult` gains `migrated: string[]` (agents moved onto their own identity), `noOwner: string[]` (agents skipped for lack of an owner) and `dryRun: boolean`. Implementers of `AgentProvisioner` must return the new fields. `POST /agents/reconcile` accepts `dryRun=true` (default false).
+
 ---
 
 ## `Task.requiresHumanApproval` field removed _(RHA-1)_
 
 **Version**: next (RHA-1)
 
-The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the deploy command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
+The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the merge command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
 
 **What changed**:
-- The `deploy` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
+- The `merge` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
 - The `plan-session` command no longer classifies tasks as "Type B" (requiring merge approval) — it only recognizes Type A (human-executable tasks with `hitl: true`) and neither (standard tasks).
-- The deploy workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
+- The merge workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
 - In RHA-1.4, the column was dropped from the Prisma schema and the database via migration `20260811000000_drop_requires_human_approval`. The filter parameter was removed from the task-store API in RHA-1.3.
 
 **Migration**:

@@ -44,7 +44,7 @@ Crons are how Shipwright runs autonomous, scheduled behavior — the `shipwright
 POST /agents/:id/crons
 ```
 
-A cron created through this endpoint is always a normal (non-system) cron — system crons are reserved for Shipwright's own built-in maintenance jobs, created internally via reconciliation, and cannot be created through this public route (see [agent-api-ops.md](./agent-api-ops.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons reject modifications to `schedule`, `prompt`, and `preCheck`, but enabled-only PATCH requests are allowed to toggle the cron.
+A cron created through this endpoint is always a normal (non-system) cron — system crons are reserved for Shipwright's own built-in maintenance jobs, created internally via reconciliation, and cannot be created through this public route (see [agent-api-ops.md](./platform/agent-api-ops.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons reject modifications to `schedule`, `prompt`, and `preCheck`, but enabled-only PATCH requests are allowed to toggle the cron.
 
 The cron's `prompt` field is a **plain string** — it is not scoped to any particular plugin. That means a custom cron's prompt can invoke any command from any plugin installed on the agent, including your own companion plugin's commands:
 
@@ -57,7 +57,7 @@ The cron's `prompt` field is a **plain string** — it is not scoped to any part
 }
 ```
 
-This is the mechanism for repo-specific scheduled/autonomous behavior — a nightly report, a weekly changelog sync, a custom compliance check — that doesn't belong in the shared `shipwright` plugin. See [agent-api-ops.md](./agent-api-ops.md#cron-jobs) for the full field reference (schedule validation, delivery-target rules, `preCheck`, etc.).
+This is the mechanism for repo-specific scheduled/autonomous behavior — a nightly report, a weekly changelog sync, a custom compliance check — that doesn't belong in the shared `shipwright` plugin. See [agent-api-ops.md](./platform/agent-api-ops.md#cron-jobs) for the full field reference (schedule validation, delivery-target rules, `preCheck`, etc.).
 
 ## Lightweight customization without a companion plugin
 
@@ -74,14 +74,14 @@ If all you need is to tweak config or data — not add a new command or skill �
 
 **For `dev-task`:** Step 6 (Simplify) follows the same pattern as `plan-session`, checking for `.claude/shipwright/principles.md` before using the default. This allows projects to enforce project-specific architecture, testing, and security principles during code simplification.
 
-See [`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md) for the full pattern.
+See [`references/principles-pattern.md`](../plugins/shipwright/references/principles-pattern.md) for the full pattern — schema, override semantics, and init flow — shared by `entropy-scan` and `security-scan`.
 
 Reach for this first if you just need different data or thresholds; reach for a companion plugin when you need genuinely new commands, skills, or scheduled behavior that doesn't fit inside shipwright's existing commands.
 
 ## See also
 
 - **[agent-api-resources.md](./agent-api-resources.md)** — full request/response schemas for the Plugins endpoints.
-- **[agent-api-ops.md](./agent-api-ops.md)** — full request/response schemas for the Cron jobs endpoints.
-- **[agent-api.md](./agent-api.md)** — the core admin CRUD API: agents, authentication, env vars, and runtime config.
+- **[agent-api-ops.md](./platform/agent-api-ops.md)** — full request/response schemas for the Cron jobs endpoints.
+- **[agent-api.md](./platform/agent-api.md)** — the core admin CRUD API: agents, authentication, env vars, and runtime config.
 - **[architecture.md](./architecture.md)** — the four-artifact design and where the plugin fits.
-- **[`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md)** — the `.claude/shipwright/principles.md` override pattern in full.
+- **[`references/principles-pattern.md`](../plugins/shipwright/references/principles-pattern.md)** — the `.claude/shipwright/` principles override pattern in full.

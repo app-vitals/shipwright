@@ -21,8 +21,8 @@ const ALL_KNOWN_STATUSES = [
   "approved",
   "merged",
   "done",
-  "deploying",
   "deployed",
+  "released",
   "blocked",
   "cancelled",
 ] as const;
@@ -30,7 +30,7 @@ const ALL_KNOWN_STATUSES = [
 describe("CLOSED_STATUSES", () => {
   it("contains exactly the terminal statuses (order-independent)", () => {
     expect(Array.from<string>(CLOSED_STATUSES).sort()).toEqual(
-      ["merged", "done", "deploying", "deployed", "cancelled"].sort(),
+      ["merged", "done", "deployed", "released", "cancelled"].sort(),
     );
   });
 
@@ -40,6 +40,16 @@ describe("CLOSED_STATUSES", () => {
 
   it("has no duplicate entries", () => {
     expect(new Set(CLOSED_STATUSES).size).toBe(CLOSED_STATUSES.length);
+  });
+
+  it("no longer contains 'deploying' (dropped in MPD-3.5)", () => {
+    expect(CLOSED_STATUSES as readonly string[]).not.toContain("deploying");
+    expect(OPEN_STATUSES as readonly string[]).not.toContain("deploying");
+  });
+
+  it("classifies 'released' as closed (MPD-1.1) — it satisfies dependencies like 'deployed'", () => {
+    expect(CLOSED_STATUSES).toContain("released");
+    expect(OPEN_STATUSES as readonly string[]).not.toContain("released");
   });
 });
 

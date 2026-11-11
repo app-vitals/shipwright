@@ -43,7 +43,7 @@ import type { Prisma, Task } from "./index.ts";
 type TaskEventWriter = Pick<Prisma.TransactionClient, "taskEvent">;
 
 /** A single field-level change between a before/after Task state. */
-export interface TaskTransitionChange {
+interface TaskTransitionChange {
   field: string;
   /** Prior value, stringified; null when the field was null/absent before. */
   oldValue: string | null;
@@ -77,8 +77,8 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "priority",
   "cancelledAt",
   "completedAt",
-  "deployingAt",
   "deployedAt",
+  "releasedAt",
   "ciFixAttempts",
   "mergeCommit",
   "prUrl",
@@ -89,6 +89,7 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "hitl",
   "skipCount",
   "lastSkippedAt",
+  "lastSkipReason",
   "claimedBy",
   "agentHint",
   "claimedAt",

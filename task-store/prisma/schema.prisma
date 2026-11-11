@@ -1,5 +1,5 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken, PullRequest, PrFinding.
+// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -19,8 +19,12 @@ datasource db {
 
 // ─── Task Status ──────────────────────────────────────────────────────────────
 // Full pipeline status set. Lifecycle:
-// pending → in_progress → pr_open → approved → merged → deploying → deployed
-// Terminal: merged | done | deployed | cancelled. Paused: blocked.
+// pending → in_progress → pr_open → approved → merged → deployed | released
+// `deployed` = the change is live in an environment; `released` (MPD-1.1) =
+// the change shipped through a package/release flow. Both are reachable from
+// `merged`, which itself stays terminal for repos that neither deploy nor
+// release. (`deploying` was removed in MPD-3.5.)
+// Terminal: merged | done | deployed | released | cancelled. Paused: blocked.
 
 enum TaskStatus {
   pending
@@ -29,8 +33,8 @@ enum TaskStatus {
   approved
   merged
   done
-  deploying
   deployed
+  released
   blocked
   cancelled
 }
@@ -65,6 +69,7 @@ enum TaskKind {
 
 model Task {
   id     String     @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
   title  String
   status TaskStatus
 
@@ -88,8 +93,8 @@ model Task {
   priority           String?
   cancelledAt        String?
   completedAt        String?
-  deployingAt        String?
   deployedAt         String?
+  releasedAt         String? // MPD-1.1: set when status → released (mirrors deployedAt)
   ciFixAttempts      Int?
   mergeCommit        String?
   prUrl              String?
@@ -103,10 +108,18 @@ model Task {
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
-  // mirroring SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts)
-  // auto-sets hitl+blockedReason so the task stops being re-selected forever.
+  // mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts)
+  // auto-sets status=blocked + blockedReason so the task stops being re-selected forever.
   skipCount     Int     @default(0)
   lastSkippedAt String?
+  // lastSkipReason records the skip-reason text ([skip-reason:...] marker, or
+  // the server-side "unspecified" default) associated with the current
+  // skipCount streak (SRB-1.1). recordSkip() resets skipCount to 1 whenever
+  // the incoming reason differs from this value (a new streak), and
+  // increments skipCount when it matches — so only *consecutive occurrences
+  // of the same reason* count toward SKIP_BLOCK_THRESHOLD. Cleared to null by
+  // resetSkip()/unblock() alongside skipCount/lastSkippedAt.
+  lastSkipReason String?
 
   // ─── Claim / liveness (multi-agent execution) ───
   claimedBy   String? // agent ID that claimed this task
@@ -133,13 +146,15 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events TaskEvent[]
+  events             TaskEvent[]
+  verificationChecks VerificationCheck[]
 
   @@index([status])
   @@index([session])
   @@index([assignee])
   @@index([claimedBy])
   @@index([updatedAt])
+  @@index([accountId])
 }
 
 // ─── Task Event ───────────────────────────────────────────────────────────────
@@ -181,7 +196,7 @@ model TaskEvent {
 }
 
 // ─── Pull Request State ───────────────────────────────────────────────────────
-// Lifecycle of a PR through the review/patch/deploy pipeline.
+// Lifecycle of a PR through the review/patch/merge pipeline.
 
 enum PrState {
   open
@@ -202,7 +217,7 @@ enum PrReviewState {
 enum PrPhase {
   review
   patch
-  deploy
+  merge
 }
 
 // ─── PR Origin ────────────────────────────────────────────────────────────────
@@ -232,25 +247,26 @@ enum PrOrigin {
 }
 
 // ─── Pull Request ─────────────────────────────────────────────────────────────
-// Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
+// Tracks a GitHub PR through the Shipwright review → patch → merge pipeline.
 // repo is in org/repo format (e.g. "app-vitals/shipwright").
-// @@unique([repo, prNumber]) ensures one record per GitHub PR.
+// @@unique([accountId, repo, prNumber]) ensures one record per GitHub PR per account.
 //
 // Review state semantics:
 //   staged      — review content has been written but not yet posted to GitHub
 //   reviewState — workflow phase: pending → in_progress → posted (see enum PrReviewState)
 // Both fields encode review progress: staged=true means "ready to post"; reviewState
-// tracks which phase of the full review→patch→deploy cycle the PR is in.
+// tracks which phase of the full review→patch→merge cycle the PR is in.
 
 model PullRequest {
   id                String        @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
   repo              String // org/repo format
   prNumber          Int
   staged            Boolean       @default(false) // true = review written but not yet posted
   state             PrState       @default(open)
   reviewState       PrReviewState @default(pending) // workflow phase within the review cycle
   commitSha         String?
-  reviewedCommitSha String? // exclusive commit-tracking field for the review pipeline, separate from the shared commitSha written by claim()/patch()/deploy
+  reviewedCommitSha String? // exclusive commit-tracking field for the review pipeline, separate from the shared commitSha written by claim()/patch()/merge
   patchCycles       Int           @default(0)
   reviewCycles      Int           @default(0)
   agentId           String?
@@ -261,10 +277,10 @@ model PullRequest {
   claimedBy         String?
   claimedAt         String?
   heartbeatAt       String?
-  phase             PrPhase? // current pipeline phase: review | patch | deploy
+  phase             PrPhase? // current pipeline phase: review | patch | merge
   readyForReviewAt  String?
   readyForPatchAt   String?
-  readyForDeployAt  String?
+  readyForMergeAt   String? // MPD-1.1: stamped on first phase=merge claim
   blocked           Boolean       @default(false)
   blockedReason     String?
 
@@ -279,15 +295,27 @@ model PullRequest {
   // through any of those three paths (e.g. deploy.md's canary-revert PR) has
   // no PullRequest row at all, let alone an origin — see POM-1.1's planning
   // doc for that accepted gap.
-  origin       PrOrigin?
-  authorLogin  String?
-  headRef      String?
-  title        String?
+  origin      PrOrigin?
+  authorLogin String?
+  headRef     String?
+  title       String?
+
+  // ─── Commit-count metrics (CPP-1.1) ───
+  // All five nullable, purely additive columns, written unconditionally by
+  // POST /prs/census whenever supplied (mirrors authorLogin/headRef/title —
+  // NOT origin's first-write-wins semantic). Only the census sweep supplies
+  // these fields, so there's no competing lower-quality writer to guard
+  // against.
+  commitCount           Int?
+  commitsDocsRefresh    Int?
+  commitsReviewPatch    Int?
+  commitsCiFix          Int?
+  commitsImplementation Int?
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
   // threshold rationale (3, matching SPIN_DETECTION_THRESHOLD in
-  // agent/src/loop-orchestrator.ts).
+  // agent/src/coding/loop-orchestrator.ts).
   skipCount     Int     @default(0)
   lastSkippedAt String?
 
@@ -302,13 +330,30 @@ model PullRequest {
   lastCiFailureSignature    String?
   consecutiveCiFailureCount Int     @default(0)
 
+  // ─── Block-time state (PSL-3.1) ───
+  // All five nullable, purely additive columns. recordSkip() fills them when
+  // it crosses SKIP_BLOCK_THRESHOLD so block frequency and the head/review the
+  // PR was blocked on are directly queryable. blockedHeadSha/blockedReviewId/
+  // blockedAt describe the live block; resetSkip() leaves them as-is (they are
+  // overwritten by the next block). lastAutoBlockReason/lastAutoBlockedAt are
+  // the preserved auto-block history — resetSkip() never clears them.
+  // blockedReviewId is the id of the latest review-source PrFinding known at
+  // block time (no GitHub review id is tracked on PullRequest).
+  blockedHeadSha      String?
+  blockedReviewId     String?
+  blockedAt           String?
+  lastAutoBlockReason String?
+  lastAutoBlockedAt   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  findings PrFinding[]
-  events   PullRequestEvent[]
+  findings           PrFinding[]
+  events             PullRequestEvent[]
+  verificationChecks VerificationCheck[]
 
-  @@unique([repo, prNumber])
+  @@unique([accountId, repo, prNumber])
+  @@index([accountId])
   @@index([state])
   @@index([reviewState])
   @@index([updatedAt])
@@ -405,22 +450,156 @@ model PullRequestEvent {
   @@index([prRecordId, at])
 }
 
+// ─── Verification Check Status ────────────────────────────────────────────────
+// Outcome of a single verification check attempted during dev-task's Step 8 (or
+// patch.md's mirrored validate/lint/test call sites, LVB-2.1/LVB-2.2) — LVB-5.1's
+// structured, queryable successor to the printed-only "PRE-SHIP CHECKS" table
+// those commands emit today (see dev-task.md Step 8's forward pointer to
+// LVB-5.1/5.2).
+//
+// Identifiers use snake_case (ran_passed, timed_out, ...) rather than the
+// hyphenated prose form ("ran-passed") used to describe them — Prisma enum
+// values cannot contain `-` (validation error: "The character `-` is not
+// allowed in Enum Value names"), and the generated client surfaces the
+// identifier itself as the runtime string value (there is no separate
+// @map'd wire value to diverge from it). This mirrors the multi-word enum
+// values already used elsewhere in this schema (TaskStatus.in_progress,
+// TaskStatus.pr_open) rather than introducing a new convention.
+
+enum VerificationCheckStatus {
+  ran_passed
+  ran_failed
+  skipped
+  timed_out
+}
+
+// ─── Verification Check Reason Category ───────────────────────────────────────
+// A closed set of ENVIRONMENTAL causes for why a check was skipped or timed
+// out — never a correctness judgment. Valid ONLY alongside
+// status IN (ran_passed's complement — i.e. skipped/timed_out); a ran_failed
+// row (the check executed and produced a genuine failure — a real assertion/
+// test failure, a real lint violation) must NEVER carry one. This separation
+// is load-bearing for LVB-4.4's skip-locally learning trigger, which must
+// only fire on skipped/timed-out outcomes and must never be tripped by a
+// genuine ran-failed result — enforced by VerificationCheckService.record(),
+// not just by convention (see its doc comment).
+//
+//   check_timeout / install_timeout — the check's (or the install step's)
+//                        time budget was exceeded (LVB-2.1/2.2's per-check
+//                        budgets).
+//   resource_limit    — insufficient CPU/memory/disk in the execution
+//                        environment.
+//   missing_tool       — the execution image lacks a required tool/runtime/
+//                        SDK for this check (the "docker image" dimension).
+//   missing_secret     — a required API key/credential isn't available.
+//   missing_dependency — e.g. no local DB or external service reachable.
+//   not_configured     — the repo hasn't declared what this check needs, so
+//                        we don't know yet.
+//   learned_skip       — classified from repeated prior occurrences rather
+//                        than observed directly this run;
+//                        `learnedFromCategory` carries the original
+//                        root-cause category that triggered the learning.
+//
+// (Identifiers use snake_case rather than the hyphenated prose form used to
+// describe them above — see VerificationCheckStatus's doc comment for why.)
+
+enum VerificationCheckReasonCategory {
+  check_timeout
+  install_timeout
+  resource_limit
+  missing_tool
+  missing_secret
+  missing_dependency
+  not_configured
+  learned_skip
+}
+
+// ─── Verification Check ─────────────────────────────────────────────────────────
+// A single per-check verification outcome — LVB-5.1. Modeled as a dedicated
+// append-only table (mirrors PrFinding/TaskEvent) rather than a JSON blob:
+// entries are appended via a plain INSERT, which is race-safe, whereas a
+// JSON-array read-modify-write PATCH on a parent record is not (mirrors the
+// PrFinding/TaskEvent rationale documented above).
+//
+// Exactly one of taskId/prRecordId is set: a check may be recorded against an
+// in-progress task before a PR exists, or against an already-open PR. There is
+// no existing "optional reference to one of two parent record types" pattern
+// elsewhere in this schema to mirror, so this uses two nullable FK columns;
+// Prisma has no schema-level XOR constraint, so "exactly one set" is enforced
+// by VerificationCheckService.record() at the service layer, not the DB.
+//
+// repo is stored directly (not derived via the taskId/prRecordId join) —
+// self-describing without an extra join, and not guaranteed to equal the
+// parent's own repo field for every future caller shape.
+//
+// checkName is a free-form string (not an enum) — "install", "lint",
+// "typecheck", "unit", "integration", etc. — deliberately, mirroring
+// TaskEvent.field/method's "plain string, not an enum, so new call sites
+// don't require a schema migration" rationale.
+//
+// at is an ISO timestamp of when the check completed, stamped by the caller
+// at insert time — the same "String for JS-interface-originated timestamps"
+// convention used throughout this schema.
+//
+// Both FKs deliberately omit onDelete (defaulting to RESTRICT), matching
+// PrFinding/TaskEvent — an outcome record should never silently disappear if
+// its parent Task/PullRequest row were ever deleted.
+
+model VerificationCheck {
+  id String @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id])
+
+  prRecordId  String?
+  pullRequest PullRequest? @relation(fields: [prRecordId], references: [id])
+
+  repo      String
+  checkName String
+
+  status VerificationCheckStatus
+
+  // Only ever non-null alongside status IN (skipped, timed_out) — see the
+  // enum's doc comment and VerificationCheckService.record()'s validation.
+  reasonCategory VerificationCheckReasonCategory?
+
+  // Only ever non-null alongside reasonCategory === learned_skip — the
+  // original root-cause category that triggered the learned classification.
+  learnedFromCategory VerificationCheckReasonCategory?
+
+  durationMs Int?
+  at         String
+
+  createdAt DateTime @default(now())
+
+  @@index([taskId, at])
+  @@index([prRecordId, at])
+  @@index([repo, checkName])
+  @@index([accountId])
+}
+
 // ─── Session ──────────────────────────────────────────────────────────────────
 // A session groups multiple related tasks. Sessions are identified by a human-
-// readable slug (primary key) rather than a numeric ID, allowing sessions to be
-// cited as a meaningful organizational unit.
+// readable slug within an account (SSP-6.9: the [accountId, slug] compound
+// unique is the sole identity — there is no slug-only primary key), allowing
+// sessions to be cited as a meaningful organizational unit.
 //
 // The Task.session field remains a free string (not a foreign key) for backward
 // compatibility — existing tasks that reference sessions by slug continue to work
 // without requiring schema migrations.
 
 model Session {
-  slug       String    @id // Human-readable identifier, e.g. "shipwright-may-launch"
+  slug       String // Human-readable identifier, e.g. "shipwright-may-launch"
   title      String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
   archivedBy String?
+  accountId  String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+
+  @@unique([accountId, slug])
+  @@index([accountId])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────

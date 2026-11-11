@@ -4,7 +4,7 @@
 
 ## Overview
 
-The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
+The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
 2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
@@ -53,6 +53,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
+| GET | `/metrics/pr-outcomes` | Read-only PR outcomes per context fingerprint (PAU-1.8): `reviewState` mix, avg `reviewCycles`/`patchCycles`, median time-to-merge over the window between the fingerprint's first and last seen. Response carries `attribution: "window-correlation"` — a time-window correlation, not per-PR attribution. |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
@@ -87,7 +88,9 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
       {
         "repo": "org/repo",
         "total": 10,
-        "byOrigin": { "shipwright": 4, "ci": 2, "dependency_bot": 3, "human": 1, "unknown": 0 }
+        "byOrigin": { "shipwright": 4, "ci": 2, "dependency_bot": 3, "human": 1, "unknown": 0 },
+        "avgCommitCount": 4,
+        "commitBreakdown": { "docsRefresh": 0.5, "reviewPatch": 1.5, "ciFix": 0.5, "implementation": 1.5 }
       }
     ],
     "trend": [
@@ -104,21 +107,38 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
 
 `repos[]` totals each merged PR in the window by repo × origin; `trend[]` breaks the same counts down by time bucket (`period`, a day `YYYY-MM-DD` or Monday-anchored ISO-week start date depending on `groupBy`) × repo. Origin follows the POM-1.1 taxonomy (`shipwright | ci | dependency_bot | human`); a PR whose origin was never stamped (`null`) is counted under `unknown`. Only `state:"merged"` PRs are counted — open and closed PRs are excluded.
 
-The dashboard's **"Merged PRs by repo"** panel renders this same data as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
+**`avgCommitCount` / `commitBreakdown` (CPP-1.3):** each `repos[]` entry also reports the average real commit count per merged PR, scoped to `origin: "shipwright"` PRs with a non-null `commitCount` in the window (the "qualifying" set). `avgCommitCount` is `commitSum / qualifyingCount`; `commitBreakdown` splits that same average across the four pipeline phases the task-store's census sweep tracks — `docsRefresh`, `reviewPatch`, `ciFix`, `implementation` (each phase's summed commit count / `qualifyingCount`, so all five numbers sit on the same per-PR scale and the four breakdown values sum to `avgCommitCount`). A qualifying PR with a null value on one breakdown field (e.g. `commitsCiFix: null`) contributes `0` to that field's sum — only `commitCount` itself gates qualification. **When a repo/window has zero qualifying PRs, both `avgCommitCount` and `commitBreakdown` are `null`** (the whole breakdown object, not a partially-null one) — never `0`, since `0` would misleadingly read as "PRs merged with zero commits" rather than "no data."
+
+**CI first-pass rate vs. commits-per-PR — do not conflate these.** They measure different things, from different systems, at different points in the pipeline:
+
+- **CI first-pass rate** was a per-*task* metric (`% tasks with ci_fix_attempts == 0`) scoped to `/shipwright:dev-task`'s own pre-PR-open CI retry loop — how many times the CI-fix subagent had to retry before the PR was ever opened. It came from the legacy JSONL per-task metrics stream, which has since been retired (CPP-2.1); this service never had an equivalent endpoint for it, so there is no first-pass-rate figure served alongside commits-per-PR today.
+- **commits-per-PR** (`avgCommitCount`/`commitBreakdown`, this endpoint) is a per-*PR* metric: the PR's real total commit count across **every** phase of its life — initial implementation, any review/patch cycles, any CI fixes *after* the PR was opened, and any docs-refresh commits — sourced from the task-store's `PullRequest.commitCount`/`commits*` columns, populated by the census sweep (CPP-1.1).
+
+A task could have `ci_fix_attempts == 0` (a clean pre-open CI run) and still end up with a high `commitCount` from several rounds of post-open review/patch cycles, or vice versa — the two were never interchangeable, so don't read `avgCommitCount` as a proxy for how cleanly CI passed.
+
+The dashboard renders commit data in two panels:
+
+- **"PR Commits"** — fleet-wide weighted-average commits per Shipwright PR (weighted by shipwright PR count per repo), broken down by pipeline phase (docs refresh, review patch, CI fix, implementation). Repos with no shipwright PRs or null `avgCommitCount` are excluded from the calculation.
+- **"Merged PRs by repo"** — breakdown of merged PRs by repo and origin (shipwright, ci, dependency_bot, human, unknown) as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
 ### Origin classification rules
 
-`PullRequest.origin` is derived by precedence (first match wins), implemented identically by `deriveOrigin()` (task-store, `/prs/claim`, POM-1.2) and `classifyPrOrigin()` (agent, the POM-4.1 census sweep):
+`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, `agent/src/coding/pr-census.ts`, the POM-4.1 census sweep) mirrors the same eight steps (POF-1.2), with the census sweep supplying `is_bot` and label data from `gh pr list --json`:
 
 | Order | Condition | Origin |
 |---|---|---|
-| 1 | A task-store `Task` row links `(repo, pr)` | `shipwright` |
-| 2 | `authorLogin` is `github-actions[bot]`, or `headRef` matches `chore/(chart\|plugin-version)-v*` | `ci` |
-| 3 | `authorLogin` is `renovate[bot]` or `dependabot[bot]` | `dependency_bot` |
-| 4 | `authorLogin` is any other non-empty string | `human` |
-| 5 | No `authorLogin` and no task-row match | `unknown` |
+| 1 | A task-store `Task` row links `(repo, pr)`, or the PR carries a Shipwright label (`hasShipwrightLabel`, POF-1.1) | `shipwright` |
+| 2 | `authorIsBot` is true (POF-1.1) and `authorLogin` matches a known Renovate/Dependabot identity, any spelling (e.g. `renovate[bot]` or gh's normalized `app/renovate`) | `dependency_bot` |
+| 3 | `authorIsBot` is true (POF-1.1), any other bot identity | `ci` |
+| 4 | The PR carries an automated-run label (`hasAutomatedLabel`, POF-1.1) | `ci` |
+| 5 | `authorLogin` is `github-actions[bot]`, or `headRef` matches `chore/(chart\|plugin-version)-v*` | `ci` |
+| 6 | `authorLogin` is `renovate[bot]` or `dependabot[bot]` | `dependency_bot` |
+| 7 | `authorLogin` is any other non-empty string | `human` |
+| 8 | No `authorLogin` and no task-row/label match | `unknown` |
 
-A task-row match always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat:** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, but it IS a merged PR like any other, so the census sweep classifies it (typically `human`) once it merges after POM-4.1 shipped. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
+Steps 2–4 exist because `gh pr list --json author` normalizes bot authors to `app/<slug>` (e.g. `app/renovate`) while separately reporting `is_bot: true` — the literal login-string checks in steps 5–6 can never match what `gh` actually sends for a bot author, so those steps remain as fallback disambiguation for callers that don't supply the newer signals (e.g. legacy callers).
+
+A task-row match (or Shipwright label) always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat (closed, POF-3.1):** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, so it has no task row and no bot/label signal for the precedence rules above to key off of. Step 6 closes this gap directly: immediately after `gh pr create` succeeds, it calls `POST /prs/census` with `origin: "shipwright"` and `state: "open"` for the revert PR, using the same task-store credentials Step 6 already holds. First-write-wins semantics on `origin` mean this stamp survives any later reconciler/census-sweep pass, so the revert PR is classified `shipwright` correctly once merged rather than falling through to the `human` heuristic. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can still be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
 
 ### Utility routes
 
@@ -133,7 +153,7 @@ A task-row match always wins, even over a bot-looking `authorLogin`. **Historica
 
 The `/metrics/*` endpoints accept **either** credential:
 
-- **Bearer API key** — tokens parsed from `METRICS_API_KEYS`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
+- **Bearer API key** — tokens parsed from `METRICS_API_KEYS`, a comma-separated `name:token:scope` registry (same format as the admin's `SHIPWRIGHT_ADMIN_API_KEYS`; scope `*` = admin). On a chart deploy it is only set when `metrics.apiKeys.existingSecret` is configured — point it at the Secret the admin reads its registry from so the admin bearer works on both services; unset, only session-cookie access works and bearers get `401`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
 - **Session cookie** (`admin_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
 
 The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/admin/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User".
@@ -155,7 +175,7 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `METRICS_OFFLINE` | | `false` | When `true`, injects fixture (cassette-backed) data and bypasses dashboard session auth. |
 | `METRICS_BASE_PATH` | | — | URL path prefix the app is mounted at (e.g. `/sw`). All routes including `/dashboard` and `/metrics/*` are served under this prefix. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
-| `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
+| `METRICS_API_KEYS` | | — | Bearer API key registry for `/metrics/*`: comma-separated `name:token:scope` (scope `*` = admin). Chart: `metrics.apiKeys.existingSecret` / `existingSecretKey`; share the admin's registry Secret to accept the admin bearer. |
 | `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `admin_session` cookie. |
 | `METRICS_REQUIRE_OWNER_ROLE` | | `false` | When `true`, gate dashboard/API on `OWNER` role via the accounts client. |
 | `METRICS_ADMIN_URL` | ✅ (taskstore mode) | `http://localhost:3000` | Shipwright admin service base URL (agent name lookups + token-aggregation stats). With `METRICS_TASK_STORE_URL` also set to http(s), selects taskstore mode. |
@@ -164,6 +184,9 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `METRICS_DASHBOARD_DEV_AUTH` | | `false` | Bypasses `/dashboard` and `/metrics/*` auth for local dev (no login flow in `task stack`). Must not be enabled in production. |
 | `SENTRY_DSN` | | — | Optional Sentry error reporting DSN. When set, the metrics service initializes Sentry and mounts error-capture middleware that reports 5xx and unhandled exceptions. When unset, Sentry is disabled (zero telemetry overhead). Env-var-only (secret). |
 | `SENTRY_ENVIRONMENT` | | — | Sentry environment tag (e.g., `production`, `staging`). Defaults to `NODE_ENV` if unset, then `production`. Passed as the `environment` field in Sentry init options. Optional alongside `SENTRY_DSN`. |
+| `METRICS_ADMIN_APP_URL` | | — | Base URL of the admin console used to make the dashboard toolbar's Agents/Tasks/PRs links absolute when it runs on a different origin (local `task stack`); falls back to same-origin relative links when unset. |
+| `SHIPWRIGHT_METRICS_PUBLIC_MODE` | | `false` | When `true` or `1`, mounts the unauthenticated, repo-scoped `/public/*` surface alongside the authenticated routes. Requires `SHIPWRIGHT_METRICS_PUBLIC_REPO`. |
+| `SHIPWRIGHT_METRICS_PUBLIC_REPO` | | — | Repo the `/public/*` surface is scoped to. Startup throws if `SHIPWRIGHT_METRICS_PUBLIC_MODE` is on and this is unset. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 
@@ -186,7 +209,7 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 
 ## Testing
 
-Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
+Unit + integration + smoke layers (`cd metrics && bun test`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
 
 The dashboard client (`metrics/src/dashboard/app.js`) is a plain browser `<script>` (not an ES module) that largely handles DOM manipulation and chart rendering — untestable in-process without browser globals. Its pure, injectable-fetch logic (`fetchSequential`) is extracted and unit-tested via a test-only export (`metrics/src/dashboard/app.unit.test.js`), while the bulk of `app.js` remains excluded from coverage as its code paths require a real browser. E2E Playwright tests cover the full dashboard UI (`metrics/e2e/dashboard.e2e.ts`).
 
@@ -197,4 +220,3 @@ See [testing.md](./testing.md).
 ## See also
 
 - [architecture.md](./architecture.md) — where the metrics service sits in the A→B→C→D design.
-- `plugins/shipwright/references/metrics-schema.md` — the `metrics.jsonl` schema the pipeline emits, which feeds these queries.

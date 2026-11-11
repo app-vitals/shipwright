@@ -9,7 +9,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import { BadRequestError, NotFoundError } from "./errors.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { deriveOrigin } from "./pr-origin-derivation.ts";
 import {
@@ -760,6 +761,7 @@ describe("PullRequestService.recordSkip()", () => {
     const record: Partial<PullRequest> = {
       id: "pr-1",
       skipCount: initialSkipCount,
+      commitSha: "abc123",
       blocked: false,
       blockedReason: null,
     };
@@ -792,6 +794,11 @@ describe("PullRequestService.recordSkip()", () => {
           return Promise.resolve({ ...record });
         },
       },
+      prFinding: {
+        findFirst(_args: unknown): Promise<{ id: string } | null> {
+          return Promise.resolve({ id: "finding-latest" });
+        },
+      },
       _updateCalls: updateCalls,
     });
 
@@ -821,6 +828,15 @@ describe("PullRequestService.recordSkip()", () => {
     expect(data.lastSkippedAt).toBe(NOW.toISOString());
     expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
+    for (const k of [
+      "blockedHeadSha",
+      "blockedReviewId",
+      "blockedAt",
+      "lastAutoBlockReason",
+      "lastAutoBlockedAt",
+    ]) {
+      expect(k in data).toBe(false);
+    }
     expect(result.skipCount).toBe(2);
   });
 
@@ -837,6 +853,11 @@ describe("PullRequestService.recordSkip()", () => {
     expect(blockUpdate.blockedReason).toContain("3");
     expect("hitl" in blockUpdate).toBe(false);
     expect(result.blocked).toBe(true);
+    expect(blockUpdate.blockedHeadSha).toBe("abc123");
+    expect(blockUpdate.blockedReviewId).toBe("finding-latest");
+    expect(blockUpdate.blockedAt).toBe(NOW.toISOString());
+    expect(blockUpdate.lastAutoBlockReason).toBe(blockUpdate.blockedReason);
+    expect(blockUpdate.lastAutoBlockedAt).toBe(NOW.toISOString());
   });
 
   test("recordSkip() exactly at threshold (skipCount reaching 3) sets blocked:true", async () => {
@@ -900,6 +921,57 @@ describe("PullRequestService.resetSkip()", () => {
     );
   });
 
+  test("clears blocked/blockedReason when the PR was blocked by the patch no-progress escalation", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason:
+        "patch dispatch made no progress at abc1234 — still unsettled: ci",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect(data.blocked).toBe(false);
+    expect(data.blockedReason).toBeNull();
+    expect(result.blocked).toBe(false);
+    expect(result.blockedReason).toBeNull();
+  });
+
+  test("does NOT clear a human-written block", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason: "Waiting on design decision — see thread",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+    expect(result.blocked).toBe(true);
+  });
+
+  test("does NOT clear a block that merely mentions the escalation text mid-reason", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason: "human note: patch dispatch made no progress, investigate",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+  });
+
   test("no-ops on blocked fields when the PR is not currently blocked", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
@@ -948,7 +1020,7 @@ describe("PullRequestService.update() merge completion", () => {
   test("state:merged clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
-      readyForDeployAt: NOW.toISOString(),
+      readyForMergeAt: NOW.toISOString(),
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -972,7 +1044,7 @@ describe("PullRequestService.update() merge completion", () => {
   test("state:closed clears claimedBy/claimedAt/heartbeatAt/phase", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
-      readyForDeployAt: NOW.toISOString(),
+      readyForMergeAt: NOW.toISOString(),
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1024,11 +1096,11 @@ describe("PullRequestService.update() claim release on review post", () => {
     expect(data.phase).toBeNull();
   });
 
-  test("reviewState:approved clears claim fields AND stamps readyForDeployAt", async () => {
+  test("reviewState:approved clears claim fields AND stamps readyForMergeAt", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
       claimedBy: "agent-a",
-      readyForDeployAt: null,
+      readyForMergeAt: null,
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1037,7 +1109,7 @@ describe("PullRequestService.update() claim release on review post", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.reviewState).toBe("approved");
-    expect(data.readyForDeployAt).toBe(NOW.toISOString());
+    expect(data.readyForMergeAt).toBe(NOW.toISOString());
     expect(data.claimedBy).toBeNull();
     expect(data.claimedAt).toBeNull();
     expect(data.heartbeatAt).toBeNull();
@@ -1823,7 +1895,10 @@ describe("PullRequestService.getEvents()", () => {
 function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
   const rows = new Map<string, Partial<PullRequest>>();
   for (const row of seed) {
-    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+    rows.set(
+      `${row.accountId ?? DEFAULT_ACCOUNT_ID}|${row.repo}#${row.prNumber}`,
+      { ...row },
+    );
   }
   let nextId = rows.size;
   const createCalls: Record<string, unknown>[] = [];
@@ -1837,10 +1912,18 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
       findUnique({
         where,
       }: {
-        where: { repo_prNumber: { repo: string; prNumber: number } };
+        where: {
+          accountId_repo_prNumber: {
+            accountId: string;
+            repo: string;
+            prNumber: number;
+          };
+        };
       }) {
-        const { repo, prNumber } = where.repo_prNumber;
-        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+        const { accountId, repo, prNumber } = where.accountId_repo_prNumber;
+        return Promise.resolve(
+          rows.get(`${accountId}|${repo}#${prNumber}`) ?? null,
+        );
       },
       update({
         where,
@@ -1863,7 +1946,7 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         createCalls.push(data);
         nextId += 1;
         const record = { id: `pr-${nextId}`, ...data };
-        rows.set(`${data.repo}#${data.prNumber}`, record);
+        rows.set(`${data.accountId}|${data.repo}#${data.prNumber}`, record);
         return Promise.resolve(record);
       },
       findFirst({
@@ -1871,6 +1954,7 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         orderBy: _orderBy,
       }: {
         where: {
+          accountId: string;
           repo: string;
           origin?: { not: null };
           mergedAt?: { not: null };
@@ -1878,6 +1962,9 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         orderBy?: unknown;
       }) {
         const candidates = Array.from(rows.values())
+          .filter(
+            (r) => (r.accountId ?? DEFAULT_ACCOUNT_ID) === where.accountId,
+          )
           .filter((r) => r.repo === where.repo)
           .filter((r) => (where.origin ? r.origin !== null : true))
           .filter((r) => (where.mergedAt ? r.mergedAt !== null : true))
@@ -1942,7 +2029,9 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     // no-op) and the pre-existing row is returned unchanged.
     expect(prisma._updateCalls).toHaveLength(0);
     expect(record.origin).toBe("human" as never);
-    expect(prisma._rows.get("org/repo#42")?.origin).toBe("human" as never);
+    expect(prisma._rows.get("default|org/repo#42")?.origin).toBe(
+      "human" as never,
+    );
   });
 
   test("first-write-wins: applies origin when the existing row's origin is currently null", async () => {
@@ -1981,8 +2070,8 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     // null, not present in the update payload at all).
     expect(data.headRef).toBeUndefined();
     expect(data.title).toBeUndefined();
-    expect(prisma._rows.get("org/repo#42")?.headRef).toBe("old-ref");
-    expect(prisma._rows.get("org/repo#42")?.title).toBe("old title");
+    expect(prisma._rows.get("default|org/repo#42")?.headRef).toBe("old-ref");
+    expect(prisma._rows.get("default|org/repo#42")?.title).toBe("old title");
   });
 
   test("an explicit null authorLogin clears it (distinct from omitting the field)", async () => {
@@ -1998,7 +2087,7 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
 
     await svc.stampOrigin("org/repo", 42, { authorLogin: null });
 
-    expect(prisma._rows.get("org/repo#42")?.authorLogin).toBeNull();
+    expect(prisma._rows.get("default|org/repo#42")?.authorLogin).toBeNull();
   });
 
   test("runs against a supplied tx client directly (no nested transaction) when `client` is provided", async () => {
@@ -2017,7 +2106,9 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     await svc.stampOrigin("org/repo", 7, { origin: "unknown" }, txSpy as never);
 
     expect(transactionCalls).toBe(0);
-    expect(prisma._rows.get("org/repo#7")?.origin).toBe("unknown" as never);
+    expect(prisma._rows.get("default|org/repo#7")?.origin).toBe(
+      "unknown" as never,
+    );
   });
 });
 
@@ -2127,8 +2218,117 @@ describe("PullRequestService.census() (POM-1.1)", () => {
     ]);
 
     expect(records).toHaveLength(2);
-    expect(prisma._rows.get("org/repo#1")?.origin).toBe("human" as never);
-    expect(prisma._rows.get("org/repo#2")?.origin).toBe("ci" as never);
+    expect(prisma._rows.get("default|org/repo#1")?.origin).toBe(
+      "human" as never,
+    );
+    expect(prisma._rows.get("default|org/repo#2")?.origin).toBe("ci" as never);
+  });
+});
+
+describe("PullRequestService.census() commit-count fields (CPP-1.1)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("persists the 5 commit-count fields on insert", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 100,
+        commitCount: 12,
+        commitsDocsRefresh: 1,
+        commitsReviewPatch: 3,
+        commitsCiFix: 2,
+        commitsImplementation: 6,
+      },
+    ]);
+
+    const created = prisma._createCalls[0];
+    expect(created.commitCount).toBe(12);
+    expect(created.commitsDocsRefresh).toBe(1);
+    expect(created.commitsReviewPatch).toBe(3);
+    expect(created.commitsCiFix).toBe(2);
+    expect(created.commitsImplementation).toBe(6);
+    expect(record.commitCount).toBe(12 as never);
+    expect(record.commitsDocsRefresh).toBe(1 as never);
+    expect(record.commitsReviewPatch).toBe(3 as never);
+    expect(record.commitsCiFix).toBe(2 as never);
+    expect(record.commitsImplementation).toBe(6 as never);
+  });
+
+  test("persists the 5 commit-count fields on update, overwriting existing values", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 1 as never,
+        commitsDocsRefresh: 0 as never,
+        commitsReviewPatch: 0 as never,
+        commitsCiFix: 0 as never,
+        commitsImplementation: 1 as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 20,
+        commitsDocsRefresh: 2,
+        commitsReviewPatch: 5,
+        commitsCiFix: 4,
+        commitsImplementation: 9,
+      },
+    ]);
+
+    expect(record.commitCount).toBe(20 as never);
+    expect(record.commitsDocsRefresh).toBe(2 as never);
+    expect(record.commitsReviewPatch).toBe(5 as never);
+    expect(record.commitsCiFix).toBe(4 as never);
+    expect(record.commitsImplementation).toBe(9 as never);
+    expect(prisma._rows.get("default|org/repo#42")?.commitCount).toBe(
+      20 as never,
+    );
+  });
+
+  test("omitting the commit-count fields on an existing row leaves previously-set values untouched", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 12 as never,
+        commitsDocsRefresh: 1 as never,
+        commitsReviewPatch: 3 as never,
+        commitsCiFix: 2 as never,
+        commitsImplementation: 6 as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 42,
+        authorLogin: "new-login",
+      },
+    ]);
+
+    const { data } = prisma._updateCalls[0];
+    expect(data.commitCount).toBeUndefined();
+    expect(data.commitsDocsRefresh).toBeUndefined();
+    expect(data.commitsReviewPatch).toBeUndefined();
+    expect(data.commitsCiFix).toBeUndefined();
+    expect(data.commitsImplementation).toBeUndefined();
+    expect(record.commitCount).toBe(12 as never);
+    expect(record.commitsDocsRefresh).toBe(1 as never);
+    expect(record.commitsReviewPatch).toBe(3 as never);
+    expect(record.commitsCiFix).toBe(2 as never);
+    expect(record.commitsImplementation).toBe(6 as never);
   });
 });
 
@@ -2183,7 +2383,10 @@ describe("PullRequestService.getCensusCursor() (POM-1.1)", () => {
 describe("deriveOrigin() (POM-1.2)", () => {
   test("authorLogin 'github-actions[bot]' -> ci", () => {
     expect(
-      deriveOrigin({ hasLinkedTask: false, authorLogin: "github-actions[bot]" }),
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorLogin: "github-actions[bot]",
+      }),
     ).toBe("ci");
   });
 
@@ -2229,15 +2432,15 @@ describe("deriveOrigin() (POM-1.2)", () => {
   });
 
   test("a task-row match with a human authorLogin -> shipwright", () => {
-    expect(
-      deriveOrigin({ hasLinkedTask: true, authorLogin: "octocat" }),
-    ).toBe("shipwright");
+    expect(deriveOrigin({ hasLinkedTask: true, authorLogin: "octocat" })).toBe(
+      "shipwright",
+    );
   });
 
   test("a human login with no task-row match -> human", () => {
-    expect(
-      deriveOrigin({ hasLinkedTask: false, authorLogin: "octocat" }),
-    ).toBe("human");
+    expect(deriveOrigin({ hasLinkedTask: false, authorLogin: "octocat" })).toBe(
+      "human",
+    );
   });
 
   test("missing authorLogin and no task-row match -> unknown", () => {
@@ -2264,6 +2467,92 @@ describe("deriveOrigin() (POM-1.2)", () => {
       deriveOrigin({ hasLinkedTask: true, authorLogin: "renovate[bot]" }),
     ).toBe("shipwright");
   });
+
+  // ── POF-1.1: authorIsBot + label signals ──────────────────────────────────
+
+  test("authorIsBot true with authorLogin 'app/renovate' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with authorLogin 'app/dependabot' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/dependabot",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with the literal 'renovate[bot]' login -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "renovate[bot]",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with a bot identity that isn't Renovate/Dependabot -> ci", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/some-other-bot",
+      }),
+    ).toBe("ci");
+  });
+
+  test("authorIsBot true with no authorLogin at all -> ci", () => {
+    expect(deriveOrigin({ hasLinkedTask: false, authorIsBot: true })).toBe(
+      "ci",
+    );
+  });
+
+  test("hasAutomatedLabel true with a human-looking authorLogin -> ci, independent of authorLogin", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        hasAutomatedLabel: true,
+        authorLogin: "octocat",
+      }),
+    ).toBe("ci");
+  });
+
+  test("hasShipwrightLabel true with no task row and no authorLogin -> shipwright", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, hasShipwrightLabel: true }),
+    ).toBe("shipwright");
+  });
+
+  test("hasShipwrightLabel true takes precedence over an authorLogin that would otherwise say 'dependency_bot'", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        hasShipwrightLabel: true,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("authorIsBot true still yields 'dependency_bot' ahead of hasAutomatedLabel (bot-identity check wins first)", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        hasAutomatedLabel: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("dependency_bot");
+  });
 });
 
 // ─── PullRequestService.claim() origin stamping (POM-1.2) ──────────────────
@@ -2287,11 +2576,14 @@ interface ClaimPrismaSeedRow extends Partial<PullRequest> {
  */
 function makeClaimPrismaDouble(
   seed: ClaimPrismaSeedRow[] = [],
-  taskRows: { repo: string; pr: number }[] = [],
+  taskRows: { accountId?: string; repo: string; pr: number }[] = [],
 ) {
   const rows = new Map<string, Partial<PullRequest>>();
   for (const row of seed) {
-    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+    rows.set(
+      `${row.accountId ?? DEFAULT_ACCOUNT_ID}|${row.repo}#${row.prNumber}`,
+      { ...row },
+    );
   }
   let nextId = rows.size;
 
@@ -2300,10 +2592,18 @@ function makeClaimPrismaDouble(
       findUnique({
         where,
       }: {
-        where: { repo_prNumber: { repo: string; prNumber: number } };
+        where: {
+          accountId_repo_prNumber: {
+            accountId: string;
+            repo: string;
+            prNumber: number;
+          };
+        };
       }) {
-        const { repo, prNumber } = where.repo_prNumber;
-        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+        const { accountId, repo, prNumber } = where.accountId_repo_prNumber;
+        return Promise.resolve(
+          rows.get(`${accountId}|${repo}#${prNumber}`) ?? null,
+        );
       },
       update({
         where,
@@ -2329,7 +2629,7 @@ function makeClaimPrismaDouble(
         // first-write-wins check tests `existing.origin === null` and would
         // otherwise wrongly treat an omitted key as "already has an origin".
         const record = { id: `pr-${nextId}`, origin: null, ...data };
-        rows.set(`${data.repo}#${data.prNumber}`, record);
+        rows.set(`${data.accountId}|${data.repo}#${data.prNumber}`, record);
         return Promise.resolve(record);
       },
     },
@@ -2339,11 +2639,20 @@ function makeClaimPrismaDouble(
       },
     },
     task: {
-      findFirst({ where }: { where: { repo: string; pr: number } }) {
+      findFirst({
+        where,
+      }: {
+        where: { accountId: string; repo: string; pr: number };
+      }) {
         const match = taskRows.find(
-          (t) => t.repo === where.repo && t.pr === where.pr,
+          (t) =>
+            (t.accountId ?? DEFAULT_ACCOUNT_ID) === where.accountId &&
+            t.repo === where.repo &&
+            t.pr === where.pr,
         );
-        return Promise.resolve(match ? { id: `task-${match.repo}-${match.pr}` } : null);
+        return Promise.resolve(
+          match ? { id: `task-${match.repo}-${match.pr}` } : null,
+        );
       },
     },
     $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
@@ -2457,5 +2766,164 @@ describe("PullRequestService.claim() origin stamping (POM-1.2)", () => {
     expect(record.claimedAt).toBe(NOW.toISOString());
     expect(record.heartbeatAt).toBe(NOW.toISOString());
     expect(record.phase).toBe("review" as never);
+  });
+
+  test("POF-1.1: authorIsBot=true with a gh-normalized 'app/renovate' login derives origin='dependency_bot' on create", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "app/renovate",
+      "renovate/some-branch",
+      "Bump some dependency",
+      true,
+    );
+
+    expect(record.origin).toBe("dependency_bot" as never);
+  });
+
+  test("POF-1.1: hasShipwrightLabel=true derives origin='shipwright' on create with no linked task row", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "octocat",
+      "feat/x",
+      "Add X",
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(record.origin).toBe("shipwright" as never);
+  });
+
+  test("POF-1.1: hasAutomatedLabel=true derives origin='ci' on create even with a human-looking authorLogin", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "octocat",
+      "feat/x",
+      "Add X",
+      undefined,
+      true,
+    );
+
+    expect(record.origin).toBe("ci" as never);
+  });
+});
+
+describe("PullRequestService.unblock() (UBL-1.2)", () => {
+  const NOW = new Date("2026-07-21T09:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  const blockedPr = {
+    id: "pr-1",
+    blocked: true,
+    blockedReason: "Auto-blocked after 3 consecutive patch cycles",
+    blockedHeadSha: "abc1234",
+    skipCount: 3,
+    lastSkippedAt: "2026-07-21T08:00:00.000Z",
+    consecutiveCiFailureCount: 3,
+    lastCiFailureSignature: "npm-test-failed",
+    claimedBy: null,
+  } as Partial<PullRequest>;
+
+  function makeUnblockDouble(row: Partial<PullRequest> | null, count = 1) {
+    const updateManyCalls: Array<{
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }> = [];
+    let current = row;
+    const prisma = attachEventStub({
+      pullRequest: {
+        findUnique(_args: unknown) {
+          return Promise.resolve(current);
+        },
+        updateMany(args: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) {
+          updateManyCalls.push(args);
+          if (count > 0) current = { ...current, ...args.data };
+          return Promise.resolve({ count });
+        },
+      },
+      _updateManyCalls: updateManyCalls,
+    });
+    return prisma as typeof prisma & {
+      _updateManyCalls: typeof updateManyCalls;
+    };
+  }
+
+  test("resets exactly the block/skip/CI-streak field set in one conditional updateMany", async () => {
+    const prisma = makeUnblockDouble(blockedPr);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.unblock("pr-1");
+
+    expect(prisma._updateManyCalls).toHaveLength(1);
+    const { where, data } = prisma._updateManyCalls[0];
+    expect(where).toEqual({ id: "pr-1", blocked: true });
+    expect(data).toEqual({
+      blocked: false,
+      blockedReason: null,
+      blockedHeadSha: null,
+      skipCount: 0,
+      lastSkippedAt: null,
+      consecutiveCiFailureCount: 0,
+      lastCiFailureSignature: null,
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.consecutiveCiFailureCount).toBe(0);
+  });
+
+  test("records PullRequestEvent rows attributed to the unblock method", async () => {
+    const prisma = makeUnblockDouble(blockedPr);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.unblock("pr-1");
+
+    expect(prisma._eventCalls.length).toBeGreaterThan(0);
+    for (const e of prisma._eventCalls) {
+      expect(e.data.method).toBe("unblock");
+    }
+    const fields = prisma._eventCalls.map((e) => e.data.field);
+    expect(fields).toContain("blocked");
+    expect(fields).toContain("consecutiveCiFailureCount");
+  });
+
+  test("throws ConflictError when the PR is not blocked (updateMany matches 0 rows)", async () => {
+    const prisma = makeUnblockDouble({ id: "pr-1", blocked: false }, 0);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.unblock("pr-1")).rejects.toBeInstanceOf(ConflictError);
+    expect(prisma._eventCalls).toHaveLength(0);
+  });
+
+  test("throws NotFoundError when the PR is missing", async () => {
+    const prisma = makeUnblockDouble(null, 0);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.unblock("nope")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

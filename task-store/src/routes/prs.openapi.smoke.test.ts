@@ -11,9 +11,10 @@
 import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError, NotFoundError } from "../errors.ts";
+import { ApiError, ConflictError, NotFoundError } from "../errors.ts";
 import type { PullRequest } from "../index.ts";
 import type {
+  CensusEntryInput,
   PullRequestListFilters,
   PullRequestListResult,
   PullRequestServiceLike,
@@ -43,7 +44,6 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     phase: null,
     readyForReviewAt: null,
     readyForPatchAt: null,
-    readyForDeployAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -183,6 +183,27 @@ function fakePrService(
       return updated;
     },
 
+    async unblock(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      if (!existing.blocked) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const updated = {
+        ...existing,
+        blocked: false,
+        blockedReason: null,
+        blockedHeadSha: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+        consecutiveCiFailureCount: 0,
+        lastCiFailureSignature: null,
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
     async resetSkip(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
@@ -202,7 +223,7 @@ function fakePrService(
       _repos?: string[],
     ): Promise<{
       pr: PullRequest;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge";
     } | null> {
       return null;
     },
@@ -223,8 +244,28 @@ function fakePrService(
       return {} as never;
     },
 
-    async census() {
-      return [];
+    async census(entries: CensusEntryInput[]): Promise<PullRequest[]> {
+      return entries.map((entry) => {
+        const record = makePr({
+          id: `pr-${entry.repo}-${entry.prNumber}`,
+          repo: entry.repo,
+          prNumber: entry.prNumber,
+          origin: entry.origin ?? null,
+          authorLogin: entry.authorLogin ?? null,
+          headRef: entry.headRef ?? null,
+          title: entry.title ?? null,
+          state: entry.state ?? "open",
+          mergedAt: entry.mergedAt ?? null,
+          prCreatedAt: entry.prCreatedAt ?? null,
+          commitCount: entry.commitCount ?? null,
+          commitsDocsRefresh: entry.commitsDocsRefresh ?? null,
+          commitsReviewPatch: entry.commitsReviewPatch ?? null,
+          commitsCiFix: entry.commitsCiFix ?? null,
+          commitsImplementation: entry.commitsImplementation ?? null,
+        });
+        store.set(record.id, record);
+        return record;
+      });
     },
 
     async getCensusCursor() {
@@ -278,9 +319,9 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
   it("GET /:id responds to single-record requests", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
-    const app = createPrsRoutes(fakePrService({ store }));
+    const app = makeAdminParent(createPrsRoutes(fakePrService({ store })));
     const res = await app.request("/pr-1");
-    expect([200, 401]).toContain(res.status);
+    expect(res.status).toBe(200);
   });
 
   it("GET /?updatedSince=<iso> passes updatedSince through to prService.list()", async () => {
@@ -423,7 +464,7 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
   });
 
   // ─── PATCH_ALLOWED_FIELDS: reviewedAt (RWA-1.2) ──────────────────────────────
-  // reviewedAt is the watermark agent/src/check-review.ts's hasFreshNonAgentComment
+  // reviewedAt is the watermark agent/src/coding/check-review.ts's hasFreshNonAgentComment
   // uses to decide whether new PR activity is "fresh". The three terminal-skip
   // write-back paths in review.md need to advance it directly via PATCH (rather
   // than only via POST /:id/complete), or a PR skipped via those paths keeps a
@@ -478,7 +519,7 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
         consecutiveCiFailureCount: 1,
       }),
     );
-    const app = createPrsRoutes(fakePrService({ store }));
+    const app = makeAdminParent(createPrsRoutes(fakePrService({ store })));
     const res = await app.request("/pr-1/patch", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -488,6 +529,35 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     const body = (await res.json()) as PullRequest;
     expect(body.lastCiFailureSignature).toBe("sig-a");
     expect(body.consecutiveCiFailureCount).toBe(2);
+  });
+
+  it("POST /census accepts the 5 commit-count fields and returns them in the response", async () => {
+    const app = createPrsRoutes(fakePrService());
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/census", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([
+        {
+          repo: "org/repo",
+          prNumber: 42,
+          commitCount: 12,
+          commitsDocsRefresh: 1,
+          commitsReviewPatch: 3,
+          commitsCiFix: 2,
+          commitsImplementation: 6,
+        },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { prs: PullRequest[] };
+    expect(body.prs).toHaveLength(1);
+    const [pr] = body.prs;
+    expect(pr.commitCount).toBe(12);
+    expect(pr.commitsDocsRefresh).toBe(1);
+    expect(pr.commitsReviewPatch).toBe(3);
+    expect(pr.commitsCiFix).toBe(2);
+    expect(pr.commitsImplementation).toBe(6);
   });
 
   it("POST /:id/release route is registered", async () => {
@@ -511,6 +581,14 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     store.set("pr-1", makePr({ id: "pr-1" }));
     const app = createPrsRoutes(fakePrService({ store }));
     const res = await app.request("/pr-1/skip/reset", { method: "POST" });
+    expect(res.status).not.toBe(404);
+  });
+
+  it("POST /:id/unblock route is registered", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/unblock", { method: "POST" });
     expect(res.status).not.toBe(404);
   });
 

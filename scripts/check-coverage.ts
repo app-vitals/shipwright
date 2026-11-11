@@ -27,11 +27,10 @@ const EXCLUDE_PREFIXES = [
   // Process entrypoints — start a real service or require live
   // credentials/infra to run (DB connections, Docker, mise, GitHub auth,
   // etc.); exercised in practice, not under unit/integration test.
-  "admin/src/server.ts",
+  // Shipwright's admin composition root; the platform admin it boots
+  // (server, startAdmin) ships in @app-vitals/agent-admin (node_modules/).
   "admin/src/main.ts",
-  "agent/src/entrypoint-main.ts",
   "task-store/src/main.ts",
-  "chat/src/main.ts",
   "mcp-server/src/serve.ts",
   "metrics/src/server.ts",
 

@@ -9,9 +9,10 @@ Check one given PR for three conditions: unaddressed review/PR comments, merge c
 with base, and failing CI. Apply the appropriate fix. Goes silent when nothing needs
 addressing, or when no target PR is given.
 
-> **Note:** Branches merely BEHIND main (no conflict) are not patch-worthy. Main is only
-> merged into a branch to resolve an actual conflict — see Step 2.5 and Step 4 for the
-> conflict-only (DIRTY) path.
+> **Note:** A BEHIND PR (no conflict) is handled by `gh pr update-branch` alone in
+> Step 2.5 — GitHub only reports BEHIND when the base branch requires branches to be up to
+> date. BEHIND never joins List C; only a real conflict (DIRTY) does — see Step 2.5 and
+> Step 4 for the DIRTY path.
 
 **This command runs autonomously. Do not pause for user input.**
 
@@ -53,11 +54,13 @@ Otherwise, proceed to Step 1.
 
 ## Step 1: Get Own GH Login
 
-Resolve the current GitHub CLI user once and remember the value — substitute it directly
-into all subsequent commands that need it:
+Resolve the current GitHub identity once and remember the value — substitute it directly
+into all subsequent commands that need it. `CURRENT_USER` is the **canonical** login (the
+`app/` prefix and `[bot]` suffix stripped, lowercased) from the shared login-identity helper,
+which resolves it via GraphQL `viewer` — the REST `/user` endpoint 403s under installation tokens:
 
 ```bash
-CURRENT_USER=$(gh api /user -q '.login')
+CURRENT_USER=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts")
 ```
 
 Also resolve the agent's configured patch-author allowlist (PAS-1.1) — an additive list of
@@ -118,13 +121,16 @@ call sites below (Steps 4a.6/5a.6/6b.5) so `/prs/claim` can derive `origin` serv
 Then evaluate the in-scope test with an **exact** membership check — never a substring one:
 
 ```bash
-# In scope iff PR_AUTHOR is CURRENT_USER, or equals an allowlist entry exactly.
-# `jq -e` exits 0 only when some element is character-for-character equal to
-# $PR_AUTHOR, and exits non-zero on `false` OR on malformed/empty input — so a
-# failed config fetch in Step 1 fails closed here rather than widening scope.
-if [ "$PR_AUTHOR" = "$CURRENT_USER" ] || \
+# In scope iff PR_AUTHOR is CURRENT_USER, or equals an allowlist entry exactly — both
+# compared in canonical form (CURRENT_USER is already canonical; `gh pr view` reports a bot
+# as "app/<slug>", so strip/lowercase PR_AUTHOR and each allowlist entry the same way).
+# `jq -e` exits 0 only when some element is equal to $a, and exits non-zero on `false` OR
+# on malformed/empty input — so a failed config fetch in Step 1 fails closed here rather
+# than widening scope.
+PR_AUTHOR_CANON=$(printf '%s' "$PR_AUTHOR" | sed -E 's#^app/##; s#\[bot\]$##' | tr '[:upper:]' '[:lower:]')
+if [ "$PR_AUTHOR_CANON" = "$CURRENT_USER" ] || \
    printf '%s' "$PATCH_AUTHOR_ALLOWLIST" \
-     | jq -e --arg a "$PR_AUTHOR" 'any(.[]; . == $a)' >/dev/null 2>&1; then
+     | jq -e --arg a "$PR_AUTHOR_CANON" 'def canon: sub("^app/"; "") | sub("\\[bot\\]$"; "") | ascii_downcase; any(.[]; canon == $a)' >/dev/null 2>&1; then
   IN_SCOPE=true
 else
   IN_SCOPE=false
@@ -138,8 +144,8 @@ patch act on an out-of-scope PR. This mirrors `check-patch.ts`'s server-side
 `listAllowlistedOpenPrs`, which queries `gh pr list --author {login}` once per allowlist
 entry and is therefore exact by construction.
 
-- **Not found, or `state != "OPEN"`, or `IN_SCOPE` is false (i.e. `author.login != CURRENT_USER`
-  AND `author.login` is not exactly equal to any entry in `PATCH_AUTHOR_ALLOWLIST`)**: this PR
+- **Not found, or `state != "OPEN"`, or `IN_SCOPE` is false (i.e. canonical `author.login != CURRENT_USER`
+  AND canonical `author.login` is not equal to any entry in `PATCH_AUTHOR_ALLOWLIST`)**: this PR
   is not workable by patch (per the Independence Principles' "own PRs only" scope, widened by
   PAS-1.1 to include any agent-configured `patchAuthorAllowlist` entry from Step 1). Print
   `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.
@@ -171,7 +177,7 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 - **One or more tasks match**: this PR can have more than one task linked to it (e.g. a
   bundled multi-task branch), so compute `PATCH_MODEL` from the **highest tier among ALL
   matched tasks' `.model` fields** (`model ?? 'sonnet'` for any task with the field unset),
-  escalated one tier up the same ladder `dev-task.md`'s Step 5c BLOCKED handling already
+  escalated one tier up the same ladder `references/dev-task/implementation-dispatch.md`'s "Status handling" BLOCKED ladder already
   climbs — a patch dispatch is always reacting to a problem the way a BLOCKED
   implementation subagent is, so it starts where that ladder's first escalation would land,
   instead of waiting to hit it: `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already
@@ -226,9 +232,104 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 
 ---
 
+## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)
+
+Runs once here too, same fail-soft, best-effort shape as Step 2.1's model-tier lookup —
+any failure leaves `PATCH_SUBAGENT_TYPE` at its built-in default, never a hard stop.
+Fetches the agent's configured phase-methodology override for the patch phase (PMC-1.1)
+off the same `GET /agents/{id}/config` endpoint Step 1 already uses for
+`patchAuthorAllowlist` and `review.md`'s equivalent lookup uses for its own review-phase
+resolution — same endpoint, same auth header, just a different field:
+
+```bash
+PATCH_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.patch // "general-purpose"')
+PATCH_SUBAGENT_TYPE=${PATCH_SUBAGENT_TYPE:-general-purpose}
+```
+
+**Fail-closed, not fail-open.** On any curl failure (the `${...:-general-purpose}` default
+covers the case where the pipeline emits nothing) or when `.phaseMethodology.patch` is
+absent or `null` (the jq `//` default covers this), `PATCH_SUBAGENT_TYPE` resolves to the
+built-in `general-purpose` — identical to today's hardcoded dispatch at all three sites
+below. With no config set, patch behaves identically to today.
+
+Steps 4b, 5b, and 6c each dispatch `PATCH_SUBAGENT_TYPE` (resolved once here, reused
+unchanged at all three — the same "resolve once, reuse everywhere" shape `PATCH_MODEL`
+already uses) instead of the literal `general-purpose` string, per
+`references/methodology-contracts/patch.md`'s (PTM-1.1) wire shape — any compliant
+subagent, built-in or custom, accepts the same PR metadata / findings / mergeability /
+CI-status inputs and returns the same STATUS/CONCERNS/BLOCKER shape, so each site's status
+handling (Steps 4c/5c/6d) and the commit-bump handback that follows it (Steps
+4c.5/5c.5/6d.5 — `POST /prs/{id}/patch`, updating `commitSha` and, for a List D fix,
+`ciFailureSignature`) apply unchanged regardless of which one was dispatched. That handback
+is caller-owned bookkeeping that never reads which subagent type produced the fix — it
+fires on any successful fix, on the same path, the same way, whether the classification and
+fix strategy came from the built-in logic or a configured override.
+
+#### Unparseable or Failed Dispatch (PTM-1.2)
+
+If the Agent tool dispatch itself fails (errors, or `PATCH_SUBAGENT_TYPE` names an
+invalid/nonexistent `subagent_type` from a misconfigured override), or the subagent's
+response contains no parseable `STATUS:` line, retry once with the same
+`PATCH_SUBAGENT_TYPE`. The retry re-dispatches the exact same site's prompt unchanged.
+
+If the retry also fails to produce a parseable STATUS, branch on what
+`PATCH_SUBAGENT_TYPE` resolved to:
+
+- **Built-in default** (`PATCH_SUBAGENT_TYPE` is `general-purpose` — no override
+  configured, or the override resolved to the built-in name): treat it identically to a
+  `BLOCKED` report — fall into that site's existing BLOCKED handling (Step 4c, 5c, or 6d)
+  with `{blockedReason}` noting "no parseable status after retry" in place of the
+  subagent's own blocker text.
+- **Configured override** (`PATCH_SUBAGENT_TYPE` is a non-default, operator-configured
+  `subagent_type`): do not escalate yet — dispatch the built-in `general-purpose` subagent
+  fresh, with that same site's prompt, as the safety net that guarantees the pipeline
+  always produces a valid response. Print a one-line note that the configured subagent
+  `{PATCH_SUBAGENT_TYPE}` failed after retry and the built-in fixer was used as a fallback.
+  If the built-in dispatch itself then also fails to produce a parseable STATUS, retry that
+  built-in dispatch once more — the same single-retry-before-terminal treatment the
+  configured override itself already received above, so the built-in safety net isn't held
+  to a laxer bar than the override it's standing in for. Only if that second built-in
+  attempt also fails to produce a parseable STATUS does this fall into that site's BLOCKED
+  handling as above.
+
+Each of Steps 4c/5c/6d must end with SOME valid parsed response before proceeding — never
+leave a dispatch site without one. A hanging or unparsed status report is never acceptable
+here: it would otherwise leave that site's pre-work PR claim (Step 4a.6/5a.6/6b.5) held
+indefinitely, exactly the failure mode `references/methodology-contracts/patch.md` warns a
+compliant subagent's own BLOCKED report must never cause. This mirrors `review.md`'s Step 7
+malformed/failed response handling (RVM-1.2) — the same retry-once-before-terminal shape
+applied at every dispatch attempt in the chain (override → override-retry → built-in-fresh →
+built-in-fresh-retry → BLOCKED), applied here to a free-text STATUS report instead of JSON.
+
+---
+
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
-Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is DIRTY.
+Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is BEHIND or DIRTY.
+
+### BEHIND (no conflict)
+
+Key off `mergeStateStatus == "BEHIND"` itself. Do not read branch protection (agent tokens
+403 on it) and do not use compare/`behind_by`. This applies to self-authored and
+allowlisted-author PRs alike. Merge the base branch in — **not** `--rebase`:
+```bash
+gh pr update-branch {number} --repo {org}/{repo}
+```
+
+**If update-branch succeeds (exit 0)**: The branch now contains the base. Re-resolve
+`headRefOid` (`gh pr view {number} --repo {org}/{repo} --json headRefOid -q '.headRefOid'`)
+before Step 3c's CI check, since the update pushed a new commit and the SHA fetched in
+Step 2 is stale. Print:
+```
+↻ PR #{number} was BEHIND — branch updated from base, continuing normal flow
+```
+
+**If update-branch fails (non-zero exit)**: Log it and continue without escalating — do not
+block, do not add the PR to any list. A real conflict surfaces as `DIRTY` and follows the
+existing List C path.
+
+### DIRTY
 
 If the target PR is DIRTY, attempt an automatic rebase via GitHub:
 ```bash
@@ -262,17 +363,18 @@ For each PR, issue a single GraphQL query to get all reviews, all inline review 
 and all PR-level comments:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 {
   repository(owner: "{org}", name: "{repo}") {
     pullRequest(number: {pr}) {
       headRefOid
       reviews(first: 50) {
         nodes {
-          author { login }
+          author { login __typename }
           state
           submittedAt
           body
+          commit { oid }
         }
       }
       reviewThreads(first: 100) {
@@ -280,8 +382,9 @@ gh api graphql -f query='
           id
           isResolved
           comments(first: 1) {
+            totalCount
             nodes {
-              author { login }
+              author { login __typename }
               body
               path
               line
@@ -291,7 +394,7 @@ gh api graphql -f query='
       }
       comments(first: 50) {
         nodes {
-          author { login }
+          author { login __typename }
           body
           createdAt
         }
@@ -303,95 +406,83 @@ gh api graphql -f query='
 
 From the response, extract:
 - `headRefOid` — current HEAD SHA of the PR
-- `reviews.nodes[]` — each with `author.login`, `state`, `submittedAt`, `body`
-- `reviewThreads.nodes[]` — each with `id`, `isResolved`, and the first comment's `author.login`, `body`, `path`, `line`
-- `comments.nodes[]` — PR-level (non-inline) comments with `author.login`, `body`, `createdAt`
+- `reviews.nodes[]` — each with `author.login`, `author.__typename`, `state`, `submittedAt`, `body`, `commit.oid`
+- `reviewThreads.nodes[]` — each with `id`, `isResolved`, `comments.totalCount`, and the first comment's `author.login`, `author.__typename`, `body`, `path`, `line`
+- `comments.nodes[]` — PR-level (non-inline) comments with `author.login`, `author.__typename`, `body`,
+  `createdAt`. Call this array `COMMENTS_JSON` — Step 5a.5 below reuses it unchanged, no new API
+  call. `__typename` is now fetched alongside `login` on all three author blocks above (mirroring
+  review.md's RBD-1.1 fix), giving the bot/CI comment filtering Step 5a.5 performs the authoritative
+  GraphQL discriminator, not just the login-string heuristic.
 
-A PR has **unaddressed findings** when ANY of the following are true:
-- At least one inline thread has `isResolved == false`
-- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
-  non-empty `body` (a review body without matching inline threads is itself a finding),
-  excluding clean-APPROVE reviews (see below), reviews addressed via a subsequent author
-  reply (see below), and self-authored reviews superseded by a later clean self-review
-  (see below)
+Capture the response (`RESPONSE`) into the shell variables the script invocation below consumes,
+keeping each `_JSON` value as the **full connection object** (`{ nodes: [...] }`), not the bare
+inner array:
 
-A PR has **no findings** (skip it) when ALL of the following are true:
-- All inline threads are resolved (`isResolved == true` for every thread)
-- No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than clean-APPROVE
-  reviews (see below), reviews addressed via a subsequent author reply (see below), and
-  self-authored reviews superseded by a later clean self-review (see below)
+```bash
+HEAD_REF_OID=$(jq -r '.data.repository.pullRequest.headRefOid' <<< "$RESPONSE")
+REVIEWS_JSON=$(jq -c '.data.repository.pullRequest.reviews' <<< "$RESPONSE")
+REVIEW_THREADS_JSON=$(jq -c '.data.repository.pullRequest.reviewThreads' <<< "$RESPONSE")
+COMMENTS_JSON=$(jq -c '.data.repository.pullRequest.comments' <<< "$RESPONSE")
+```
 
-**Clean-APPROVE exclusion**: A review is excluded from the body check above when its body is
-a clean APPROVE verdict, matched either by:
-- leading markdown bold markers (`**`) stripped, the body starts with `APPROVE`, or
-- a `Verdict: APPROVE` label appears anywhere in the body (case-insensitive, optional bold
-  markers around either word) — **not** anchored to end-of-line, since the agent's narrative
-  self-reviews often trail reasoning after the verdict on the same line, e.g.
-  `"...All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows
-  self-approval via the API)."` (verbatim from shipwright PR #1272, the case that motivated
-  this).
+Also fetch the PR's durable findings ledger — the task-store `PullRequest` record's `findings`
+array, which `isResolvedByLedger` and `isRejectedByPatchLedger` read below. Use the pre-claim
+record id (`PRECLAIM_RECORD_ID`, Step 0) when present, else look the record up by repo and PR
+number. Fail soft: an unreachable task store or a PR with no record yields `[]` — exactly the
+pre-ledger behavior, never a hard stop:
 
-Not restricted to self-authored reviews (SRV-1.1): multiple distinct Shipwright agents
-operate under different GitHub identities in the same repo, so WHO posted a clean APPROVE
-verdict is not meaningful — the verdict text itself is the ground truth. Per review.md's
-Step 10 mechanical verdict computation (the `selfReview` input), GitHub rejects self-APPROVE
-via the API, so an agent's own clean approval of its own PR is always posted as `COMMENTED`
-with a body like
-`"APPROVE — looks good, no changes needed."` or a narrative containing `"Verdict: APPROVE"`
-instead of an `APPROVED` review. Without this exclusion, that clean approval would look
-identical to a real finding and loop the patch cron forever on an already-approved PR. The
-exclusion is scoped to clean APPROVE verdicts only — a review whose body neither starts with
-`APPROVE` nor contains a `Verdict: APPROVE` label (e.g. it contains `Verdict:
-CHANGES_REQUESTED`, meaning the reviewer found a real issue) still counts as a finding,
-regardless of who posted it.
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID" | jq -c '.findings // []' 2>/dev/null || echo '[]')
+else
+  PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0].findings // []' 2>/dev/null || echo '[]')
+fi
+```
 
-**Third-party review body addressed via reply (CPF-2.3)**: A review's non-empty body is
-excluded from the finding check when the PR author has posted a PR-level comment (from
-`comments.nodes`, already fetched by this same query) with `createdAt` after that review's
-`submittedAt`. This exclusion is distinct from and independent of the clean-APPROVE
-exclusion above — a review can be excluded by either one on its own.
+**List A membership is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
+(PVD-1.1) is the single exported, tested implementation of `hasUnaddressedFindings` — the same
+module `check-patch.ts` qualifies candidates with and `review.md`'s Step 9.5 invokes. Build its
+input from the query response above (`reviews`, `reviewThreads`, `comments` are the full
+connection objects — `{ nodes: [...] }` — passed through unchanged), plus `CURRENT_USER`
+(Step 1), `PR_AUTHOR` (Step 0) as `prAuthor`, and `PR_FINDINGS_JSON`:
 
-The self-review "Verdict: APPROVE" rewrite (via the `updatePullRequestReview` mutation)
-only works because `updatePullRequestReview` can only edit a review's OWN author's body —
-it cannot be used on a third-party reviewer's review (e.g. a review posted by a distinct
-GitHub identity like `dodizzle`). When a third-party review flags a real finding, the fix
-subagent replies with a rebuttal or fix explanation and resolves the inline thread, but the
-review's own body text remains exactly as the third party wrote it — it can never be
-rewritten to signal the finding was addressed. A subsequent PR-author reply is therefore
-the only available signal that a third-party review's finding was addressed (fixed or
-rejected with a rebuttal), so it is treated the same as a body rewrite would be for a
-self-authored review. This exclusion still requires all inline threads to be resolved
-(`isResolved == true`) — an unresolved thread on the same review continues to count as a
-finding regardless of any reply.
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
+  "$(jq -n --arg currentUser "$CURRENT_USER" \
+    --arg prAuthor "$PR_AUTHOR" \
+    --arg headRefOid "$HEAD_REF_OID" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson reviewThreads "$REVIEW_THREADS_JSON" \
+    --argjson comments "$COMMENTS_JSON" \
+    --argjson findings "$PR_FINDINGS_JSON" \
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, findings: $findings}')"
+# -> {"unaddressedFindings":true|false}
+```
 
-**Self-review superseded by a later clean self-review (DRO-1.2)**: review.md's own Step
-10/11 procedure always posts a *new* review object each pass rather than rewriting a prior
-one's body (see Step 10's "the initial-review and re-review paths run identically"), so a
-self-authored PR that goes through N review rounds — each finding and fixing one real issue
-— ends up with N-1 COMMENT-bodied self-reviews on the PR even after every finding has been
-fixed. None of those qualifies for the clean-APPROVE exclusion above (their bodies read
-`Verdict: COMMENT`, not `Verdict: APPROVE`), and the reply exclusion doesn't apply either
-(self-reviews aren't "third-party," and this PR's convention never posts a PR-level author
-reply) — so without this exclusion, `unaddressedFindings` computes `true` forever and a
-self-authored PR can never reach a clean verdict once it has had more than one review round.
-An earlier self-authored COMMENTED review's body is excluded from the finding check when a
-**later** review exists whose `author.login` is the same self-review identity AND that later
-review's own body is a clean verdict (matched by the clean-APPROVE exclusion's pattern above
-— i.e. the later self-review itself reads `Verdict: APPROVE` or leads with `APPROVE`, whether
-or not GitHub's API forced its `state` to `COMMENTED`). This mirrors what an
-`updatePullRequestReview` body rewrite would have signaled had review.md instead edited the
-prior review in place — a later clean self-review is functionally the same "this round found
-nothing new, prior issues are fixed" signal, just expressed as a new review object instead of
-an edit to an old one. It does **not** exclude a later self-review that is itself non-clean
-(e.g. `Verdict: COMMENT` because *this* round found a fresh issue) — only a prior self-review
-is superseded, and only when the later one is genuinely clean. All inline threads must still
-be resolved for the PR overall, same as the other two exclusions.
+If `unaddressedFindings` is `true`, add it to **List A**; if `false`, skip it — it does not
+belong in List A. Do not override the script's answer by narrative judgment. Only these settle
+a review or thread, and `compute-unaddressed-findings.ts`'s own unit tests are the authoritative
+behavioral spec for them (not restated here, to avoid another divergent copy):
+- a task-store ledger entry for the review (`isResolvedByLedger` — `source: "review"`,
+  `resolved`/`superseded`) or a patch `rejected` entry for the review or thread
+  (`isRejectedByPatchLedger`);
+- a later `APPROVED` review by the same reviewer at the same head
+  (`isSupersededBySameHeadApproval`);
+- a PR-author reply: after the review's `submittedAt` for a review body
+  (`isAddressedByAuthorReply`), or within the thread after its flagging comment for an inline
+  thread (`isThreadAddressedByAuthorReply`).
 
-If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
-excluded clean-APPROVE, reply-addressed, or superseded-self-review), skip the PR — it does
-not belong in List A.
+**A clean self-APPROVE with no ledger entry IS in List A.** The script no longer infers
+"clean" from the review body's text, so a self-authored `COMMENTED` review reading
+`Verdict: APPROVE` that has no ledger entry (e.g. one posted before PFL-5.2 started ledgering
+self-reviews at post time) counts as unaddressed. Such a PR is not skipped here and the run must
+not exit `[silent]`: Step 5c.5 settles it by writing a `rejected` ledger entry for the review
+body (its subagent observation — "review contains no actionable finding" — as `evidence`), which
+is what stops the PR being re-dispatched.
 
-If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
+When a PR is in **List A**, store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
 Step 5.
 
@@ -456,8 +547,8 @@ the finding first.
    `Verdict: ...` output but deliberately excludes it from `compute-review-verdict.ts`'s
    event computation (review.md:1118-1125). A dependency-bump-only PR with a `hold`/`review`
    recommendation and no other findings therefore still gets a clean `Verdict: APPROVE` —
-   which Step 3a's own clean-APPROVE exclusion would otherwise keep out of List A
-   indefinitely. Without this rule, Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block is
+   which Step 3a's ledger exclusion (`isResolvedByLedger` — review.md ledgers a clean
+   self-review `resolved` at post time) would otherwise keep out of List A indefinitely. Without this rule, Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block is
    unreachable for exactly the scenario it targets: a dependency-bump PR carrying a
    hold/review recommendation with no unrelated ordinary finding to piggyback List A
    membership on.
@@ -465,7 +556,7 @@ the finding first.
 3. **Already-held exclusion — clear `DEPENDENCY_RISK_FINDING` when this same finding is
    already held at this same HEAD.** Every one of Step 3a's own finding criteria carries its own
    "this was dealt with" state (a thread's `isResolved`, an author reply post-dating a
-   review, a later clean self-review superseding an earlier one). Step 1's finding carries
+   review, a ledger entry settling a review or thread). Step 1's finding carries
    none — it is synthesized fresh from the diff on every cycle, with no dependence on prior
    review or reply state — so step 2 needs an exclusion of its own. Without one, a PR whose
    fix subagent hits `references/dependency-patch.md`'s no-safe-strategy exit
@@ -542,8 +633,9 @@ gh pr view {pr} --repo {org}/{repo} --json mergeStateStatus
 ```
 
 - If `mergeStateStatus` is `"DIRTY"` → add to **List C**
-- Any other state (including `"BEHIND"`) → not patch-worthy on its own; being behind
-  main without a conflict does not require action
+- `"BEHIND"` → already handled by `gh pr update-branch` in Step 2.5; never add to
+  **List C**
+- Any other state → no merge-state action
 
 Store the fetched `mergeStateStatus` — do not re-fetch in Step 3c.
 
@@ -591,18 +683,45 @@ If all three lists are empty:
 No PRs need attention.
 ```
 
+**Release the orchestrator pre-claim first.** If `PRECLAIM_RECORD_ID` is set (Step 2 extracted a
+`[preclaim:...]` marker), release it by record id before emitting `[silent]` or the skip-reason —
+this exit precedes all three claim sites (Steps 4a.6/5a.6/6b.5), so none of them ever adopts or
+releases the pre-claim. Release by record id regardless of head SHA: the pre-claim is held
+against whatever SHA the orchestrator saw, and a stale marker must still be given back. A failed
+call is non-fatal — the TTL reaper remains the backstop. With no marker, call nothing.
+
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release" || true
+fi
+```
+
 Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]` alongside `[silent]` (interpolating
 the target PR number) — order relative to `[silent]` does not matter, both are recognized regardless
 of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
 field (visible in the admin cron-logs UI) instead of the generic `command:no-work` reason, letting the
 loop orchestrator's SKIP_BLOCK_THRESHOLD handling classify this correctly.
 
+**`[silent]` is reserved for the genuinely-empty case above.** A PR that is in List A but has
+nothing to fix (e.g. a bot COMMENTED review saying "no feedback to provide", or every finding
+classified REJECT) is **not** this case: its outcome is *settle-with-rejected*, defined in
+Step 5c.5 — a `source: "patch"`, `disposition: "rejected"` ledger entry (with evidence) for
+every List A item not fixed, plus the one-line author comment from Step 5b [D], and then a
+normal non-silent end. A run must never exit `[silent]` while List A items remain unsettled:
+a silent exit records nothing, leaves the PR a candidate, and re-dispatches it every tick.
+
 **Design note:** Reaching Step 3d is most likely a genuine race (CI went green, or a human fixed the
-issue directly, between candidate selection and dispatch). Unlike `review.md`'s RVD-2.2/2.3 write-back
-gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status fresh from live GitHub every tick with
-no persisted "needs patch" cache field to drift, so there is no stale state to correct via a write-back
-here. If telemetry later shows this recurring for the same PR repeatedly, that is the signal for a
-follow-up write-back task, not something to speculatively build now.
+issue directly, between candidate selection and dispatch). Candidacy needs no write-back: unlike
+`review.md`'s RVD-2.2/2.3 write-back gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status
+fresh from live GitHub every tick, with no persisted "needs patch" cache field to drift. The
+orchestrator's pre-claim (CBD-1.3) is a different matter: it is persisted state this run must give
+back, which is why the release above is required. Skipping it leaves the PR locked until TTL expiry,
+after which it is re-dispatched. The release is safe to call unconditionally because `release()`
+always clears the claim fields but leaves a terminal `posted`/`approved` reviewState untouched, so it
+cannot clobber a verdict. If telemetry shows this recurring for the same PR repeatedly, that is the
+signal for a follow-up task, not something to speculatively build now.
 
 Print a summary before proceeding:
 
@@ -640,13 +759,26 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to Step 4a.6.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to item 5 below (the scoped-lint check still needs to run against the reused commands).
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
    - **{tests}**: optional object of additional test layers (e.g., `{"integration": "pytest tests/integration", "e2e": "npx playwright test"}`) — omit when only one test command exists
 4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+5. **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` and `{head}` above into its template
+     (e.g. `turbo lint --filter=...[{base}...{head}]`) to resolve **{lint command}** for
+     this PR's dispatch in Step 4b — the scoped command replaces the unscoped one for this
+     dispatch only, the cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
 
 ### Step 4a.6: Claim PR Record (pre-work lock)
 
@@ -655,8 +787,8 @@ another patch run (or a stale leftover claim from `/shipwright:review`, e.g. a
 still-claimed `phase: "review"` record left behind after posting — the record stays
 claimed until released or reaped). Without a pre-work claim, two overlapping patch runs
 could both dispatch competing fix subagents against the same branch. Claim the PR record
-with `phase: "patch"` now, before starting the merge/resolve, mirroring deploy.md's Step
-4a pre-merge claim:
+with `phase: "patch"` now, before starting the merge/resolve, mirroring merge.md's pre-merge
+claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
 it against this site's live head before trusting it — the head can have moved since Step 2
@@ -711,9 +843,10 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the conflict-resolution subagent runs at the escalated
-tier, with this prompt:
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the
+conflict-resolution subagent runs at the escalated tier, with this prompt:
 
 ```
 You are resolving merge conflicts on a pull request. Merge the base branch, resolve all
@@ -721,6 +854,7 @@ conflicts, validate, and push.
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Base branch: {base}
 Worktree: {worktree-path}
@@ -744,15 +878,66 @@ INSTRUCTIONS — follow in order:
     changes are the goal; base is just catching up
   - Stage resolved files: `git add {file}`
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by the merge
-  - Re-run until both pass cleanly
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
+
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
+  ```bash
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
+  ```
+
+  **Learned skip.** Before running a check, fetch its recent history:
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
+  ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [D] Commit and push
   - Complete the merge: `git commit -m "Merge branch '{base}' into {branch}"`
     (or `git merge --continue` if git is waiting for a commit)
+  **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+  verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+  prompt; `$PR_RECORD_ID` is not set in your shell):
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+  ```
+
+  If the result is empty, record each check that was run (or skipped, and why) now, using the
+  POST shape from [C] Validate, then continue. This gate never blocks the push.
+
   - Push: `git push origin {branch}`
 
 [E] Report back
@@ -771,6 +956,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the conflicts resolved. Proceed to Step 4c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
@@ -873,6 +1062,20 @@ From inside the worktree, collect the full picture of what needs fixing:
    git diff "origin/$base"...HEAD
    ```
 
+   **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` (reuse `$base` above — no second
+     fetch) and `{head}` above into its template (e.g. `turbo lint
+     --filter=...[{base}...{head}]`) to resolve **{lint command}** for this PR's dispatch
+     in Step 5b — the scoped command replaces the unscoped one for this dispatch only, the
+     cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
+
 2. **Unresolved inline threads** (from Step 3a — already fetched, reuse):
    Each thread with `isResolved == false` — include `id`, `path`, `line`, and comment body.
 
@@ -880,7 +1083,13 @@ From inside the worktree, collect the full picture of what needs fixing:
    with a non-empty `body`, include the full body text.
 
 4. **PR-level comments** (from Step 3a — already fetched, reuse):
-   Include all non-bot comments as additional context.
+   Filter `COMMENTS_JSON` (the `comments.nodes[]` array from Step 3a's query, including
+   `author.__typename`) through the shared bot/CI filter (PBD-1.1) instead of freehand
+   judgment, mirroring `is-ci-green.ts`'s CLI invocation pattern:
+   ```bash
+   FILTERED_COMMENTS=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/filter-bot-comments.ts" "$COMMENTS_JSON")
+   ```
+   Use its output (`FILTERED_COMMENTS`, the non-bot/non-CI subset) as additional context.
 
 ### Step 5a.6: Claim PR Record (pre-work lock)
 
@@ -889,7 +1098,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -997,7 +1206,7 @@ cycle and re-fire this same escalation indefinitely — the exact loop this chec
 close. Use the same mutation as Step 5a.7:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 mutation {
   resolveReviewThread(input: {threadId: "{thread.id}"}) {
     thread { isResolved }
@@ -1128,7 +1337,7 @@ and re-fire this same escalation indefinitely — the exact loop this step exist
 Use the same mutation as Step 5b [D]/[E]:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 mutation {
   resolveReviewThread(input: {threadId: "{thread.id}"}) {
     thread { isResolved }
@@ -1167,9 +1376,11 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the fix subagent runs at the escalated tier, with this
-prompt. When Step 3a.5 left `DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the fix
+subagent runs at the escalated tier, with this prompt. When Step 3a.5 left
+`DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
 finding and its step 3 already-held exclusion did not clear it — with recommendation
 `review` or `hold`, include the DEPENDENCY-RISK REMEDIATION PROTOCOL block below — it is
 additive, injected ahead of (not replacing) the existing [A.5] verify/classify
@@ -1182,6 +1393,7 @@ and resolve the addressed GitHub threads.
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Worktree: {worktree-path}
 
@@ -1281,18 +1493,58 @@ INSTRUCTIONS — follow in order:
   - If a finding is unclear or contradictory, apply the most conservative interpretation
     (preserve existing behavior; add the narrowest fix that satisfies the concern)
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by your changes
-  - Re-run until both pass cleanly
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
+
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
+  ```bash
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
+  ```
+
+  **Learned skip.** Before running a check, fetch its recent history:
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
+  ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - Re-run {test command} from [C] to confirm the new
+    test passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one
 
@@ -1306,10 +1558,24 @@ INSTRUCTIONS — follow in order:
     - Stage only the files you changed: `git add {changed files}`
     - Commit with a conventional commit message describing what was fixed:
       "fix: address review findings on #{pr} — {one-line summary of changes}"
+    **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+    verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+    prompt; `$PR_RECORD_ID` is not set in your shell):
+
+    ```bash
+    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+    ```
+
+    If the result is empty, record each check that was run (or skipped, and why) now, using the
+    POST shape from [C] Validate, then continue. This gate never blocks the push.
+
     - Push: `git push origin {branch}`
 
   - **If any finding was classified REJECT in [A.5]** (regardless of whether other
-    findings in the same run were ACCEPTED/MODIFIED and handled above): post a PR-level
+    findings in the same run were ACCEPTED/MODIFIED and handled above) — **or a List A
+    review has nothing actionable at all** (e.g. a bot review saying "no feedback to
+    provide"; treat it as REJECT with that as the reason, PHS-2.1): post a PR-level
     rebuttal comment explaining why each REJECTed finding was rejected, so the review is
     not left looking unaddressed. Write the comment body to a temp file first to avoid
     heredoc syntax in the command string (heredocs break permission glob matching and
@@ -1336,7 +1602,7 @@ INSTRUCTIONS — follow in order:
     maps any `file:line` finding to an inline comment), also resolve the inline threads for
     the REJECTed findings now, right after posting the rebuttal comment:
     ```bash
-    gh api graphql -f query='
+    SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
     mutation {
       resolveReviewThread(input: {threadId: "{thread.id}"}) {
         thread { isResolved }
@@ -1354,7 +1620,7 @@ INSTRUCTIONS — follow in order:
   threads" above) whose finding was ACCEPTED or MODIFIED and fixed in [B], mark it
   resolved:
   ```bash
-  gh api graphql -f query='
+  SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
   mutation {
     resolveReviewThread(input: {threadId: "{thread.id}"}) {
       thread { isResolved }
@@ -1397,6 +1663,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
   Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
@@ -1424,9 +1694,12 @@ Parse the subagent's STATUS:
   (independent of push/no-push — a mixed ACCEPT+REJECT run that also pushed a commit still
   has REJECTed findings needing a ledger entry). For each REJECTed finding in the
   subagent's CONCERNS, capture:
-  - **`ref`**: the same identifier already used to resolve that finding's thread in Step 5b
-    Instructions [D] — the inline thread's `path:line` for inline findings, or a short slug
-    for PR-body-level findings with no inline thread. For a dependency-risk finding that
+  - **`ref`**: the identifier `compute-unaddressed-findings.ts` matches when it honors a
+    patch `rejected` entry (PHS-1.2) — `thread:{thread.id}@{comments.totalCount}` for an
+    inline-thread finding (from Step 3a's `reviewThreads.nodes[]`; the count makes the ref
+    self-expire on any new comment), `{review.commit.oid}@{review.submittedAt}` (the full
+    commit SHA, not a short one) for a review-body finding (from Step 3a's `reviews.nodes[]`),
+    or a short slug for any other PR-body-level finding. For a dependency-risk finding that
     slug is the `dependency-risk@{headRefOid}` ref Step 5b's DEPENDENCY-RISK REMEDIATION
     PROTOCOL block told the subagent to use — carry it through verbatim, since Step 3a.5's
     already-held exclusion matches on that exact string.
@@ -1436,6 +1709,17 @@ Parse the subagent's STATUS:
   Set `REJECTED_FINDINGS_THIS_CYCLE` to this list (empty if no finding was REJECTed this
   cycle, e.g. the plain `DONE` case above or a `DONE_WITH_CONCERNS` run with only
   non-REJECT concerns) before proceeding to Step 5c.5.
+
+  **Settle every List A item that was not fixed (PHS-2.1).** `REJECTED_FINDINGS_THIS_CYCLE`
+  must cover every List A item this run did not fix — each unresolved inline thread and each
+  qualifying review body whose finding was not ACCEPTed/MODIFIEd and committed — not only the
+  ones the subagent explicitly REJECTed. This includes a non-actionable review (e.g. a clean self-authored
+  `Verdict: APPROVE` review with no ledger entry, which Step 3a puts in List A, or a bot
+  COMMENTED review with "no feedback to provide") the subagent found nothing to fix in: add
+  its review-body ref with the subagent's observation ("review contains no actionable
+  finding") as `evidence`. If the subagent's report leaves any such item unaccounted for,
+  settle it here with `evidence` stating that no change was made and why, rather than leaving
+  it unsettled.
 - **BLOCKED**: This is a first-round BLOCKED report from the fix subagent itself — distinct
   from Step 5a.7's (RPF-1.3) second-round-disagreement escalation, which fires *before*
   dispatch when the same finding was already rebutted once. Here the subagent was dispatched
@@ -1492,13 +1776,22 @@ fi
 
 Run the ledger-write `curl` once for each entry in `REJECTED_FINDINGS_THIS_CYCLE` (assigned
 in Step 5c — see there for how it's populated), POSTing one `source: "patch"`,
-`disposition: "rejected"` finding per REJECTed finding this cycle to
-`/prs/$PR_RECORD_ID/findings`, with `ref` set to that finding's identifying `path:line` (or
-slug, for PR-body-level findings) and `evidence` set to the rejection reason already used in
+`disposition: "rejected"` finding per List A item not fixed this cycle to
+`/prs/$PR_RECORD_ID/findings`, with `ref` set to the PHS-1.2 ref format Step 5c captured
+(`thread:{id}@{count}` for inline threads, `{commit.oid}@{submittedAt}` for review bodies —
+a `path:line` ref no longer settles anything) and `evidence` set to the rejection reason already used in
 the rebuttal comment. If `REJECTED_FINDINGS_THIS_CYCLE` is empty, skip this call entirely —
 there is nothing to record. This runs unconditionally whenever
 `REJECTED_FINDINGS_THIS_CYCLE` is non-empty, on both a no-push all-REJECT cycle and a mixed
 ACCEPT+REJECT run that pushed a commit.
+
+**Outcome: settle-with-rejected (PHS-2.1).** When a PR is in List A and this run fixes
+nothing (no commit pushed) — a bot review with no actionable feedback, or every finding
+REJECTed — the run ends *settled*, never `[silent]`: this step's ledger writes record every
+List A item as rejected with evidence, Step 5b [D]'s one-line author comment gives humans
+visibility, and the final report states the PR was settled (list the refs). Do **not** emit
+`[silent]` or the `no-op-at-dispatch` skip-reason on this path. Never exit `[silent]` while
+List A items remain unsettled.
 
 This ledger POST is now the sole mechanism that makes a no-push rebuttal cycle re-qualify
 for review: `agent/src/check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) treats any
@@ -1546,13 +1839,26 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to Step 6b.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to item 5 below (the scoped-lint check still needs to run against the reused commands).
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
    - **{tests}**: optional object of additional test layers (e.g., `{"integration": "pytest tests/integration", "e2e": "npx playwright test"}`) — omit when only one test command exists
 4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+5. **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` and `{head}` above into its template
+     (e.g. `turbo lint --filter=...[{base}...{head}]`) to resolve **{lint command}** for
+     this PR's dispatch in Step 6c — the scoped command replaces the unscoped one for this
+     dispatch only, the cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
 
 ### Step 6b: Collect CI Failure Output
 
@@ -1576,7 +1882,7 @@ order, matching Step 6d.5's already-existing `ciFailureSignature` field on the t
 `POST /prs/:id/patch` (CSD-1.1):
 
 ```bash
-CI_FAILURE_SIGNATURE=$(gh run view "$RUN_ID" --json jobs \
+CI_FAILURE_SIGNATURE=$(gh run view "$RUN_ID" --repo {org}/{repo} --json jobs \
   --jq '[.jobs[] | select(.conclusion=="failure") | .name] | sort | join(",")')
 ```
 
@@ -1589,7 +1895,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -1705,7 +2011,7 @@ same signal before dispatch is ever considered — but that filter only guards t
 `shipwright-loop`-driven path. A human running `/shipwright:patch org/repo#123` directly
 bypasses `check-patch.ts` entirely, and time can also pass between candidate selection and
 this point in the run (a bundle-mate task can start, or get blocked, after this PR was
-selected). Mirror deploy.md's Step 2b here, immediately before Step 6c's dispatch, so an
+selected). Mirror merge.md's live-state re-check here, immediately before Step 6c's dispatch, so an
 incomplete bundle is caught on both paths — this is where a prior CI-fix-on-an-incomplete-
 bundle incident actually happened: re-query the same sibling-branch-status signal now, right
 before dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.
@@ -1834,7 +2140,59 @@ gh run list --workflow {workflow-name-or-id} --repo {org}/{repo} --status succes
 ```
 
 Store both durations (or a note that typical duration was unavailable) as
-`{repeated-timeout-context}` for use in Step 6c's prompt. Proceed to Step 6c.
+`{repeated-timeout-context}` for use in Step 6c's prompt. Proceed to Step 6b.9.
+
+### Step 6b.9: Out-of-Scope CI Judgment (SLS-2.2)
+
+Having read the CI logs in Step 6b, decide whether the failing check is caused by this PR.
+
+**Main-red path (MRB-1.1) — check this first.** Before judging anything out of scope, check
+whether the same failing jobs are failing on the base branch. Look up the latest completed CI
+run of the base branch (`gh run list --repo {org}/{repo} --branch {base} --status completed
+--limit 1 --json databaseId,headSha,conclusion`), list its failed jobs, and compare them with
+`CI_FAILURE_SIGNATURE`. If the same jobs fail there, the PR is waiting on main, not on a fix:
+
+1. Escalate via [escalation-pattern.md](references/escalation-pattern.md) with
+   `{blockedReason}` = `main_red: {base} @ {main-sha} is failing {CI_FAILURE_SIGNATURE}` (task
+   `blocked`, or the PR record `blocked: true` when no task is linked) and `{temp_file_slug}` =
+   `main-red`.
+2. The one PR comment (`{comment_body}`) explains the PR is waiting on a red `{base}` (name the
+   sha and failing jobs) and how to resume: once `{base}` is green, re-run CI or update the
+   branch, then run `/shipwright:unblock`.
+3. The escalation sequence releases the claim. Skip Steps 6c–6e and move to the next PR.
+4. **Do NOT write the `ci:` ledger entry on this path** — an unblock at the same head SHA would
+   otherwise stay settled and never re-run.
+
+This path ends blocked, so it never ends `[silent]`. If main is green, or its failing jobs
+differ, fall through to the judgment below.
+
+If it is not — for example the same check already fails on the base branch, or the failure
+is in code this PR does not touch and no change to the PR can fix it — the run must not end
+with nothing recorded: without a ledger entry, `check-patch.ts` re-selects the PR every tick.
+For these other out-of-scope judgments, write the `ci` ref before ending, and **never exit `[silent]` without it**.
+
+Reuse `CI_FAILURE_SIGNATURE` from Step 6b (no new computation) and the head SHA the PR
+record is keyed on. The ref is `ci:{headSha}:{ciFailureSignature}` — the format SLS-2.1's
+`check-patch.ts` honors, where a matching `source: "patch"`, `disposition: "rejected"` entry
+settles that exact failure state at that exact head. POST it with the same ledger shape as
+Step 5c.5, with `evidence` naming the failing check(s) and why the failure is out of scope:
+
+```bash
+HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq .headRefOid)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings" \
+  -d "{\"ref\": \"ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{failing check} is not caused by this PR: {why out of scope}\", \"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" \
+  > /dev/null 2>&1 || \
+  echo "⚠ POST /prs/$PR_RECORD_ID/findings (ci rejected) failed — continuing"
+```
+
+Then release the pre-work claim from Step 6b.5, skip Steps 6c–6e for this PR, and end its
+cycle (move to the next PR in List D). The final report states the PR was settled as
+out-of-scope CI, with the ref. A push by a later commit changes `$HEAD_SHA`, so the entry
+stops matching and the PR re-qualifies automatically. If the failure *is* caused by this PR,
+or you cannot tell, write nothing and proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 
@@ -1847,15 +2205,17 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the CI-fix subagent runs at the escalated tier, with this
-prompt:
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the
+CI-fix subagent runs at the escalated tier, with this prompt:
 
 ```
 You are fixing failing CI on a pull request. Diagnose the failures, apply fixes, validate locally, commit, and push.
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Worktree: {worktree-path}
 
@@ -1890,18 +2250,58 @@ INSTRUCTIONS — follow in order:
   - If a failure is caused by a flaky test or an external dependency, note it in concerns
     rather than patching around it
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by your changes
-  - Re-run until both pass cleanly
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
+
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
+  ```bash
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
+  ```
+
+  **Learned skip.** Before running a check, fetch its recent history:
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
+  ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - Re-run {test command} from [C] to confirm the new
+    test passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one
 
@@ -1909,6 +2309,18 @@ INSTRUCTIONS — follow in order:
   - Stage only the files you changed: `git add {changed files}`
   - Commit with a conventional commit message describing what was fixed:
     "fix: resolve CI failures on #{pr} — {one-line summary of changes}"
+  **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+  verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+  prompt; `$PR_RECORD_ID` is not set in your shell):
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+  ```
+
+  If the result is empty, record each check that was run (or skipped, and why) now, using the
+  POST shape from [C] Validate, then continue. This gate never blocks the push.
+
   - Push: `git push origin {branch}`
 
 [E] Report back
@@ -1931,6 +2343,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the failures fixed. Proceed to Step 6d.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
@@ -2028,9 +2444,9 @@ Otherwise, proceed below.
 ### Step 6.5a: Poll for the Final CI Result
 
 Reuse the same "poll the GitHub Actions API, dedupe by latest run per workflow, skip
-cleanly when nothing is configured" pattern as `dev-task.md`'s Step 9b.2 — same shape, a
+cleanly when nothing is configured" pattern as `references/dev-task/push-and-ci.md`'s CI gate — same shape, a
 tighter cadence: 30-second interval, capped at **~5 minutes** (10 polls max) rather than
-Step 9b.2's 10-minute cap, since this is a final gate on a patch cycle that already ran
+that CI gate's 10-minute cap, since this is a final gate on a patch cycle that already ran
 fixes, not a first-attempt wait.
 
 Resolve the repo and current HEAD SHA (the worktree for whichever of Steps 4/5/6 pushed
@@ -2063,7 +2479,7 @@ workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task
 9b.2, to avoid a stale failed run being counted alongside its passing rerun.
 
 **No CI configured:** if no matching runs appear after 60 seconds (2 polls), skip the rest
-of Step 6.5 and proceed to Step 7 — mirroring `dev-task.md` Step 9b.2's identical
+of Step 6.5 and proceed to Step 7 — mirroring `references/dev-task/push-and-ci.md`'s CI gate's identical
 no-CI-configured skip. Print:
 ```
 ⏭ No CI checks configured — skipping CI verification gate

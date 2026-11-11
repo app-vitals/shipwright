@@ -1,0 +1,7 @@
+# braces <= 3.0.3 (GHSA-vfj7-8cjw-p6xm): no upstream fix; build/dev-only
+# (tailwindcss). Time-boxed suppression — re-check by 2027-01-04.
+# Keep in sync with .grype.yaml (enforced by braces-suppression.content.test.ts).
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-04
+reason = "braces <= 3.0.3 has no upstream fix; dev/build-only dependency (tailwindcss). Re-check by 2027-01-04."

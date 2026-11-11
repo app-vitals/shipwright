@@ -614,3 +614,52 @@ describe("renderDashboardPage — PPL-1.2 readOnly variant", () => {
     expect(full).toContain('id="token-agent-table"');
   });
 });
+
+describe("renderDashboardPage — CPP-1.4 PR Commits panel", () => {
+  test("includes PR Commits panel in the Pipeline Quality section", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain("PR Commits");
+  });
+
+  test("PR Commits panel has a total stat-row with the correct id", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('id="pr-commits-total"');
+  });
+
+  test("PR Commits panel has breakdown bar-items for the four phases", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('id="bar-pr-commits-docs-refresh"');
+    expect(html).toContain('id="bar-pr-commits-review-patch"');
+    expect(html).toContain('id="bar-pr-commits-ci-fix"');
+    expect(html).toContain('id="bar-pr-commits-implementation"');
+  });
+
+  test("PR Commits panel has bar-values for the four phases", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('id="val-pr-commits-docs-refresh"');
+    expect(html).toContain('id="val-pr-commits-review-patch"');
+    expect(html).toContain('id="val-pr-commits-ci-fix"');
+    expect(html).toContain('id="val-pr-commits-implementation"');
+  });
+
+  test("PR Commits panel has data-metric attribute on bar-items", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('data-metric="pr-commits-docs-refresh"');
+    expect(html).toContain('data-metric="pr-commits-review-patch"');
+    expect(html).toContain('data-metric="pr-commits-ci-fix"');
+    expect(html).toContain('data-metric="pr-commits-implementation"');
+  });
+
+  test("PR Commits panel is peer to CI Gates, Simplify, Reviews, Coverage in quality grid", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    const qualitySection = html.slice(
+      html.indexOf('aria-label="Pipeline quality"'),
+      html.indexOf('aria-label="Feature breakdown"'),
+    );
+    expect(qualitySection).toContain("CI Gates");
+    expect(qualitySection).toContain("Simplify Fixes");
+    expect(qualitySection).toContain("Reviews");
+    expect(qualitySection).toContain("Coverage");
+    expect(qualitySection).toContain("PR Commits");
+  });
+});

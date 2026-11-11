@@ -1,24 +1,32 @@
 /**
  * task-store/src/pull-request-service.ts
  * PullRequestService — operations for tracking GitHub PRs through the
- * Shipwright review → patch → deploy pipeline.
+ * Shipwright review → patch → merge pipeline.
  *
  * claim() is atomic via a Prisma $transaction:
- *   1. Find existing record by @@unique([repo, prNumber])
+ *   1. Find existing record by @@unique([accountId, repo, prNumber])
  *   2. Update with the conflict conditions re-checked in the UPDATE's own WHERE
  *      clause (so Postgres, holding the row lock, is the sole arbiter of a
  *      concurrent claim — not a possibly-stale JS snapshot). A write that no
  *      longer matches affects 0 rows → P2025 → ConflictError(409) (or, if the
  *      row was deleted, NotFoundError). Otherwise → update (200)
- *   3. No record → create (201); a concurrent INSERT loser hits the
- *      @@unique([repo, prNumber]) constraint → P2002 → ConflictError(409)
+ *   3. No record → create (201), stamping the caller's accountId; a
+ *      concurrent INSERT loser hits the @@unique([accountId, repo, prNumber])
+ *      constraint → P2002 → ConflictError(409). (Until SSP-6.4 drops the old
+ *      @@unique([repo, prNumber]), a cross-account INSERT for an existing
+ *      repo#prNumber also lands here as a 409.)
+ *
+ * Every write that creates a row stamps `accountId` (DEFAULT_ACCOUNT_ID when
+ * the caller omits it — never NULL), and every repo+prNumber lookup is also
+ * keyed by accountId (SSP-6.3).
  *
  * Timestamp fields are stored as ISO strings to match the application contract;
  * only createdAt/updatedAt are DateTime columns.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
   type PrFinding,
@@ -50,7 +58,7 @@ type PrismaTxClient = Pick<
   Prisma.TransactionClient,
   "pullRequest" | "pullRequestEvent"
 >;
-export type PullRequestTxClient = PrismaTxClient;
+type PullRequestTxClient = PrismaTxClient;
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -80,9 +88,12 @@ interface LinkedTaskBlockedInfo {
   status: string;
 }
 
-/** Map key for the repo+prNumber task join — mirrors GET /tasks?repo=&pr=. */
-function prKey(repo: string, prNumber: number): string {
-  return `${repo}#${prNumber}`;
+/**
+ * Map key for the accountId+repo+prNumber task join — mirrors
+ * GET /tasks?repo=&pr= within a single account (SSP-6.3).
+ */
+function prKey(accountId: string, repo: string, prNumber: number): string {
+  return `${accountId}|${repo}#${prNumber}`;
 }
 
 /**
@@ -97,7 +108,7 @@ function prKey(repo: string, prNumber: number): string {
  * (the only ones that keep hitl:true) never have a linked PR, so that branch
  * was dead code.
  *
- * Mirrors the combined signal agent/src/check-helpers.ts already uses for
+ * Mirrors the combined signal agent/src/coding/check-helpers.ts already uses for
  * dispatch gating — `isTaskBlockedForDispatch(linkedTask) ||
  * isPrRecordBlockedForDispatch(pr)` — reimplemented natively here rather than
  * imported, since task-store must not depend on the agent package.
@@ -113,7 +124,7 @@ function isPrBlocked(
  * Skip-count auto-block threshold: once a PR's skipCount reaches this value,
  * recordSkip() also sets blocked:true + blockedReason so the loop
  * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
+ * agent/src/coding/loop-orchestrator.ts:179 — duplicated here (not imported) since
  * agent/ and task-store/ are separate deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
@@ -125,9 +136,18 @@ const SKIP_BLOCK_THRESHOLD = 3;
  * blockedReason in the same request so the loop orchestrator stops
  * re-dispatching CI-fix cycles that keep hitting the same failure. Mirrors
  * SKIP_BLOCK_THRESHOLD above / SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179.
+ * agent/src/coding/loop-orchestrator.ts:179.
  */
 const CI_FAILURE_BLOCK_THRESHOLD = 3;
+
+/**
+ * Prefix of the blockedReason the agent's patch no-progress escalation sets
+ * (see PATCH_NO_PROGRESS_REASON_PREFIX in agent/src/coding/check-helpers.ts).
+ * resetSkip() clears a block carrying this prefix so a PR whose head moved
+ * re-enters candidacy. Mirrors that constant — duplicated here (not
+ * imported) since agent/ and task-store/ are separate deployables.
+ */
+const PATCH_NO_PROGRESS_REASON_PREFIX = "patch dispatch made no progress";
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -137,6 +157,11 @@ export interface PullRequestListFilters {
    * built via `buildRepoOrgWhere` into a `{ repo: { in: [...] } }` clause.
    */
   repo?: string | string[];
+  /**
+   * Restrict to one account's rows (SSP-6.6). null/undefined = unrestricted
+   * (admin token with no ?accountId=). ANDed with the repo scope.
+   */
+  accountScope?: string | null;
   /**
    * Org filter — matched via `repo: { startsWith: "<org>/" }` (there's no
    * dedicated org column). Built via the shared `buildRepoOrgWhere` helper.
@@ -163,7 +188,7 @@ export interface PullRequestListFilters {
   ready?: boolean;
   /**
    * When true, only return PRs considered "blocked" — mirroring the combined
-   * dispatch-gating signal agent/src/check-helpers.ts uses (
+   * dispatch-gating signal agent/src/coding/check-helpers.ts uses (
    * isTaskBlockedForDispatch(linkedTask) || isPrRecordBlockedForDispatch(pr)),
    * reimplemented natively here since task-store must not import from the
    * agent package. A PR is blocked when pr.blocked===true OR any task
@@ -197,6 +222,13 @@ export interface PullRequestListFilters {
    * current (unfiltered) behavior.
    */
   origin?: PrOrigin[];
+  /**
+   * Agent-token repo scope (PRG-1.2). `null`/omitted = unrestricted (admin
+   * token); an array restricts results to PRs whose repo is a member, ANDed
+   * with any caller `repo`/`org` filter — so an out-of-scope filter yields an
+   * empty list rather than leaking. `[]` matches nothing (fail-closed).
+   */
+  repoScope?: string[] | null;
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -234,9 +266,15 @@ export interface StampOriginInput {
 /**
  * A single entry in a `POST /prs/census` batch upsert — StampOriginInput
  * plus the additional fields census writes unconditionally (`state`,
- * `mergedAt`, `prCreatedAt`). Deliberately excludes claim/phase/review/
- * patch/blocked fields — census must never touch them, so there's no way to
- * even supply them here.
+ * `mergedAt`, `prCreatedAt`, and the five commit-count fields from CPP-1.1).
+ * Deliberately excludes claim/phase/review/patch/blocked fields — census
+ * must never touch them, so there's no way to even supply them here.
+ *
+ * The five commit-count fields (`commitCount`/`commitsDocsRefresh`/
+ * `commitsReviewPatch`/`commitsCiFix`/`commitsImplementation`, CPP-1.1) live
+ * only on this interface, not on `StampOriginInput` — only the census sweep
+ * ever supplies them, so TaskService.update()'s pr_open transition and
+ * claim() (the other two StampOriginInput callers) never see them.
  */
 export interface CensusEntryInput extends StampOriginInput {
   repo: string;
@@ -244,6 +282,11 @@ export interface CensusEntryInput extends StampOriginInput {
   state?: PrState;
   mergedAt?: string | null;
   prCreatedAt?: string | null;
+  commitCount?: number | null;
+  commitsDocsRefresh?: number | null;
+  commitsReviewPatch?: number | null;
+  commitsCiFix?: number | null;
+  commitsImplementation?: number | null;
 }
 
 /**
@@ -267,11 +310,23 @@ export interface PrOriginStamper {
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId?: string,
   ): Promise<PullRequest>;
 }
 
+/**
+ * One (accountId, repo, prNumber) key for lookupBlockedPrNumbers(). The
+ * accountId is the linked task's own account, so a blocked PR in another
+ * account never matches (SSP-6.3).
+ */
+interface BlockedPrLookupKey {
+  accountId: string;
+  repo: string;
+  prNumber: number;
+}
+
 /** Input for PullRequestService.appendFinding. */
-export interface AppendFindingInput {
+interface AppendFindingInput {
   ref: string;
   disposition: PrFindingDisposition;
   source: PrFindingSource;
@@ -297,6 +352,10 @@ export interface PullRequestServiceLike {
     authorLogin?: string | null,
     headRef?: string | null,
     title?: string | null,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
+    accountId?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
@@ -308,45 +367,54 @@ export interface PullRequestServiceLike {
   release(id: string): Promise<PullRequest>;
   recordSkip(id: string): Promise<PullRequest>;
   resetSkip(id: string): Promise<PullRequest>;
+  unblock(id: string): Promise<PullRequest>;
   claimNext(
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
   getEvents(
     prId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<GetEventsResult>;
-  lookupBlockedPrNumbers(
-    pairs: { repo: string; prNumber: number }[],
-  ): Promise<Set<number>>;
+  lookupBlockedPrNumbers(pairs: BlockedPrLookupKey[]): Promise<Set<number>>;
   /**
    * Upsert a PullRequest row for (repo, prNumber): authorLogin/headRef/title
    * are written unconditionally when supplied; origin follows first-write-
    * wins (see StampOriginInput). When `client` is supplied, runs against it
    * directly (no nested transaction) so a caller — e.g. TaskService.update()
    * — can fold this into its own $transaction; when omitted, wraps the write
-   * in its own transaction.
+   * in its own transaction. Keyed by (accountId, repo, prNumber);
+   * `accountId` defaults to DEFAULT_ACCOUNT_ID.
    */
   stampOrigin(
     repo: string,
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId?: string,
   ): Promise<PullRequest>;
   /**
    * Batch upsert for POST /prs/census (max MAX_CENSUS_ENTRIES per call, all
    * in one transaction). Never touches claim/phase/review/patch/blocked
    * fields; new rows get phase=null, reviewState='pending', staged=false.
+   * The five commit-count fields (CPP-1.1) are written unconditionally
+   * whenever supplied, same as authorLogin/headRef/title. Every entry is
+   * keyed/stamped with `accountId` (default DEFAULT_ACCOUNT_ID).
    */
-  census(entries: CensusEntryInput[]): Promise<PullRequest[]>;
+  census(
+    entries: CensusEntryInput[],
+    accountId?: string,
+  ): Promise<PullRequest[]>;
   /**
    * Max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin`
    * is not null, or null when no such row exists — the incremental search
-   * window POM-4.1's census sweep reads via GET /prs/census/cursor.
+   * window POM-4.1's census sweep reads via GET /prs/census/cursor. Only rows
+   * in `accountId` (default DEFAULT_ACCOUNT_ID) are considered.
    */
-  getCensusCursor(repo: string): Promise<string | null>;
+  getCensusCursor(repo: string, accountId?: string): Promise<string | null>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -360,31 +428,45 @@ export class PullRequestService implements PullRequestServiceLike {
   async list(
     filters: PullRequestListFilters = {},
   ): Promise<PullRequestListResult> {
-    const where: Prisma.PullRequestWhereInput = {};
+    const callerWhere: Prisma.PullRequestWhereInput = {};
     if (typeof filters.repo === "string" && filters.org === undefined) {
       // Preserves today's exact-match behavior for a single repo string.
-      where.repo = filters.repo;
+      callerWhere.repo = filters.repo;
     } else if (filters.repo !== undefined || filters.org !== undefined) {
       Object.assign(
-        where,
+        callerWhere,
         buildRepoOrgWhere({
           repos: toArray(filters.repo),
           orgs: toArray(filters.org),
         }),
       );
     }
-    if (filters.prNumber !== undefined) where.prNumber = filters.prNumber;
-    if (filters.state) where.state = filters.state as PullRequest["state"];
+    if (filters.prNumber !== undefined) callerWhere.prNumber = filters.prNumber;
+    if (filters.state)
+      callerWhere.state = filters.state as PullRequest["state"];
     if (filters.reviewState)
-      where.reviewState = filters.reviewState as PullRequest["reviewState"];
-    if (filters.staged !== undefined) where.staged = filters.staged;
-    if (filters.ready) where.claimedBy = null;
+      callerWhere.reviewState =
+        filters.reviewState as PullRequest["reviewState"];
+    if (filters.staged !== undefined) callerWhere.staged = filters.staged;
+    if (filters.ready) callerWhere.claimedBy = null;
     if (filters.origin && filters.origin.length > 0) {
-      where.origin = { in: filters.origin };
+      callerWhere.origin = { in: filters.origin };
     }
     if (filters.updatedSince) {
-      where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
+      callerWhere.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
+
+    // AND the token scope on top of the caller's own repo/org filters (never
+    // merged into callerWhere — buildRepoOrgWhere may already own `AND`/`OR`).
+    const scopeClauses: Prisma.PullRequestWhereInput[] = [];
+    if (filters.repoScope)
+      scopeClauses.push({ repo: { in: filters.repoScope } });
+    if (filters.accountScope)
+      scopeClauses.push({ accountId: filters.accountScope });
+    const where: Prisma.PullRequestWhereInput =
+      scopeClauses.length > 0
+        ? { AND: [callerWhere, ...scopeClauses] }
+        : callerWhere;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -405,29 +487,37 @@ export class PullRequestService implements PullRequestServiceLike {
         include: { findings: true, events: true },
       });
 
-      // Over-fetch on repo × prNumber (a cheap cross-product pre-filter,
+      // Over-fetch on accountId × repo × prNumber (a cheap cross-product pre-filter,
       // since Prisma can't express "any of these (repo, pr) pairs" without
       // an OR-per-candidate query), then match exact pairs in JS below.
+      const accountIds = [...new Set(candidates.map((pr) => pr.accountId))];
       const repos = [...new Set(candidates.map((pr) => pr.repo))];
       const prNumbers = [...new Set(candidates.map((pr) => pr.prNumber))];
       const tasks = candidates.length
         ? await this.prisma.task.findMany({
-            where: { repo: { in: repos }, pr: { in: prNumbers } },
-            select: { repo: true, pr: true, status: true },
+            where: {
+              accountId: { in: accountIds },
+              repo: { in: repos },
+              pr: { in: prNumbers },
+            },
+            select: { accountId: true, repo: true, pr: true, status: true },
           })
         : [];
 
       const tasksByPr = new Map<string, LinkedTaskBlockedInfo[]>();
       for (const task of tasks) {
         if (task.repo === null || task.pr === null) continue;
-        const key = prKey(task.repo, task.pr);
+        const key = prKey(task.accountId, task.repo, task.pr);
         const bucket = tasksByPr.get(key);
         if (bucket) bucket.push(task);
         else tasksByPr.set(key, [task]);
       }
 
       const blockedPrs = candidates.filter((pr) =>
-        isPrBlocked(pr, tasksByPr.get(prKey(pr.repo, pr.prNumber)) ?? []),
+        isPrBlocked(
+          pr,
+          tasksByPr.get(prKey(pr.accountId, pr.repo, pr.prNumber)) ?? [],
+        ),
       );
 
       return {
@@ -466,21 +556,21 @@ export class PullRequestService implements PullRequestServiceLike {
       const updateData: Prisma.PullRequestUpdateInput = { ...data };
 
       // When a caller transitions reviewState to 'approved' and hasn't already
-      // supplied readyForDeployAt, stamp it now rather than leaving it to be
+      // supplied readyForMergeAt, stamp it now rather than leaving it to be
       // set lazily on the next claim/claimNext. claimNext's
       // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
-      // it at the actual approval moment keeps the deploy-readiness ordering
+      // it at the actual approval moment keeps the merge-readiness ordering
       // accurate for PRs that sit approved-but-unclaimed for a while.
       if (
         data.reviewState === "approved" &&
-        data.readyForDeployAt === undefined
+        data.readyForMergeAt === undefined
       ) {
         const existing = await this.prisma.pullRequest.findUnique({
           where: { id },
-          select: { readyForDeployAt: true },
+          select: { readyForMergeAt: true },
         });
-        if (existing && existing.readyForDeployAt === null) {
-          updateData.readyForDeployAt = this.clock.now().toISOString();
+        if (existing && existing.readyForMergeAt === null) {
+          updateData.readyForMergeAt = this.clock.now().toISOString();
         }
       }
 
@@ -498,7 +588,7 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.phase = null;
       }
 
-      // deploy.md's merge-completion PATCH transitions state to 'merged' —
+      // merge.md's merge-completion PATCH transitions state to 'merged' —
       // explicitly release the claim in the same call, mirroring patch()'s
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
@@ -533,7 +623,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     on first creation of the record, also stamps readyForReviewAt=now
    *     (mirrors claimNext()'s behaviour for pre-existing records)
    *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
-   *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
+   *   - merge: sets phase='merge', claim fields, sets readyForMergeAt=now if null
+   *     (MPD-1.1); does NOT touch reviewState
    *
    * Conflict detection:
    *   - Same commitSha AND claimedBy IS NOT NULL for same phase → 409. Staleness of
@@ -544,7 +635,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     reviewState !== 'pending' → 409
    *
    * Origin stamping (POM-1.2): after the claim write succeeds (update or
-   * create branch), looks up whether a Task row exists for (repo, prNumber),
+   * create branch), looks up whether a Task row exists for (accountId, repo,
+   * prNumber),
    * derives a PrOrigin via deriveOrigin() (a task-row match always wins,
    * taking precedence over any author/branch-based signal), and calls
    * stampOrigin() with the same `tx` so it's atomic with the claim write.
@@ -565,12 +657,16 @@ export class PullRequestService implements PullRequestServiceLike {
     authorLogin?: string | null,
     headRef?: string | null,
     title?: string | null,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
     const result = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: { accountId_repo_prNumber: { accountId, repo, prNumber } },
       });
 
       if (existing) {
@@ -585,10 +681,10 @@ export class PullRequestService implements PullRequestServiceLike {
 
         if (phase === "review") {
           updateData.reviewState = "in_progress";
-        } else if (phase === "deploy") {
-          // Set readyForDeployAt only if not already set
-          if (existing.readyForDeployAt === null) {
-            updateData.readyForDeployAt = now;
+        } else if (phase === "merge") {
+          // Set readyForMergeAt only if not already set
+          if (existing.readyForMergeAt === null) {
+            updateData.readyForMergeAt = now;
           }
         }
         // phase === 'patch': do NOT touch reviewState (preserve 'posted')
@@ -639,11 +735,15 @@ export class PullRequestService implements PullRequestServiceLike {
           await this.recordTransition(tx, existing, record, "claim", claimedBy);
           const stamped = await this.stampClaimOrigin(
             tx,
+            accountId,
             repo,
             prNumber,
             authorLogin,
             headRef,
             title,
+            authorIsBot,
+            hasAutomatedLabel,
+            hasShipwrightLabel,
           );
           return { status: 200 as const, record: stamped };
         } catch (err: unknown) {
@@ -673,12 +773,16 @@ export class PullRequestService implements PullRequestServiceLike {
         }
       }
 
-      // No existing record → create.
+      // No existing record → create, stamped with the caller's accountId.
       // Guard against a concurrent INSERT winning the race: Postgres enforces
-      // @@unique([repo, prNumber]) and the losing writer gets a P2002. Map that
-      // to ConflictError(409) so callers see a clean error instead of a raw 500.
+      // @@unique([accountId, repo, prNumber]) and the losing writer gets a
+      // P2002. Map that to ConflictError(409) so callers see a clean error
+      // instead of a raw 500. (Until SSP-6.4 drops the old
+      // @@unique([repo, prNumber]), a different account's row for the same
+      // repo#prNumber also trips P2002 here — same 409, no row is touched.)
       try {
         const createData: Prisma.PullRequestCreateInput = {
+          accountId,
           repo,
           prNumber,
           commitSha,
@@ -695,18 +799,22 @@ export class PullRequestService implements PullRequestServiceLike {
         if (phase === "review") {
           createData.reviewState = "in_progress";
           createData.readyForReviewAt = now;
-        } else if (phase === "deploy") {
-          createData.readyForDeployAt = now;
+        } else if (phase === "merge") {
+          createData.readyForMergeAt = now;
         }
 
         await tx.pullRequest.create({ data: createData });
         const stamped = await this.stampClaimOrigin(
           tx,
+          accountId,
           repo,
           prNumber,
           authorLogin,
           headRef,
           title,
+          authorIsBot,
+          hasAutomatedLabel,
+          hasShipwrightLabel,
         );
         return { status: 201 as const, record: stamped };
       } catch (err: unknown) {
@@ -898,9 +1006,9 @@ export class PullRequestService implements PullRequestServiceLike {
    * Steps (all in one transaction):
    *   1. Count active claims by agentId — if >= maxConcurrent, return null
    *   2. Find oldest unclaimed eligible PR ordered by
-   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ASC
+   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt) ASC
    *      WHERE claimedBy IS NULL AND state='open' AND reviewState IN ('pending','posted','approved')
-   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→deploy
+   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→merge
    *   4. Set readyForReviewAt=now if null (first claim)
    *   5. Claim with the appropriate phase
    *   6. Return {pr, phase}
@@ -909,11 +1017,12 @@ export class PullRequestService implements PullRequestServiceLike {
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
     // Cutoff for "fresh" heartbeat — mirrors the reaper's own default
-    // (DEFAULT_CLAIM_TTL_MS in @shipwright/lib/claim-ttl).
+    // (DEFAULT_CLAIM_TTL_MS in task-store/src/claim-ttl.ts).
     const cutoffMs = Number(
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
     );
@@ -941,6 +1050,12 @@ export class PullRequestService implements PullRequestServiceLike {
           ? Prisma.sql`AND "repo" = ANY(${repos})`
           : Prisma.sql``;
 
+      // SSP-6.6: a scoped caller only ever claims its own account's PRs, even
+      // for an identical repo string. null/undefined = unrestricted (admin).
+      const accountFilter = accountId
+        ? Prisma.sql`AND "accountId" = ${accountId}`
+        : Prisma.sql``;
+
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id
           FROM "PullRequest"
@@ -948,7 +1063,8 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "state" = 'open'
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
-         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
+           ${accountFilter}
+         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
       `;
@@ -972,7 +1088,7 @@ export class PullRequestService implements PullRequestServiceLike {
       } else if (target.reviewState === "posted") {
         phase = "patch";
       } else {
-        phase = "deploy"; // approved
+        phase = "merge"; // approved
       }
 
       // Step 4 & 5: Build claim update
@@ -989,9 +1105,9 @@ export class PullRequestService implements PullRequestServiceLike {
         if (target.readyForReviewAt === null) {
           updateData.readyForReviewAt = nowIso;
         }
-      } else if (phase === "deploy") {
-        if (target.readyForDeployAt === null) {
-          updateData.readyForDeployAt = nowIso;
+      } else if (phase === "merge") {
+        if (target.readyForMergeAt === null) {
+          updateData.readyForMergeAt = nowIso;
         }
       }
       // patch: preserve reviewState='posted', no readyForPatchAt change here
@@ -1098,11 +1214,22 @@ export class PullRequestService implements PullRequestServiceLike {
           data: { skipCount: { increment: 1 }, lastSkippedAt: now },
         });
         if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+          const latestReview = await tx.prFinding.findFirst({
+            where: { prRecordId: id, source: "review" },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          });
+          const blockedReason = `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`;
           updated = await tx.pullRequest.update({
             where: { id },
             data: {
               blocked: true,
-              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+              blockedReason,
+              blockedHeadSha: updated.commitSha ?? updated.reviewedCommitSha,
+              blockedReviewId: latestReview?.id ?? null,
+              blockedAt: now,
+              lastAutoBlockReason: blockedReason,
+              lastAutoBlockedAt: now,
             },
           });
         }
@@ -1127,9 +1254,11 @@ export class PullRequestService implements PullRequestServiceLike {
    * Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null.
    * If the PR is currently blocked AND its blockedReason matches the
    * skip-auto-block message pattern set by recordSkip() (contains
-   * "consecutive skips"), also clears blocked:false and blockedReason:null
+   * "consecutive skips") or the patch no-progress escalation prefix
+   * (PATCH_NO_PROGRESS_REASON_PREFIX), also clears blocked:false and blockedReason:null
    * in the same update — giving a human-retried PR a way back into
-   * candidacy. A block set by a different mechanism (e.g. the CI-failure-
+   * candidacy. The preserved lastAutoBlockReason/lastAutoBlockedAt history
+   * (PSL-3.1) is never cleared. A block set by a different mechanism (e.g. the CI-failure-
    * streak auto-block in patch()) is left untouched.
    */
   async resetSkip(id: string): Promise<PullRequest> {
@@ -1158,7 +1287,8 @@ export class PullRequestService implements PullRequestServiceLike {
         };
         if (
           existing.blocked &&
-          existing.blockedReason?.includes("consecutive skips")
+          (existing.blockedReason?.includes("consecutive skips") ||
+            existing.blockedReason?.startsWith(PATCH_NO_PROGRESS_REASON_PREFIX))
         ) {
           updateData.blocked = false;
           updateData.blockedReason = null;
@@ -1180,6 +1310,53 @@ export class PullRequestService implements PullRequestServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
+  }
+
+  /**
+   * Human-driven unblock (UBL-1.2): atomically clears a block regardless of
+   * which mechanism set it. A single conditional updateMany (WHERE id AND
+   * blocked=true) resets blocked, blockedReason, blockedHeadSha, skipCount,
+   * lastSkippedAt, consecutiveCiFailureCount and lastCiFailureSignature —
+   * the CI-streak counter/signature must go too, otherwise the next patch()
+   * would re-trip the threshold. Throws NotFoundError when the PR is missing
+   * and ConflictError when it is not currently blocked (never a silent
+   * no-op). The preserved lastAutoBlock* history is left untouched. Records
+   * PullRequestEvent rows (method "unblock") in the same transaction.
+   */
+  async unblock(id: string): Promise<PullRequest> {
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.pullRequest.findUnique({ where: { id } });
+      if (!before) {
+        throw new NotFoundError("pr not found");
+      }
+      const { count } = await tx.pullRequest.updateMany({
+        where: { id, blocked: true },
+        data: {
+          blocked: false,
+          blockedReason: null,
+          blockedHeadSha: null,
+          skipCount: 0,
+          lastSkippedAt: null,
+          consecutiveCiFailureCount: 0,
+          lastCiFailureSignature: null,
+        },
+      });
+      if (count === 0) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const after = await tx.pullRequest.findUnique({ where: { id } });
+      if (!after) {
+        throw new NotFoundError("pr not found");
+      }
+      await this.recordTransition(
+        tx,
+        before,
+        after,
+        "unblock",
+        before.claimedBy ?? "system",
+      );
+      return after;
+    });
   }
 
   /**
@@ -1261,8 +1438,9 @@ export class PullRequestService implements PullRequestServiceLike {
   }
 
   /**
-   * Given a batch of (repo, prNumber) pairs — typically every linked-PR
-   * reference across a set of tasks — return the subset of prNumbers whose
+   * Given a batch of (accountId, repo, prNumber) keys — typically every
+   * linked-PR reference across a set of tasks, each carrying its task's own
+   * accountId — return the subset of prNumbers whose
    * PullRequest record has `blocked === true`, in ONE query. Built for
    * SessionService.list()/get() (SESH-2.2): computeSessionRollup()'s
    * `prBlockedSet` param needs exactly this signal, and batching the lookup
@@ -1285,25 +1463,29 @@ export class PullRequestService implements PullRequestServiceLike {
    * field alone, without its repo, is what's compared against the set).
    */
   async lookupBlockedPrNumbers(
-    pairs: { repo: string; prNumber: number }[],
+    pairs: BlockedPrLookupKey[],
   ): Promise<Set<number>> {
     if (pairs.length === 0) return new Set();
 
+    const accountIds = [...new Set(pairs.map((p) => p.accountId))];
     const repos = [...new Set(pairs.map((p) => p.repo))];
     const prNumbers = [...new Set(pairs.map((p) => p.prNumber))];
     const rows = await this.prisma.pullRequest.findMany({
       where: {
+        accountId: { in: accountIds },
         repo: { in: repos },
         prNumber: { in: prNumbers },
         blocked: true,
       },
-      select: { repo: true, prNumber: true },
+      select: { accountId: true, repo: true, prNumber: true },
     });
 
-    const exactPairs = new Set(pairs.map((p) => prKey(p.repo, p.prNumber)));
+    const exactPairs = new Set(
+      pairs.map((p) => prKey(p.accountId, p.repo, p.prNumber)),
+    );
     const result = new Set<number>();
     for (const row of rows) {
-      if (exactPairs.has(prKey(row.repo, row.prNumber))) {
+      if (exactPairs.has(prKey(row.accountId, row.repo, row.prNumber))) {
         result.add(row.prNumber);
       }
     }
@@ -1314,7 +1496,7 @@ export class PullRequestService implements PullRequestServiceLike {
 
   /**
    * claim()'s origin-stamping tail call (POM-1.2): looks up whether a Task
-   * row links (repo, prNumber), derives a PrOrigin via deriveOrigin() (a
+   * row in the same account links (repo, prNumber), derives a PrOrigin via deriveOrigin() (a
    * task-row match always wins over any author/branch-based signal), and
    * calls stampOrigin() against the same `tx` so the origin write is atomic
    * with the claim write that preceded it. Returns stampOrigin()'s record —
@@ -1322,22 +1504,35 @@ export class PullRequestService implements PullRequestServiceLike {
    */
   private async stampClaimOrigin(
     tx: Prisma.TransactionClient,
+    accountId: string,
     repo: string,
     prNumber: number,
     authorLogin: string | null | undefined,
     headRef: string | null | undefined,
     title: string | null | undefined,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
   ): Promise<PullRequest> {
     const linkedTask = await tx.task.findFirst({
-      where: { repo, pr: prNumber },
+      where: { accountId, repo, pr: prNumber },
       select: { id: true },
     });
     const origin = deriveOrigin({
       hasLinkedTask: linkedTask !== null,
       authorLogin,
       headRef,
+      authorIsBot,
+      hasAutomatedLabel,
+      hasShipwrightLabel,
     });
-    return this.stampOrigin(repo, prNumber, { origin, authorLogin, headRef, title }, tx);
+    return this.stampOrigin(
+      repo,
+      prNumber,
+      { origin, authorLogin, headRef, title },
+      tx,
+      accountId,
+    );
   }
 
   async stampOrigin(
@@ -1345,15 +1540,21 @@ export class PullRequestService implements PullRequestServiceLike {
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<PullRequest> {
     const entry: CensusEntryInput = { repo, prNumber, ...data };
     if (client) {
-      return this.upsertOriginFields(client, entry);
+      return this.upsertOriginFields(client, entry, accountId);
     }
-    return this.prisma.$transaction((tx) => this.upsertOriginFields(tx, entry));
+    return this.prisma.$transaction((tx) =>
+      this.upsertOriginFields(tx, entry, accountId),
+    );
   }
 
-  async census(entries: CensusEntryInput[]): Promise<PullRequest[]> {
+  async census(
+    entries: CensusEntryInput[],
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<PullRequest[]> {
     if (entries.length > MAX_CENSUS_ENTRIES) {
       throw new BadRequestError(
         `census accepts at most ${MAX_CENSUS_ENTRIES} entries per call (received ${entries.length}) — split the batch`,
@@ -1362,15 +1563,23 @@ export class PullRequestService implements PullRequestServiceLike {
     return this.prisma.$transaction(async (tx) => {
       const results: PullRequest[] = [];
       for (const entry of entries) {
-        results.push(await this.upsertOriginFields(tx, entry));
+        results.push(await this.upsertOriginFields(tx, entry, accountId));
       }
       return results;
     });
   }
 
-  async getCensusCursor(repo: string): Promise<string | null> {
+  async getCensusCursor(
+    repo: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<string | null> {
     const row = await this.prisma.pullRequest.findFirst({
-      where: { repo, origin: { not: null }, mergedAt: { not: null } },
+      where: {
+        accountId,
+        repo,
+        origin: { not: null },
+        mergedAt: { not: null },
+      },
       orderBy: { mergedAt: "desc" },
       select: { mergedAt: true },
     });
@@ -1379,12 +1588,15 @@ export class PullRequestService implements PullRequestServiceLike {
 
   /**
    * Core upsert shared by stampOrigin() and census(): findUnique by the
-   * (repo, prNumber) unique key, then either update (authorLogin/headRef/
-   * title/state/mergedAt/prCreatedAt written unconditionally when supplied;
-   * origin only when currently null) or create (new rows pick up the
-   * schema's own phase=null/reviewState='pending'/staged=false defaults —
-   * left absent from createData rather than restated here, so a future
-   * default change doesn't need updating in two places).
+   * (accountId, repo, prNumber) unique key (new rows are stamped with
+   * `accountId`), then either update (authorLogin/headRef/
+   * title/state/mergedAt/prCreatedAt/commitCount/commitsDocsRefresh/
+   * commitsReviewPatch/commitsCiFix/commitsImplementation written
+   * unconditionally when supplied; origin only when currently null) or
+   * create (new rows pick up the schema's own phase=null/
+   * reviewState='pending'/staged=false defaults — left absent from
+   * createData rather than restated here, so a future default change
+   * doesn't need updating in two places).
    *
    * Deliberately does NOT call recordTransition()/write PullRequestEvent
    * rows — stampOrigin/census are metrics-plumbing writes, not pipeline
@@ -1392,13 +1604,14 @@ export class PullRequestService implements PullRequestServiceLike {
    * pr-transition-diff.ts's AUDITED_FIELDS allowlist.
    *
    * A concurrent create race (two callers upserting the same never-before-
-   * seen (repo, prNumber) at once) surfaces as Prisma P2002; the loser
+   * seen (accountId, repo, prNumber) at once) surfaces as Prisma P2002; the loser
    * retries once as a plain update against the now-existing row rather than
    * surfacing a 409 — stampOrigin/census are idempotent upserts, not claims.
    */
   private async upsertOriginFields(
     client: PullRequestTxClient,
     entry: CensusEntryInput,
+    accountId: string,
   ): Promise<PullRequest> {
     const {
       repo,
@@ -1410,10 +1623,15 @@ export class PullRequestService implements PullRequestServiceLike {
       state,
       mergedAt,
       prCreatedAt,
+      commitCount,
+      commitsDocsRefresh,
+      commitsReviewPatch,
+      commitsCiFix,
+      commitsImplementation,
     } = entry;
 
     const existing = await client.pullRequest.findUnique({
-      where: { repo_prNumber: { repo, prNumber } },
+      where: { accountId_repo_prNumber: { accountId, repo, prNumber } },
     });
 
     // First-write-wins: only apply `origin` when it was supplied AND the
@@ -1431,6 +1649,14 @@ export class PullRequestService implements PullRequestServiceLike {
       if (state !== undefined) updateData.state = state;
       if (mergedAt !== undefined) updateData.mergedAt = mergedAt;
       if (prCreatedAt !== undefined) updateData.prCreatedAt = prCreatedAt;
+      if (commitCount !== undefined) updateData.commitCount = commitCount;
+      if (commitsDocsRefresh !== undefined)
+        updateData.commitsDocsRefresh = commitsDocsRefresh;
+      if (commitsReviewPatch !== undefined)
+        updateData.commitsReviewPatch = commitsReviewPatch;
+      if (commitsCiFix !== undefined) updateData.commitsCiFix = commitsCiFix;
+      if (commitsImplementation !== undefined)
+        updateData.commitsImplementation = commitsImplementation;
       if (resolvedOrigin !== undefined) updateData.origin = resolvedOrigin;
 
       if (Object.keys(updateData).length === 0) return existing;
@@ -1444,6 +1670,7 @@ export class PullRequestService implements PullRequestServiceLike {
     try {
       return await client.pullRequest.create({
         data: {
+          accountId,
           repo,
           prNumber,
           authorLogin: authorLogin ?? null,
@@ -1453,6 +1680,11 @@ export class PullRequestService implements PullRequestServiceLike {
           ...(state !== undefined ? { state } : {}),
           mergedAt: mergedAt ?? null,
           prCreatedAt: prCreatedAt ?? null,
+          commitCount: commitCount ?? null,
+          commitsDocsRefresh: commitsDocsRefresh ?? null,
+          commitsReviewPatch: commitsReviewPatch ?? null,
+          commitsCiFix: commitsCiFix ?? null,
+          commitsImplementation: commitsImplementation ?? null,
         },
       });
     } catch (err: unknown) {
@@ -1464,7 +1696,7 @@ export class PullRequestService implements PullRequestServiceLike {
       ) {
         // Lost a concurrent create race — the row now exists; retry once as
         // a plain update against it.
-        return this.upsertOriginFields(client, entry);
+        return this.upsertOriginFields(client, entry, accountId);
       }
       throw err;
     }

@@ -60,7 +60,7 @@ configurable via `taskStore.expose.pathPrefix`.
 
 ### Chat service (opt-in)
 
-The optional chat service (`@shipwright/chat`) manages web chat threads, messages, and
+The optional chat service (the platform-hosted `agent-chat` image) manages web chat threads, messages, and
 scoped agent tokens. By default it is **disabled** (`chat.enabled=false`) — purely
 additive and safe to deploy without. To enable it:
 
@@ -171,3 +171,42 @@ external path routing is operator-driven.
 See [configuration-agent.md](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full list of MCP server env vars and their defaults.
 
+### Tenant agent NetworkPolicy (self-serve, opt-in)
+
+Self-serve tenant agents run user-controlled workloads in the shared agent
+namespace (`agent.provisioning.namespace`, else the release namespace), so they
+must not be able to reach other pods, the node, the cloud metadata service, or
+the in-cluster API server. Set `selfServe.networkPolicy.enabled=true` to render
+`templates/tenant-networkpolicy.yaml` (default `false` renders nothing).
+**Do not enable tenant agents without this policy.**
+
+The policy selects pods labelled `shipwright.dev/tenant=true` and allows:
+
+| Direction | Allowed | Details |
+|-----------|---------|---------|
+| Egress | DNS | `kube-dns` pods (`k8s-app=kube-dns`) in `kube-system`, port 53 UDP and TCP |
+| Egress | Node-local DNS | each CIDR in `selfServe.networkPolicy.dnsCidrs` (default `169.254.20.10/32`, the GKE NodeLocal DNSCache), port 53 UDP and TCP |
+| Egress | Shipwright services | admin, task-store and chat pods in the release namespace (selected by the chart's `app.kubernetes.io/{name,instance,component}` labels) |
+| Egress | Public internet | `0.0.0.0/0` with `ipBlock.except`: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` |
+| Ingress | Admin only | admin pods in the release namespace; everything else is denied |
+
+The `except` list is what blocks other pods, nodes, the metadata endpoint
+(`169.254.169.254`) and the in-cluster API server (a private ClusterIP).
+Traffic to the Shipwright services above is allowed by the explicit pod
+selectors, not by the `ipBlock`.
+
+**Cluster resolver.** Clusters using a node-local DNS cache (GKE NodeLocal
+DNSCache, Dataplane V2) point pods at a link-local address that the
+`169.254.0.0/16` exclusion would otherwise drop, so every lookup fails. The
+default `dnsCidrs` covers GKE's `169.254.20.10`. On other clusters, find the
+resolver with `cat /etc/resolv.conf` in any pod (the `nameserver` line) and set
+`selfServe.networkPolicy.dnsCidrs` to its `/32`, e.g.
+`--set 'selfServe.networkPolicy.dnsCidrs={10.96.0.10/32}'`.
+
+> **CNI requirement:** a NetworkPolicy is only enforced if the cluster's CNI
+> implements it. Without enforcement the resource is accepted and silently does
+> nothing. The default `kindnet` (kind) and the stock minikube CNI do **not**
+> enforce NetworkPolicy (minikube needs `--cni=calico` or similar); GKE needs
+> network policy enforcement (or Dataplane V2) enabled on the cluster; EKS needs
+> the VPC CNI network policy feature or Calico/Cilium. Verify enforcement
+> before enabling tenants.

@@ -292,3 +292,149 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "issuer"
+
+  # awsSecurityGroupPolicy mirrors cloudSqlProxy's if/then guard — once enabled,
+  # groupIds is required and must hold at least one id. A branch ENI carrying an
+  # empty group list is rejected by the VPC CNI admission webhook, so failing the
+  # render up front is the more actionable error.
+  - it: rejects awsSecurityGroupPolicy.enabled=true with no group ids
+    set:
+      awsSecurityGroupPolicy.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/awsSecurityGroupPolicy/groupIds': minItems"
+
+  - it: accepts awsSecurityGroupPolicy.enabled=true when at least one group id is supplied
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts agent.provisioning.images specialty entries with repository and tag
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.tag: v1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an agent.provisioning.images entry without repository
+    set:
+      agent.provisioning.images.coding.tag: v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "repository"
+
+  - it: rejects an unknown key inside an agent.provisioning.images entry
+    set:
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "bogus"
+
+  - it: rejects an unknown key under agent.provisioning.claudePolicy
+    set:
+      agent.provisioning.claudePolicy.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: rejects a non-boolean agent.provisioning.claudePolicy.enabled
+    set:
+      agent.provisioning.claudePolicy.enabled: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: rejects a non-object agent.provisioning.claudePolicy.settings
+    set:
+      agent.provisioning.claudePolicy.settings: "not-an-object"
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: accepts agent.provisioning.claudePolicy with free-form settings
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.claudePolicy.enabled: true
+      agent.provisioning.claudePolicy.settings:
+        anything:
+          goes: [1, 2]
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown key under agent.provisioning.anthropicFederation
+    set:
+      agent.provisioning.anthropicFederation.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation"
+
+  - it: rejects anthropicFederation.tokenExpirationSeconds below 600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 599
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: rejects anthropicFederation.tokenExpirationSeconds above 3600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 3601
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: rejects a non-integer anthropicFederation.tokenExpirationSeconds
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 900.5
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: accepts anthropicFederation.tokenExpirationSeconds of 600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 600
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts anthropicFederation.tokenExpirationSeconds of 3600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 3600
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts anthropicFederation.identityMode perAgent
+    set:
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown anthropicFederation.identityMode
+    set:
+      agent.provisioning.anthropicFederation.identityMode: both
+    asserts:
+      - failedTemplate:
+          errorPattern: "identityMode"
+
+  - it: rejects an anthropicFederation.nameSuffix outside [a-z0-9-]
+    set:
+      agent.provisioning.anthropicFederation.nameSuffix: Dev_1
+    asserts:
+      - failedTemplate:
+          errorPattern: "nameSuffix"
+
+  - it: accepts a lowercase-alphanumeric-dash anthropicFederation.nameSuffix
+    set:
+      agent.provisioning.anthropicFederation.nameSuffix: dev-1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown key under anthropicFederation.adminFederation
+    set:
+      agent.provisioning.anthropicFederation.adminFederation.bogus: x
+    asserts:
+      - failedTemplate:
+          errorPattern: "adminFederation"

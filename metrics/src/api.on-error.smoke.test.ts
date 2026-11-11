@@ -20,11 +20,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import {
-  type MetricsDeps,
   createMetricsApp,
   createPublicMetricsApp,
+  type MetricsDeps,
 } from "./api.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import {

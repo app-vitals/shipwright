@@ -10,7 +10,7 @@ next: "/docs/running-locally"
 # The Plugin
 
 The Shipwright plugin (artifact **A**) is the core of the system. Install it once into any Claude Code
-session and it drives the full **spec → plan → execute → review → deploy** loop against any repository.
+session and it drives the full **spec → plan → execute → review → merge** loop against any repository.
 It is pure TypeScript with no server, no database, and no external HTTP — everything runs locally
 inside Claude Code.
 
@@ -47,7 +47,7 @@ a slash command prefixed with `/shipwright:`.
 | `/shipwright:dev-task` | Pick the next ready task and build it — tests first, then implementation, then open a PR |
 | `/shipwright:review` | Deep single-pass code review of an open PR with inline comments |
 | `/shipwright:patch` | Fix failing CI and unresolved review findings on open PRs |
-| `/shipwright:deploy` | Merge an approved PR and watch post-merge CI |
+| `/shipwright:merge` | Merge an approved PR and watch post-merge CI |
 | `/shipwright:metrics` | Pull pipeline metrics (cycle time, throughput, first-time quality) |
 | `/shipwright:research` | Load relevant project docs and web research for the current task |
 | `/shipwright:research-docs` | Refresh docs that have drifted from the code |
@@ -98,8 +98,7 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 
 | Skill | What it does |
 |-------|--------------|
-| `agent-admin` | Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions, API tokens, and plugins |
-| `investigate-cron` | Diagnose why a cron run behaved unexpectedly — finds the session transcript by cron name and time |
+| `investigate-stuck` | Diagnose why a specific PR or task didn't proceed — checks the work queue, task-store and live GitHub state, then explains each dispatch from its session transcript |
 | `learning-capture` | Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly |
 | `task-store` | Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks |
 
@@ -115,7 +114,7 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 The plugin lives at `plugins/shipwright/` in the repo and is structured around four directories:
 
 - **`commands/`** — every slash command listed above, as individual TypeScript files
-- **`skills/`** — autonomous behavior scripts (`agent-admin`, `entropy-scan`, `test-readiness`, and more)
+- **`skills/`** — autonomous behavior scripts (`entropy-scan`, `test-readiness`, and more)
 - **`scripts/`** — task-store adapters, `check-docs-freshness.ts`, and supporting tooling
 - **`references/`** — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`)
 

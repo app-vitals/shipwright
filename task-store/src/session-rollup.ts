@@ -53,7 +53,7 @@ export interface SessionRollupTaskLike extends ReadyTaskLike {
 
 /** The minimal Session shape needed to report `archived`. See the file-level
  * doc comment for why this is a separate, optional parameter. */
-export interface SessionRollupSessionLike {
+interface SessionRollupSessionLike {
   archivedAt?: string | Date | null;
 }
 

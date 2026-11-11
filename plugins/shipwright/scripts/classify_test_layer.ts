@@ -4,7 +4,7 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type LayerName = "unit" | "integration" | "smoke" | "e2e";
+type LayerName = "unit" | "integration" | "smoke" | "e2e";
 
 export type LayerDef = {
   name: LayerName;
@@ -16,24 +16,24 @@ export type LoadDefsResult = {
   source: "test-system.md" | "defaults";
 };
 
-export type ParsedDecision = {
+type ParsedDecision = {
   layers: LayerName[];
   added: string[];
   retired: string[];
 };
 
-export type ConformanceDeviation = {
+type ConformanceDeviation = {
   module: string; // the directory pattern that prescribed the layer (e.g. "time/**")
   prescribed: LayerName;
   observed: LayerName;
 };
 
-export type ConformanceReport = {
+type ConformanceReport = {
   checked: boolean; // false when test-system.md is absent (defs come from defaults)
   deviations: ConformanceDeviation[];
 };
 
-export type FileReader = (path: string) => Promise<string>;
+type FileReader = (path: string) => Promise<string>;
 
 // ─── Generic suffix-based defaults ────────────────────────────────────────────
 // Project-agnostic layer definitions relying solely on file-suffix conventions.

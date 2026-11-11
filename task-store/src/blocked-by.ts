@@ -13,7 +13,8 @@
  * does not suppress the dependency gate.
  *
  * Dependency-satisfied rules (mirrors ready.ts):
- *   1. dep.status ∈ { merged, done, deploying, deployed, cancelled } → satisfied
+ *   1. dep.status ∈ CLOSED_STATUSES (merged, done, deployed, released,
+ *      cancelled) → satisfied
  *   2. same-branch dep with status ∈ { pr_open, approved } → satisfied (bundled)
  *   3. anything else → not satisfied (including cross-branch pr_open without a
  *      verified merge — the task-store has no GitHub access, so we never treat

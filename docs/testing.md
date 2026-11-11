@@ -20,7 +20,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (the merge-blocking gate)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (local command; GitHub CI runs different checks)
 task test         # bun test (all packages)
 task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 90/89 lines/functions (scripts/check-coverage.ts)
 ```
@@ -28,11 +28,14 @@ task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on
 Run a single package or file directly:
 
 ```bash
-bun test --filter metrics            # one workspace
-bun test --filter agent
-bun test --filter plugins/shipwright
+cd metrics && bun test               # one workspace (each package.json's `test` script)
+cd agent && bun test
+cd plugins/shipwright && bun test
 bun test path/to/file.test.ts        # one file
+bun test '**/*.unit.test.ts'         # one layer, via positional glob
 ```
+
+> `bun test` has no real `--filter` flag — it is silently ignored and the next word is treated as a path-substring filter, so `bun test --filter agent` would also match `admin/src/agent-*.test.ts`. Run from inside the package or pass positional paths/globs.
 
 The marketing site is **not** part of the root `bun test` scan — run its Playwright suite separately:
 
@@ -46,15 +49,15 @@ cd site && npm test                  # playwright (*.spec.ts)
 
 | Component | Layers in use | Run command |
 |---|---|---|
-| Plugin (`plugins/shipwright`) | unit, content | `bun test --filter plugins/shipwright` |
-| Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
-| Agent (`agent`) | unit, integration (real I/O), smoke | `bun test --filter agent` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
-| Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
-| Chat (`chat`) | unit, integration, smoke | `bun test --filter chat` |
-| Task Store (`task-store`) | unit, integration, smoke | `bun test --filter task-store` |
-| MCP Server (`mcp-server`) | unit, integration, smoke | `bun test --filter mcp-server` |
+| Plugin (`plugins/shipwright`) | unit, integration (real subprocess/filesystem I/O), content | `cd plugins/shipwright && bun test` |
+| Metrics (`metrics`) | unit, integration, smoke, e2e | `cd metrics && bun test` (unit/integration/smoke); `task e2e` (e2e) |
+| Agent (`agent`) | unit, integration (real I/O), smoke | `cd agent && bun test` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
+| Admin (`admin`) | unit, integration, smoke, e2e | `cd admin && bun test` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
+| Chat (`chat`) | unit, integration, smoke | `cd chat && bun test` |
+| Task Store (`task-store`) | unit, integration, smoke | `cd task-store && bun test` |
+| MCP Server (`mcp-server`) | unit, integration, smoke | `cd mcp-server && bun test` |
 
-The plugin has **no integration/smoke/e2e layer** (no HTTP surface, no external dependencies). Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-redirect.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
+The plugin has **no smoke/e2e layer** (no HTTP surface, no browser surface). The plugin has no integration test; everything in it is unit or content. Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-redirect.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
 
 ## Speed budgets
 
@@ -73,11 +76,11 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 - **Time:** any production code path that calls `new Date()` / `Date.now()` non-trivially must accept a `Clock` interface; tests inject `FixedClock(t)`. Raw `Date.now()` in code under test is a bug.
 - **External HTTP:** service clients (`TaskStoreClient`, `GithubClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` recorded fixture doubles replaying fixture data from `src/fixtures/<service>/*.json` (versioned JSON committed to the repo).
 - **No global state:** **no `mock.module()`**, **no `global.fetch` / `global.*` overrides.** Bun runs test files in the same process, so module-level mocks and global mutation leak across sibling suites. Each test must be independently runnable, order-independent.
-- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests, and `DATABASE_URL_SHIPWRIGHT_CHAT` for chat DB integration tests (suites skip automatically when the respective var is absent).
+- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests. CI no longer provisions a chat database (CHX-3.3): the chat service is hosted and tested in `app-vitals/agent`, and its suites were removed from this repo (CHX-4.1). Suites skip automatically when the respective var is absent.
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
+GitHub CI gates run: **lint → check-strings → typecheck → check-config-docs → check-admin-spec-and-types → test:coverage → secret-scan**, with layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+. (Note: the local `task ci` command includes `check-version-sync` in place of `check-admin-spec-and-types`, so running `task ci` locally does not fully replicate the CI gate.)
 
 The coverage gate is an absolute threshold:
 

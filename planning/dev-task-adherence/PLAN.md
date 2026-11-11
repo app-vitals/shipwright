@@ -1,0 +1,309 @@
+# Plan: dev-task step adherence
+
+Session: `dev-task-adherence` · Repo: `app-vitals/shipwright`
+
+Source: Slack discussion between Dan, Dave and the agent (2026-10-09/10). Approved by Dan; Dave to correct anything afterwards.
+
+## Goal
+
+Cut prompts as far as possible while quality and step-following stay high. The steps are the product: skipping one is a defect even when CI passes. The "how" is what gets cut. One prompt at a time, judged on real production runs.
+
+## Evidence
+
+- 9 of 9 sampled dev-task sessions (agent: VRW-1.1, VRW-1.2, PAU-4.2; Dan's sample: PAU-1.10, PAU-1.8, SSX-3.1, SSX-2.2, CDV-1.1, PRL-1.1) dispatched no implementation or spec-compliance subagent and edited files inline (Python/cat heredocs). Skill loading was fine; CI passed, so outcome metrics did not show it.
+- `dev-task.md` is ~1,400 lines, mostly mechanics. The prompt audit flags it as ~18k tokens/run (~2.3M tokens/week) but only reads markdown and token cost; it cannot see skipped steps.
+- No sandbox exists. The audit's evals run in git worktrees and cannot stand in for production runs. Evals are out of scope for this session.
+
+## Design
+
+**Decisions from the discussion**
+- All dev-task steps are mandatory. Step 8.5 (docs-refresher) is always dispatched; the agent decides inside whether docs need updating.
+- Enforcement is automatic and after the run. No extra steps are added to any phase.
+- Rollout is an A/B on real runs, ~100 runs per arm, random split per run, one prompt at a time.
+
+**Adherence measurement (DTA-1.2).** Admin already stores per-run `AgentCronRunSkillUsage` rows (`kind`, `name`, `invocations`); subagent dispatches appear as `agent:<subagent_type>`. The adherence report compares each run to a per-command required-steps table. No schema or agent-side change. A dispatch proves a step started, not that it was done well.
+
+**Variant switch (DTA-1.3).** `PHASE_COMMANDS` in `agent/src/loop-orchestrator.ts` is a fixed phase-to-command map. Add a configured share of runs that use an alternate command, and record the variant per run so results can be grouped.
+
+**Required steps for dev-task (all mandatory)**
+
+| Step | Proof of running |
+|---|---|
+| 5 Implementation subagent | `agent:` dispatch |
+| 6 Simplify | marker needed; unmeasured at first |
+| 6.5 Spec compliance | `agent:` dispatch |
+| 7 Requirements verification | marker needed; unmeasured at first |
+| 8 Pre-ship checks | lint/test commands ran (partial) |
+| 8.5 Docs refresh | `agent:shipwright:docs-refresher` dispatch (a skip reason is fine) |
+| 9, 9b, 10 | PR, CI, handoff visible in outcomes |
+
+CI-fix subagents (9b) run only on failure and are not required per run.
+
+## Tasks
+
+| ID | Task | Depends on | Review |
+|---|---|---|---|
+| DTA-1.1 | One line in `dev-task.md`: task size / docs-only is never grounds to skip a step | none | Dave (PR) |
+| DTA-2.1 | Machine-readable required-steps table for dev-task | none | Dan, Dave |
+| DTA-1.2 | Adherence report from existing admin run data | 2.1 | none |
+| DTA-1.3 | Per-run command variant switch in the loop orchestrator | none | Dave |
+| DTA-2.2 | Trimmed dev-task variant (spine + references/) | 2.1 | Dave |
+| DTA-2.3 | Trial ~100 runs/arm, stop condition set beforehand (HITL) | 1.2, 1.3, 2.2 | Dan, Dave |
+| DTA-3.1 | Check patch/review/deploy adherence, pick next prompt (HITL) | 1.2, 2.3 | Dan, Dave |
+| DTA-4.1 | Adherence metric in prompt-audit | 1.2 | none |
+| DTA-4.2 | Quiet `unresolvable-path` by default (optional) | none | none |
+
+**Dependency note:** DTA-1.2 depends on DTA-2.1 (it consumes the table file), a small change from the thread's draft where 1.2 had no dependency.
+
+**Order:** 1.1, 1.3, 2.1 and 4.2 are ready immediately; 1.2 and 2.2 follow 2.1; 2.3 follows 1.2/1.3/2.2; 3.1 and 4.1 follow.
+
+## Breaking Change Safety
+
+All tasks are additive (a prompt line, a new table file, a new report, an optional variant path off by default, a new metric, a rule default). Safe to deploy standalone: yes for every task. The variant switch must default to 0% so nothing changes until the trial starts.
+
+## Safeguards
+
+- DTA-1.2 changes no behavior: measure before changing prompts.
+- The trimmed command goes to a share of runs only.
+- Any metric must reproduce the 9-of-9 finding before it is trusted.
+- Trial stop condition: adherence no lower, patch cycles and CI pass no worse. ~19 dev-task sessions/day on one agent means ~10 days for 100 runs per arm at a 50/50 split.
+
+## Decision Log
+
+- Added DTA-1.2 -> DTA-2.1 dependency: the report consumes the table file.
+- DTA-2.3 and DTA-3.1 marked HITL: they are human-run trial and analysis steps with no code diff.
+- Marker-based measurement of Steps 6 and 7 deferred until first adherence numbers exist, to avoid adding output steps.
+
+## Addendum (2026-10-13): DTA-5.1 — fix Step 5 dispatch detection
+
+DTA-2.3 blocked on `adherence_report_cannot_score_trial`: the report's grouping-by-variant
+half was already fixed by DTA-1.4 (byCommandVariant, PR #4246, merged/deployed 2026-10-12).
+The remaining half — step detection seeing the Step 5 dispatch in only 3/201 task-bearing
+runs since 2026-10-08 — is a real bug, root-caused by reading the code (no re-investigation
+needed):
+
+**Root cause.** `RunTelemetryAccumulator.observeContent()` in `agent/src/run-telemetry.ts`
+(~line 151) only recognizes a subagent dispatch when the stream-json tool_use block's
+`name === "Agent"`, and only populates `subagentByToolUseId` for that same name (~line 157).
+The Claude CLI's stream can emit either `"Agent"` or `"Task"` for the identical dispatch
+tool — `agent/src/progress-milestones.ts` (earlier, PR #2906) already encodes this duality,
+mapping both names to the `"delegating"` phase in its `TOOL_PHASE_MAP`. `run-telemetry.ts`
+(later, PR #3982) never adopted that precedent, so whenever a real run's CLI build emits
+`"Task"` instead of `"Agent"`, the Step 5 dispatch is invisible to `invocationsOf()` /
+`customImplementer` in `admin/src/coding/dev-task-adherence.ts`, and `step5Ran` evaluates false
+even though Step 5 genuinely ran.
+
+**Fix (DTA-5.1):** widen both checks in `run-telemetry.ts` to `name === "Agent" || name ===
+"Task"`. Single file, no architecture decision, no breaking change — additive widening of a
+string check. `admin/src/coding/dev-task-adherence.ts` needs no change; it already consumes
+`SkillUsageRow[]` correctly once the rows are populated right.
+
+| ID | Task | Depends on | HITL |
+|---|---|---|---|
+| DTA-5.1 | Recognize both `Agent` and `Task` tool names in `run-telemetry.ts` dispatch detection | none | no |
+
+**Breaking Change Safety:** additive string-check widening. Safe to deploy standalone: yes.
+
+**Note for whoever retries DTA-2.3:** once DTA-5.1 merges and deploys, re-run the adherence
+report over a fresh window and confirm the dispatch-detection rate against real runs before
+resetting DTA-2.3 to pending — not done automatically here.
+
+## Addendum (2026-10-21): DTA-2.3 retried; real root cause was a pre-telemetry data gap, not the matcher
+
+DTA-2.3 was reset to pending on 2026-10-20 after confirming DTA-5.1 and DTA-1.4 had both
+deployed. Before starting the trial, we cross-checked the live report against real
+transcripts (via another agent, the one named `doc`) to settle whether the "mostly skipped" numbers were
+still a detection bug.
+
+**Finding: the matcher is correct.** Every dispatch observed in real transcripts used tool
+name `Agent` (never `Task`); `run-telemetry.ts` already handles both. No further matcher fix
+needed.
+
+**Real cause: `AgentCronRunSkillUsage` didn't exist before PR #3982 (merged 2026-10-08).**
+Joining 146 completed+dispatched runs against the report: 124 (from 09-21 to 10-08) have
+null `turns`/`toolCalls`/`claudeCodeVersion`/`pluginVersion` — no telemetry was ever
+persisted, because the accumulator didn't exist yet. 12 more are legitimately
+"skipped" (docs-refresher-only dispatch, no implementer). Only 1 (`SPL-2.8`) is a real
+miss, and it's the same small, still-live pattern described below. Restricting to
+`from=2026-10-10` (first full day with telemetry live) gives a more honest 9/102 (8.8%)
+Step 5 ran-rate.
+
+**Known live limitation: stalled-and-resumed runs misattribute their dispatch.** When a run
+dispatches the implementer, then stalls without completing (`completedAt` stays null), a
+later resume reuses the same Claude session (`sessionId`) but gets a fresh
+`AgentCronRun` row — its own telemetry only covers its own turns, so the dispatch is
+invisible to the resumed row, and the stalled row never reports at all. Confirmed via
+`SPL-2.8`, and separately via `AEP-3.1`/`AEP-3.2` (dispatch confirmed in transcript,
+`completedAt: null`). Small (affects a single-digit percentage of runs) but real; not
+fixed here. Likely symmetric across trial arms, so not expected to bias the A/B
+comparison, but should be called out in the final write-up rather than silently absorbed.
+
+**Decision:** started the DTA-2.3 trial on 2026-10-20 on doc, warchild and maverick
+(`SHIPWRIGHT_LOOP_DEV_TASK_ALT_COMMAND=/shipwright:dev-task-lean`,
+`SHIPWRIGHT_LOOP_DEV_TASK_ALT_SHARE=50`) without a report code fix — the pre-telemetry gap
+is purely historical, and every run the trial generates from 2026-10-20 forward already has
+real telemetry. DTA-2.3's own description was updated with: (1) use `from=2026-10-20` when
+reading the final comparison, not all-time, and (2) treat the resumed-run gap as a documented
+caveat, not a regression signal.
+
+## Addendum (2026-10-21): required-steps table covers only 3 of 9 steps; most of the rest is already capturable without new agent instrumentation
+
+While verifying the report, we compared `references/required-steps/dev-task.json` (DTA-2.1)
+against what `admin/src/coding/dev-task-adherence.ts`'s `evaluateRun()` actually implements.
+`isDispatchStep()` only treats a step as measurable when `proofOfRunning` starts with
+"agent dispatch", and the switch statement only has cases for steps `5`, `6.5`, `8.5`. The
+table declares 7 of 9 steps `measurable: true` (everything except 6 and 7), but only 3 of
+those 7 are wired up — steps `8`, `9`, `9b`, and `10` silently fall through to
+"unmeasured", identically to the genuinely-unmeasured 6/7, even though the table claims
+otherwise.
+
+Steps 2 and 4 are not rows in `references/required-steps/dev-task.json` (the table has 9 entries: 5, 6, 6.5, 7, 8, 8.5, 9, 9b, 10); the proof types for them below are proposed additions, not existing table values.
+
+Steps 0/1/3 (toolchain detection, fetch/validate, prompt construction) have no independent
+proof of running — any task-bearing run already proves they happened, so they don't need a
+table entry at all.
+
+Breaking down what's actually needed for the remaining gap:
+
+| Step | Proof type (per table) | Status | What's needed |
+|---|---|---|---|
+| 2 (Mark In-Progress) | _proposed addition — not in the table_ | not wired | Join report against the task's own `claimedAt`/`startedAt` — already in the task store, no new instrumentation. |
+| 4 (Set Up Worktree) | _proposed addition — not in the table_ | not wired | Join against git/GitHub state (branch, PR existence) — already checked live by dev-task itself, just not persisted for the report to read. |
+| 6 (Simplify) | marker needed | unmeasured (by design) | New marker. |
+| 6.5 (Spec Compliance Check) | agent dispatch | wired | — |
+| 7 (Requirements Verification) | marker needed | unmeasured (by design) | New marker. |
+| 8 (Pre-Ship Checks) | lint/test ran | not wired | **Already fully captured** — `POST /verification-checks` (task-store, LVB-5.1) records every check's `taskId`/`checkName`/`status` today. Report just needs to query `GET /verification-checks?taskId=` and join. No new instrumentation. |
+| 8.5 (Auto-Refresh Docs) | agent dispatch | wired | — |
+| 9 (Push & PR) | PR visible in outcomes | not wired | Join against the task's own `pr`/`prCreatedAt` field or the PR record. |
+| 9b (CI Gate) | CI/handoff visible in outcomes | not wired | Join against the PR record's CI/outcome fields (`ciFixAttempts`, `mergeCommit`, etc.), already tracked. |
+| 10 (Update Queue & Handoff) | handoff visible in outcomes | not wired | The table's `measurable: true` claim for step 10 is wrong: nothing persisted records that the handoff print happened. Flip it to unmeasured in the table and add a marker (same class as 6/7). |
+
+So the gap is smaller than it first looked. Of the table's untracked steps (8, 9, 9b, 10, plus 6 and 7 by design), 8, 9 and 9b need only a report-side join against data already
+recorded in the task store/PR records, as do the two proposed additions (2, 4) — no agent-side changes. Only 6, 7, and 10 need a new marker (same mechanism as the
+existing `[skip-reason:...]`/`[silent]` convention).
+
+**Next:** break this into scoped follow-up tasks (join-based steps first, since they're
+lower-risk and higher-value; marker-based steps second) via a fresh planning pass on this
+same session.
+
+## Addendum (2026-10-22): DTA-6.x — report-side joins for steps 2, 8, 9, 9b
+
+Follow-up planning pass on the gap above. Two refinements during design:
+
+- **Step 4 dropped from the plan.** A worktree is local/ephemeral — there's no persisted
+  signal for "the worktree was created," only a live `git`/`gh` query per run, which is
+  heavier than a join and only meaningful close to real-time (a branch can be deleted/merged
+  later). Since the pipeline is sequential, a PR existing (step 9) already transitively
+  proves step 4 happened. No dedicated step 4 check.
+- **No new task-store client needed.** `admin/src/coding/task-store-fetchers.ts`'s
+  `createTaskStoreFetchers` is already the admin service's reusable, dependency-free
+  task-store HTTP client (single admin token, injectable fetch). Extend it instead of adding
+  a new one.
+
+**Design**
+
+- `admin/src/coding/task-store-fetchers.ts`: add three lookups, called once per task-bearing
+  run's `itemId`:
+  - `getTask(itemId)` → `{startedAt, pr, prCreatedAt, mergedAt, deployedAt}` — step 2
+    (`startedAt` set) and step 9 (`pr`/`prCreatedAt` set).
+  - `getPrByNumber(repo, pr)` → PR record's CI/outcome fields — step 9b.
+  - `getVerificationChecks(itemId)` → `GET /verification-checks?taskId=` — step 8.
+- `admin/src/dev-task-adherence.ts`: `evaluateRun()` takes an optional enrichment object
+  (task fields + verification checks + PR fields) alongside the existing `SkillUsageRow[]`;
+  adds step cases for `2`, `8`, `9`, `9b` the same way `5`/`6.5`/`8.5` work today.
+  `DevTaskAdherenceService.report()` fetches enrichment per task-bearing run.
+- **N+1 accepted for now.** `GET /verification-checks` has no bulk mode (confirmed in its
+  schema — `taskId` XOR `prId` XOR `repo`+`checkName`, single-parent only). Realistic report
+  windows are ~100-200 runs — bounded, not unbounded, and this is an on-demand admin report,
+  not a hot path. A bulk endpoint is a future optimization if report latency becomes a
+  problem, not scoped here.
+- Batch 2 (new markers for steps 6, 7, 10) stays deferred to its own follow-up tasks, same
+  `[skip-reason:...]`-style convention — not part of this addendum.
+
+**Task breakdown**
+
+| ID | Task | Depends on | Layer | Hours | Complexity | Model | HITL |
+|---|---|---|---|---|---|---|---|
+| DTA-6.1 | feat: add task/PR/verification-check lookups to task-store-fetchers | — | Shared | 2 | 2 | haiku | |
+| DTA-6.2 | feat: wire steps 2, 8, 9, 9b into dev-task-adherence report | DTA-6.1 | Background | 4 | 3 | sonnet | |
+
+**Dependency Map**
+
+```
+[START]
+  └─ DTA-6.1: add task/PR/verification-check lookups (no deps)
+        └─ DTA-6.2: wire steps 2, 8, 9, 9b into report (needs 6.1)
+```
+
+```
+Task     | Depends on | Blocks | HITL
+DTA-6.1  | —          | 6.2    |
+DTA-6.2  | 6.1        | —      |
+```
+
+**Breaking Change Safety**
+
+Both additive (new fetcher methods, new optional enrichment param with existing behavior
+unchanged when absent). Safe to deploy standalone: yes for both.
+
+**HITL scan:** no tasks require human steps — pure code, no infra/secrets/`.claude/**` paths.
+
+## Addendum (2026-11-03): DTA-9.x — patch prompt A/B (DTA-3.1's patch outcome)
+
+DTA-2.3 shipped the trimmed dev-task (DTA-7.1 promotes it; DTA-8.x makes the report cheap and adds per-arm
+outcome metrics). Next prompt: **patch**. Chosen with Dan on evidence from the `doc` agent's runs since 2026-10-20.
+
+**Evidence**
+- `patch.md` is 2,549 lines / 140 KB, the largest command (review 106 KB, dev-task 74 KB, deploy 67 KB).
+- 8 of 172 task-bearing patch runs dispatched any subagent; 110 pushed a commit with no subagent dispatch
+  (inline `sed`/Python edits seen in spot checks). Patch is already cheap (~$0.59, ~11 turns per run), so this is
+  a step-adherence problem, not a cost problem.
+- dev-task lean cost more per run than default ($1.16 vs $0.90, ~43 vs ~22 turns) because it runs the steps the default
+  skips. Main-session behaviour was the same in both arms (~19 vs ~18 tool calls, ~2% errors); the extra turns are
+  subagents. The DTA-2.3 note omitted cost. Record cost beside adherence in every trial.
+- Lean reference load rates (98 runs): push-and-ci 27%, pre-ship-checks 24%, handoff 21%, implementation-dispatch 14%,
+  worktree-recovery 4%, task-lifecycle 2%. Runs that read pre-ship-checks recorded `/verification-checks` 24/24, runs that
+  did not 8/74 (confounded). Guards that must run should live in the spine, not behind a reference.
+- Patch volume is ~9 runs/day (vs ~19 for dev-task), so a trial needs a skewed split or a smaller n.
+
+**Design decisions**
+- A sed-style conflict-marker fix counts as skipping the fix subagent: no size exemption, same rule as dev-task.
+- The baseline rides the existing admin adherence report (fleet-wide `AgentCronRunSkillUsage` rows plus task-store/PR
+  joins). No transcript scorer; transcripts are only used for reference-load tallies (per-agent script, DTA-9.4).
+- First cut scores lane-agnostic steps (fix dispatch on non-no-op runs, push, patchCycles, findings ledger, pre-claim
+  release). Per-lane scoring and guard markers wait for baseline numbers.
+- Trial reuses the generic `SHIPWRIGHT_LOOP_PATCH_ALT_COMMAND` / `_ALT_SHARE` switch at 70% lean.
+- Stop condition, set before starting: patch adherence no lower than default; patch cycles and CI pass no worse; cost
+  per run recorded beside adherence.
+- Every prompt trial leaves a learnings file (`planning/dev-task-adherence/learnings-{prompt}.md`): baseline, drop
+  audit, reference load rates, cost vs adherence, surprises.
+
+| ID | Task | Depends on | Layer | Hours | Complexity | Model | HITL |
+|---|---|---|---|---|---|---|---|
+| DTA-9.1 | feat: add patch required-steps table with lane field | none | Shared | 2 | 2 | haiku | |
+| DTA-9.2 | feat: score patch runs in the adherence report | 9.1, 8.1, 8.3 | Background | 6 | 4 | sonnet | |
+| DTA-9.3 | feat: add cost per run and patch guardrail metrics to the report | 9.2, 8.2 | Background | 4 | 3 | sonnet | |
+| DTA-9.4 | chore: add prompt-trial tally script and dev-task learnings | none | Shared | 4 | 3 | sonnet | |
+| DTA-9.5 | Read the patch baseline and confirm trial scope | 9.2, 9.4 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-9.6 | docs: audit what patch-lean may drop from patch.md | none | Shared | 4 | 3 | sonnet | |
+| DTA-9.7 | feat: add patch-lean command | 9.1, 9.6 | Shared | 8 | 5 | opus | |
+| DTA-9.8 | Start the patch trial | 9.5, 9.7, 9.3 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-9.9 | Patch trial readout, learnings and next prompt | 9.8 | Shared | 3 | 2 | haiku | ⚠ HITL |
+
+```
+[START]
+  ├─ DTA-9.1
+  │     └─ DTA-9.2 (needs 9.1, 8.1, 8.3) ── DTA-9.3 (needs 9.2, 8.2)
+  ├─ DTA-9.4
+  ├─ DTA-9.6
+  │     └─ DTA-9.7 (needs 9.1, 9.6)
+  └─ DTA-9.5 (needs 9.2, 9.4)
+        └─ DTA-9.8 (needs 9.5, 9.7, 9.3)
+              └─ DTA-9.9 (needs 9.8)
+```
+
+**Breaking Change Safety:** all additive. Generalizing the report must leave dev-task output unchanged; `patch-lean`
+is only reachable through the ALT env vars. Safe to deploy standalone: yes for every task.
+
+**HITL scan:** 9.5, 9.8, 9.9 are human-run steps with no code diff (9.8 needs agent-admin access for env vars).
+No `.claude/**` paths.

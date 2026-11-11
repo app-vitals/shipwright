@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Mechanical unaddressed-findings computation gate (PVD-1.1).
 //
-// Extracts agent/src/check-patch.ts's private `hasUnaddressedFindings` (and its
+// Extracts agent/src/coding/check-patch.ts's private `hasUnaddressedFindings` (and its
 // three helper functions) into a pure, exported function plus a CLI
 // entrypoint, mirroring compute-review-verdict.ts's structure (DRO-1.1) —
 // this is one layer upstream of that gate: `hasUnaddressedFindings` computes
@@ -20,7 +20,7 @@
 // asking the LLM to recompute the definition by hand.
 //
 // A qualifying review is excluded from counting as an unaddressed finding by
-// either of two exclusions:
+// the exclusions audited in the PHS-4.1 block below, among them:
 //   1. isAddressedByAuthorReply (CPF-2.3) — a third-party review addressed by a
 //      subsequent PR-author reply. Scoped to the real PR author via `prAuthor`
 //      (RAS-1.1), which defaults to `currentUser` when absent.
@@ -37,7 +37,7 @@
 // confirmed isResolvedByLedger covers every case they caught. isSelfCleanApprove
 // and isSupersededBySelfReview remain exported: review.md's Step 5.5 still calls
 // them directly to decide what to durably write to the ledger in the first
-// place (PFL-2.1), and agent/src/check-patch.ts's hasMergeOnlyStaleFindings
+// place (PFL-2.1), and agent/src/coding/check-patch.ts's hasMergeOnlyStaleFindings
 // still uses isSelfCleanApprove for its own, unrelated staleness check.
 // isResolvedByPriorFindingsStatus had no other caller and is fully removed.)
 //
@@ -51,6 +51,48 @@
 //      (see patch.md's own admission of the same gap), so this exclusion
 //      cannot reuse isAddressedByAuthorReply's review-level comparison.
 //
+// PHS-4.1 audit — every "handled finding" exclusion, and whether it survives.
+//
+// Criterion for removal: a ledger entry (review-source resolved/superseded, or
+// patch-source rejected) is guaranteed to exist for the same scenario by the time
+// the exclusion matters, so every PHS-1.1 characterization test would still pass
+// through isResolvedByLedger / isRejectedByPatchLedger alone. No exclusion met it,
+// so none was removed and no test changed.
+//
+//   isResolvedByLedger (PFL-3.2) .......... KEPT — the authoritative path.
+//     Tests: "ledger exclusion is per review", "ledger-resolved sole qualifying
+//     review short-circuits...", "excludes a THIRD-PARTY review's finding via a
+//     matching ledger entry", "excludes a finding via the ledger even when...".
+//   isRejectedByPatchLedger (PHS-1.2) ..... KEPT — authoritative path for patch.
+//     Tests: the "PHS-1.2 patch-source rejected ledger entries" suite.
+//   isSelfCleanApprove (CPF-2.1) /
+//   isSupersededBySelfReview (DRO-1.2) .... REMOVED (PFL-4.1, restored PFL-5.1,
+//     removed again PFL-5.4) — isResolvedByLedger is the sole path now that
+//     review.md's Step 11 ledgers a self-review at post time (PFL-5.2).
+//   isSupersededBySameHeadApproval (PSL-1.1) KEPT — a third-party reviewer's own
+//     later APPROVED has no ledger entry (the review pipeline only attests the
+//     agent's own reviews, patch only writes after a dispatch); dropping it would
+//     re-dispatch patch on every such PR just to write a `rejected` entry.
+//     Tests: the "isSupersededBySameHeadApproval / hasUnaddressedFindings
+//     (PSL-1.1)" suite, "same-head supersede requires state APPROVED".
+//   isAddressedByAuthorReply (CPF-2.3) .... KEPT, explicitly — a PR author's
+//     reply to a human review ("fixed in abc123") never gets a ledger entry, so
+//     this is the only thing clearing it.
+//     Tests: "followed by a PR-author reply (mirrors PR #1432)", "reply predates
+//     the review", the prAuthor (RAS-1.1) pair, "author reply at the exact review
+//     timestamp does not address the review (strict >)".
+//   isThreadAddressedByAuthorReply (URT-1.1) KEPT — same reasoning as CPF-2.3 for
+//     inline threads: a human reply in a thread leaves no ledger entry.
+//     Tests: the URT-1.1 thread cases and "thread-level exclusion is per thread".
+//
+// Duplicated copies reviewed and kept: agent/src/coding/check-patch.ts's
+// hasMergeOnlyStaleFindings (a different question — stale-commit findings — that
+// shares only isSelfCleanApprove/isAddressedByAuthorReply, imported from here, not
+// copied), agent/src/coding/check-helpers.ts's classifyReviewState/isCleanApproveBody
+// (identity-agnostic reconciler, not a candidacy gate), and check-review.ts (no
+// copy of these predicates). patch.md/review.md prose describing removed logic:
+// none, since nothing was removed.
+
 // CLI:
 //   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...],"prAuthor":"pr-author-login"}'
 // or pipe the same JSON blob via stdin. `priorFindingsStatus` and `findings`
@@ -59,16 +101,27 @@
 // `currentUser` is not the PR's author (e.g. review.md's Step 9.5, which
 // gates verdicts on any PR the bot reviews, including third-party PRs).
 
+import { canonicalLogin } from "./login-identity.ts";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
-// Mirrors agent/src/check-patch.ts's ReviewNode/ReviewThread/IssueCommentNode/
+// Mirrors agent/src/coding/check-patch.ts's ReviewNode/ReviewThread/IssueCommentNode/
 // PrReviewData type definitions exactly (duplicated here, not imported —
 // plugins/shipwright is a separate, repo-agnostic package from agent/src, see
 // plugins/shipwright/CLAUDE.md; the same rationale compute-review-verdict.ts's
 // VERDICT_APPROVE_LABEL duplication already documents).
+//
+// Every `author` field's `__typename` is optional (RBD-1.1): only callers whose
+// GraphQL query requests it alongside `login` (review.md's Step 3/5.5 query, the
+// only current caller) populate it, with `"Bot"` as the authoritative discriminator
+// for GitHub Apps/bots. This module's own logic never reads `__typename` — it is
+// purely additive for compute-unresolved-comment-check.ts's `isBotOrCiAuthor` (which
+// imports these same types) to consume. Callers/fixtures that omit it (older
+// queries, hand-built test fixtures) are unaffected — this field defaults to
+// `undefined`, never throws, and never changes this module's own behavior.
 
 export interface ReviewNode {
-  author: { login: string };
+  author: { login: string; __typename?: string };
   state: string;
   submittedAt: string;
   commit: { oid: string };
@@ -76,13 +129,25 @@ export interface ReviewNode {
 }
 
 export interface ReviewThread {
+  /**
+   * GraphQL node id (PHS-1.2). Optional: only callers whose query requests
+   * `id` can have a patch-source `rejected` ledger entry honored for the
+   * thread (see threadRef) — absent means the thread is never ledger-settled.
+   */
+  id?: string;
   isResolved: boolean;
   comments: {
+    /**
+     * Total comment count (PHS-1.2). Optional: threadRef falls back to
+     * `nodes.length` when absent, which is only accurate for callers that
+     * fetch every comment — prefer requesting `totalCount`.
+     */
+    totalCount?: number;
     nodes: Array<{
-      author: { login: string };
+      author: { login: string; __typename?: string };
       body: string;
       /**
-       * Optional (mirrors agent/src/check-patch.ts's RVG-2.1 precedent):
+       * Optional (mirrors agent/src/coding/check-patch.ts's RVG-2.1 precedent):
        * only callers that fetch multiple thread comments with `createdAt`
        * (review.md's Step 5.5, widened for URT-1.1) can populate this.
        * Callers whose GraphQL query doesn't request it — or that only fetch
@@ -96,7 +161,7 @@ export interface ReviewThread {
 }
 
 export interface IssueCommentNode {
-  author: { login: string };
+  author: { login: string; __typename?: string };
   body: string;
   createdAt: string;
 }
@@ -118,7 +183,7 @@ export interface IssueCommentNode {
  *               Required in both cases; an empty/whitespace `evidence` is
  *               treated as no attestation for exclusion purposes (PVD-1.3).
  */
-export interface PriorFindingStatus {
+interface PriorFindingStatus {
   ref: string;
   resolved: boolean;
   evidence: string;
@@ -184,7 +249,7 @@ export interface PrReviewData {
 
 // ─── Self-review body matching ────────────────────────────────────────────────
 //
-// Duplicated from agent/src/check-helpers.ts's `isCleanApproveBody` (rather
+// Duplicated from agent/src/coding/check-helpers.ts's `isCleanApproveBody` (rather
 // than imported) because plugins/shipwright is a separate, repo-agnostic
 // package from agent/src — see plugins/shipwright/CLAUDE.md. Mirrors
 // compute-review-verdict.ts's identical duplication of the sibling
@@ -225,14 +290,15 @@ function isCleanApproveBody(body: string): boolean {
  * caught there. Still exported and still called directly by review.md's Step
  * 5.5 (PFL-2.1) to decide which prior self-reviews to durably record as
  * `resolved` in the findings ledger in the first place, and by
- * agent/src/check-patch.ts's `hasMergeOnlyStaleFindings` for its own,
+ * agent/src/coding/check-patch.ts's `hasMergeOnlyStaleFindings` for its own,
  * unrelated stale-review check.
  */
 export function isSelfCleanApprove(
   review: Pick<ReviewNode, "author" | "body">,
   currentUser: string,
 ): boolean {
-  if (review.author.login !== currentUser) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser))
+    return false;
 
   return isCleanApproveBody(review.body);
 }
@@ -266,7 +332,7 @@ export function isAddressedByAuthorReply(
   const reviewedAt = new Date(review.submittedAt).getTime();
   return comments.some(
     (c) =>
-      c.author.login === prAuthor &&
+      canonicalLogin(c.author.login) === canonicalLogin(prAuthor) &&
       new Date(c.createdAt).getTime() > reviewedAt,
   );
 }
@@ -297,7 +363,7 @@ export function isThreadAddressedByAuthorReply(
   const flaggedAt = new Date(first.createdAt).getTime();
   return rest.some(
     (c) =>
-      c.author.login === prAuthor &&
+      canonicalLogin(c.author.login) === canonicalLogin(prAuthor) &&
       c.createdAt !== undefined &&
       new Date(c.createdAt).getTime() > flaggedAt,
   );
@@ -338,14 +404,43 @@ export function isSupersededBySelfReview(
   allReviews: ReviewNode[],
   currentUser: string,
 ): boolean {
-  if (review.author.login !== currentUser) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser))
+    return false;
 
   const reviewedAt = new Date(review.submittedAt).getTime();
   return allReviews.some(
     (r) =>
-      r.author.login === currentUser &&
+      canonicalLogin(r.author.login) === canonicalLogin(currentUser) &&
       new Date(r.submittedAt).getTime() > reviewedAt &&
       isCleanApproveBody(r.body),
+  );
+}
+
+/**
+ * Returns true when `review` (any reviewer) is superseded by a LATER APPROVED
+ * review from the same reviewer (matched via `canonicalLogin`) on the SAME
+ * `commit.oid` (PSL-1.1). A reviewer who posts a body-only COMMENTED review and
+ * then approves the identical head has withdrawn the earlier concern; counting
+ * the stale COMMENTED body as an unaddressed finding produced identical
+ * `patch:deferred:no-op-at-dispatch` dispatches (PRs #2426/#2428).
+ *
+ * An approval on a newer commit supersedes nothing (the reviewer has not seen
+ * the code the COMMENTED review was about, and such a review is no longer at
+ * HEAD anyway), and an approval by a different reviewer never clears someone
+ * else's review. This predicate only concerns review bodies —
+ * `hasUnaddressedFindings` still counts unresolved inline threads separately.
+ */
+export function isSupersededBySameHeadApproval(
+  review: Pick<ReviewNode, "author" | "submittedAt" | "commit">,
+  allReviews: ReviewNode[],
+): boolean {
+  const reviewedAt = new Date(review.submittedAt).getTime();
+  return allReviews.some(
+    (r) =>
+      r.state === "APPROVED" &&
+      canonicalLogin(r.author.login) === canonicalLogin(review.author.login) &&
+      r.commit.oid === review.commit.oid &&
+      new Date(r.submittedAt).getTime() > reviewedAt,
   );
 }
 
@@ -399,6 +494,54 @@ export function isResolvedByLedger(
 }
 
 /**
+ * Derives the ledger `ref` for an inline review thread (PHS-1.2): the thread's
+ * GraphQL node id plus its total comment count, joined by `@`. A new comment
+ * (from the author, a reviewer, or anyone) changes the count and therefore the
+ * ref, so a patch `rejected` entry written for the thread as it stood
+ * self-expires the moment the thread is re-opened for discussion. Returns
+ * `null` when the thread carries no `id` (callers whose query predates
+ * PHS-1.2), in which case no ledger entry can match.
+ */
+export function threadRef(
+  thread: Pick<ReviewThread, "id" | "comments">,
+): string | null {
+  if (!thread.id) return null;
+  const count = thread.comments.totalCount ?? thread.comments.nodes.length;
+  return `thread:${thread.id}@${count}`;
+}
+
+/**
+ * Derives the ledger `ref` for a failing/cancelled-CI patch trigger (SLS-2.1):
+ * `ci:{headSha}:{ciFailureSignature}`, where the signature is patch.md Step
+ * 6b's sorted, comma-joined failing job names (empty for a cancelled-only
+ * state). A new head or a different failing-job set yields a ref with no
+ * ledger entry, so a patch `rejected` entry self-expires exactly like
+ * threadRef's does.
+ */
+export function ciRef(headSha: string, ciFailureSignature: string): string {
+  return `ci:${headSha}:${ciFailureSignature}`;
+}
+
+/**
+ * Returns true when a durable ledger entry exists for `ref` with
+ * `source: "patch"` and `disposition: "rejected"` (PHS-1.2) — patch's record
+ * that it examined the finding and decided not to act on it. Counterpart to
+ * isResolvedByLedger: that predicate honors only `source: "review"`
+ * resolved/superseded entries, and a patch entry never satisfies it (nor does
+ * a review-source `rejected` entry satisfy this one).
+ */
+export function isRejectedByPatchLedger(
+  ref: string | null,
+  findings: PrFinding[],
+): boolean {
+  if (ref === null) return false;
+  return findings.some(
+    (f) =>
+      f.ref === ref && f.source === "patch" && f.disposition === "rejected",
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -425,6 +568,12 @@ export function isResolvedByLedger(
  * entries are written by the code-reviewer subagent independent of whose
  * review is being resolved.
  *
+ * A review or an inline thread is also settled by a `source: "patch"`,
+ * `disposition: "rejected"` ledger entry at its ref (see
+ * isRejectedByPatchLedger, PHS-1.2): `reviewRef(review)` for review bodies,
+ * `threadRef(thread)` for threads. Both refs self-expire (new head / new
+ * comment), so a rejection never outlives the state patch actually examined.
+ *
  * Separately, an unresolved inline thread (isResolved == false) is excluded
  * from the unresolved-threads check when the PR author has replied within
  * that same thread after its first (flagging) comment (see
@@ -434,57 +583,73 @@ export function isResolvedByLedger(
  * against its own timestamps, not the review that (may have) raised it.
  *
  * PFL-4.1 removed `isSelfCleanApprove`/`isSupersededBySelfReview` as
- * exclusions here, on the premise that `isResolvedByLedger` alone covers
- * every case they caught once review.md's Step 5.5 durably records those same
- * judgments to the ledger. That premise breaks for a PR whose only review
- * ever posted is a clean self-approve: Step 5.5 only writes a ledger entry
- * for a *prior* review, evaluated at the start of a *subsequent* review pass
- * — and a PR with nothing new to review (headRefOid unchanged, reviewState
- * already posted) never gets a subsequent pass from check-review.ts's own
- * candidacy gate. No subsequent pass means Step 5.5 never runs, so no ledger
- * entry is ever written, and `isResolvedByLedger` stays false for that review
- * forever (PFL-5.1). Restored here as fallback exclusions alongside
- * `isResolvedByLedger`, not instead of it — a PR that does get re-reviewed
- * and does have a matching ledger entry is unaffected either way.
+ * exclusions here (`isResolvedByLedger` covers every case they caught). PFL-5.1
+ * temporarily restored them as fallbacks for a PR whose only review was a clean
+ * self-approve and so never got a ledger entry; PFL-5.2 closed that gap at the
+ * root (review.md's Step 11 ledgers the self-review at post time), and PFL-5.4
+ * removed the fallbacks again once production confirmed the post-time write.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
   currentUser: string,
 ): boolean {
+  return unaddressedFindingRefs(data, currentUser).length > 0;
+}
+
+/**
+ * The refs of every finding `hasUnaddressedFindings` counts as unaddressed
+ * (PHS-3.1) — empty exactly when it returns false. Unresolved, unsettled
+ * inline threads yield their `threadRef` (or a `thread:<index>` fallback for a
+ * query that predates PHS-1.2 and carries no node id); otherwise each
+ * qualifying review with a non-empty, unreplied body yields its `reviewRef`.
+ * Lets a caller compare "which findings are still open" across two points in
+ * time without re-deriving the exclusion rules.
+ */
+export function unaddressedFindingRefs(
+  data: PrReviewData,
+  currentUser: string,
+): string[] {
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const findings = data.findings ?? [];
   const prAuthor = data.prAuthor ?? currentUser;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current
-  // HEAD, excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
-  // superseded by a later clean self-review (DRO-1.2), and reviews
-  // resolved/superseded per the task-store ledger (PFL-3.2).
+  // HEAD, excluding reviews resolved/superseded per the task-store ledger
+  // (PFL-3.2) and reviews superseded by the same reviewer's later APPROVED on
+  // the same head (PSL-1.1).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
-      !isSelfCleanApprove(r, currentUser) &&
-      !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
-      !isResolvedByLedger(reviewRef(r), findings),
+      !isSupersededBySameHeadApproval(r, reviews.nodes) &&
+      !isResolvedByLedger(reviewRef(r), findings) &&
+      !isRejectedByPatchLedger(reviewRef(r), findings),
   );
 
-  if (qualifyingReviews.length === 0) return false;
+  if (qualifyingReviews.length === 0) return [];
 
   // Check for unresolved threads, excluding ones the PR author has already
   // replied to and addressed within the thread itself (URT-1.1).
-  const unresolvedThreads = reviewThreads.nodes.filter(
-    (t) => !t.isResolved && !isThreadAddressedByAuthorReply(t, prAuthor),
-  );
+  const unresolvedThreadRefs = reviewThreads.nodes
+    .filter(
+      (t) =>
+        !t.isResolved &&
+        !isThreadAddressedByAuthorReply(t, prAuthor) &&
+        !isRejectedByPatchLedger(threadRef(t), findings),
+    )
+    .map((t) => threadRef(t) ?? `thread:${reviewThreads.nodes.indexOf(t)}`);
 
-  if (unresolvedThreads.length > 0) return true;
+  if (unresolvedThreadRefs.length > 0) return unresolvedThreadRefs;
 
   // No unresolved threads — check if any qualifying review has a non-empty
   // body that hasn't been addressed by a subsequent author reply.
-  return qualifyingReviews.some(
-    (r) =>
-      r.body.trim().length > 0 &&
-      !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
-  );
+  return qualifyingReviews
+    .filter(
+      (r) =>
+        r.body.trim().length > 0 &&
+        !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
+    )
+    .map((r) => reviewRef(r));
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────

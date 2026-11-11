@@ -34,6 +34,9 @@ function fakeSessionService(): SessionServiceLike {
 
 function fakeTaskService(): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
@@ -74,6 +77,9 @@ function fakeTaskService(): TaskServiceLike {
       return {} as never;
     },
     async resetSkip() {
+      return {} as never;
+    },
+    async unblock() {
       return {} as never;
     },
     async bulk() {

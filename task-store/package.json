@@ -8,22 +8,23 @@
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "test": "NODE_ENV=test bun test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cross-package.json",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^0.19.0",
+    "@hono/zod-openapi": "^1.0.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
-    "@shipwright/lib": "workspace:*",
+    "@app-vitals/agent-lib": "1.20.1",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
-    "zod": "^3"
+    "zod": "^4"
   },
   "devDependencies": {
+    "@shipwright/admin": "workspace:*",
     "@types/pg": "^8.15.6",
     "bun-types": "^1.3.14",
     "prisma": "^7.10.0",

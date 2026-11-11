@@ -18,6 +18,10 @@ By the `/test-inventory` command. The repo path arrives as `$ARGUMENTS` (default
 
 ### Step 0 — load the decisions registry
 
+See `references/decisions-registry.md` for the shared decisions-registry pattern this
+mirrors — the generic entry schema, ownership, and consumption contract that
+`.claude/shipwright/test-readiness-decisions.md` is one concrete instance of.
+
 1. Check for `.claude/shipwright/test-readiness-decisions.md` in the target repo root.
 2. **If it does not exist**, treat this as "no decisions configured" — the same graceful
    no-op `consolidation-scan` uses for a missing `.claude/shipwright/consolidation-decisions.md`

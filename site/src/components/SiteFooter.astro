@@ -5,7 +5,7 @@
 // "Compare" and "Docs"; `variant="docs"` omits those two (DocsLayout's
 // footer never had them pre-shared-component and AC#3 requires no other
 // content change there) while still keeping "vs Devin".
-import { BOOKING_URL, LICENSE_URL, REPO_URL } from "../consts";
+import { BOOKING_URL, LICENSE_URL, REPO_URL, withUtm } from "../consts";
 
 interface Props {
   variant?: "marketing" | "docs";
@@ -39,7 +39,7 @@ const year = new Date().getFullYear();
     </p>
     <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
       <a href={storyUrl}>Story</a>
-      <a href={REPO_URL}>GitHub</a>
+      <a href={withUtm(REPO_URL, "nav_footer")}>GitHub</a>
       <a href={LICENSE_URL}>MIT License</a>
       <a href={claudeCodeUrl}>Claude Code</a>
       <a href={discussionsUrl}>GitHub Discussions</a>

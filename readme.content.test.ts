@@ -38,3 +38,16 @@ describe("README.md Project status section", () => {
     expect(section).toMatch(/shipwright agent/i);
   });
 });
+
+describe("README.md competitor-naming policy (brand/MESSAGING.md D10)", () => {
+  const content = readFileSync(join(repoRoot, "README.md"), "utf8");
+
+  it("does not name a competitor", () => {
+    const match = content.match(/devin|cursor|openhands|augment code|copilot/i);
+    expect(match?.[0] ?? null).toBeNull();
+  });
+
+  it("still has the Compare it bullet", () => {
+    expect(content).toMatch(/\*\*Compare it\*\*/);
+  });
+});

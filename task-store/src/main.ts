@@ -12,19 +12,23 @@
  */
 
 import { join } from "node:path";
+import { registerGracefulShutdown } from "@app-vitals/agent-lib/graceful-shutdown";
+import { initSentry } from "@app-vitals/agent-lib/sentry";
 import * as Sentry from "@sentry/bun";
-import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
-import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
-import { createPrismaClient } from "./prisma-client.ts";
+import {
+  createPrismaClientWithPool,
+  enablePoolObservability,
+} from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService, WEBHOOK_TX_TIMEOUT_MS } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
+import { VerificationCheckService } from "./verification-check-service.ts";
 import { createWebhookDispatcher } from "./webhook-dispatcher.ts";
 import { checkWebhookTimeoutBuffer } from "./webhook-timeout-buffer-check.ts";
 
@@ -149,7 +153,10 @@ async function startServer(): Promise<void> {
       "DATABASE_URL_SHIPWRIGHT_TASK_STORE is not set — the Prisma 7 driver adapter needs an explicit connection string",
     );
   }
-  const prisma = createPrismaClient(databaseUrl);
+  const { prisma, pool } = createPrismaClientWithPool(databaseUrl);
+  // Observability only (Sentry VITALS-OS-5T): logs long connection holds and
+  // waiting clients; stopped on graceful shutdown below.
+  const stopPoolObservability = enablePoolObservability(pool);
 
   // Build the outbound event dispatcher when a webhook URL is configured.
   // createWebhookDispatcher itself returns a no-op when the URL is unset, so
@@ -208,6 +215,7 @@ async function startServer(): Promise<void> {
   const sessionService = new SessionService(prisma, undefined, (pairs) =>
     pullRequestService.lookupBlockedPrNumbers(pairs),
   );
+  const verificationCheckService = new VerificationCheckService(prisma);
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -242,11 +250,13 @@ async function startServer(): Promise<void> {
     tokenService,
     pullRequestService,
     sessionService,
+    verificationCheckService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+    pool,
     // Once a shutdown signal has been received, fail readiness immediately
     // (no DB round-trip) so Kubernetes pulls this pod from Service endpoints
-    // as early as possible — see lib/graceful-shutdown.ts.
+    // as early as possible — see @app-vitals/agent-lib/graceful-shutdown.
     checkDbReady: () =>
       isShuttingDown() ? Promise.resolve(false) : checkDbReady(prisma),
   });
@@ -305,7 +315,7 @@ async function startServer(): Promise<void> {
 
   const shutdown = registerGracefulShutdown({
     server,
-    cleanup: [() => prisma.$disconnect()],
+    cleanup: [async () => stopPoolObservability(), () => prisma.$disconnect()],
     serviceName: "task-store",
   });
   isShuttingDown = shutdown.isShuttingDown;

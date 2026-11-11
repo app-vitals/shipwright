@@ -47,7 +47,7 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 /** How often the reaper sweeps for idle sessions. */
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-export interface MountMcpHttpTransportOptions extends CreateMcpServerOptions {
+interface MountMcpHttpTransportOptions extends CreateMcpServerOptions {
   /** Idle-eviction timeout in ms (default: 30 minutes). */
   idleTimeoutMs?: number;
   /** How often to sweep for idle sessions, in ms (default: 5 minutes). */

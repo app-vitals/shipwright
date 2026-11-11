@@ -157,6 +157,9 @@ function fakeAgentTokenService(): TokenServiceLike {
 
 function fakeTaskService(): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },
@@ -201,6 +204,9 @@ function fakeTaskService(): TaskServiceLike {
       return null as never;
     },
     async resetSkip() {
+      return null as never;
+    },
+    async unblock() {
       return null as never;
     },
     async getEvents() {

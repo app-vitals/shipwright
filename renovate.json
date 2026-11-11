@@ -25,6 +25,7 @@
         "ghcr.io/app-vitals/shipwright-agent",
         "ghcr.io/app-vitals/shipwright-metrics",
         "ghcr.io/app-vitals/shipwright-chat",
+        "ghcr.io/app-vitals/agent-chat",
         "ghcr.io/app-vitals/shipwright-task-store",
         "ghcr.io/app-vitals/shipwright-mcp-server"
       ],
@@ -34,6 +35,19 @@
       "description": "Group routine (non-security) minor/patch bumps to cut down PR noise",
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "routine dependency updates"
+    },
+    {
+      "description": "zod 4 and @hono/zod-openapi 1.x are a coupled pair (zod-to-openapi 9 requires zod ^4); keep their updates, including majors, in one PR",
+      "matchPackageNames": ["zod", "@hono/zod-openapi"],
+      "groupName": "zod and zod-openapi",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "The App Vitals agent platform packages (@app-vitals/agent-*) release together; bump them in one PR, majors included, with exact pins. Fallback for .github/workflows/platform-release.yml, which bumps them on each platform release dispatch. Declared after the routine grouping rule so it is not folded into it.",
+      "matchPackageNames": ["/^@app-vitals\\/agent-/"],
+      "groupName": "app-vitals agent platform",
+      "separateMajorMinor": false,
+      "rangeStrategy": "pin"
     }
   ]
 }

@@ -113,7 +113,7 @@ echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
 ### Sizing
 
 The agent pod dominates: **500m CPU / 2Gi memory requests, 8Gi memory limit,
-4Gi ephemeral-storage** (`admin/src/agent-manifest.ts`). Ephemeral-storage was
+4Gi ephemeral-storage** (`agent-manifest.ts` in the `@app-vitals/agent-admin` package). Ephemeral-storage was
 raised from a 1Gi default that left no room for a build step's scratch space
 and caused mid-run evictions; tool caches are pinned to the PVC, so this
 budget only covers genuinely transient writes. Everything else is small.
@@ -153,6 +153,9 @@ For example, the chat admin token that powers the admin console's Chat tab is
 wired via `chat.adminToken.existingSecret` (see
 [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in)), and the task-store bearer token consumed by
 the metrics dashboard is wired via `metrics.provider.taskStoreToken.existingSecret`.
+The bearer registry for `/metrics/*` (`METRICS_API_KEYS`, `name:token:scope` tuples) is wired via
+`metrics.apiKeys.existingSecret` / `existingSecretKey`; point it at the Secret the admin's
+`SHIPWRIGHT_ADMIN_API_KEYS` comes from so the same bearer works on both services (unset: session cookies only).
 The Minikube example values file below leaves the task-store token unset (see
 its comments) since the chart has no equivalent seed-token wiring for
 task-store yet — the metrics dashboard falls back to admin-only data until

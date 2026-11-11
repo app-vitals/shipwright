@@ -32,14 +32,16 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { format } from "node:util";
-
+import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
+import { FLOOR_TOOLS } from "@app-vitals/agent-runtime/claude";
+import { installPlugins } from "@app-vitals/agent-runtime/setup";
 import {
   createTaskStoreClient,
   getCurrentUser,
@@ -47,31 +49,33 @@ import {
   ghJson,
   parseCandidateId,
   resolveAllRepos,
-} from "../agent/src/check-helpers.ts";
+} from "../agent/src/coding/check-helpers.ts";
 import {
-  type CheckPatchDeps,
   buildProductionDeps as buildPatchDeps,
+  type CheckPatchDeps,
   getPatchCandidates,
-} from "../agent/src/check-patch.ts";
+} from "../agent/src/coding/check-patch.ts";
 import {
-  type CheckReviewDeps,
   buildProductionDeps as buildReviewDeps,
+  type CheckReviewDeps,
   getReviewCandidates,
-} from "../agent/src/check-review.ts";
-import { FLOOR_TOOLS } from "../agent/src/claude.ts";
-import { installPlugins } from "../agent/src/setup.ts";
+} from "../agent/src/coding/check-review.ts";
 import {
+  createPatchStateSnapshotter,
+  evaluatePatchOutcome,
+  type PatchStateSnapshot,
+} from "../agent/src/coding/patch-outcome-check.ts";
+import {
+  selectNextWorkItem,
   type WorkPrCandidate,
   type WorkTaskCandidate,
-  selectNextWorkItem,
-} from "../agent/src/work-selector.ts";
+} from "../agent/src/coding/work-selector.ts";
 import {
   type ConsoleMethod,
   type LogFileTeeTarget,
-  type WriteFn,
   realLogFileTeeTarget,
+  type WriteFn,
 } from "./hitl-log-file-tee-target.ts";
-import { computeMissingClones } from "./lib/clone-plan.ts";
 
 // ---------------------------------------------------------------------------
 // Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can
@@ -154,7 +158,6 @@ export type HitlConfig = {
   reposDir: string;
   worktreesDir: string;
   claudeMdTemplate: string;
-  agentPolicyTemplate: string;
   repos: string[];
   authors: string[];
   pollIntervalS: number;
@@ -194,13 +197,6 @@ export function buildHitlConfig(
       "agent",
       "workspace",
       "CLAUDE-HITL.md.template",
-    ),
-    agentPolicyTemplate: join(
-      repoRoot,
-      "agent",
-      "workspace",
-      "state",
-      "agent-policy.md.template",
     ),
     repos: parseHitlRepos(env.SHIPWRIGHT_HITL_REPOS),
     authors: parseHitlAuthors(env.SHIPWRIGHT_HITL_AUTHORS),
@@ -390,30 +386,27 @@ async function waitForHealth(url: string, label: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace provisioning — mirrors agent/src/setup.ts ensureAgentHome()
+// Workspace provisioning — mirrors @app-vitals/agent-runtime setup.ts ensureAgentHome()
 // ---------------------------------------------------------------------------
 
 /**
  * Pure planning step for provisionWorkspace(): given the set of dirs the
  * workspace needs and an injectable existence check, report which dirs are
- * missing and whether CLAUDE.md and agent-policy.md still need to be seeded.
+ * missing and whether CLAUDE.md still needs to be seeded.
  * Kept side-effect free so it's unit-testable without touching the real
  * filesystem.
  */
 export function computeProvisionPlan(
   dirs: string[],
   claudeMdPath: string,
-  agentPolicyPath: string,
   exists: (path: string) => boolean,
 ): {
   missingDirs: string[];
   needsClaudeMd: boolean;
-  needsAgentPolicy: boolean;
 } {
   return {
     missingDirs: dirs.filter((dir) => !exists(dir)),
     needsClaudeMd: !exists(claudeMdPath),
-    needsAgentPolicy: !exists(agentPolicyPath),
   };
 }
 
@@ -425,7 +418,7 @@ export function computeProvisionPlan(
 // processes, touching the filesystem, or booting services.
 // ---------------------------------------------------------------------------
 
-export type HitlStepKind =
+type HitlStepKind =
   | "mkdir"
   | "seed-file"
   | "clone"
@@ -458,7 +451,7 @@ export type HitlStep = {
 };
 
 /** Runs a single planned step. Injected so tests can record instead of act. */
-export type StepExecFn = (step: HitlStep) => void | Promise<void>;
+type StepExecFn = (step: HitlStep) => void | Promise<void>;
 
 /**
  * Plans the workspace provisioning steps: the dirs to create and the template
@@ -477,9 +470,8 @@ export function buildProvisionSteps(
     join(cfg.workspace, ".claude"),
   ];
   const claudeMd = join(cfg.workspace, "CLAUDE.md");
-  const agentPolicy = join(cfg.workspace, "state", "agent-policy.md");
 
-  const plan = computeProvisionPlan(dirs, claudeMd, agentPolicy, exists);
+  const plan = computeProvisionPlan(dirs, claudeMd, exists);
   const steps: HitlStep[] = plan.missingDirs.map((dir) => ({
     kind: "mkdir",
     label: `mkdir ${dir}`,
@@ -492,14 +484,6 @@ export function buildProvisionSteps(
       label: "seeded CLAUDE.md",
       path: claudeMd,
       templatePath: cfg.claudeMdTemplate,
-    });
-  }
-  if (plan.needsAgentPolicy) {
-    steps.push({
-      kind: "seed-file",
-      label: "seeded agent-policy.md",
-      path: agentPolicy,
-      templatePath: cfg.agentPolicyTemplate,
     });
   }
 
@@ -526,47 +510,43 @@ export function buildCloneSteps(
 }
 
 /**
- * Plans the schema/seed steps: prisma generate + migrate for both the
- * task-store and admin services, plus the admin token seed between them.
+ * Plans the schema/seed steps: prisma generate + migrate for the task-store,
+ * migrate for admin (its generated client ships in @app-vitals/agent-admin),
+ * plus the admin token seed between them.
  * Ordering matters — the token seed runs against an already-migrated
  * task-store DB, and admin migrates last.
  */
 export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
-  const prismaArgs = (cmd: "generate" | "deploy"): string[] =>
-    cmd === "generate"
-      ? ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"]
-      : [
-          "bunx",
-          "prisma",
-          "migrate",
-          "deploy",
-          "--schema=prisma/schema.prisma",
-        ];
+  // task-store uses a single prisma/schema.prisma file. admin passes no
+  // --schema: its schema and migrations ship in @app-vitals/agent-admin and
+  // admin/prisma.config.ts points the CLI at them.
+  const prismaArgs = (
+    cmd: "generate" | "deploy",
+    schema?: string,
+  ): string[] => {
+    const schemaArg = schema ? [`--schema=${schema}`] : [];
+    return cmd === "generate"
+      ? ["bunx", "prisma", "generate", ...schemaArg]
+      : ["bunx", "prisma", "migrate", "deploy", ...schemaArg];
+  };
 
   return [
     {
       kind: "exec",
       label: "task-store prisma generate failed",
       startLabel: "running task-store prisma generate...",
-      argv: prismaArgs("generate"),
+      argv: prismaArgs("generate", "prisma/schema.prisma"),
       cwd: join(cfg.repoRoot, "task-store"),
     },
     {
       kind: "exec",
       label: "task-store migrate failed",
       startLabel: "running task-store prisma migrate...",
-      argv: prismaArgs("deploy"),
+      argv: prismaArgs("deploy", "prisma/schema.prisma"),
       cwd: join(cfg.repoRoot, "task-store"),
       env: { DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl },
     },
     buildTokenSeedStep(cfg, DEV_TOKEN),
-    {
-      kind: "exec",
-      label: "admin prisma generate failed",
-      startLabel: "running admin prisma generate...",
-      argv: prismaArgs("generate"),
-      cwd: join(cfg.repoRoot, "admin"),
-    },
     {
       kind: "exec",
       label: "admin migrate failed",
@@ -701,7 +681,7 @@ type ServiceHandle = {
 };
 
 /** A service the bootstrap boots: what to run, where, and with what env. */
-export type ServiceSpec = {
+type ServiceSpec = {
   label: string;
   argv: string[];
   cwd: string;
@@ -823,7 +803,7 @@ interface AgentRecord {
 /** Injectable fetch type so tests can supply a double instead of real network calls. */
 type FetchLike = typeof fetch;
 
-/** Agent Type the hitl agent is created as — mirrors the retired JSON API's default. */
+/** Specialty the hitl agent is created as — mirrors the retired JSON API's default. */
 const HITL_AGENT_TYPE = "coding";
 
 /**
@@ -1124,6 +1104,53 @@ export function buildClaudeSpawnEnv(
   };
 }
 
+/**
+ * PHS-3.2 — runs one spawned dispatch under the shared state-based patch
+ * outcome check (PHS-3.1). For patch PR dispatches, snapshots candidacy
+ * before, runs `spawn` (resolving to claude's exit code), then recomputes it
+ * on every exit — including a nonzero code or a throw, which still
+ * propagates. An unchanged, unsettled PR is escalated via `escalate` (the
+ * PR-level blocked mechanism) so the loop's next candidate query skips it
+ * instead of re-dispatching. Best-effort: snapshot/escalation failures are
+ * logged and never fail the dispatch. Non-patch dispatches pass through.
+ */
+export async function runWithPatchOutcomeCheck(opts: {
+  phase: string | undefined;
+  prId: string;
+  recordId: string;
+  spawn: () => Promise<number>;
+  snapshot?: (candidateId: string) => Promise<PatchStateSnapshot | null>;
+  escalate: (
+    recordId: string,
+    candidateId: string,
+    reason: string,
+    headSha: string,
+  ) => Promise<void>;
+}): Promise<number> {
+  const { phase, prId, recordId, spawn, snapshot, escalate } = opts;
+  if (phase !== "patch" || !snapshot) return spawn();
+
+  const before = await snapshot(prId).catch(() => null);
+  try {
+    return await spawn();
+  } finally {
+    try {
+      const after = before ? await snapshot(prId) : null;
+      if (before && after) {
+        const outcome = evaluatePatchOutcome(before, after);
+        if (outcome.kind === "escalated") {
+          log(`${prId}: ${outcome.reason} — escalating`);
+          await escalate(recordId, prId, outcome.reason, outcome.headSha);
+        }
+      }
+    } catch (err) {
+      log(
+        `patch outcome check failed for ${prId}: ${err instanceof Error ? err.message : err} — swallowing`,
+      );
+    }
+  }
+}
+
 async function runLoop(): Promise<void> {
   log(`task loop started — polling ${TASK_STORE_URL}`);
   log(`admin UI: ${ADMIN_URL}/admin/dev-login`);
@@ -1157,7 +1184,6 @@ async function runLoop(): Promise<void> {
     reviewDeps = await buildReviewDeps({
       ghJson,
       getScopedRepos: () => allRepos,
-      hasScopeSynced: () => true,
       ...(HITL_AUTHORS.length > 0
         ? { isAuthorAllowed: (login: string) => HITL_AUTHORS.includes(login) }
         : {}),
@@ -1167,7 +1193,6 @@ async function runLoop(): Promise<void> {
       ghGraphql,
       getCurrentUser,
       getScopedRepos: () => allRepos,
-      hasScopeSynced: () => true,
     });
   }
 
@@ -1206,6 +1231,7 @@ async function runLoop(): Promise<void> {
 
     let command: string;
     let label: string;
+    let prRecord: { id: string; phase: string; repo: string } | undefined;
 
     if (next.type === "task") {
       let claimed: boolean;
@@ -1254,6 +1280,11 @@ async function runLoop(): Promise<void> {
         continue;
       }
 
+      prRecord = {
+        id: claimResult.id,
+        phase: next.pr.phase,
+        repo: parsed.repo,
+      };
       command = buildPrCommand(next.pr.id, next.pr.phase, claimResult);
       label = `${next.pr.id} — ${next.pr.title ?? ""}`;
     }
@@ -1265,27 +1296,48 @@ async function runLoop(): Promise<void> {
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("");
 
-    const claude = Bun.spawn(
-      [
-        "claude",
-        command,
-        "--permission-mode",
-        "auto",
-        "--allowedTools",
-        ...HITL_ALLOWED_TOOLS,
-      ],
-      {
-        cwd: WORKSPACE,
-        env: buildClaudeSpawnEnv(process.env),
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "inherit",
-      },
-    );
+    let exitCode: number | null = null;
+    const spawnClaude = async (): Promise<number> => {
+      const claude = Bun.spawn(
+        [
+          "claude",
+          command,
+          "--permission-mode",
+          "auto",
+          "--allowedTools",
+          ...HITL_ALLOWED_TOOLS,
+        ],
+        {
+          cwd: WORKSPACE,
+          env: buildClaudeSpawnEnv(process.env),
+          stdout: "inherit",
+          stderr: "inherit",
+          stdin: "inherit",
+        },
+      );
+      await claude.exited;
+      exitCode = claude.exitCode;
+      return claude.exitCode ?? 0;
+    };
 
-    await claude.exited;
+    if (next.type === "pr" && prRecord) {
+      const record = prRecord;
+      await runWithPatchOutcomeCheck({
+        phase: record.phase,
+        prId: next.pr.id,
+        recordId: record.id,
+        spawn: spawnClaude,
+        snapshot: patchDeps
+          ? createPatchStateSnapshotter(patchDeps)
+          : undefined,
+        escalate: (recordId, _candidateId, reason, headSha) =>
+          client.blockPr(recordId, record.repo, reason, headSha),
+      });
+    } else {
+      await spawnClaude();
+    }
 
-    log(`claude exited (code ${claude.exitCode}) — continuing loop`);
+    log(`claude exited (code ${exitCode}) — continuing loop`);
     console.log("");
   }
 }

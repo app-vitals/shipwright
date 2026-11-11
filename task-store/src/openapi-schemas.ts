@@ -1,7 +1,7 @@
 /**
  * task-store/src/openapi-schemas.ts
  * Zod schemas for the task-store API — Task, PullRequest, and TaskToken response shapes.
- * Mirrors admin/src/openapi-schemas.ts pattern: Zod schemas with OpenAPI metadata.
+ * Mirrors the platform admin's openapi-schemas.ts pattern: Zod schemas with OpenAPI metadata.
  *
  * Import z from "@hono/zod-openapi" so .openapi() metadata is available.
  */
@@ -9,7 +9,12 @@
 import { z } from "@hono/zod-openapi";
 
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
-import { MAX_BULK_TASKS } from "./task-service.ts";
+import { UNBLOCK_TARGETS } from "./task-service.ts";
+import {
+  BY_PR_TARGET_STATUSES,
+  MAX_BULK_TASKS,
+  MAX_PATCH_BY_PR_NUMBERS,
+} from "./task-service.ts";
 
 /** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
  * the generated Prisma client so this file stays a pure Zod-schema module. */
@@ -37,8 +42,6 @@ export const OkSchema = z
   })
   .openapi("Ok");
 
-export type OkResponse = z.infer<typeof OkSchema>;
-
 // ─── Task ─────────────────────────────────────────────────────────────────────
 
 export const TaskSchema = z
@@ -53,8 +56,8 @@ export const TaskSchema = z
         "approved",
         "merged",
         "done",
-        "deploying",
         "deployed",
+        "released",
         "blocked",
         "cancelled",
       ])
@@ -117,12 +120,12 @@ export const TaskSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-05T00:00:00.000Z" }),
-    deployingAt: z.string().nullable().optional().openapi({ example: null }),
     deployedAt: z
       .string()
       .nullable()
       .optional()
       .openapi({ example: "2026-01-06T00:00:00.000Z" }),
+    releasedAt: z.string().nullable().optional().openapi({ example: null }),
     ciFixAttempts: z
       .number()
       .int()
@@ -156,13 +159,18 @@ export const TaskSchema = z
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+        "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
     }),
     lastSkippedAt: z
       .string()
       .nullable()
       .optional()
       .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    lastSkipReason: z.string().nullable().optional().openapi({
+      example: "dev-task:deferred:unmet-hidden-requirement",
+      description:
+        'The skip reason associated with the current skipCount streak. POST /tasks/:id/skip\'s optional `reason` field (default `"unspecified"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.',
+    }),
     claimedBy: z
       .string()
       .nullable()
@@ -298,7 +306,7 @@ export type PrFinding = z.infer<typeof PrFindingSchema>;
 // Defined ahead of PullRequestSchema so PullRequestSchema's `events` field can
 // reference it directly, mirroring the PrFindingSchema pattern above.
 
-export const PullRequestEventSchema = z
+const PullRequestEventSchema = z
   .object({
     id: z.string().openapi({ example: "clxevent123456" }),
     prRecordId: z.string().openapi({ example: "clx0987654321" }),
@@ -317,7 +325,7 @@ export const PullRequestEventSchema = z
 
 export type PullRequestEvent = z.infer<typeof PullRequestEventSchema>;
 
-export const TaskEventSchema = z
+const TaskEventSchema = z
   .object({
     id: z.string().openapi({ example: "clxevent123456" }),
     taskId: z.string().openapi({ example: "clx0987654321" }),
@@ -360,7 +368,7 @@ export const PullRequestSchema = z
     reviewedCommitSha: z.string().nullable().optional().openapi({
       example: "abc123def456",
       description:
-        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
+        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping.",
     }),
     patchCycles: z.number().int().default(0).openapi({ example: 1 }),
     reviewCycles: z.number().int().default(0).openapi({ example: 0 }),
@@ -397,7 +405,7 @@ export const PullRequestSchema = z
       .optional()
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
     phase: z
-      .enum(["review", "patch", "deploy"])
+      .enum(["review", "patch", "merge"])
       .nullable()
       .optional()
       .openapi({ example: "review" }),
@@ -411,7 +419,7 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
-    readyForDeployAt: z
+    readyForMergeAt: z
       .string()
       .nullable()
       .optional()
@@ -442,10 +450,33 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "Add the origin metrics dimension" }),
+    commitCount: z.number().int().nullable().optional().openapi({
+      example: 12,
+      description:
+        "Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.",
+    }),
+    commitsDocsRefresh: z.number().int().nullable().optional().openapi({
+      example: 1,
+      description:
+        "Commits attributed to the docs-refresher subagent (CPP-1.1).",
+    }),
+    commitsReviewPatch: z.number().int().nullable().optional().openapi({
+      example: 3,
+      description: "Commits attributed to the review/patch cycle (CPP-1.1).",
+    }),
+    commitsCiFix: z.number().int().nullable().optional().openapi({
+      example: 2,
+      description: "Commits attributed to CI-fix cycles (CPP-1.1).",
+    }),
+    commitsImplementation: z.number().int().nullable().optional().openapi({
+      example: 6,
+      description:
+        "Commits attributed to the initial implementation (CPP-1.1).",
+    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
+        "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips') or starts with the patch no-progress escalation prefix ('patch dispatch made no progress'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
     }),
     lastSkippedAt: z
       .string()
@@ -461,6 +492,26 @@ export const PullRequestSchema = z
       example: 0,
       description:
         "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
+    }),
+    blockedHeadSha: z.string().nullable().optional().openapi({
+      description:
+        "Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then.",
+    }),
+    blockedReviewId: z.string().nullable().optional().openapi({
+      description:
+        "Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed.",
+    }),
+    blockedAt: z.string().nullable().optional().openapi({
+      description:
+        "ISO timestamp of the most recent skip auto-block (PSL-3.1).",
+    }),
+    lastAutoBlockReason: z.string().nullable().optional().openapi({
+      description:
+        "blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1).",
+    }),
+    lastAutoBlockedAt: z.string().nullable().optional().openapi({
+      description:
+        "ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1).",
     }),
     createdAt: z
       .string()
@@ -493,6 +544,11 @@ export type PullRequest = z.infer<typeof PullRequestSchema>;
 export const SessionSchema = z
   .object({
     slug: z.string().openapi({ example: "shipwright-may-launch" }),
+    accountId: z.string().openapi({
+      example: "default",
+      description:
+        "The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently.",
+    }),
     title: z
       .string()
       .nullable()
@@ -549,6 +605,17 @@ export const SessionSlugParamSchema = z
   })
   .openapi("SessionSlugParam");
 
+/** Query for GET/PATCH /sessions/:slug — which account's session to address. */
+export const SessionAccountQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+    }),
+  })
+  .openapi("SessionAccountQuery");
+
 /** Query params for GET /sessions */
 export const SessionListQuerySchema = z
   .object({
@@ -588,6 +655,11 @@ export const SessionListQuerySchema = z
     q: z.string().optional().openapi({
       example: "launch",
       description: "Case-insensitive substring match against slug OR title.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
     }),
     limit: z.string().optional().openapi({ example: "50" }),
     offset: z.string().optional().openapi({ example: "0" }),
@@ -689,6 +761,11 @@ export const TaskListQuerySchema = z.object({
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
+  accountId: z.string().optional().openapi({
+    example: "default",
+    description:
+      "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
+  }),
   hitl: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   kind: z.enum(["dev", "prd"]).optional().openapi({
     example: "prd",
@@ -716,6 +793,13 @@ export const TaskListResponseSchema = z
   })
   .openapi("TaskListResponse");
 
+/** Accepted forms for a client-supplied `pr` (normalized to the integer PR number server-side). */
+const PrInputSchema = z.unknown().optional().openapi({
+  example: 42,
+  description:
+    'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
+});
+
 /** Request body for POST /tasks.
  * Required fields (title, status, repo) are validated by the handler rather
  * than by Zod so custom error messages are returned instead of ZodError objects.
@@ -734,6 +818,7 @@ export const CreateTaskBodySchema = z
     description: z.string().optional().openapi({ example: "Task description" }),
     layer: z.string().optional().openapi({ example: "service" }),
     branch: z.string().optional().openapi({ example: "feat/feature-x" }),
+    pr: PrInputSchema,
     dependencies: z.array(z.string()).optional().openapi({ example: [] }),
     acceptanceCriteria: z.array(z.string()).optional().openapi({ example: [] }),
     assignee: z.string().optional().openapi({ example: "user@example.com" }),
@@ -750,7 +835,8 @@ export const CreateTaskBodySchema = z
 
 /** Request body for PATCH /tasks/:id */
 export const UpdateTaskBodySchema = z
-  .record(z.string(), z.unknown())
+  .object({ pr: PrInputSchema })
+  .passthrough()
   .openapi("UpdateTaskBody");
 
 /** Single item in a bulk insert array.
@@ -766,6 +852,7 @@ const BulkInsertItemSchema = z
       .openapi({ example: "Implement feature X" }),
     status: z.string().min(1).optional().openapi({ example: "pending" }),
     repo: z.string().nullable().optional().openapi({ example: "org/repo" }),
+    pr: PrInputSchema,
   })
   .passthrough();
 
@@ -795,6 +882,47 @@ export const BulkInsertResponseSchema = z
   })
   .openapi("BulkInsertResponse");
 
+/**
+ * Request body for PATCH /tasks/by-pr (MPD-1.2). Shape violations (empty or
+ * over-cap prNumbers, non-positive-integer entries, unknown status) are
+ * rejected by the app's validation hook as 400.
+ */
+export const PatchTasksByPrBodySchema = z
+  .object({
+    repo: z.string().min(1).openapi({ example: "org/repo" }),
+    prNumbers: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(MAX_PATCH_BY_PR_NUMBERS)
+      .openapi({
+        example: [101, 102],
+        description: `PR numbers of \`repo\`, 1 to ${MAX_PATCH_BY_PR_NUMBERS} positive integers.`,
+      }),
+    status: z.enum(BY_PR_TARGET_STATUSES).openapi({ example: "deployed" }),
+    at: z.string().min(1).optional().openapi({
+      example: "2026-07-02T00:00:00.000Z",
+      description:
+        "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.",
+    }),
+  })
+  .openapi("PatchTasksByPrBody");
+
+/** Response for PATCH /tasks/by-pr */
+export const PatchTasksByPrResponseSchema = z
+  .object({
+    updated: z.array(z.string()).openapi({
+      description: "Ids of `merged` tasks moved to the requested status.",
+    }),
+    unchanged: z.array(z.string()).openapi({
+      description: "Ids of tasks already at the requested status (no-op).",
+    }),
+    skipped: z.array(z.object({ id: z.string(), status: z.string() })).openapi({
+      description:
+        "Matching tasks in any other status; never modified. Carries their current status.",
+    }),
+  })
+  .openapi("PatchTasksByPrResponse");
+
 /** Response for GET /tasks/distinct */
 export const DistinctResponseSchema = z
   .object({
@@ -817,6 +945,30 @@ export const FailBodySchema = z
     reason: z.string().optional().openapi({ example: "build failed" }),
   })
   .openapi("FailBody");
+
+/**
+ * Request body for POST /tasks/:id/skip (SRB-1.1). `reason` is optional —
+ * when omitted, the route defaults it server-side to "unspecified" before
+ * calling TaskService.recordSkip(), so recordSkip() always has a concrete
+ * string to compare against the task's current lastSkipReason.
+ */
+export const SkipBodySchema = z
+  .object({
+    reason: z.string().optional().openapi({
+      example: "dev-task:deferred:unmet-hidden-requirement",
+    }),
+  })
+  .openapi("SkipBody");
+
+/** UBL-1.1: optional body of POST /tasks/:id/unblock. */
+export const UnblockBodySchema = z
+  .object({
+    to: z.enum(UNBLOCK_TARGETS).optional().openapi({
+      description:
+        "Target status. Omit to infer from task.pr and the PR record (never deployed/released).",
+    }),
+  })
+  .openapi("UnblockBody");
 
 // ─── PR Route Schemas ─────────────────────────────────────────────────────────
 
@@ -948,6 +1100,36 @@ const CensusEntrySchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    commitCount: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 12 }),
+    commitsDocsRefresh: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 1 }),
+    commitsReviewPatch: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 3 }),
+    commitsCiFix: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 2 }),
+    commitsImplementation: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 6 }),
   })
   .openapi("CensusEntry");
 
@@ -1062,7 +1244,7 @@ export const ClaimPrBodySchema = z
       example: "agent-id-123",
       description: "Agent claiming this PR (admin tokens only)",
     }),
-    phase: z.enum(["review", "patch", "deploy"]).optional().openapi({
+    phase: z.enum(["review", "patch", "merge"]).optional().openapi({
       example: "patch",
       description:
         "Pipeline phase this claim is for (defaults to 'review' when omitted)",
@@ -1086,6 +1268,21 @@ export const ClaimPrBodySchema = z
       example: "Add the origin metrics dimension",
       description:
         "PR title (POM-1.2). Refreshed unconditionally on every claim.",
+    }),
+    authorIsBot: z.boolean().optional().openapi({
+      example: true,
+      description:
+        "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.",
+    }),
+    hasAutomatedLabel: z.boolean().optional().openapi({
+      example: false,
+      description:
+        "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.",
+    }),
+    hasShipwrightLabel: z.boolean().optional().openapi({
+      example: false,
+      description:
+        "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.",
     }),
   })
   .openapi("ClaimPrBody");
@@ -1127,7 +1324,7 @@ export const PatchPrBodySchema = z
 export const ClaimNextResponseSchema = z
   .object({
     pr: PullRequestSchema,
-    phase: z.enum(["review", "patch", "deploy"]).openapi({ example: "review" }),
+    phase: z.enum(["review", "patch", "merge"]).openapi({ example: "review" }),
   })
   .openapi("ClaimNextResponse");
 
@@ -1161,3 +1358,150 @@ export const CreateFindingBodySchema = z
     }),
   })
   .openapi("CreateFindingBody");
+
+// ─── Verification Check (LVB-5.1) ──────────────────────────────────────────────
+// Mirrored here rather than imported from the generated Prisma client so this
+// file stays a pure Zod-schema module (mirrors PR_ORIGIN_VALUES above).
+
+const VERIFICATION_CHECK_STATUS_VALUES = [
+  "ran_passed",
+  "ran_failed",
+  "skipped",
+  "timed_out",
+] as const;
+
+const VERIFICATION_CHECK_REASON_CATEGORY_VALUES = [
+  "check_timeout",
+  "install_timeout",
+  "resource_limit",
+  "missing_tool",
+  "missing_secret",
+  "missing_dependency",
+  "not_configured",
+  "learned_skip",
+] as const;
+
+export const VerificationCheckSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxvcheck1234567" }),
+    taskId: z.string().nullable().openapi({ example: null }),
+    prRecordId: z.string().nullable().openapi({ example: "clx0987654321" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    checkName: z.string().openapi({ example: "unit" }),
+    status: z.enum(VERIFICATION_CHECK_STATUS_VALUES).openapi({
+      example: "ran_passed",
+      description:
+        "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.",
+    }),
+    reasonCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .nullable()
+      .openapi({
+        example: null,
+        description:
+          "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.",
+      }),
+    learnedFromCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .nullable()
+      .openapi({
+        example: null,
+        description:
+          "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.",
+      }),
+    durationMs: z.number().int().nullable().openapi({ example: 4200 }),
+    at: z.string().openapi({ example: "2026-09-24T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-09-24T12:00:00.000Z" }),
+  })
+  .openapi("VerificationCheck");
+
+export type VerificationCheck = z.infer<typeof VerificationCheckSchema>;
+
+/** Request body for POST /verification-checks. */
+export const CreateVerificationCheckBodySchema = z
+  .object({
+    taskId: z.string().optional().openapi({
+      example: "clx1234567890",
+      description:
+        "Exactly one of taskId/prId is required — supplying neither or both is 400.",
+    }),
+    prId: z.string().optional().openapi({ example: "clx0987654321" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    checkName: z.string().openapi({
+      example: "unit",
+      description:
+        "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.",
+    }),
+    status: z.enum(VERIFICATION_CHECK_STATUS_VALUES).openapi({
+      example: "ran_passed",
+    }),
+    reasonCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .optional()
+      .openapi({
+        example: "missing_tool",
+        description:
+          "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.",
+      }),
+    learnedFromCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .optional()
+      .openapi({
+        example: "missing_tool",
+        description:
+          "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.",
+      }),
+    durationMs: z.number().int().optional().openapi({ example: 4200 }),
+    at: z.string().optional().openapi({
+      example: "2026-09-24T12:00:00.000Z",
+      description:
+        "ISO timestamp of when the check completed. Defaults to the current time when omitted.",
+    }),
+  })
+  .openapi("CreateVerificationCheckBody");
+
+/** Query params for GET /verification-checks */
+export const VerificationCheckListQuerySchema = z
+  .object({
+    taskId: z.string().optional().openapi({
+      example: "clx1234567890",
+      description:
+        "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
+    }),
+    prId: z.string().optional().openapi({ example: "clx0987654321" }),
+    repo: z.string().optional().openapi({
+      example: "org/repo",
+      description:
+        "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
+    }),
+    checkName: z.string().optional().openapi({
+      example: "unit",
+      description:
+        "Paired with ?repo= — supplying only one of the pair is 400.",
+    }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+  })
+  .openapi("VerificationCheckListQuery");
+
+/** Response for GET /verification-checks */
+export const VerificationCheckListResponseSchema = z
+  .object({
+    checks: z.array(VerificationCheckSchema).openapi({
+      description:
+        "Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode.",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("VerificationCheckListResponse");

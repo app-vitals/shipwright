@@ -1,0 +1,1 @@
+{{ include "agent-platform.tenantNetworkPolicy" (dict "context" . "extensions" (include "shipwright.platformExtensions" . | fromYaml)) }}

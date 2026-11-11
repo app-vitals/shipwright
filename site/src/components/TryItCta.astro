@@ -11,7 +11,7 @@
 // The secondary button and the rollout line below it (MKT-AUTONOMY-PAGE-1)
 // label what the discovery call is actually for and point at /autonomy for
 // readers who want the staged-rollout detail before booking anything.
-import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
+import { BOOKING_URL, INSTALL_CMD, REPO_URL, withUtm } from "../consts";
 ---
 
 <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
@@ -22,7 +22,7 @@ import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
   </p>
   <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
   <div class="mt-6 flex flex-wrap items-center gap-4">
-    <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
+    <a href={withUtm(REPO_URL, "try_it_cta")} class="sw-btn">Star on GitHub ↗</a>
     <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Talk through a rollout</a>
   </div>
   <p class="mt-4 max-w-2xl text-sm" style="color: var(--sw-color-text-muted);">

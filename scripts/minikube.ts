@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * scripts/minikube.ts — bring the full Shipwright stack up on Minikube.
@@ -12,7 +12,7 @@ import { parseFlags } from "../lib/cli-flags.ts";
  * wrong and produce confusing failures rather than clear errors:
  *
  *   1. VM sizing must be set at `minikube start`. The agent pod alone requests
- *      500m CPU / 2Gi memory (admin/src/agent-manifest.ts); an under-sized VM
+ *      500m CPU / 2Gi memory (@app-vitals/agent-admin/agent-manifest); an under-sized VM
  *      schedules it and then thrashes.
  *   2. `minikube addons enable ingress` must run BEFORE the install, or the
  *      rendered Ingress has no controller and nothing answers.
@@ -36,11 +36,11 @@ import { parseFlags } from "../lib/cli-flags.ts";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const RELEASE = "shipwright";
+const RELEASE = "shipwright";
 export const NAMESPACE = "shipwright";
-export const CHART_PATH = "charts/shipwright";
-export const VALUES_FILE = "charts/shipwright/examples/values-minikube.yaml";
-export const INGRESS_HOST = "shipwright.local";
+const CHART_PATH = "charts/shipwright";
+const VALUES_FILE = "charts/shipwright/examples/values-minikube.yaml";
+const INGRESS_HOST = "shipwright.local";
 
 /**
  * With the docker driver (the default on macOS/Colima), `minikube ip` returns
@@ -49,19 +49,19 @@ export const INGRESS_HOST = "shipwright.local";
  * port), not port 80. So the host must reach it through a `kubectl
  * port-forward` to a local port instead of the raw minikube IP on :80.
  */
-export const INGRESS_LOCAL_PORT = 8080;
+const INGRESS_LOCAL_PORT = 8080;
 /** HTTPS local port — only forwarded by profiles that terminate TLS. */
-export const INGRESS_LOCAL_TLS_PORT = 8443;
-export const PORT_FORWARD_PID_FILE = "state/minikube-port-forward.pid";
-export const PORT_FORWARD_LOG_FILE = "state/minikube-port-forward.log";
+const INGRESS_LOCAL_TLS_PORT = 8443;
+const PORT_FORWARD_PID_FILE = "state/minikube-port-forward.pid";
+const PORT_FORWARD_LOG_FILE = "state/minikube-port-forward.log";
 
 /**
  * Default VM size. The floor for the platform plus one agent — see the sizing
  * note in examples/values-minikube.yaml. Below 4 CPU / 6Gi the agent thrashes.
  */
-export const DEFAULT_CPUS = 4;
-export const DEFAULT_MEMORY_MB = 8192;
-export const DEFAULT_DISK = "40g";
+const DEFAULT_CPUS = 4;
+const DEFAULT_MEMORY_MB = 8192;
+const DEFAULT_DISK = "40g";
 
 /** Deployments waited on after install, in dependency-ish order. */
 export const DEPLOYMENTS = [
@@ -75,7 +75,7 @@ export const DEPLOYMENTS = [
 // Types
 // ---------------------------------------------------------------------------
 
-export type CommandKind = "minikube" | "helm" | "kubectl";
+type CommandKind = "minikube" | "helm" | "kubectl";
 
 /**
  * "addon" is the pre-existing default: minikube's own `ingress` addon,
@@ -86,12 +86,12 @@ export type CommandKind = "minikube" | "helm" | "kubectl";
  * namespace, so there is nothing for `minikube addons enable` to do and no
  * separate webhook to wait on before the install.
  */
-export type Profile = "addon" | "cloud-native-nginx" | "cloud-native-traefik";
+type Profile = "addon" | "cloud-native-nginx" | "cloud-native-traefik";
 
 /** A local:remote port pair passed to `kubectl port-forward`. */
-export type PortPair = { local: number; remote: number };
+type PortPair = { local: number; remote: number };
 
-export type ProfileConfig = {
+type ProfileConfig = {
   profile: Profile;
   /** Run `minikube addons enable ingress` + wait on its webhook before install. */
   useIngressAddon: boolean;
@@ -370,7 +370,7 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
   return cmds;
 }
 
-export type AccessUrls = {
+type AccessUrls = {
   admin: string;
   devLogin: string;
   metrics: string;
@@ -482,7 +482,7 @@ export function buildPortForwardArgv(config: ProfileConfig): string[] {
 // Preflight (pure — the existence check is injected)
 // ---------------------------------------------------------------------------
 
-export const REQUIRED_BINARIES = ["minikube", "helm", "kubectl"] as const;
+const REQUIRED_BINARIES = ["minikube", "helm", "kubectl"] as const;
 
 /** Names of required binaries that are NOT on PATH. Empty means good to go. */
 export function missingBinaries(

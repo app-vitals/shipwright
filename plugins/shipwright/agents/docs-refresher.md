@@ -75,6 +75,8 @@ Use the `Edit` tool with focused old/new strings — one edit per affected secti
 - A doc that only mentions a changed filename inside a `## References` section (those point to other docs by design)
 - A doc whose only matched symbol appears in a code-fence example clearly labeled "example" or "before/after" — not a current-API claim
 
+**Never write measured values.** Follow the "Measured values" rule in `references/doc-refresh-recipe.md`: do not write observed values (coverage %, test counts, timings, CI baselines, run ids or PR numbers cited as a baseline) into a doc. If a doc you are already editing contains one, replace it with a pointer to where the number lives instead of refreshing it. Configured thresholds (e.g. `fail_under = 51`) may be named; `docs/test-readiness/**`, `planning/**` and dated snapshots are exempt.
+
 If after auditing all candidates no doc actually has broken references, emit `skipped_reason="no_stale_refs"` and stop. (Pre-filter matched on string overlap but Part 1 found everything still resolves.)
 
 ### Step 4: Stage and Commit

@@ -6,8 +6,8 @@
 // resize-driven redraw. Grounded in the actual repo dependencies (see the
 // per-cluster `integrations` below): agent/package.json (@octokit/auth-app,
 // @slack/bolt + @slack/web-api, @sentry/bun, plus the Claude Code CLI itself),
-// admin/package.json + admin/src/kubernetes-client.ts +
-// admin/src/google-auth-client.ts (@prisma/client, KubernetesClient, Google
+// admin/package.json + the @app-vitals/agent-admin package
+// (kubernetes-client, google-auth-client) (@prisma/client, KubernetesClient, Google
 // OAuth, @sentry/bun), task-store/package.json (@prisma/client, @sentry/bun),
 // and metrics/package.json (no @prisma/client — stateless, reads Task Store
 // over HTTP, @sentry/bun for error reporting).

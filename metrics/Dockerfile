@@ -20,7 +20,7 @@
 #   SHIPWRIGHT_ENV_FILE        — dotenv file loaded at startup (default: ~/.shipwright/.env)
 
 # ─── Stage 1: dependencies ────────────────────────────────────────────────────
-FROM oven/bun:1-slim AS deps
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS deps
 
 WORKDIR /app
 
@@ -28,24 +28,21 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY metrics/package.json ./metrics/
 COPY admin/package.json ./admin/
-COPY admin/prisma ./admin/prisma/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
-COPY chat/package.json ./chat/
-COPY chat/prisma ./chat/prisma/
 COPY agent/package.json ./agent/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
-COPY lib/package.json ./lib/
 COPY mcp-server/package.json ./mcp-server/
 COPY patches/ ./patches/
 
 RUN bun install --frozen-lockfile
 
 # ─── Stage 2: production image ────────────────────────────────────────────────
-FROM oven/bun:1-slim AS production
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS production
 
 # Install system dependencies (ca-certificates only — stateless service, no toolchain needed)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,18 +52,21 @@ ENV NODE_ENV=production
 
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/metrics/node_modules),
-# NOT the hoisted root — both are required at runtime. lib/node_modules is also
-# copied defensively: bun nests a shared lib dependency under lib/node_modules
-# instead of hoisting it to root whenever a consuming service also declares that
-# same dependency directly (this broke task-store + @sentry/bun at runtime —
-# see app-vitals/shipwright#1187). metrics doesn't hit that today, but copying
-# lib/node_modules here means it can't happen silently if that changes.
+# NOT the hoisted root — both are required at runtime. The root node_modules also
+# carries bun's package store (node_modules/.bun), which is where the registry
+# package @app-vitals/agent-lib (and its own deps, e.g. @sentry/bun) lives; the
+# workspace-local @app-vitals/agent-lib entries are symlinks into it.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/metrics/node_modules ./metrics/node_modules
-COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 # Copy entire monorepo source
 COPY . .
+
+# Lib resolution guard (AGR-4.1): resolve every @app-vitals/agent-lib/* and
+# import of the service from the final filesystem, so an image
+# missing the registry package fails here instead of crash-looping at
+# boot (the 0.100.0 class).
+RUN bun agent/scripts/check-lib-resolution.ts --require @app-vitals/agent-lib metrics/src
 
 EXPOSE 3460
 

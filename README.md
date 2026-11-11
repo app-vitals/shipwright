@@ -1,5 +1,7 @@
 # Shipwright Harness -- autonomous delivery agent for Claude Code
 
+By [App Vitals](https://app-vitals.com) · [shipwrightharness.com](https://shipwrightharness.com) · not affiliated with other projects named "Shipwright".
+
 [![release](https://img.shields.io/github/v/release/app-vitals/shipwright?sort=semver&label=release&color=34C77B)](https://github.com/app-vitals/shipwright/releases)
 [![license: MIT](https://img.shields.io/badge/license-MIT-34C77B)](./LICENSE)
 [![built on Claude Code](https://img.shields.io/badge/built%20on-Claude%20Code-34C77B)](https://www.anthropic.com/claude-code)
@@ -8,17 +10,47 @@
 **The open-source autonomous delivery agent for Claude Code.** A deployable cloud agent and the autonomous coding system that powers it — built on the Shipwright plugin, running on your own codebase.
 
 <p align="center">
-  <video src="https://github.com/app-vitals/shipwright/raw/main/brand/assets/videos/shipwright-intro.mp4" controls muted width="900"></video>
-</p>
-
-<p align="center">
   <img src="assets/demo.gif" alt="Shipwright Harness in a Claude Code terminal: install, then plan → build → review → ship a task end to end." width="900" />
   <br />
   <em>Plan → build → review → ship — one task through the pipeline. (Illustrative.)</em>
 </p>
 
+**Coming from _How to Build Your Own Software Factory_?** This is the factory the lessons are built on:
 
-> **Brand vs. package:** the project is **Shipwright Harness**; the plugin/package you install is **`shipwright`**.
+- [Lesson 1: Plan, Execute, Loop](https://www.youtube.com/watch?v=c4qi_zu3vZI) → [`/shipwright:plan-session`](./plugins/shipwright/commands/plan-session.md) + [`/shipwright:dev-task`](./plugins/shipwright/commands/dev-task.md), the loop the agent runs on a schedule.
+- [Lesson 2: A Plan That Looks First](https://www.youtube.com/watch?v=dr-JNCWH0Yc) → [`/shipwright:plan-session`](./plugins/shipwright/commands/plan-session.md), which reads the codebase before it writes tasks.
+
+All lessons: [the playlist](https://www.youtube.com/playlist?list=PLEtnpY4_ARns) · lesson code: [app-vitals/how-to-factory](https://github.com/app-vitals/how-to-factory)
+
+### It builds itself, and the numbers are public
+
+Shipwright's own delivery pipeline runs on Shipwright. Cycle time, CI first-pass rate,
+review verdicts and estimation accuracy for this repository are public:
+
+**[→ proof.shipwrightharness.com](https://proof.shipwrightharness.com/public/dashboard)**
+
+As of 2026-10-30, trailing 30 days: **300 tasks completed, 85.8% CI
+first-pass rate, ~1.4h average cycle time.** No other autonomous coding agent publishes its
+own delivery metrics — you can check our work before installing anything.
+
+## What is Shipwright Harness?
+
+Two faces, one product:
+
+- **The agent** — deploy it to your cloud (GitHub Actions or self-hosted). It does autonomous coding on your codebase, held to the **same review and test bar as human code**.
+- **The system** — the autonomous coding system, built on the Claude Code **`shipwright` plugin**: plan · build · review · metrics. Use it interactively inside Claude Code, or let the agent run it autonomously.
+
+It runs in **your** environment, on **your** codebase — you own it, it's MIT, and it's free.
+
+## What it does
+
+Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
+
+- **Write a PRD** for your idea — a structured product spec ready for /plan-session.
+- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked in the **Shipwright task store** — a shared queue any agent or contributor can query).
+- **Execute** the next ready task — build, test, and open a PR.
+- **Review** the PR with policy-controlled, inline feedback.
+- **Ship** the merged change.
 
 ## Install
 
@@ -27,6 +59,9 @@
 ```
 
 Requires [Claude Code](https://www.anthropic.com/claude-code). Point it at your own repository — Shipwright is repo-agnostic.
+
+⭐ **If the approach makes sense to you, star the repo** — it's how we gauge whether to keep
+investing in the open-source track.
 
 **Deploying the services to Kubernetes?** The `shipwright` Helm chart is published to a Helm repo on each chart version bump:
 
@@ -101,25 +136,6 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 To stop: tmux kill-session -t shipwright
 ```
 
-## What is Shipwright Harness?
-
-Two faces, one product:
-
-- **The agent** — deploy it to your cloud (GitHub Actions or self-hosted). It does autonomous coding on your codebase, held to the **same review and test bar as human code**.
-- **The system** — the autonomous coding system, built on the Claude Code **`shipwright` plugin**: plan · build · review · metrics. Use it interactively inside Claude Code, or let the agent run it autonomously.
-
-It runs in **your** environment, on **your** codebase — you own it, it's MIT, and it's free.
-
-## What it does
-
-Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
-
-- **Write a PRD** for your idea — a structured product spec ready for /plan-session.
-- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked in the **Shipwright task store** — a shared queue any agent or contributor can query).
-- **Execute** the next ready task — build, test, and open a PR.
-- **Review** the PR with policy-controlled, inline feedback.
-- **Ship** the merged change.
-
 ## Why Shipwright Harness
 
 - **Free and open-source (MIT)** — the own-it alternative to closed, hosted coding agents. No rented infrastructure, no lock-in.
@@ -132,7 +148,7 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 
 | Component | What it does | Status |
 |---|---|---|
-| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, a test-readiness pipeline, and deploy commands. | ✅ Available |
+| **Plugin (the system)** | The `shipwright` toolchain you `/plugin install` — planning, queue-based execution, review, and a test-readiness pipeline. | ✅ Available |
 | **Metrics dashboard** | A stateless service that reads pipeline analytics (task throughput, CI first-pass rate, review verdicts, estimation accuracy) and renders a dashboard. Run locally with `task api` or `task ui` (offline mode, no secrets needed). | ✅ Available |
 | **Shipwright agent** | A thin autonomous runner that drives the system on a schedule — pick the next ready task → build → ship a PR → forward metrics — deployable to GitHub Actions or self-hosted. | ✅ Available |
 
@@ -144,7 +160,7 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 /shipwright:dev-task       → build + test + open a PR for the next ready task
 /shipwright:review         → policy-controlled PR review
 /shipwright:patch          → address review findings / failing CI
-/shipwright:deploy         → merge + deploy
+/shipwright:merge          → merge + watch post-merge CI
 ```
 
 Tasks are tracked in the Shipwright task store (see [`docs/task-store.md`](./docs/task-store.md)), so the queue is shared across every agent working the pipeline.
@@ -164,7 +180,7 @@ task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
 task stack      # full dev stack in a tmux session (6 panes) — requires tmux
 ```
 
-`task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the chat service, :3003), the **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`), not a REPL or an endpoint on the agent itself. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
+`task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the platform-hosted chat service from `app-vitals/agent`, :3003 — see [local platform development](docs/local-platform-development.md#running-chat-task-stack)), the **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`), not a REPL or an endpoint on the agent itself. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
 
 See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.
 
@@ -174,7 +190,7 @@ Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plu
 
 ## See it in the wild
 
-- **Compare it** — how Shipwright's plan → queue → loop differs from [Devin](https://app-vitals.com/blog/shipwright-vs-devin/) and from [Claude Code orchestrators](https://app-vitals.com/blog/shipwright-vs-claude-code-orchestrators/).
+- **Compare it** — how Shipwright's plan → queue → loop model differs from the commercial agent tier and from other Claude Code orchestrators: see the [comparison pages](https://shipwrightharness.com/compare).
 - **Have us run it on your pipeline** — the [design-partner program](https://app-vitals.com/shipwright/design-partners/): the people who built Shipwright, hands-on on your codebase.
 - **Read the full story** — [shipwrightharness.com](https://shipwrightharness.com).
 
@@ -197,3 +213,7 @@ Issues and discussion are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) fo
 ## License
 
 [MIT](./LICENSE) © 2026 App Vitals
+
+## Naming
+
+> **Brand vs. package:** the project is **Shipwright Harness**; the plugin/package you install is **`shipwright`**.

@@ -31,19 +31,47 @@ const emptyResult: HogQLResult = {
   offset: 0,
 };
 
+const MERGED_PRS_COLUMNS = [
+  "repo",
+  "origin",
+  "period",
+  "count",
+  "commitSum",
+  "qualifyingCount",
+  "docsRefreshSum",
+  "reviewPatchSum",
+  "ciFixSum",
+  "implementationSum",
+];
+
 function makeProvider(): MetricsProvider {
   return {
     query: async (q) => {
       if (q.kind === "mergedPrsByRepo") {
         return {
-          columns: ["repo", "origin", "period", "count"],
+          columns: MERGED_PRS_COLUMNS,
           results: [
-            ["org/alpha", "shipwright", "2026-06-01", 2],
-            ["org/alpha", "ci", "2026-06-01", 1],
-            ["org/beta", "unknown", "2026-06-08", 1],
+            ["org/alpha", "shipwright", "2026-06-01", 2, 0, 0, 0, 0, 0, 0],
+            ["org/alpha", "ci", "2026-06-01", 1, 0, 0, 0, 0, 0, 0],
+            ["org/beta", "unknown", "2026-06-08", 1, 0, 0, 0, 0, 0, 0],
           ],
           types: [],
         };
+      }
+      return emptyResult;
+    },
+  };
+}
+
+/** A provider double for the commit-aggregation-specific test cases below —
+ * kept separate from makeProvider() so the existing pre-CPP-1.3 test cases
+ * above stay byte-identical (no retired tests, per CPP-1.3's acceptance
+ * criteria). */
+function makeCommitAggProvider(rows: (string | number)[][]): MetricsProvider {
+  return {
+    query: async (q) => {
+      if (q.kind === "mergedPrsByRepo") {
+        return { columns: MERGED_PRS_COLUMNS, results: rows, types: [] };
       }
       return emptyResult;
     },
@@ -141,5 +169,75 @@ describe("GET /metrics/merged-prs (POM-2.1)", () => {
     const app = createMetricsApp(new Map(), noopAccountsClient, deps);
     const res = await app.request("/metrics/merged-prs?preset=7d&groupBy=day");
     expect(res.status).toBe(401);
+  });
+
+  // ─── Commits-per-PR aggregation (CPP-1.3) ──────────────────────────────────
+
+  test("origin:shipwright rows with non-null commitCount → avgCommitCount + commitBreakdown computed as per-PR averages", async () => {
+    const provider = makeCommitAggProvider([
+      // Two qualifying org/alpha PRs: commitCount 3 and 5 → avg 4.
+      ["org/alpha", "shipwright", "2026-06-01", 1, 3, 1, 1, 1, 0, 1],
+      ["org/alpha", "shipwright", "2026-06-01", 1, 5, 1, 0, 2, 1, 2],
+    ]);
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(provider),
+    );
+    const res = await app.request("/metrics/merged-prs?preset=7d&groupBy=week");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(() => MergedPrsResultSchema.parse(body.data)).not.toThrow();
+
+    const alpha = body.data.repos.find(
+      (r: { repo: string }) => r.repo === "org/alpha",
+    );
+    expect(alpha.avgCommitCount).toBe(4);
+    expect(alpha.commitBreakdown).toEqual({
+      docsRefresh: 0.5,
+      reviewPatch: 1.5,
+      ciFix: 0.5,
+      implementation: 1.5,
+    });
+  });
+
+  test("all rows non-shipwright origin or null commitCount → avgCommitCount and commitBreakdown are null, not 0", async () => {
+    const provider = makeCommitAggProvider([
+      // origin ci, would-be-qualifying commitCount ignored because origin != shipwright
+      ["org/beta", "ci", "2026-06-01", 1, 0, 0, 0, 0, 0, 0],
+      // origin shipwright but null commitCount at the source (provider marks qualifyingCount 0)
+      ["org/beta", "shipwright", "2026-06-01", 1, 0, 0, 0, 0, 0, 0],
+    ]);
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(provider),
+    );
+    const res = await app.request("/metrics/merged-prs?preset=7d&groupBy=week");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(() => MergedPrsResultSchema.parse(body.data)).not.toThrow();
+
+    const beta = body.data.repos.find(
+      (r: { repo: string }) => r.repo === "org/beta",
+    );
+    expect(beta.avgCommitCount).toBeNull();
+    expect(beta.commitBreakdown).toBeNull();
+  });
+
+  test("existing fixture (no commit columns populated) → avgCommitCount and commitBreakdown are null", async () => {
+    const app = createMetricsApp(
+      new Map(),
+      noopAccountsClient,
+      makeDevAuthDeps(),
+    );
+    const res = await app.request("/metrics/merged-prs?preset=7d&groupBy=week");
+    const body = await res.json();
+
+    const alpha = body.data.repos.find(
+      (r: { repo: string }) => r.repo === "org/alpha",
+    );
+    expect(alpha.avgCommitCount).toBeNull();
+    expect(alpha.commitBreakdown).toBeNull();
   });
 });

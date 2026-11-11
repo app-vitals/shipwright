@@ -276,6 +276,7 @@ describe("review.md — RVD-1.2 live-review pre-check regex parity", () => {
     "..",
     "agent",
     "src",
+    "coding",
     "check-helpers.ts",
   );
 

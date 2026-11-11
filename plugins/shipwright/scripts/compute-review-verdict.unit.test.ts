@@ -6,9 +6,9 @@
 // "Worked example" for the recurring production incident this mechanical
 // gate exists to prevent.
 
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "bun:test";
 import {
   computeVerdict,
   validateReviewVerdict,
@@ -181,14 +181,14 @@ describe("validateReviewVerdict", () => {
   });
 
   // Regression test for the empirical mismatch found in PR #2515 review round 3:
-  // the label regexes here must match agent/src/check-helpers.ts's
+  // the label regexes here must match agent/src/coding/check-helpers.ts's
   // VERDICT_APPROVE_LABEL (`/verdict\**\s*:\s*\**approve\b/i`) exactly. A body
   // with bold markers wrapping "Verdict:" (colon included, e.g. "**Verdict:**")
   // is NOT matched by the canonical pattern — only bold markers around the
   // verdict word itself are. If this file's regex ever diverges again (e.g. by
   // reintroducing `\s*` between the colon and `\**`), this body would be
   // wrongly treated as a valid "Verdict: APPROVE" label here while
-  // agent/src/check-patch.ts's isSelfCleanApprove (canonical pattern) would NOT
+  // agent/src/coding/check-patch.ts's isSelfCleanApprove (canonical pattern) would NOT
   // recognize it as a clean self-approve — reintroducing DRO-1.1's motivating
   // bug via a different code path.
   it("does not match when bold markers wrap the colon itself, matching the canonical check-helpers.ts pattern exactly", () => {
@@ -214,7 +214,7 @@ describe("validateReviewVerdict", () => {
 
 describe("VERDICT_APPROVE_LABEL / VERDICT_COMMENT_LABEL regex parity with check-helpers.ts", () => {
   // This file's label regexes are duplicated (not imported) from
-  // agent/src/check-helpers.ts's VERDICT_APPROVE_LABEL, per the module
+  // agent/src/coding/check-helpers.ts's VERDICT_APPROVE_LABEL, per the module
   // comment above their definitions — plugins/shipwright is a separate,
   // repo-agnostic package that can't import from agent/src. A prior review
   // round on PR #2515 found the two had silently diverged (an extra `\**`
@@ -227,6 +227,7 @@ describe("VERDICT_APPROVE_LABEL / VERDICT_COMMENT_LABEL regex parity with check-
     "..",
     "agent",
     "src",
+    "coding",
     "check-helpers.ts",
   );
   const THIS_FILE_PATH = join(import.meta.dir, "compute-review-verdict.ts");

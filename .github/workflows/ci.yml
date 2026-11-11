@@ -123,17 +123,13 @@ jobs:
       # docker's `--cpu-shares` shorthand there anyway).
       DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
-      # `prisma migrate deploy` reads the non-_TEST var names below. Admin,
-      # task-store and chat are all on Prisma 7, which dropped `url` from the
+      # `prisma migrate deploy` reads the non-_TEST var names below. Admin
+      # and task-store are both on Prisma 7, which dropped `url` from the
       # schema, so each reads its own var via its own prisma.config.ts — they
       # need to be set to the same connection strings as the _TEST vars above to
       # sync schema against the right databases.
-      # DATABASE_URL_SHIPWRIGHT_CHAT is the exception to the
-      # "nothing else reads these at runtime" rule: chat's integration suite
-      # reads it directly (it has no separate _TEST variant).
       DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
-      DATABASE_URL_SHIPWRIGHT_CHAT: postgres://shipwright:shipwright@localhost:5432/shipwright_chat_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,9 +140,9 @@ jobs:
           # Pinned, not floating "1.x": Bun 1.4.0 changed `process.env.KEY =
           # undefined` to coerce to the string "undefined" instead of
           # deleting the key. Every "falls back when unset" test in this repo
-          # (lib/sentry.unit.test.ts and friends) now uses `delete
+          # (the sentry init tests and friends) now uses `delete
           # process.env.KEY` instead, which behaves the same across versions.
-          bun-version: "1.4.2"
+          bun-version: "1.4.3"
 
       - name: Install go-task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
@@ -168,22 +164,32 @@ jobs:
       - name: Check config docs
         run: task check-config-docs
 
+      # The generate step used to run only inside the platform-release bump, so
+      # a dependency change that broke it went unnoticed until release time.
+      # Run it on every PR and fail on a nonzero exit or on drift from the
+      # committed admin spec and types.
+      - name: Check admin spec and types generation
+        run: |
+          bun run generate:admin-spec
+          bun run generate:admin-types
+          git diff --exit-code -- admin/openapi.json admin/src/coding/openapi.coding.json admin/src/coding/admin-types.ts
+
       - name: Create test databases
         run: |
           PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_task_store_test;"
-          PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_chat_test;"
 
       - name: Sync test DB schema
         run: |
-          # admin, task-store and chat are all on Prisma 7 while the repo root
+          # admin and task-store are both on Prisma 7 while the repo root
           # still resolves Prisma 6. Their schemas no longer carry `url` (v7
           # moved that to each workspace's prisma.config.ts), which the 6.x CLI
           # rejects — so run each from its own workspace, where bunx resolves
           # the 7.x CLI and the config file is discovered. Both the CLI
           # resolution and the config discovery are cwd-dependent.
-          (cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma)
+          # admin passes no --schema: admin/prisma.config.ts points at the
+          # schema and migrations shipped in @app-vitals/agent-admin.
+          (cd admin && bunx prisma migrate deploy)
           (cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma)
-          (cd chat && bunx prisma migrate deploy --schema=prisma/schema.prisma)
 
       - name: Install Playwright chromium-headless-shell
         run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
@@ -242,6 +248,10 @@ jobs:
       - name: Build admin Docker image
         run: docker build -f admin/Dockerfile -t shipwright-admin:ci .
 
+  # AGR-4.3b: the single shipwright-agent build. agent/Dockerfile builds FROM the
+  # published platform image (the runtime lives at /app/runtime there, hence the
+  # contract path overrides below). These are the image-level contract checks the
+  # candidate passed under AGR-4.3a.
   agent-docker-build:
     name: agent docker build
     timeout-minutes: 20
@@ -256,26 +266,76 @@ jobs:
       - name: Build agent Docker image
         run: docker build -f agent/Dockerfile -t shipwright-agent:ci .
 
+      # The coding layer's runtime deps come from the platform image's
+      # node_modules, not from this repo's lockfile: prove the ones the plugin
+      # scripts and the browser path need are actually there.
+      - name: Verify layered dependencies resolve
+        run: |
+          docker run --rm --entrypoint bun shipwright-agent:ci \
+            -e 'await import("js-yaml"); await import("playwright"); await import("/app/agent/src/coding/extension.ts"); console.log("layered deps OK")'
+
       # Load-bearing check, not a build smoke test: a green `bun test` run in
       # CI's normal (unrestricted) process does not prove Chromium can launch
       # under the pod's actual restricted securityContext (runAsNonRoot,
       # allowPrivilegeEscalation: false, no sudo) — only running the already
       # -built image with matching restrictions does. --user 1000 mirrors the
-      # image's baked-in non-root runtime user; --security-opt=no-new-privileges
-      # mirrors allowPrivilegeEscalation: false. No new CI secrets — this runs
-      # the image already built above, entirely locally within this job.
-      #
-      # The image's ENTRYPOINT is exec-form (`bun run
-      # /app/agent/src/entrypoint-main.ts`), not CMD, so `docker run <image>
-      # <args>` would just append those args to the entrypoint's fixed command
-      # rather than replacing it. --entrypoint overrides it explicitly so the
-      # container runs the verify script instead of the full agent startup
-      # sequence.
+      # image's non-root runtime user; --security-opt=no-new-privileges mirrors
+      # allowPrivilegeEscalation: false. --entrypoint overrides the image's
+      # exec-form ENTRYPOINT so the container runs the verify script instead of
+      # the full agent startup sequence.
       - name: Verify browser launch under sandbox restrictions
         run: |
           docker run --rm --user 1000 --security-opt=no-new-privileges \
             --entrypoint bun shipwright-agent:ci \
             run agent/scripts/verify-browser-launch.ts
+
+      # PLD-1.1: the platform gh wrapper must shadow the real gh, and under GitHub App
+      # auth (GH_TOKEN_FILE points at an existing file) it must refuse to run
+      # without SHIPWRIGHT_GH_OWNER instead of falling back to another org's token.
+      - name: Verify gh wrapper requires SHIPWRIGHT_GH_OWNER under App auth
+        run: |
+          docker run --rm --entrypoint bash shipwright-agent:ci -c '
+            test "$(command -v gh)" = /app/scripts/bin/gh
+            echo dummy > /tmp/gh-token
+            if out=$(GH_TOKEN_FILE=/tmp/gh-token gh --version 2>&1); then
+              echo "gh ran without SHIPWRIGHT_GH_OWNER"; exit 1
+            fi
+            echo "$out" | grep -q SHIPWRIGHT_GH_OWNER
+          '
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.x"
+
+      # Base-image contract guard (ARD-2.1): builds a derived image FROM the
+      # image above the way downstream repos do and asserts the
+      # convention-root marketplace registers via installPlugins() and the
+      # entrypoint path runs under `bun run`.
+      - name: Base-image contract smoke test
+        run: |
+          SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci \
+          SHIPWRIGHT_CONTRACT_SETUP_MODULE=/app/runtime/setup.ts \
+          SHIPWRIGHT_CONTRACT_ENTRYPOINT=/app/runtime/entrypoint-main.ts \
+          bun test agent/src/contract/base-image-contract.smoke.test.ts
+
+      # Runs the platform runtime's real setup code in the image as uid 1000:
+      # ensureAgentHome() for the coding type and the built-in marketplace install.
+      - name: Platform real-boot smoke test
+        run: |
+          SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci \
+          SHIPWRIGHT_CONTRACT_SETUP_MODULE=/app/runtime/setup.ts \
+          bun test agent/src/contract/platform-real-boot.smoke.test.ts
+
+      # Reports (does not gate) which process-tree-kill mode the real image
+      # resolves to: cgroup v2 delegation if /sys/fs/cgroup is writable inside
+      # the container, otherwise the procfs descendant-walk fallback (PLD-1.2).
+      # Both are supported — see @app-vitals/agent-runtime process-tree-kill.ts — so this
+      # step always exits 0; it makes the answer visible per-build in CI logs.
+      - name: Report cgroup delegation mode under sandbox restrictions
+        run: |
+          docker run --rm --user 1000 --security-opt=no-new-privileges \
+            --entrypoint bun shipwright-agent:ci \
+            run agent/scripts/verify-cgroup-delegation.ts
 
   metrics-docker-build:
     name: metrics docker build

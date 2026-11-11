@@ -8,18 +8,28 @@
  * wiring /doc in the factory is a planned follow-up).
  *
  * Also guards the committed generated artifact `admin/openapi.json` against
- * drift: its path+method set must match the live spec, so a route removed from
- * (or added to) the Hono registrations can't be left behind in the checked-in
- * spec (and therefore in the `lib/admin-types.ts` generated from it).
+ * drift: its path+method set must match the live spec plus the composed admin
+ * extensions' contributions, so a route removed from (or added to) the Hono
+ * registrations can't be left behind in the checked-in spec (and therefore in
+ * the generated admin types).
  */
 
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  applyOpenApiContributions,
+  collectOpenApiContributions,
+} from "@app-vitals/agent-admin/admin-extension";
+import { NoopAgentProvisioner } from "@app-vitals/agent-admin/agent-provisioner";
+import {
+  createAdminApp,
+  parseAdminApiKeys,
+} from "@app-vitals/agent-admin/agents-api";
+import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { NoopAgentProvisioner } from "./agent-provisioner.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
-import { createAgentRuntimeApp } from "./api.ts";
+import { adminExtensions } from "./main.ts";
 
 const SESSION_SECRET = "spec-test-session-secret-32bytes!";
 const ADMIN_API_KEY = "spec-test-admin-key";
@@ -49,6 +59,11 @@ function buildSpecApp() {
         return [];
       },
     },
+    agentPhaseMethodologyService: {
+      async list() {
+        return [];
+      },
+    },
     adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -65,7 +80,7 @@ function buildSpecApp() {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        specialty: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
         missingRequiredEnv: [],
@@ -84,11 +99,22 @@ function buildSpecApp() {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        specialty: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
         missingRequiredEnv: [],
       }),
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
+    },
+    specialtyRegistry: {
+      getType: () => {
+        throw new Error("not implemented");
+      },
+      tryGetType: () => undefined,
+      listTypes: () => [],
     },
     agentEnvService: {
       upsert: async () => {},
@@ -111,6 +137,9 @@ function buildSpecApp() {
         name: null,
         system: false,
         parentCronId: null,
+        lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -127,6 +156,9 @@ function buildSpecApp() {
         name: null,
         system: false,
         parentCronId: null,
+        lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -144,6 +176,9 @@ function buildSpecApp() {
         name: null,
         system: false,
         parentCronId: null,
+        lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -160,6 +195,9 @@ function buildSpecApp() {
         name: null,
         system: false,
         parentCronId: null,
+        lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -176,6 +214,9 @@ function buildSpecApp() {
         name: null,
         system: false,
         parentCronId: null,
+        lockdownDisabledAt: null,
+        runRequestedAt: null,
+        runRequestedBy: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -199,8 +240,19 @@ function buildSpecApp() {
         error: null,
         itemType: null,
         itemId: null,
+        commandVariant: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         inputTokens: null,
         outputTokens: null,
@@ -223,8 +275,19 @@ function buildSpecApp() {
         error: null,
         itemType: null,
         itemId: null,
+        commandVariant: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         inputTokens: null,
         outputTokens: null,
@@ -292,6 +355,8 @@ function buildSpecApp() {
       removeByName: async () => {},
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-1",
         agentId,
@@ -331,13 +396,14 @@ function buildSpecApp() {
         daily: [],
       }),
     },
-    agentWorkQueueService: {
+    agentGitHubInstallationsService: {
       push: async () => {
         throw new Error("not implemented");
       },
       get: async () => null,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,
@@ -378,10 +444,13 @@ function buildSpecApp() {
       },
     } as never,
     provisioner: new NoopAgentProvisioner(),
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},
@@ -398,6 +467,19 @@ function buildSpecApp() {
   const root = new OpenAPIHono();
   root.route("/agents", runtimeApp);
   root.route("/", adminApp);
+  // The /github-enterprise routes live in their own app, mounted at the root
+  // in admin-boot.ts; stub deps suffice since only the spec is read.
+  root.route(
+    "/",
+    createGithubEnterpriseApp({
+      appService: {} as never,
+      agentService: {} as never,
+      agentEnvService: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+    }),
+  );
   root.doc("/doc", {
     openapi: "3.1.0",
     info: { title: "Shipwright Admin API", version: "0.1.0" },
@@ -424,7 +506,7 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     const body = await res.json();
     // Runtime routes mounted via root.route("/agents", runtimeApp) appear with
     // Hono colon notation (:id) in the live /doc output — NOT curly-brace OAS
-    // notation ({id}). The committed admin/openapi.json and lib/admin-types.ts
+    // notation ({id}). The committed admin/openapi.json and the generated admin types
     // use {id} because generate-admin-spec.ts rewrites colons before writing the
     // artifact. Both are correct for their context; these assertions must match
     // the live Hono format, not the committed spec file.
@@ -432,7 +514,7 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     expect(body.paths["/agents/:id/crons"]).toBeDefined();
   });
 
-  it("spec covers admin routes (GET /agents, GET /agents/{id}/envs)", async () => {
+  it("spec covers admin routes (GET /agents, POST /agents, GET /agents/{id}/envs)", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
     const body = await res.json();
@@ -441,20 +523,30 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     expect(body.paths["/agents/{id}/envs"]).toBeDefined();
   });
 
-  it("does not document the retired POST /agents creation route", async () => {
+  it("documents the POST /agents creation route (APA-2.1)", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
     const body = await res.json();
-    // ABF-3.2 retired the JSON creation API — agents are created only via the
-    // admin UI's form-encoded POST /admin/agents, which is not part of this spec.
-    expect(body.paths["/agents"].post).toBeUndefined();
-    expect(body.components?.schemas?.CreateAgentBody).toBeUndefined();
+    // ABF-3.2 retired the JSON creation API (no caller existed at the time);
+    // APA-2.1 reinstates it once createAgent() (APA-1.1) made agent creation a
+    // single, injectable function multiple callers — the web UI form and this
+    // route — can both call.
+    expect(body.paths["/agents"].post).toBeDefined();
+    expect(body.components?.schemas?.CreateAgentBody).toBeDefined();
   });
 
   it("committed admin/openapi.json matches the live spec's routes", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
-    const live = await res.json();
+    // The committed artifact is Shipwright's composed spec: the platform's
+    // live routes plus the admin extensions' contributions (AEP-3.2), folded
+    // in exactly as generate-admin-spec.ts does.
+    const live = applyOpenApiContributions(
+      (await res.json()) as {
+        paths: Record<string, Record<string, unknown>>;
+      },
+      collectOpenApiContributions(adminExtensions),
+    );
     const committed = JSON.parse(
       readFileSync(resolve(import.meta.dir, "../openapi.json"), "utf8"),
     ) as { paths: Record<string, Record<string, unknown>> };

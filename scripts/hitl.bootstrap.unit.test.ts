@@ -154,11 +154,9 @@ describe("buildProvisionSteps", () => {
     const seeds = steps.filter((s) => s.kind === "seed-file");
     expect(seeds.map((s) => s.path)).toEqual([
       "/home/dev/.shipwright/workspace/CLAUDE.md",
-      "/home/dev/.shipwright/workspace/state/agent-policy.md",
     ]);
     expect(seeds.map((s) => s.templatePath)).toEqual([
       "/repo/agent/workspace/CLAUDE-HITL.md.template",
-      "/repo/agent/workspace/state/agent-policy.md.template",
     ]);
   });
 
@@ -170,28 +168,13 @@ describe("buildProvisionSteps", () => {
     const c = cfg();
     const steps = buildProvisionSteps(
       c,
-      existsIn([
-        c.workspace,
-        c.reposDir,
-        `${c.workspace}/CLAUDE.md`,
-        `${c.workspace}/state/agent-policy.md`,
-      ]),
+      existsIn([c.workspace, c.reposDir, `${c.workspace}/CLAUDE.md`]),
     );
     expect(steps.map((s) => s.path)).toEqual([
       "/home/dev/.shipwright/workspace/worktrees",
       "/home/dev/.shipwright/workspace/state/reviews",
       "/home/dev/.shipwright/workspace/.claude",
     ]);
-  });
-
-  test("seeds CLAUDE.md alone when only agent-policy.md already exists", () => {
-    const c = cfg();
-    const seeds = buildProvisionSteps(
-      c,
-      existsIn([`${c.workspace}/state/agent-policy.md`]),
-    ).filter((s) => s.kind === "seed-file");
-    expect(seeds).toHaveLength(1);
-    expect(seeds[0]?.path).toBe("/home/dev/.shipwright/workspace/CLAUDE.md");
   });
 
   test("mkdir steps always precede seed-file steps", () => {
@@ -260,13 +243,12 @@ describe("buildCloneSteps", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildMigrationSteps", () => {
-  test("orders task-store generate → migrate → token seed → admin generate → migrate", () => {
+  test("orders task-store generate → migrate → token seed → admin migrate", () => {
     const steps = buildMigrationSteps(cfg());
     expect(steps.map((s) => [s.cwd, s.argv?.slice(1, 4).join(" ")])).toEqual([
       ["/repo/task-store", "prisma generate --schema=prisma/schema.prisma"],
       ["/repo/task-store", "prisma migrate deploy"],
       [REPO_ROOT, "run /repo/scripts/seed-task-store-token.ts --db-url"],
-      ["/repo/admin", "prisma generate --schema=prisma/schema.prisma"],
       ["/repo/admin", "prisma migrate deploy"],
     ]);
   });
@@ -278,16 +260,24 @@ describe("buildMigrationSteps", () => {
       DATABASE_URL_SHIPWRIGHT_TASK_STORE:
         "postgresql://alice@localhost:5432/shipwright_task_store_dev",
     });
-    expect(steps[4]?.env).toEqual({
+    expect(steps[3]?.env).toEqual({
       DATABASE_URL_SHIPWRIGHT_ADMIN:
         "postgresql://alice@localhost:5432/shipwright_dev",
     });
   });
 
-  test("leaves generate steps env-free — they touch no database", () => {
+  test("leaves the generate step env-free — it touches no database", () => {
     const steps = buildMigrationSteps(cfg());
     expect(steps[0]?.env).toBeUndefined();
-    expect(steps[3]?.env).toBeUndefined();
+  });
+
+  test("does not generate the admin client — it ships in @app-vitals/agent-admin", () => {
+    const steps = buildMigrationSteps(cfg());
+    expect(
+      steps.filter(
+        (s) => s.cwd === "/repo/admin" && s.argv?.includes("generate"),
+      ),
+    ).toEqual([]);
   });
 
   test("seeds the admin token against an already-migrated task-store DB", () => {
@@ -296,7 +286,9 @@ describe("buildMigrationSteps", () => {
     const migrateIdx = steps.findIndex((s) =>
       s.label.startsWith("task-store migrate"),
     );
-    const seedIdx = steps.findIndex((s) => s.label === "admin token seed failed");
+    const seedIdx = steps.findIndex(
+      (s) => s.label === "admin token seed failed",
+    );
     expect(seedIdx).toBeGreaterThan(migrateIdx);
   });
 
@@ -310,7 +302,6 @@ describe("buildMigrationSteps", () => {
       "running task-store prisma generate...",
       "running task-store prisma migrate...",
       "seeding task-store admin token...",
-      "running admin prisma generate...",
       "running admin prisma migrate...",
     ]);
   });
@@ -357,10 +348,8 @@ describe("buildPreflightSteps", () => {
       "mkdir",
       "mkdir",
       "seed-file",
-      "seed-file",
       "clone",
       "install-plugins",
-      "exec",
       "exec",
       "exec",
       "exec",
@@ -371,22 +360,19 @@ describe("buildPreflightSteps", () => {
   test("clones before installing plugins and migrating", () => {
     const c = cfg({ SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright" });
     const kinds = buildPreflightSteps(c, nothingExists).map((s) => s.kind);
-    expect(kinds.indexOf("clone")).toBeLessThan(kinds.indexOf("install-plugins"));
-    expect(kinds.indexOf("install-plugins")).toBeLessThan(kinds.indexOf("exec"));
+    expect(kinds.indexOf("clone")).toBeLessThan(
+      kinds.indexOf("install-plugins"),
+    );
+    expect(kinds.indexOf("install-plugins")).toBeLessThan(
+      kinds.indexOf("exec"),
+    );
   });
 
   test("still runs plugins + migrations when nothing needs provisioning", () => {
     const kinds = buildPreflightSteps(cfg(), everythingExists).map(
       (s) => s.kind,
     );
-    expect(kinds).toEqual([
-      "install-plugins",
-      "exec",
-      "exec",
-      "exec",
-      "exec",
-      "exec",
-    ]);
+    expect(kinds).toEqual(["install-plugins", "exec", "exec", "exec", "exec"]);
   });
 });
 
@@ -447,7 +433,10 @@ describe("runSteps", () => {
 
   test("exposes each exec/clone step's startLabel to the executor for progress logging", async () => {
     const c = cfg({ SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright" });
-    const steps = [...buildCloneSteps(c, nothingExists), ...buildMigrationSteps(c)];
+    const steps = [
+      ...buildCloneSteps(c, nothingExists),
+      ...buildMigrationSteps(c),
+    ];
     const startLabels: (string | undefined)[] = [];
 
     await runSteps(steps, (step) => {
@@ -457,9 +446,9 @@ describe("runSteps", () => {
     // Every clone/exec step in the preflight sequence carries a distinct
     // start-of-step message a real executor can log before spawning.
     expect(startLabels).toHaveLength(steps.length);
-    expect(startLabels.every((s) => typeof s === "string" && s.length > 0)).toBe(
-      true,
-    );
+    expect(
+      startLabels.every((s) => typeof s === "string" && s.length > 0),
+    ).toBe(true);
   });
 });
 
@@ -531,7 +520,9 @@ describe("buildServiceSpecs", () => {
     const [, admin] = buildServiceSpecs(cfg(), {});
     expect(admin?.env.ADMIN_DEV_AUTH).toBe("true");
     expect(admin?.env.SHIPWRIGHT_ENCRYPTION_KEY).toMatch(/^0{64}$/);
-    expect(admin?.env.SHIPWRIGHT_SESSION_SECRET).toContain("not-for-production");
+    expect(admin?.env.SHIPWRIGHT_SESSION_SECRET).toContain(
+      "not-for-production",
+    );
   });
 
   test("overlays onto the base env rather than replacing it", () => {
@@ -571,7 +562,9 @@ describe("buildPrCommand", () => {
         id: "pr-1",
         commitSha: "abc123",
       }),
-    ).toBe("/shipwright:review app-vitals/shipwright#42 [preclaim:pr-1:abc123]");
+    ).toBe(
+      "/shipwright:review app-vitals/shipwright#42 [preclaim:pr-1:abc123]",
+    );
   });
 
   test("routes a patch-phase candidate to /shipwright:patch", () => {

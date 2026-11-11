@@ -133,7 +133,41 @@ Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. Okta sign-in is
 available at `/admin/auth/okta`. When `OKTA_ISSUER`, `OKTA_CLIENT_ID`, and
 `OKTA_CLIENT_SECRET` are set, the login page (`/admin/login`) renders a "Sign in
-with Okta" button alongside the Google sign-in button.
+with Okta" button alongside the Google sign-in button. The login page shows only
+the providers that are configured (Google requires `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET`); with none configured it shows a misconfiguration
+notice instead of buttons.
+
+---
+
+## Admin feature flags
+
+The admin service supports several optional feature flags that gate functionality:
+
+- **`admin.ask.enabled`** — Agent ask feature (`SHIPWRIGHT_AGENT_ASK_ENABLED`). Defaults to `false`. When enabled, also configure `admin.ask.allowlist` with `fromAgentId>toAgentId` pairs (e.g., `[agent-a>agent-b]`); empty means no agent may ask any agent.
+- **`admin.chatCredentialMint.enabled`** — Chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). Defaults to `false`.
+- **`admin.doc.enabled`** — Admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). Defaults to `false`.
+- **`admin.podServiceAccount.enabled`** — Pod ServiceAccount flag (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). Defaults to `false`.
+- **`admin.cronRunNow.enabled`** — Cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). Defaults to `false`.
+- **`admin.transcriptApi.enabled`** — Cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). Defaults to `false`.
+- **`admin.repoAccessCheck.enabled`** — Agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Defaults to `false`.
+
+Example:
+
+```yaml
+admin:
+  ask:
+    enabled: true
+    allowlist:
+      - agent-a>agent-b
+      - agent-b>agent-c
+  chatCredentialMint:
+    enabled: true
+  doc:
+    enabled: false
+  podServiceAccount:
+    enabled: false
+```
 
 ---
 
@@ -149,7 +183,7 @@ subcharts. These are documented in a companion doc:
 
 ## See also
 
-- [`deploy-kubernetes-networking.md`](./deploy-kubernetes-networking.md) — the full networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services.
+- [`deploy-kubernetes-networking.md`](./deploy-kubernetes-networking.md) — the full networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services, and the tenant agent NetworkPolicy (`selfServe.networkPolicy.enabled`; requires a CNI that enforces NetworkPolicy).
 - [`deploy-kubernetes-provisioning.md`](./deploy-kubernetes-provisioning.md) — the full agent runtime provisioning model: RBAC, the provisioner env contract, provisioning values, and the task-store claim TTL constraint.
 - [`deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md) — optional add-ons: agent voice, Web Push notifications, bringing your own PostgreSQL, and bundled ingress-controllers/cert-manager.
 - [`helm-repo.md`](./helm-repo.md) — installing from the published Helm repo and how publishing is triggered.

@@ -372,6 +372,30 @@ tests:
           content:
             name: METRICS_INTERNAL_API_KEY
 
+  - it: injects METRICS_API_KEYS via secretKeyRef when apiKeys.existingSecret is set
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.apiKeys.existingSecret: admin-api-keys
+      metrics.apiKeys.existingSecretKey: SHIPWRIGHT_ADMIN_API_KEYS
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: admin-api-keys
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+
+  - it: omits METRICS_API_KEYS when apiKeys.existingSecret is empty (default)
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_API_KEYS
+          any: true
+
   - it: injects the public-mode env when metrics.public.enabled with a repo
     template: templates/metrics-deployment.yaml
     set:

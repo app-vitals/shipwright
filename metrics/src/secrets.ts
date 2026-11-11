@@ -24,7 +24,7 @@ export interface SecretManagerClient {
 }
 
 /** Factory that creates a SecretManagerClient — injectable for tests */
-export type SecretManagerClientFactory = () => SecretManagerClient;
+type SecretManagerClientFactory = () => SecretManagerClient;
 
 /** Error thrown when a secret cannot be resolved from any source */
 export class SecretNotFoundError extends Error {
@@ -105,5 +105,3 @@ export function createSecretsClient(
 
   return { getSecret };
 }
-
-export type SecretsClient = ReturnType<typeof createSecretsClient>;

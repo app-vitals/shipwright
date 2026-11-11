@@ -4,7 +4,7 @@
 
 ## Overview
 
-`docs/consolidation.md`-style patrol crons work by pairing a cheap precheck script with a full-check command dispatched only when the precheck finds something worth doing. The repo-scoped `check-docs-freshness.ts` (wired as the `preCheck` for the `shipwright-docs-freshness` cron, see [`docs/architecture.md`](./architecture.md)) answers "has any repo changed source since its docs were last synced?" across every repo under `repos/`. The **site-docs-freshness** mechanism (SDR track) answers the same question at a finer grain: for the `site/` marketing pages specifically, which *individual page* has drifted from the source files it's documenting, tracked with its own last-synced anchor rather than one shared repo-wide anchor.
+`docs/consolidation.md`-style patrol crons work by pairing a cheap precheck script with a full-check command dispatched only when the precheck finds something worth doing. The repo-scoped `check-docs-freshness.ts` (wired as the `preCheck` for the `shipwright-docs-freshness` cron, see [`docs/architecture.md`](./architecture.md)) answers "has any repo changed source since its docs were last synced?" across every repo in the agent's configured `repos[]` (filtered via `resolveScopedRepos`, see [`docs/agent-ops.md`](./agent-ops.md#multi-repo-scoping-via-resolvescopedrepos)). The **site-docs-freshness** mechanism (SDR track) answers the same question at a finer grain: for the `site/` marketing pages specifically, which *individual page* has drifted from the source files it's documenting, tracked with its own last-synced anchor rather than one shared repo-wide anchor.
 
 ## The source map: `site/docs-source-map.json`
 
@@ -54,7 +54,7 @@ Unit-tested via `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.
 
 ## Wiring status
 
-**Available to wire per-agent — not part of the generic coding manifest.** Unlike the repo-scoped `shipwright-docs-freshness` cron (generically useful across every repo under `repos/`, and seeded onto every `coding`-type agent via `agent-types/coding/manifest.yaml`), `shipwright-site-docs-freshness`'s precheck and downstream command are both scoped to this one repo's own marketing site (`site/docs-source-map.json`, `site/src/content/docs/`). That scoping means it doesn't belong in the generic manifest every `coding`-type agent gets by default — it's only relevant to an agent that maintains *this* repo's site.
+**Available to wire per-agent — not part of the generic coding defaults.** Unlike the repo-scoped `shipwright-docs-freshness` cron (generically useful across every repo in the agent's configured `repos[]`, and seeded onto every `coding`-type agent via `admin/src/coding/coding-specialty-defaults.ts`), `shipwright-site-docs-freshness`'s precheck and downstream command are both scoped to this one repo's own marketing site (`site/docs-source-map.json`, `site/src/content/docs/`). That scoping means it doesn't belong in the generic defaults every `coding`-type agent gets by default — it's only relevant to an agent that maintains *this* repo's site.
 
 An operator who wants it can wire it as a [custom cron](./extending.md#custom-cron-jobs-for-scheduled-automation) via `POST /agents/:id/crons`, mirroring `shipwright-docs-freshness`'s shape:
 
@@ -67,4 +67,4 @@ An operator who wants it can wire it as a [custom cron](./extending.md#custom-cr
 }
 ```
 
-See [`docs/agent-types.md`](./agent-types.md) for the manifest schema and the `preCheck` contract, and [`docs/extending.md`](./extending.md) for the full custom-cron API reference.
+See [`docs/platform/specialties.md`](./platform/specialties.md) for the manifest schema and the `preCheck` contract, and [`docs/extending.md`](./extending.md) for the full custom-cron API reference.

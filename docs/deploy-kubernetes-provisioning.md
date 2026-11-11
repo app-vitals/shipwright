@@ -22,12 +22,16 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
 - Creating an agent creates a per-agent **PersistentVolumeClaim** (for persistent
   agent home storage), mints a scoped per-agent token, creates a per-agent
   **Secret** (carrying the token), and a per-agent **Deployment** (referencing
-  both), in that order. All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
+  both), in that order. In `perAgent` Anthropic identity mode the agent's own
+  ServiceAccount and Anthropic identity are created between the PVC and the
+  Secret (see [perAgent identity mode](#peragent-identity-mode-opt-in)). All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
 - `DELETE /agents/:id` runs the full `deleteAgentFully()` orchestration:
   deprovisions the agent's Kubernetes workload (Deployment, Secret, and PVC),
-  revokes the agent's task-store and chat-service tokens, deletes its chat
-  threads, and deletes the agent database row (last step, only if all other
-  steps succeeded). Every step is idempotent and safe to retry. Deleted agents
+  removes the agent's per-agent Anthropic identity when it has one (federation
+  rule, then Anthropic service account, then Kubernetes ServiceAccount; agents
+  without one skip this step), revokes the agent's task-store and chat-service
+  tokens, deletes its chat threads, and deletes the agent database row (last
+  step, only if all other steps succeeded). Every step is idempotent and safe to retry. Deleted agents
   do not leak persistent storage.
 
 ### What the chart renders when provisioning is enabled
@@ -37,8 +41,8 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
     **`Role`** + **`RoleBinding`** named `<admin>-agent-provisioner`, granting
     `create`, `get`, `list`, `patch`, `update`, and `delete` on `Deployments`
     (`apps`) and `create`, `get`, `delete` on `Secrets` and
-    `PersistentVolumeClaims` (core) — exactly the verbs the provisioner
-    exercises, scoped to the release namespace (least privilege).
+    `PersistentVolumeClaims` and `ServiceAccounts` (core) — exactly the verbs
+    the provisioner exercises, scoped to the release namespace (least privilege).
   - **Non-empty (cross-namespace provisioning):** a **`ClusterRole`** +
     **`ClusterRoleBinding`** with the same name and verb set, so the admin
     service can provision agents into a namespace other than its own release
@@ -47,7 +51,10 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
     subject's namespace scopes which ServiceAccount is granted the
     permissions.
 - A separate **agent ServiceAccount** that provisioned agent pods run as
-  (distinct from the admin SA).
+  (distinct from the admin SA). It is rendered into the agent namespace
+  (`agent.provisioning.namespace`, else the release namespace), because
+  Kubernetes refuses to schedule a pod whose ServiceAccount is missing from the
+  pod's own namespace.
 - The provisioner env contract injected into the admin Deployment, matching
   `admin/src/main.ts` `buildProvisioner`.
 
@@ -71,6 +78,7 @@ agent:
         cpu: ""                     # e.g. "320m"; empty keeps the provisioner's own default
         memory: ""                  # e.g. "3Gi"; empty keeps the provisioner's own default
       limits:
+        cpu: ""                     # tenant pods only, e.g. "2"; empty keeps the provisioner's default
         memory: ""                  # e.g. "9Gi"; empty keeps the provisioner's own default
       ephemeralStorage: ""          # e.g. "5Gi"; applied to both request and limit; empty keeps the provisioner's own default
 ```
@@ -88,11 +96,259 @@ cascade-delete every provisioned agent on admin uninstall.)
 
 The provisioned agent container's resource requests/limits can also be
 overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
-`SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST`, `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT`, and
+`SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST`, `SHIPWRIGHT_K8S_AGENT_CPU_LIMIT` (tenant pods only), `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT`, and
 `SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` — unset fields keep today's defaults
 (500m cpu / 2Gi memory request / 8Gi memory limit / 4Gi ephemeral storage, no
 CPU limit). See [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
 for full defaults and rationale.
+
+Provisioned agent pods can also receive a Claude Code managed-policy file: set
+`SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP` to the name of a ConfigMap whose
+`managed-settings.json` key is mounted read-only at `/etc/claude-code`, and
+optionally `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` to roll pods when the policy
+changes. Both are unset by default (no mount). The provisioner's `reconcile()`
+pass also brings existing agent Deployments in line with the policy (adding or
+removing the mount and hash annotation as needed). See
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
+for details.
+
+The chart can render that ConfigMap and inject both env vars for you via
+`agent.provisioning.claudePolicy`:
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    claudePolicy:
+      enabled: true
+      settings:                    # free-form Claude Code managed settings, rendered as managed-settings.json
+        permissions:
+          deny: ["Bash(curl:*)"]
+```
+
+How it behaves:
+
+- **Values block.** `claudePolicy.enabled` (default `false`) turns the feature
+  on; `claudePolicy.settings` is a free-form object rendered as pretty-printed
+  JSON into the ConfigMap's single `managed-settings.json` key. With the default
+  values nothing renders: no ConfigMap and no
+  `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_*` env on admin. Rendering fails if
+  `claudePolicy.enabled` is set without `agent.provisioning.enabled` or with
+  empty `settings`.
+- **Mount path.** The provisioner mounts the ConfigMap read-only at
+  `/etc/claude-code`, so the file lands at
+  `/etc/claude-code/managed-settings.json` — the system-wide path Claude Code
+  reads managed policy from on Linux.
+- **Read-only.** The mount is read-only and lives outside the agent's home
+  PVC, so neither the agent nor a Claude run inside it can edit or remove the
+  policy. Managed settings also override user and project settings, so the
+  agent cannot loosen it from its own `settings.json`.
+- **Automatic rollout.** `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` is the
+  sha256 of the rendered JSON. Because it is an env var on the admin
+  Deployment, changing any `settings` value (or toggling `enabled`) restarts
+  admin on `helm upgrade`. On startup admin runs a policy-only reconcile across
+  every managed (non-self-hosted) agent, patching only the policy volume, mount
+  and `shipwright.dev/claude-policy-hash` pod annotation, plus the Anthropic
+  federation wiring when federation is configured. Only agents whose policy or
+  federation wiring actually drifted roll; disabling the policy removes the mount from
+  existing agents the same way.
+- **Agent pods only.** The policy is mounted only into provisioned agent pods.
+  Admin, task-store, chat, metrics and mcp-server pods never receive it, and
+  self-hosted agents (which manage their own workloads) are not touched.
+- **Namespace.** The ConfigMap is rendered into `agent.provisioning.namespace`
+  (else the release namespace), next to the agent pods that mount it. The chart
+  does not create a separate agent namespace — when
+  `agent.provisioning.namespace` is set, that namespace must already exist
+  before `helm install`/`helm upgrade`, or the ConfigMap fails to apply.
+- **Precedence.** Claude Code managed settings delivered remotely (via the
+  Claude admin console) take precedence over a local
+  `managed-settings.json`. If your organization already pushes remote managed
+  settings, the file from this chart does not apply; use one mechanism or the
+  other.
+
+Provisioned agent pods can also authenticate to Anthropic with Workload
+Identity Federation instead of a long-lived key: set
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID` together with
+`SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT`,
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID` and
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID` on admin. Pods
+then run as that ServiceAccount with a projected token (audience
+`https://api.anthropic.com`, 600s by default) mounted read-only at
+`/var/run/secrets/anthropic.com/token`, plus the `ANTHROPIC_*` federation env.
+It is off by default (manifest unchanged); a partial config fails admin
+startup, and the startup policy-only reconcile adds or removes the wiring on
+existing agents. See
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service).
+
+When moving an existing deployment to federation, clean the stored credentials with the one-off `POST /agents/federation/strip-credentials` migration (dry run by default); see [`agent-api.md`](./platform/agent-api.md#environment-variables).
+
+The chart injects these for you via `agent.provisioning.anthropicFederation`:
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    serviceAccount:
+      create: true                 # or create: false with an existing name
+    anthropicFederation:
+      enabled: true
+      federationRuleId: "<rule-id>"
+      organizationId: "<organization-id>"
+      serviceAccountId: "<service-account-id>"
+      workspaceId: ""              # optional
+      audience: https://api.anthropic.com
+      tokenExpirationSeconds: 600  # 600 to 3600
+```
+
+`SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT` is set to the agent ServiceAccount
+(`agent.provisioning.serviceAccount`), and the projected token's subject is
+that ServiceAccount, so the federation rule must trust it. With the default
+values nothing is injected. Rendering fails if `anthropicFederation.enabled` is
+set without `agent.provisioning.enabled`, with an empty `federationRuleId`,
+`organizationId` or `serviceAccountId`, or with no agent ServiceAccount
+(`serviceAccount.create=false` and an empty `serviceAccount.name`, which would
+otherwise fall back to the namespace `default` ServiceAccount).
+
+#### perAgent identity mode (opt-in)
+
+Set `anthropicFederation.identityMode: perAgent` to give each agent its own
+identity instead of the shared one. perAgent mode requires `agent.provisioning.enabled`,
+`organizationId`, `issuerId` (this cluster's Anthropic issuer ID) and
+`adminFederation.ruleId` / `adminFederation.serviceAccountId` (the org:admin
+bootstrap rule and service account the admin pod uses to sign in to the Admin
+API). `federationRuleId`, `serviceAccountId` and the agent ServiceAccount are
+not required. `nameSuffix` (`^[a-z0-9-]*$`) is appended to per-agent names. In
+this mode the admin pod gets its own projected token at
+`/var/run/secrets/anthropic.com/token` plus `ANTHROPIC_IDENTITY_TOKEN_FILE`,
+`ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`,
+`ANTHROPIC_SERVICE_ACCOUNT_ID` (and `ANTHROPIC_WORKSPACE_ID` when set). The
+default `shared` mode renders none of this. Admin startup fails if the admin
+pod's own sign-in env (`ANTHROPIC_IDENTITY_TOKEN_FILE`,
+`ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`) is missing.
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    anthropicFederation:
+      enabled: true
+      identityMode: perAgent
+      organizationId: "<organization-id>"
+      issuerId: "<issuer-id>"          # this cluster's OIDC issuer in Anthropic
+      nameSuffix: ""                   # e.g. "staging"; ^[a-z0-9-]*$
+      workspaceId: ""                  # optional
+      adminFederation:
+        ruleId: "<bootstrap-rule-id>"
+        serviceAccountId: "<bootstrap-service-account-id>"
+      audience: https://api.anthropic.com
+      tokenExpirationSeconds: 600
+```
+
+##### Bootstrap rule
+
+Before enabling perAgent, an org admin does this one-time setup in Anthropic:
+
+1. Register this cluster's OIDC issuer. Its ID is `issuerId`.
+2. Create one Anthropic service account for the admin service. Its ID is
+   `adminFederation.serviceAccountId`.
+3. Create a federation rule bound to that service account, with the `org:admin`
+   scope, on that issuer. Its ID is `adminFederation.ruleId`. Its subject must
+   match exactly `system:serviceaccount:<release namespace>:<admin
+   ServiceAccount>`, where the admin ServiceAccount is
+   `admin.serviceAccount.name`, or the admin fullname when
+   `admin.serviceAccount.create` is true. Its audience is
+   `anthropicFederation.audience`.
+
+The admin pod gets a projected token with that audience and uses it to sign in
+to the Anthropic Admin API. That sign-in is what creates and archives the
+per-agent service accounts and federation rules. The per-agent rules have the
+`workspace:inference` scope only; the `org:admin` rule is used only by the admin
+pod. Treat the bootstrap rule as privileged and keep its subject exact.
+
+Provisioning a new agent in perAgent mode runs, in order:
+
+1. the PVC;
+2. a Kubernetes ServiceAccount with the same name as the agent's Deployment;
+3. an Anthropic service account named after the agent's owner (see
+   [Naming](#naming)), added to `workspaceId` when one is set;
+4. a federation rule with the same name, on this cluster's `issuerId`, that
+   matches exactly the subject `system:serviceaccount:<agent namespace>:<sa>`
+   and the agent token audience, with scope `workspace:inference` and a 600s
+   token lifetime;
+5. the Secret, then the Deployment, which runs as that ServiceAccount and gets
+   that agent's own `ANTHROPIC_FEDERATION_RULE_ID` and
+   `ANTHROPIC_SERVICE_ACCOUNT_ID`.
+
+Each ID (`k8sServiceAccountName`, `anthropicServiceAccountId`,
+`anthropicFederationRuleId`) is saved on the agent row right after it is
+created. A retry reuses saved IDs, so it creates no duplicates. When a create
+conflicts because an earlier ID write was lost, the existing service account or
+rule is found by name and saved. If a later step fails, the steps this attempt
+completed are undone on a best-effort basis, in reverse order: the Secret
+(with its tokens), the rule (archived), the Anthropic service account
+(archived) and the ServiceAccount (deleted), and their IDs are cleared. The PVC
+is never rolled back. An agent with no owner email fails with a clear error
+before anything is created.
+
+##### Naming
+
+The Anthropic service account and its federation rule share one name, saved as
+the agent's `anthropicIdentityName`. The name is built in this order:
+
+- the owner email's local part (before the last `@`), without any `+tag`,
+  lowercased, with each run of characters outside `[a-z0-9]` replaced by one
+  `-`, and leading and trailing `-` trimmed;
+- then `-a{n}`, where `n` is the next free number for that owner (the first
+  agent is `a1`, the second `a2`, and so on);
+- then `-<nameSuffix>` when `nameSuffix` is set.
+
+For example, `jane.doe+bot@example.com` becomes `jane-doe-a1`, or
+`jane-doe-a1-staging` with `nameSuffix: staging`. Names match `^[a-z0-9-]+$`,
+are at most 255 characters (the base is truncated to fit) and are unique.
+
+Set `nameSuffix` when several clusters share one Anthropic organization, so
+their names do not collide. The domain is dropped, so a name identifies the
+owner only loosely. For the exact owner, read the agent record (see the
+[IT runbook](./platform/anthropic-usage-by-agent.md)).
+
+##### Migrating existing agents
+
+Existing agents are moved by reconcile. A full reconcile
+(`POST /agents/reconcile`) gives each existing agent that has an owner but no
+identity of its own the same identity steps as above, then patches its
+Deployment off the shared ServiceAccount: `serviceAccountName`, the projected
+token volume and the federation env (`ANTHROPIC_FEDERATION_RULE_ID`,
+`ANTHROPIC_SERVICE_ACCOUNT_ID`, ...). The moved agents are listed in
+`migrated`. An agent that already moved is not created or patched again, so
+re-running is safe, and a failed move keeps the IDs it saved and is retried on
+the next run. Agents with no owner are listed in `noOwner`, left as they are,
+and are not counted as failures; set an owner and reconcile again.
+
+Run `POST /agents/reconcile?dryRun=true` first to see what would change:
+nothing is created in Anthropic or Kubernetes, nothing is saved and no
+Deployment is patched, and the response lists the agents that would be
+recreated, updated and moved (`dryRun: true`). The startup reconcile is
+policy-only: it never creates identities on a boot, it only corrects the wiring
+of agents that already have one.
+
+To move a cluster from `shared` to `perAgent`:
+
+1. Do the [bootstrap setup](#bootstrap-rule).
+2. Run `helm upgrade` with `identityMode: perAgent` and the values above.
+3. Make sure every agent has an owner (`ownerEmail`; `GET /agents/:id` shows
+   it). Agents without one are listed in `noOwner`.
+4. Run `POST /agents/reconcile?dryRun=true` and review the result.
+5. Run `POST /agents/reconcile`. Check `migrated` and `noOwner`. Set owners and
+   run reconcile again until `noOwner` is empty.
+6. Once every agent has moved, no agent uses the shared federation rule or the
+   shared service account. Archive them in Anthropic.
+
+Deleting an agent removes its Anthropic identity as part of
+`DELETE /agents/:id` (see above). If that removal fails, the agent row is kept
+and the checklist names the identity pieces still live.
+
+To attribute Anthropic usage to agents and owners, see
+[Anthropic usage by agent](./platform/anthropic-usage-by-agent.md).
 
 ### Chat service provisioning (opt-in)
 

@@ -69,7 +69,9 @@ describe("consolidation-fix — reads consolidation-report.md, ready_to_propose 
 
 describe("consolidation-fix — cross-checks consolidation-decisions.md", () => {
   it("mentions .claude/shipwright/consolidation-decisions.md", () => {
-    expect(readSkill()).toContain(".claude/shipwright/consolidation-decisions.md");
+    expect(readSkill()).toContain(
+      ".claude/shipwright/consolidation-decisions.md",
+    );
   });
 
   it("documents cross-checking it before queueing (not just reading it once)", () => {
@@ -79,7 +81,9 @@ describe("consolidation-fix — cross-checks consolidation-decisions.md", () => 
 
   it("mentions accepted debt / suppression as a reason to skip queueing", () => {
     const lower = readSkill().toLowerCase();
-    expect(lower.includes("accepted as debt") || lower.includes("suppress")).toBe(true);
+    expect(
+      lower.includes("accepted as debt") || lower.includes("suppress"),
+    ).toBe(true);
   });
 });
 
@@ -171,7 +175,9 @@ describe("consolidation-fix — strangler-fig execution plan", () => {
   it("documents breaking the migration into small, separate PRs (not one sweeping diff)", () => {
     const lower = readSkill().toLowerCase();
     expect(lower).toContain("small");
-    expect(lower.includes("separate pr") || lower.includes("pr-sized")).toBe(true);
+    expect(lower.includes("separate pr") || lower.includes("pr-sized")).toBe(
+      true,
+    );
   });
 });
 
@@ -190,7 +196,9 @@ describe("consolidation-fix — per-finding hitl classification", () => {
   it("documents multiple-plausible-shapes / crosses-service-boundary / >~5 call sites path to hitl: true", () => {
     const lower = readSkill().toLowerCase();
     expect(lower.includes("multiple plausible")).toBe(true);
-    expect(lower.includes("service") || lower.includes("repo boundar")).toBe(true);
+    expect(lower.includes("service") || lower.includes("repo boundar")).toBe(
+      true,
+    );
     expect(lower).toMatch(/five call sites|~5 call sites|5 call sites/);
   });
 
@@ -222,6 +230,14 @@ describe("consolidation-fix — constraints", () => {
     const lower = readSkill().toLowerCase();
     expect(lower).toContain("consolidation-scan");
     expect(lower).toContain("does not re-run");
+  });
+});
+
+// ── Cites the shared decisions-registry reference doc (DRU-1.1) ─────────────
+
+describe("consolidation-fix — cites the shared decisions-registry reference doc", () => {
+  it("Step 3 cites references/decisions-registry.md", () => {
+    expect(readSkill()).toContain("references/decisions-registry.md");
   });
 });
 

@@ -56,6 +56,37 @@ export interface CronRunTokenStats {
   daily: DailyTokenAggregate[];
   byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
   byPhase: KeyedTokenAggregate[]; // key=phase; runs with a null phase are excluded
+  bySkill?: SkillUsageAggregate[]; // per (kind,name); skipped runs excluded
+  baselines?: ContextBaselineAggregate[]; // per (fingerprint,model,phase); skipped included, no-baseline excluded
+}
+
+/** Per-skill / per-subagent usage rollup across runs. */
+export interface SkillUsageAggregate {
+  kind: string;
+  name: string;
+  runs: number;
+  invocations: number;
+  turns: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  avgInvokeContextDelta: number | null;
+}
+
+/** First-turn context baseline rollup, ordered by first appearance. */
+export interface ContextBaselineAggregate {
+  contextFingerprint: string | null;
+  baselineModel: string | null;
+  phase: string | null;
+  runs: number;
+  avgContextTokens: number;
+  minContextTokens: number;
+  maxContextTokens: number;
+  avgTurns: number | null;
+  avgToolCalls: number | null;
+  firstSeen: string;
+  lastSeen: string;
 }
 
 /** Chat-daily-sourced stats: per-agent + per-model + daily. */

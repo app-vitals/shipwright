@@ -74,22 +74,33 @@ Determine which repos to process, in this priority order:
    `repos/`, applied the opt-in qualification (a repo qualifies only if it has
    a `docs/test-readiness/` directory — a repo without one is not the implicit
    target and is skipped), and its stdout — which became this prompt (see
-   the agent type manifest's cron `preCheck` contract: "When a preCheck script is
+   the specialty manifest's cron `preCheck` contract: "When a preCheck script is
    set, its stdout becomes the actual prompt sent to Claude") — lists exactly
    which repo(s) have a stale or missing phase artifact, one repo name
    (`org/repo`) per section. Parse the repo names out of the invoking prompt
    and use that as the repo list. Skip any repo not named in the precheck
    output — it had nothing to run.
 2. **Fallback (manual invocation, or no repo list available in the prompt).**
-   Iterate `repos/*` directly and keep only repos with a `docs/test-readiness/`
-   directory (the same opt-in signal the precheck uses):
+   Call the config-driven resolver directly, then keep only repos with a
+   `docs/test-readiness/` directory (the same opt-in signal the precheck uses):
    ```bash
-   for dir in repos/*/; do
-     [ -d "$dir/.git" ] && [ -d "$dir/docs/test-readiness" ] && basename "$dir"
-   done
+   bun run - <<EOF
+   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
+   const repos = await resolveScopedRepos(resolveWorkspacePath());
+   console.log(repos.join("\n"));
+   EOF
    ```
-   A repo under `repos/` with no `docs/test-readiness/` directory is skipped
-   cleanly — it is never silently treated as the implicit single target.
+   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
+   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   For each repo name returned, keep it only if its local clone directory has a
+   `docs/test-readiness/` directory; drop the rest. A repo with no `docs/test-readiness/`
+   directory is skipped cleanly — it is never silently treated as the implicit single
+   target. Note: `check-test-readiness.ts`'s own precheck (priority-1 list above) still
+   resolves its repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver —
+   the two paths are not yet unified, so this fallback can scope more narrowly than the
+   precheck does.
 
 For each resolved repo, match the precheck's `org/repo` name back to its local
 clone directory `repos/{dirname}` by checking each `repos/*/`'s
@@ -198,9 +209,60 @@ artifact. A failure in one repo does not stop the remaining repos in the
 resolved list; move on to the next repo after logging the failure.
 
 After phase 5 (or an early stop due to failure) completes for the current
-repo, return to Step 1's per-repo loop for the next repo in the resolved
-list. Once every repo has been processed (run or skipped for being fresh),
-proceed to Step 4.
+repo, proceed to Step 3.5 to commit and open a PR with the refresh results.
+
+### Step 3.5: Commit and Open PR
+
+After all phases have completed successfully for this repo, push the branch to
+origin and open (or update) a PR for the phase-artifact refresh.
+
+**Push the branch:**
+
+```bash
+git push --set-upstream origin {branch-name}
+```
+
+Where `{branch-name}` is either:
+- The fresh-branch case (from Step 1's fresh-branch flow): `docs/test-readiness-refresh-{YYYYMMDD}` (today's date)
+- The reused-branch case (from Step 1's open-PR supersession flow): the existing earlier-day branch name checked out in this worktree
+
+**Check for an existing open PR on this branch:**
+
+```bash
+gh pr list --repo {org}/{repo} --head {branch-name} --state open --json number
+```
+
+If this command returns a result (PR already exists for this branch), stop here — the push
+already updated the open PR, and no further action is needed. This handles the reused-branch
+case from Step 1, where an earlier-day PR is still open and absorbs today's updates via the
+merged `origin/main` and the newly-pushed phase artifacts.
+
+**If no PR exists (fresh-branch case only), create the label and open the PR:**
+
+Create the idempotent `shipwright` label with `--force`, which upserts rather than
+erroring if the label already exists (matching the pattern applied across Shipwright
+skills — see `plugins/shipwright/commands/research-docs.md` Step A7.5 for the
+consistency rationale):
+
+```bash
+gh label create shipwright \
+  --description "Opened autonomously by Shipwright" \
+  --color 1D76DB \
+  --force
+```
+
+Then open the PR with the shipwright label:
+
+```bash
+gh pr create \
+  --title "docs: test-readiness refresh ({YYYYMMDD})" \
+  --body "Automated test-readiness phase-artifact refresh" \
+  --label shipwright
+```
+
+After the PR is open (or updated in the reused-branch case), return to Step 1's
+per-repo loop for the next repo in the resolved list. Once every repo has been
+processed (run or skipped for being fresh), proceed to Step 4.
 
 ### Step 4: Report
 

@@ -22,7 +22,7 @@ import { join, relative } from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface Hit {
+interface Hit {
   /** Path relative to the scanned root directory. */
   file: string;
   /** 1-based line number of the match. */

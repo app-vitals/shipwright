@@ -16,7 +16,7 @@ export type { ResponseMeta } from "./schemas.ts";
 
 // ─── Meta / Envelope types ────────────────────────────────────────────────────
 
-export interface MetricsEnvelope<T> {
+interface MetricsEnvelope<T> {
   data: T;
   meta: ResponseMeta;
 }

@@ -38,23 +38,21 @@
  *
  * Out of scope: no dispatch loop (the operator drives `claude` themselves),
  * no local task-store/admin service startup, no task-store token minting,
- * no changes to the real agent's own K8s deployment. The config bundle has
- * no `policy` field, so state/agent-policy.md is always seeded from the
- * static default template (via ensureAgentHome), not a copy of the real
- * agent's live autonomy settings.
+ * no changes to the real agent's own K8s deployment.
  */
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentConfigResponse, AgentPlugin } from "@shipwright/admin";
+import type { AgentConfigResponse, AgentPlugin } from "@app-vitals/agent-admin";
+import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
+import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
+import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
 import {
   ensureAgentHome,
   installPlugins as realInstallPlugins,
-} from "../agent/src/setup.ts";
-import { HttpShipwrightRuntimeClient } from "../agent/src/shipwright-runtime-client.ts";
-import { SECRET_ENV_VARS } from "../lib/secret-env-vars.ts";
-import { computeMissingClones } from "./lib/clone-plan.ts";
+} from "@app-vitals/agent-runtime/setup";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
 
 // ---------------------------------------------------------------------------
 // Agent summary (GET /agents list-summary shape — no `repos` field, mirrors
@@ -74,7 +72,7 @@ export interface AgentSummary {
 // assertion).
 // ---------------------------------------------------------------------------
 
-export type ResolveAgentResult =
+type ResolveAgentResult =
   | { ok: true; agent: AgentSummary }
   | { ok: false; reason: "not-found" | "ambiguous"; message: string };
 
@@ -211,7 +209,7 @@ export interface PullAgentWorkspaceDeps {
   warn: (line: string) => void;
 }
 
-export interface PullAgentWorkspaceResult {
+interface PullAgentWorkspaceResult {
   agent: AgentSummary;
   workspaceRoot: string;
   clonedRepos: string[];
@@ -240,7 +238,7 @@ export async function pullAgentWorkspace(
 
   const workspaceRoot = buildWorkspaceRoot(pullRoot, agent.name);
   // Clone into <workspaceRoot>/workspace/repos to match ensureAgentHome()'s
-  // scaffolding (agent/src/setup.ts) and the documented
+  // scaffolding (@app-vitals/agent-runtime setup.ts) and the documented
   // <AGENT_HOME>/workspace/repos convention (docs/configuration.md) — so the
   // clones and the scaffolded state/identity files live in one coherent
   // mirrored tree, not disconnected siblings.
@@ -285,15 +283,26 @@ export async function pullAgentWorkspace(
 // Main entrypoint
 // ---------------------------------------------------------------------------
 
-async function realCloneRepo(repo: string, dest: string): Promise<void> {
-  const result = Bun.spawnSync(["gh", "repo", "clone", repo, dest], {
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`gh repo clone failed for ${repo}`);
-  }
+/**
+ * Real `gh repo clone` shell-out. The repo scope entry's org is passed as
+ * SHIPWRIGHT_GH_OWNER (GOR-1.3). Spawner injectable for tests.
+ */
+export function makeRealCloneRepo(
+  spawnSync: typeof Bun.spawnSync = Bun.spawnSync,
+): (repo: string, dest: string) => Promise<void> {
+  return async (repo, dest) => {
+    const result = spawnSync(["gh", "repo", "clone", repo, dest], {
+      env: { ...process.env, SHIPWRIGHT_GH_OWNER: ownerOfRepo(repo) },
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(`gh repo clone failed for ${repo}`);
+    }
+  };
 }
+
+const realCloneRepo = makeRealCloneRepo();
 
 if (import.meta.main) {
   const idOrName = process.argv[2];

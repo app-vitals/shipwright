@@ -1,12 +1,12 @@
 // Unit tests for compute-unaddressed-findings.ts — pure logic, no I/O.
 //
-// Ported from agent/src/check-patch.unit.test.ts's getPatchCandidates()-level
+// Ported from agent/src/coding/check-patch.unit.test.ts's getPatchCandidates()-level
 // scenario matrix (PVD-1.1) — these scenarios exercised hasUnaddressedFindings
 // and its helpers only indirectly, through the full candidate collection
 // pipeline. Now that hasUnaddressedFindings is extracted and exported, these
 // scenarios are ported to call it directly with a PrReviewData + currentUser
 // input, asserting the boolean result — same scenarios, new location, not
-// duplicated in agent/src/check-patch.unit.test.ts (see that file's
+// duplicated in agent/src/coding/check-patch.unit.test.ts (see that file's
 // remaining getPatchCandidates() tests for wiring-level smoke coverage
 // instead).
 //
@@ -14,32 +14,70 @@
 // isResolvedByPriorFindingsStatus exclusions from hasUnaddressedFindings
 // (production ledger data confirmed isResolvedByLedger, PFL-3.2, covers
 // every case they caught) and deleted the now-dead isResolvedByPriorFindingsStatus
-// entirely. PFL-5.1 restored isSelfCleanApprove/isSupersededBySelfReview as
-// fallback exclusions alongside isResolvedByLedger: a PR whose only review
-// ever posted is a clean self-approve never gets a subsequent review pass
-// (nothing changed to re-review), so review.md's Step 5.5 never gets a
-// chance to retroactively ledger it as a "prior" review, and
-// isResolvedByLedger stays false for it forever. isResolvedByPriorFindingsStatus
-// remains removed (PVD-1.3 had no other caller). isSelfCleanApprove and
-// isSupersededBySelfReview themselves are still exported and still tested
-// directly below — review.md's Step 5.5 still calls them to decide what to
-// write to the findings ledger.
+// entirely. PFL-5.1 temporarily restored isSelfCleanApprove/isSupersededBySelfReview
+// as fallbacks; PFL-5.2 ledgers self-reviews at post time, so PFL-5.4 removed
+// them again. isSelfCleanApprove and isSupersededBySelfReview themselves are
+// still exported and tested directly below — review.md's Step 5.5 and
+// check-patch.ts still use them.
+//
+// ─── PHS-1.1 characterization inventory ─────────────────────────────────────
+// Maps every handled-finding exclusion in hasUnaddressedFindings to the tests
+// that pin it, so later simplification can tell which cases are covered.
+// "EXISTING" = pre-PHS-1.1 test (by name); "PHS-1.1" = added in the
+// "PHS-1.1 characterization" describe block at the bottom of this file.
+//
+// Qualification gate (COMMENTED/CHANGES_REQUESTED at headRefOid):
+//   EXISTING "returns false when there are no COMMENT/CHANGES_REQUESTED reviews";
+//   EXISTING "returns false when the COMMENT review was posted at an older commit ..."
+// CPF-2.1 / DRO-1.2 self-review exclusions: removed (PFL-5.4); ledger-covered.
+//   Remaining negative cases (still true): self-APPROVE alongside a third-party
+//   CHANGES_REQUESTED, non-APPROVE self-review bodies, order-matters, third-party
+//   leading-APPROVE body is NOT excluded.
+// PSL-1.1 same-head approval supersede (isSupersededBySameHeadApproval):
+//   EXISTING the whole "isSupersededBySameHeadApproval / hasUnaddressedFindings
+//   (PSL-1.1)" describe (same head, newer head, different reviewer, earlier APPROVED,
+//   unresolved threads still count).
+//   PHS-1.1: "same-head supersede requires state APPROVED ...", "same-head supersede
+//   matches the reviewer through canonicalLogin".
+// PFL-3.2 ledger (isResolvedByLedger):
+//   EXISTING resolved / superseded / source:patch / rejected / non-matching ref /
+//   third-party / ledger-sole-path tests, plus the isResolvedByLedger describe.
+//   PHS-1.1: "ledger-resolved sole review short-circuits before the thread check",
+//   "ledger exclusion is per review ...".
+// CPF-2.3 / RAS-1.1 review-level author reply (isAddressedByAuthorReply):
+//   EXISTING "...followed by a PR-author reply (mirrors PR #1432)", "...reply predates the
+//   review", "...explicit prAuthor (mirrors ok-wow-agency PR #80)", "...currentUser (not
+//   the explicit prAuthor) replies ...", "...no PR-author reply at all", "...an inline
+//   thread is still unresolved", "...someone other than the PR author".
+//   PHS-1.1: "author reply at the exact review timestamp does not address (strict >)",
+//   "whitespace-only review body is not a finding", "reply matched via canonicalLogin".
+// URT-1.1 thread-level author reply (isThreadAddressedByAuthorReply):
+//   EXISTING "excludes a thread addressed by a later PR-author reply", "...reply predates
+//   the flagging comment", "...someone other than prAuthor", "...missing createdAt",
+//   "end-to-end repro ...", plus the isThreadAddressedByAuthorReply describe.
+//   PHS-1.1: "thread-level exclusion is per thread", "a thread reply does not address a
+//   non-empty review body", "thread reply by currentUser is ignored when prAuthor
+//   differs", "thread reply defaults prAuthor to currentUser", "thread reply at the exact
+//   flagging timestamp ...".
 
 import { describe, expect, test } from "bun:test";
 import {
-  type IssueCommentNode,
-  type PrFinding,
-  type PrReviewData,
-  type ReviewNode,
-  type ReviewThread,
   hasUnaddressedFindings,
+  type IssueCommentNode,
   isAddressedByAuthorReply,
+  isRejectedByPatchLedger,
   isResolvedByLedger,
   isSelfCleanApprove,
+  isSupersededBySameHeadApproval,
   isSupersededBySelfReview,
   isThreadAddressedByAuthorReply,
+  type PrFinding,
+  type PrReviewData,
   parseCliInput,
+  type ReviewNode,
+  type ReviewThread,
   reviewRef,
+  threadRef,
 } from "./compute-unaddressed-findings.ts";
 
 function makeData(overrides: Partial<PrReviewData> = {}): PrReviewData {
@@ -118,23 +156,6 @@ describe("hasUnaddressedFindings", () => {
 
   // ─── Self-authored review exclusion (CPF-1.1, restored PFL-5.1) ───────────
 
-  test("returns false when only review is self-authored COMMENTED at current HEAD with non-empty APPROVE body", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "APPROVE — looks good, no changes needed.",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
   test("returns true when self-authored clean-APPROVE review coexists with a different reviewer's CHANGES_REQUESTED finding", () => {
     const data = makeData({
       reviews: {
@@ -180,58 +201,7 @@ describe("hasUnaddressedFindings", () => {
 
   // ─── Bold-wrapped self-APPROVE verdicts (CPF-1.3, restored PFL-5.1) ────────
 
-  test("returns false when only review is self-authored COMMENTED at current HEAD with a bold-wrapped APPROVE verdict", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "**APPROVE** — looks good, no changes needed.",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
   // ─── Narrative "Verdict: APPROVE" self-reviews (CPF-2.1, restored PFL-5.1) ─
-
-  test("returns false when only review is self-authored COMMENTED at current HEAD with a narrative ending in Verdict: APPROVE", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Reviewed the diff for correctness and style. Everything checks out, no issues found.\n\nVerdict: APPROVE",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
-  test("returns false when self-authored review trails reasoning after Verdict: APPROVE on the same line (verbatim shipwright PR #1272 case)", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Clean, well-scoped PR. Verified the generator output is byte-identical to the committed `docs/mcp-tools.md` (no drift), all 9 sections match the allowlist's filtered tool set exactly, unit tests (10/10) and lint pass, and no Helm/Kubernetes content leaked into the doc. All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
 
   test("returns true when a narrative Verdict: APPROVE self-review coexists with a different reviewer's CHANGES_REQUESTED finding", () => {
     const data = makeData({
@@ -275,30 +245,6 @@ describe("hasUnaddressedFindings", () => {
   });
 
   // ─── Self-review superseded by a later clean self-review (DRO-1.2, restored PFL-5.1) ──
-
-  test("returns false when an earlier self-authored COMMENT review is superseded by a later clean self-review", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Verdict: COMMENT — found a race condition in the retry logic, needs a fix before merge.",
-          },
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-27T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Verified the race condition is fixed. Verdict: APPROVE",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
 
   test("returns true when an earlier self-authored COMMENT review is followed by a LATER self-review that is itself non-clean", () => {
     const data = makeData({
@@ -472,6 +418,47 @@ describe("hasUnaddressedFindings", () => {
       },
     ];
     const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("returns true for a self-authored COMMENTED 'Verdict: APPROVE' review at head with no ledger entry (PRL-1.1)", () => {
+    const data = makeData({
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: APPROVE",
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("returns false for that same self-authored 'Verdict: APPROVE' review once a matching resolved ledger entry exists (PRL-1.1)", () => {
+    const review: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: APPROVE",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(review),
+        disposition: "resolved",
+        source: "review",
+        evidence: "Clean self-review.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [review] }, findings });
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
   });
 
@@ -1278,6 +1265,137 @@ describe("isSupersededBySelfReview", () => {
   });
 });
 
+describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", () => {
+  const rev = (
+    login: string,
+    state: string,
+    submittedAt: string,
+    oid: string,
+    body = "",
+  ): ReviewNode => ({
+    author: { login },
+    state,
+    submittedAt,
+    commit: { oid },
+    body,
+  });
+  const commented = rev(
+    "reviewer1",
+    "COMMENTED",
+    "2026-05-26T10:00:00Z",
+    "current-head-sha",
+    "Body-only finding",
+  );
+
+  test("same reviewer's later APPROVED on the same head supersedes the COMMENTED review", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(true);
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("APPROVED on a newer head does not supersede", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "newer-head-sha",
+    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(false);
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+
+  test("APPROVED by a different reviewer does not supersede", () => {
+    const approval = rev(
+      "reviewer2",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(false);
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+
+  test("an APPROVED earlier than the COMMENTED review does not supersede", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T09:00:00Z",
+      "current-head-sha",
+    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [approval, commented]),
+    ).toBe(false);
+  });
+
+  test("unresolved inline threads still count even after a same-head approval", () => {
+    const empty = rev(
+      "reviewer1",
+      "COMMENTED",
+      "2026-05-26T10:00:00Z",
+      "current-head-sha",
+    );
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    const data = makeData({
+      reviews: { nodes: [empty, approval] },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [{ author: { login: "reviewer1" }, body: "Fix this" }],
+            },
+          },
+        ],
+      },
+    });
+    // The superseded review no longer qualifies, so the review-level gate
+    // returns false; pair with another qualifying review to prove threads count.
+    const other = rev(
+      "reviewer3",
+      "COMMENTED",
+      "2026-05-26T10:30:00Z",
+      "current-head-sha",
+    );
+    expect(
+      hasUnaddressedFindings(
+        { ...data, reviews: { nodes: [empty, approval, other] } },
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("reviewRef", () => {
   test("derives a stable ref from full commit oid and submittedAt (not a lossy short SHA)", () => {
     const review: Pick<ReviewNode, "commit" | "submittedAt"> = {
@@ -1637,5 +1755,420 @@ describe("CLI entrypoint", () => {
     ]);
     expect(exitCode).not.toBe(0);
     expect(stderr.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── PHS-1.1 characterization tests ───────────────────────────────────────────
+//
+// Pin CURRENT behavior of gaps in the matrix above (see inventory comment at
+// the top). All pass against unmodified production code; if a case looks
+// questionable, a NOTE says so — it is pinned anyway.
+
+describe("PHS-1.1 characterization", () => {
+  const HEAD = "current-head-sha";
+  const review = (overrides: Partial<ReviewNode> = {}): ReviewNode => ({
+    author: { login: "reviewer1" },
+    state: "COMMENTED",
+    submittedAt: "2026-05-26T10:00:00Z",
+    commit: { oid: HEAD },
+    body: "Please fix this.",
+    ...overrides,
+  });
+  const thread = (
+    comments: Array<{ login: string; createdAt?: string }>,
+    isResolved = false,
+  ): ReviewThread => ({
+    isResolved,
+    comments: {
+      nodes: comments.map((c) => ({
+        author: { login: c.login },
+        body: "x",
+        createdAt: c.createdAt,
+      })),
+    },
+  });
+  const ledger = (
+    r: ReviewNode,
+    overrides: Partial<PrFinding> = {},
+  ): PrFinding => ({
+    id: "f",
+    prRecordId: "p",
+    ref: reviewRef(r),
+    disposition: "resolved",
+    source: "review",
+    evidence: "e",
+    at: "2026-05-27T00:00:00Z",
+    createdAt: "2026-05-27T00:00:00Z",
+    ...overrides,
+  });
+
+  // --- CPF-2.1 / PFL-5.1 self clean-APPROVE ---
+
+  test("third-party leading-APPROVE body is NOT excluded (clean-APPROVE exclusion is self-gated)", () => {
+    const data = makeData({
+      reviews: { nodes: [review({ body: "APPROVE with nits: rename foo." })] },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  // --- DRO-1.2 / PFL-5.1 self-review supersede ---
+
+  test("an earlier clean self-approve stays excluded while a later non-clean self-review still counts", () => {
+    const early = review({
+      author: { login: "the-agent" },
+      body: "Verdict: APPROVE",
+      submittedAt: "2026-05-26T10:00:00Z",
+    });
+    const later = review({
+      author: { login: "the-agent" },
+      body: "Verdict: COMMENT — new issue found.",
+      submittedAt: "2026-05-26T11:00:00Z",
+    });
+    const data = makeData({ reviews: { nodes: [early, later] } });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  // --- PSL-1.1 same-head approval supersede ---
+
+  test("same-head supersede requires state APPROVED (a later COMMENTED 'APPROVE' body from the same third party does not clear it)", () => {
+    const first = review({ body: "Body-only finding" });
+    const second = review({
+      state: "COMMENTED",
+      body: "APPROVE",
+      submittedAt: "2026-05-26T11:00:00Z",
+    });
+    const data = makeData({ reviews: { nodes: [first, second] } });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("same-head supersede matches the reviewer through canonicalLogin", () => {
+    const first = review({ author: { login: "Reviewer1" } });
+    const approval = review({
+      author: { login: "reviewer1[bot]" },
+      state: "APPROVED",
+      body: "",
+      submittedAt: "2026-05-26T11:00:00Z",
+    });
+    const data = makeData({ reviews: { nodes: [first, approval] } });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  // --- PFL-3.2 ledger ---
+
+  test("ledger-resolved sole qualifying review short-circuits before the thread check (unresolved threads are not consulted)", () => {
+    // NOTE: with zero qualifying reviews the function returns false even if an
+    // unresolved thread exists — pinned.
+    const r = review();
+    const data = makeData({
+      reviews: { nodes: [r] },
+      reviewThreads: { nodes: [thread([{ login: "reviewer1" }])] },
+      findings: [ledger(r)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("ledger exclusion is per review: one resolved + one unresolved review still counts; both resolved does not", () => {
+    const a = review({ submittedAt: "2026-05-26T10:00:00Z" });
+    const b = review({
+      author: { login: "reviewer2" },
+      submittedAt: "2026-05-26T10:30:00Z",
+    });
+    const base = { reviews: { nodes: [a, b] } };
+    expect(
+      hasUnaddressedFindings(
+        makeData({ ...base, findings: [ledger(a)] }),
+        "the-agent",
+      ),
+    ).toBe(true);
+    expect(
+      hasUnaddressedFindings(
+        makeData({
+          ...base,
+          findings: [ledger(a), ledger(b, { disposition: "superseded" })],
+        }),
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  // --- CPF-2.3 / RAS-1.1 review-level author reply ---
+
+  test("author reply at the exact review timestamp does not address the review (strict >)", () => {
+    const data = makeData({
+      reviews: { nodes: [review()] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            body: "done",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("whitespace-only review body with no unresolved threads is not a finding", () => {
+    const data = makeData({ reviews: { nodes: [review({ body: " \n\t " })] } });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("PR-author reply is matched through canonicalLogin (case / [bot] suffix)", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: { nodes: [review()] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "PR-Author[bot]" },
+            body: "fixed",
+            createdAt: "2026-05-26T11:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  // --- URT-1.1 thread-level author reply ---
+
+  test("thread-level exclusion is per thread: one replied thread + one unreplied thread still counts", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: {
+        nodes: [
+          thread([
+            { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+            { login: "pr-author", createdAt: "2026-05-26T11:00:00Z" },
+          ]),
+          thread([{ login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" }]),
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("a thread reply does not address a non-empty review body (body still needs a PR-level comment)", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: { nodes: [review({ body: "See inline." })] },
+      reviewThreads: {
+        nodes: [
+          thread([
+            { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+            { login: "pr-author", createdAt: "2026-05-26T11:00:00Z" },
+          ]),
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("thread reply by currentUser is ignored when an explicit, different prAuthor is given (third-party PR)", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: {
+        nodes: [
+          thread([
+            { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+            { login: "the-agent", createdAt: "2026-05-26T11:00:00Z" },
+          ]),
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("thread reply defaults prAuthor to currentUser when prAuthor is absent (own-PR behavior)", () => {
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: {
+        nodes: [
+          thread([
+            { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+            { login: "the-agent", createdAt: "2026-05-26T11:00:00Z" },
+          ]),
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("thread reply at the exact flagging timestamp does not address the thread (strict >)", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: {
+        nodes: [
+          thread([
+            { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+            { login: "pr-author", createdAt: "2026-05-26T10:00:00Z" },
+          ]),
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+});
+
+describe("PHS-1.2 patch-source rejected ledger entries", () => {
+  const HEAD = "current-head-sha";
+  const review = (overrides: Partial<ReviewNode> = {}): ReviewNode => ({
+    author: { login: "reviewer1" },
+    state: "COMMENTED",
+    submittedAt: "2026-05-26T10:00:00Z",
+    commit: { oid: HEAD },
+    body: "No feedback to provide.",
+    ...overrides,
+  });
+  const thread = (
+    id: string | undefined,
+    count: number,
+    overrides: Partial<ReviewThread> = {},
+  ): ReviewThread => ({
+    id,
+    isResolved: false,
+    comments: {
+      totalCount: count,
+      nodes: [{ author: { login: "reviewer1" }, body: "x" }],
+    },
+    ...overrides,
+  });
+  const entry = (
+    ref: string,
+    overrides: Partial<PrFinding> = {},
+  ): PrFinding => ({
+    id: "f",
+    prRecordId: "p",
+    ref,
+    disposition: "rejected",
+    source: "patch",
+    evidence: "e",
+    at: "2026-05-27T00:00:00Z",
+    createdAt: "2026-05-27T00:00:00Z",
+    ...overrides,
+  });
+
+  test("review body with a matching patch rejected entry is not an unaddressed finding", () => {
+    const r = review();
+    const data = makeData({
+      reviews: { nodes: [r] },
+      findings: [entry(reviewRef(r))],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("same review without an entry, or with an entry at a different submittedAt/commit, still counts", () => {
+    const r = review();
+    const base = { reviews: { nodes: [r] } };
+    expect(hasUnaddressedFindings(makeData(base), "the-agent")).toBe(true);
+    for (const ref of [
+      reviewRef(review({ submittedAt: "2026-05-26T11:00:00Z" })),
+      reviewRef(review({ commit: { oid: "other-sha" } })),
+    ]) {
+      const data = makeData({ ...base, findings: [entry(ref)] });
+      expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+    }
+  });
+
+  test("a rejected review-body entry also clears the review when unresolved threads are absent but does not hide an unresolved thread", () => {
+    const r = review();
+    const data = makeData({
+      reviews: { nodes: [r] },
+      reviewThreads: { nodes: [thread("T1", 1)] },
+      findings: [entry(reviewRef(r))],
+    });
+    // The review itself is settled, so it no longer qualifies — and with no
+    // qualifying review the thread check is never reached.
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("an unresolved thread with a matching patch rejected entry is excluded", () => {
+    const t = thread("T1", 1);
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [t] },
+      findings: [entry(threadRef(t) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("a new comment in the thread changes its ref and re-qualifies it", () => {
+    const settled = thread("T1", 1);
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [thread("T1", 2)] },
+      findings: [entry(threadRef(settled) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("a rejected entry for a different thread id does not settle this thread", () => {
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [thread("T1", 1)] },
+      findings: [entry(threadRef(thread("T2", 1)) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("a thread without an id is never ledger-settled", () => {
+    const t = thread(undefined, 1);
+    expect(threadRef(t)).toBeNull();
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [t] },
+      findings: [entry("thread:undefined@1")],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("threadRef falls back to nodes.length when totalCount is absent", () => {
+    const t: ReviewThread = {
+      id: "T9",
+      isResolved: false,
+      comments: {
+        nodes: [
+          { author: { login: "a" }, body: "x" },
+          { author: { login: "b" }, body: "y" },
+        ],
+      },
+    };
+    expect(threadRef(t)).toBe("thread:T9@2");
+  });
+
+  test("source:review resolved/superseded still settles; a patch entry never counts as resolved/superseded", () => {
+    const r = review();
+    for (const disposition of ["resolved", "superseded"] as const) {
+      const settled = makeData({
+        reviews: { nodes: [r] },
+        findings: [entry(reviewRef(r), { source: "review", disposition })],
+      });
+      expect(hasUnaddressedFindings(settled, "the-agent")).toBe(false);
+
+      const patchOnly = makeData({
+        reviews: { nodes: [r] },
+        findings: [entry(reviewRef(r), { source: "patch", disposition })],
+      });
+      expect(hasUnaddressedFindings(patchOnly, "the-agent")).toBe(true);
+      expect(isResolvedByLedger(reviewRef(r), patchOnly.findings ?? [])).toBe(
+        false,
+      );
+    }
+  });
+
+  test("isRejectedByPatchLedger requires source:patch AND disposition:rejected", () => {
+    const ref = "r";
+    expect(isRejectedByPatchLedger(ref, [entry(ref)])).toBe(true);
+    expect(
+      isRejectedByPatchLedger(ref, [entry(ref, { source: "review" })]),
+    ).toBe(false);
+    expect(
+      isRejectedByPatchLedger(ref, [entry(ref, { disposition: "resolved" })]),
+    ).toBe(false);
+    expect(isRejectedByPatchLedger(null, [entry(ref)])).toBe(false);
   });
 });

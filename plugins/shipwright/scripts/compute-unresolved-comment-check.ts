@@ -25,6 +25,7 @@
 // are both optional. `prAuthor` defaults to `currentUser` when absent, same
 // as compute-unaddressed-findings.ts's RAS-1.1 convention.
 
+import { canonicalLogin } from "./login-identity.ts";
 import {
   type IssueCommentNode,
   type ReviewNode,
@@ -69,7 +70,7 @@ export interface UnresolvedCommentCheckInput {
   reviewThreads: { nodes: ReviewThread[] };
 }
 
-export interface UnresolvedCommentCheckResult {
+interface UnresolvedCommentCheckResult {
   hasSubstantiveUnresolvedFeedback: boolean;
 }
 
@@ -81,6 +82,17 @@ export interface UnresolvedCommentCheckResult {
 // repo-agnostic package from agent/src — see plugins/shipwright/CLAUDE.md),
 // so this is a small, local, conservative set of common CI service account
 // logins that do not carry a `[bot]` suffix.
+//
+// RBD-1.1: GraphQL's `Actor` interface exposes `__typename` ("Bot" for GitHub
+// Apps/bots) as the authoritative discriminator — unlike a login-string match,
+// it cannot false-negative on a bot account whose login carries neither a
+// `[bot]` suffix nor a KNOWN_CI_ACCOUNTS entry. `__typename` is checked first;
+// the login-based heuristic below remains as a fallback for callers whose
+// GraphQL query doesn't request `__typename` (older fixtures, or a caller that
+// hasn't upgraded its query) — `author.__typename` is optional on ReviewNode/
+// ReviewThread/IssueCommentNode (compute-unaddressed-findings.ts) for exactly
+// this reason, so this fallback path is never a type error, only a missed
+// signal.
 
 const KNOWN_CI_ACCOUNTS = new Set([
   "github-actions",
@@ -89,8 +101,12 @@ const KNOWN_CI_ACCOUNTS = new Set([
   "renovate",
 ]);
 
-function isBotOrCiAuthor(login: string): boolean {
-  return login.includes("[bot]") || KNOWN_CI_ACCOUNTS.has(login);
+export function isBotOrCiAuthor(author: {
+  login: string;
+  __typename?: string;
+}): boolean {
+  if (author.__typename === "Bot") return true;
+  return author.login.includes("[bot]") || KNOWN_CI_ACCOUNTS.has(author.login);
 }
 
 // ─── Trivial-acknowledgement exclusion ─────────────────────────────────────
@@ -158,17 +174,17 @@ export function computeUnresolvedCommentCheck(
   const hasUnresolvedChangesRequestedReview = input.reviews.nodes.some(
     (r) =>
       r.state === "CHANGES_REQUESTED" &&
-      r.author.login !== currentUser &&
-      !isBotOrCiAuthor(r.author.login) &&
+      canonicalLogin(r.author.login) !== canonicalLogin(currentUser) &&
+      !isBotOrCiAuthor(r.author) &&
       r.commit.oid === headRefOid &&
       !isAddressedByAuthorReply(r, input.comments.nodes, prAuthor),
   );
 
   const hasSubstantiveUnresolvedComment = input.comments.nodes.some(
     (c) =>
-      c.author.login !== currentUser &&
-      c.author.login !== prAuthor &&
-      !isBotOrCiAuthor(c.author.login) &&
+      canonicalLogin(c.author.login) !== canonicalLogin(currentUser) &&
+      canonicalLogin(c.author.login) !== canonicalLogin(prAuthor) &&
+      !isBotOrCiAuthor(c.author) &&
       !isTrivialAcknowledgement(c.body) &&
       new Date(c.createdAt).getTime() > lastPushAt &&
       !isAddressedByAuthorReply(
@@ -183,9 +199,9 @@ export function computeUnresolvedCommentCheck(
     if (!first) return false;
     return (
       !t.isResolved &&
-      first.author.login !== currentUser &&
-      first.author.login !== prAuthor &&
-      !isBotOrCiAuthor(first.author.login) &&
+      canonicalLogin(first.author.login) !== canonicalLogin(currentUser) &&
+      canonicalLogin(first.author.login) !== canonicalLogin(prAuthor) &&
+      !isBotOrCiAuthor(first.author) &&
       !isThreadAddressedByAuthorReply(t, prAuthor)
     );
   });

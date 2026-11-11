@@ -7,15 +7,18 @@
  * `task stack` against the local task-store DB; it is never part of a
  * deployed stack.
  *
- * Flag parsing itself is covered by lib/cli-flags.unit.test.ts; this file
+ * Flag parsing itself is covered by the @app-vitals/agent-lib cli-flags tests; this file
  * only asserts that the flag-name mapping this script relies on
  * (--db-url/--token/--agent-id, both `--flag value` and `--flag=value` forms)
  * resolves the way the CLI entrypoint expects.
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseFlags } from "../lib/cli-flags.ts";
-import { hashRawToken, seedTaskStoreAdminToken } from "./seed-task-store-token.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
+import {
+  hashRawToken,
+  seedTaskStoreAdminToken,
+} from "./seed-task-store-token.ts";
 
 const SEED_TOKEN_FLAGS = ["--db-url", "--token", "--agent-id"] as const;
 
@@ -64,14 +67,7 @@ describe("parseFlags — seed-task-store-token's flag mapping", () => {
 
   test("parses --agent-id in space form", () => {
     const result = parseFlags(
-      [
-        "--db-url",
-        "postgresql://x/y",
-        "--token",
-        "abc",
-        "--agent-id",
-        "hitl",
-      ],
+      ["--db-url", "postgresql://x/y", "--token", "abc", "--agent-id", "hitl"],
       SEED_TOKEN_FLAGS,
     );
     expect(result["--db-url"]).toBe("postgresql://x/y");

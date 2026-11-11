@@ -14,6 +14,7 @@ export type {
   Task,
   TaskEvent,
   TaskToken,
+  VerificationCheck,
 } from "../prisma/client/client.ts";
 export {
   PrFindingDisposition,
@@ -26,6 +27,8 @@ export {
   PrState,
   TaskKind,
   TaskStatus,
+  VerificationCheckReasonCategory,
+  VerificationCheckStatus,
 } from "../prisma/client/client.ts";
 export type {
   BlockedByEntry,

@@ -1,0 +1,834 @@
+/**
+ * task-store/src/routes/verification-checks.smoke.test.ts
+ *
+ * Smoke tests for the /verification-checks routes via in-process
+ * app.request() — LVB-5.1.
+ *
+ * Mirrors tasks.pr-open-stamp.smoke.test.ts's pattern rather than the
+ * hand-faked-service pattern used by most other *.smoke.test.ts files here:
+ * this wires the REAL VerificationCheckService against a small hand-built
+ * in-memory Prisma double (task/pullRequest/verificationCheck), so the
+ * route's HTTP-contract behavior (auth, status codes, error propagation) is
+ * exercised end to end through the actual service's validation — not a
+ * second, hand-duplicated copy of its business rules. No real DB, no
+ * mock.module(), no global overrides. The service's exhaustive validation
+ * rules (e.g. every reasonCategory/status combination) are unit-tested in
+ * verification-check-service.unit.test.ts; this file covers the HTTP
+ * contract only.
+ *
+ * Covers:
+ *   - No bearer token → 401
+ *   - POST /verification-checks → 201 happy path (against a task, and
+ *     against a PR)
+ *   - POST /verification-checks → 400 when neither/both taskId & prId given
+ *   - POST /verification-checks → 404 when the referenced task/pr is missing
+ *   - POST /verification-checks → 400 when status:'ran_failed' is submitted
+ *     with a non-null reasonCategory (the service's rejection propagates
+ *     through the route as a clean 400, not a raw 500)
+ *   - GET /verification-checks?taskId= / ?prId= → 200 with the recorded rows
+ *   - GET /verification-checks → 400 when neither/both ?taskId=/?prId= given
+ *   - GET /verification-checks → 404 when the referenced task/pr is missing
+ *   - GET /verification-checks?repo=&checkName= → 200, most-recent-first (LVB-4.4)
+ *   - GET /verification-checks?repo=&checkName= → 400 when only one of the pair
+ *     is given, or when combined with ?taskId=/?prId=
+ */
+
+import { describe, expect, it } from "bun:test";
+import { createTaskStoreApp } from "../app.ts";
+import type { ScopeResolver } from "../auth.ts";
+import { FixedClock } from "../clock.ts";
+import type { PrismaClient } from "../index.ts";
+import type { SessionServiceLike } from "../session-service.ts";
+import type { TaskServiceLike } from "../task-service.ts";
+import type { TokenServiceLike } from "../token-service.ts";
+import { VerificationCheckService } from "../verification-check-service.ts";
+
+const NOW = new Date("2026-09-24T12:00:00.000Z");
+const ADMIN_TOKEN = "admin-token";
+
+// ─── Fake builders (routes/services not under test here) ──────────────────────
+
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+    async update() {
+      throw new Error("not implemented");
+    },
+  };
+}
+
+function fakeTaskService(): TaskServiceLike {
+  return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
+    async list() {
+      return { tasks: [], total: 0, limit: 50, offset: 0 };
+    },
+    async listReady() {
+      return [];
+    },
+    async listBlocked() {
+      return [];
+    },
+    async get() {
+      return null;
+    },
+    async create(data) {
+      return data as never;
+    },
+    async bulk() {
+      return { inserted: 0, updated: 0, skipped: [] };
+    },
+    async update(_id, data) {
+      return data as never;
+    },
+    async remove() {},
+    async claim() {
+      return {} as never;
+    },
+    async heartbeat() {
+      return {} as never;
+    },
+    async complete() {
+      return {} as never;
+    },
+    async fail() {
+      return {} as never;
+    },
+    async release() {
+      return {} as never;
+    },
+    async recordSkip() {
+      return {} as never;
+    },
+    async resetSkip() {
+      return {} as never;
+    },
+    async unblock() {
+      return {} as never;
+    },
+    async distinct() {
+      return { sessions: [], repos: [], orgs: [] };
+    },
+    async getEvents() {
+      return { events: [], total: 0 };
+    },
+  };
+}
+
+function fakeAdminTokenService(): TokenServiceLike {
+  return {
+    async create(label?: string) {
+      return {
+        token: {
+          id: "tok-1",
+          token: "hash",
+          label: label ?? null,
+          agentId: null,
+          createdAt: new Date(),
+          revokedAt: null,
+        },
+        rawToken: "raw",
+      };
+    },
+    async validate(raw: string) {
+      return raw === ADMIN_TOKEN ? { id: "tok-1", agentId: null } : null;
+    },
+    async revoke() {
+      return null;
+    },
+    async list() {
+      return [];
+    },
+    async update() {
+      return null;
+    },
+  };
+}
+
+// ─── Hand-built in-memory Prisma double ────────────────────────────────────────
+// Mirrors verification-check-service.unit.test.ts's makePrismaDouble, extended
+// with a real in-memory verificationCheck store (create/findMany/count) so
+// GET after POST round-trips through actual data rather than a stub.
+
+interface ParentRow {
+  id: string;
+  repo: string;
+  accountId: string;
+}
+
+interface DoubleOpts {
+  taskIds?: string[];
+  prIds?: string[];
+  /** Overrides the default in-scope parent rows (repo org/repo, account "default"). */
+  tasks?: ParentRow[];
+  prs?: ParentRow[];
+}
+
+function makePrismaDouble(opts: DoubleOpts = {}): PrismaClient {
+  const defaultRow = (id: string): ParentRow => ({
+    id,
+    repo: "org/repo",
+    accountId: "default",
+  });
+  const tasks = new Map(
+    (opts.tasks ?? (opts.taskIds ?? ["task-1"]).map(defaultRow)).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  const prs = new Map(
+    (opts.prs ?? (opts.prIds ?? ["pr-1"]).map(defaultRow)).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  const rows: Record<string, unknown>[] = [];
+  let counter = 0;
+
+  const prisma = {
+    task: {
+      findUnique({ where }: { where: { id: string } }) {
+        return Promise.resolve(tasks.get(where.id) ?? null);
+      },
+    },
+    pullRequest: {
+      findUnique({ where }: { where: { id: string } }) {
+        return Promise.resolve(prs.get(where.id) ?? null);
+      },
+    },
+    verificationCheck: {
+      create({ data }: { data: Record<string, unknown> }) {
+        counter += 1;
+        const row = { id: `vc-${counter}`, createdAt: new Date(), ...data };
+        rows.push(row);
+        return Promise.resolve(row);
+      },
+      findMany({
+        where,
+        orderBy,
+        take,
+        skip,
+      }: {
+        where: Record<string, unknown>;
+        orderBy?: { at?: "asc" | "desc" };
+        take?: number;
+        skip?: number;
+      }) {
+        let matched = rows.filter((r) =>
+          Object.entries(where).every(([k, v]) => r[k] === v),
+        );
+        if (orderBy?.at) {
+          const dir = orderBy.at === "desc" ? -1 : 1;
+          matched = [...matched].sort(
+            (a, b) => dir * String(a.at).localeCompare(String(b.at)),
+          );
+        }
+        const offset = skip ?? 0;
+        const limited =
+          take !== undefined
+            ? matched.slice(offset, offset + take)
+            : matched.slice(offset);
+        return Promise.resolve(limited);
+      },
+      count({ where }: { where: Record<string, unknown> }) {
+        const matched = rows.filter((r) =>
+          Object.entries(where).every(([k, v]) => r[k] === v),
+        );
+        return Promise.resolve(matched.length);
+      },
+    },
+    $transaction<T>(ops: Promise<T>[]): Promise<T[]> {
+      return Promise.all(ops);
+    },
+  };
+
+  return prisma as unknown as PrismaClient;
+}
+
+function makeApp(
+  opts: DoubleOpts & {
+    tokenService?: TokenServiceLike;
+    scopeResolver?: ScopeResolver;
+  } = {},
+) {
+  const prisma = makePrismaDouble(opts);
+  const verificationCheckService = new VerificationCheckService(
+    prisma,
+    FixedClock(NOW),
+  );
+  return createTaskStoreApp({
+    taskService: fakeTaskService(),
+    tokenService: opts.tokenService ?? fakeAdminTokenService(),
+    sessionService: fakeSessionService(),
+    verificationCheckService,
+    scopeResolver: opts.scopeResolver,
+  });
+}
+
+const AGENT_TOKEN = "agent-token";
+
+function fakeAgentTokenService(): TokenServiceLike {
+  return {
+    ...fakeAdminTokenService(),
+    async validate(raw: string) {
+      if (raw === AGENT_TOKEN) return { id: "tok-2", agentId: "agent-1" };
+      return raw === ADMIN_TOKEN ? { id: "tok-1", agentId: null } : null;
+    },
+  };
+}
+
+function agentAuth(): Record<string, string> {
+  return { Authorization: `Bearer ${AGENT_TOKEN}` };
+}
+
+function makeScopeResolver(repos: string[], accountId: string): ScopeResolver {
+  return async () => ({ repos, accountId });
+}
+
+function adminAuth(): Record<string, string> {
+  return { Authorization: `Bearer ${ADMIN_TOKEN}` };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("/verification-checks routes (smoke)", () => {
+  it("no bearer token — 401", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?taskId=task-1");
+    expect(res.status).toBe(401);
+  });
+
+  // ─── POST /verification-checks ────────────────────────────────────────────
+
+  it("POST against a valid taskId — 201, persists the row", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.taskId).toBe("task-1");
+    expect(body.prRecordId).toBeNull();
+    expect(body.status).toBe("ran_passed");
+    expect(body.at).toBe(NOW.toISOString());
+  });
+
+  it("POST against a valid prId — 201, persists the row", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        prId: "pr-1",
+        repo: "org/repo",
+        checkName: "lint",
+        status: "skipped",
+        reasonCategory: "missing_tool",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.prRecordId).toBe("pr-1");
+    expect(body.taskId).toBeNull();
+    expect(body.reasonCategory).toBe("missing_tool");
+  });
+
+  it("POST with neither taskId nor prId — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST with both taskId and prId — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        prId: "pr-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST against a missing taskId — 404", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "does-not-exist",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST status:'ran_failed' with a non-null reasonCategory — 400 (service rejection propagates, not a 500)", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_failed",
+        reasonCategory: "missing_tool",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // ─── GET /verification-checks ─────────────────────────────────────────────
+
+  it("GET ?taskId= after two POSTs against that task — 200 with both rows", async () => {
+    const app = makeApp();
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "install",
+        status: "ran_passed",
+      }),
+    });
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "timed_out",
+        reasonCategory: "check_timeout",
+      }),
+    });
+
+    const res = await app.request("/verification-checks?taskId=task-1", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.checks).toHaveLength(2);
+    expect(body.checks.map((c) => c.checkName).sort()).toEqual([
+      "install",
+      "unit",
+    ]);
+  });
+
+  it("GET ?prId= against a PR with no recorded checks — 200 with an empty list", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?prId=pr-1", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { checks: unknown[]; total: number };
+    expect(body.checks).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("GET with neither ?taskId= nor ?prId= — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with both ?taskId= and ?prId= — 400", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?taskId=task-1&prId=pr-1",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("GET ?taskId= for a missing task — 404", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?taskId=does-not-exist",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  // ─── GET /verification-checks?repo=&checkName= (LVB-4.4) ─────────────────
+
+  it("GET ?repo=&checkName= after three POSTs — 200, ordered by `at` DESCENDING (most recent first)", async () => {
+    const app = makeApp();
+    const posts = [
+      { at: "2026-09-01T00:00:00.000Z", status: "ran_passed" },
+      {
+        at: "2026-09-02T00:00:00.000Z",
+        status: "timed_out",
+        reasonCategory: "check_timeout",
+      },
+      {
+        at: "2026-09-03T00:00:00.000Z",
+        status: "skipped",
+        reasonCategory: "missing_tool",
+      },
+    ];
+    for (const p of posts) {
+      await app.request("/verification-checks", {
+        method: "POST",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          repo: "org/repo",
+          checkName: "lint",
+          ...p,
+        }),
+      });
+    }
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+    };
+    expect(body.total).toBe(3);
+    expect(body.checks.map((c) => c.at)).toEqual([
+      "2026-09-03T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+      "2026-09-01T00:00:00.000Z",
+    ]);
+  });
+
+  it("GET ?repo=&checkName= respects ?limit=", async () => {
+    const app = makeApp();
+    for (const at of [
+      "2026-09-01T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+      "2026-09-03T00:00:00.000Z",
+    ]) {
+      await app.request("/verification-checks", {
+        method: "POST",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          repo: "org/repo",
+          checkName: "lint",
+          status: "ran_passed",
+          at,
+        }),
+      });
+    }
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint&limit=2",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+    };
+    expect(body.checks).toHaveLength(2);
+    expect(body.total).toBe(3);
+    expect(body.limit).toBe(2);
+    expect(body.checks.map((c) => c.at)).toEqual([
+      "2026-09-03T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+    ]);
+  });
+
+  it("GET ?repo=&checkName= only returns rows matching that exact repo+checkName pair", async () => {
+    const app = makeApp();
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "lint",
+        status: "ran_passed",
+      }),
+    });
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/other-repo",
+        checkName: "lint",
+        status: "ran_passed",
+      }),
+    });
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+    };
+    expect(body.total).toBe(1);
+    expect(body.checks[0].checkName).toBe("lint");
+    expect(body.checks[0].repo).toBe("org/repo");
+  });
+
+  it("GET ?repo=&checkName= with no matching rows — 200 with an empty list (no 404 — no single parent to 404 on)", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { checks: unknown[]; total: number };
+    expect(body.checks).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("GET with only ?repo= (no ?checkName=) — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?repo=org%2Frepo", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with only ?checkName= (no ?repo=) — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?checkName=lint", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with ?taskId= combined with ?repo=&checkName= — 400 (all three modes mutually exclusive)", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?taskId=task-1&repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with ?prId= combined with ?repo=&checkName= — 400", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?prId=pr-1&repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(400);
+  });
+  // ─── Repo/account scoping (SSP-6.10) ──────────────────────────────────────
+
+  const IN_SCOPE_TASK: ParentRow = {
+    id: "task-1",
+    repo: "org/repo",
+    accountId: "acct-a",
+  };
+  const OTHER_REPO_TASK: ParentRow = {
+    id: "task-2",
+    repo: "other/repo",
+    accountId: "acct-a",
+  };
+  const OTHER_ACCT_TASK: ParentRow = {
+    id: "task-3",
+    repo: "org/repo",
+    accountId: "acct-b",
+  };
+  const IN_SCOPE_PR: ParentRow = {
+    id: "pr-1",
+    repo: "org/repo",
+    accountId: "acct-a",
+  };
+
+  function scopedApp() {
+    return makeApp({
+      tasks: [IN_SCOPE_TASK, OTHER_REPO_TASK, OTHER_ACCT_TASK],
+      prs: [IN_SCOPE_PR],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo"], "acct-a"),
+    });
+  }
+
+  function post(
+    app: ReturnType<typeof makeApp>,
+    headers: Record<string, string>,
+    body: Record<string, unknown>,
+  ) {
+    return app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+        ...body,
+      }),
+    });
+  }
+
+  it("agent POST in scope — 201, row stamped with the parent's accountId", async () => {
+    const res = await post(scopedApp(), agentAuth(), { taskId: "task-1" });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.accountId).toBe("acct-a");
+  });
+
+  it("agent POST with a repo outside its scope — 403", async () => {
+    const res = await post(scopedApp(), agentAuth(), {
+      taskId: "task-1",
+      repo: "other/repo",
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("agent POST against a task in another repo or another account — 404", async () => {
+    const app = scopedApp();
+    expect((await post(app, agentAuth(), { taskId: "task-2" })).status).toBe(
+      404,
+    );
+    expect((await post(app, agentAuth(), { taskId: "task-3" })).status).toBe(
+      404,
+    );
+  });
+
+  it("agent with repos [] — POST 403, GET by task 404", async () => {
+    const app = makeApp({
+      tasks: [IN_SCOPE_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([], "acct-a"),
+    });
+    expect((await post(app, agentAuth(), { taskId: "task-1" })).status).toBe(
+      403,
+    );
+    const res = await app.request("/verification-checks?taskId=task-1", {
+      headers: agentAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("agent GET ?taskId=/?prId= for out-of-scope parents — 404; in-scope — 200", async () => {
+    const app = scopedApp();
+    for (const q of ["taskId=task-2", "taskId=task-3"]) {
+      const res = await app.request(`/verification-checks?${q}`, {
+        headers: agentAuth(),
+      });
+      expect(res.status).toBe(404);
+    }
+    for (const q of ["taskId=task-1", "prId=pr-1"]) {
+      const res = await app.request(`/verification-checks?${q}`, {
+        headers: agentAuth(),
+      });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("agent GET ?repo=&checkName= only sees its own account's rows in scope; out-of-scope repo is empty", async () => {
+    const app = makeApp({
+      tasks: [IN_SCOPE_TASK, OTHER_REPO_TASK, OTHER_ACCT_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo", "other/repo"], "acct-a"),
+    });
+    // Admin seeds rows for both accounts on the same repo.
+    for (const taskId of ["task-1", "task-3"]) {
+      await post(app, adminAuth(), { taskId });
+    }
+    await post(app, adminAuth(), { taskId: "task-2", repo: "other/repo" });
+
+    const res = await app.request(
+      "/verification-checks?repo=org/repo&checkName=unit",
+      { headers: agentAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<{ taskId: string }>;
+      total: number;
+    };
+    expect(res.status).toBe(200);
+    expect(body.checks.map((c) => c.taskId)).toEqual(["task-1"]);
+    expect(body.total).toBe(1);
+
+    const narrow = makeApp({
+      tasks: [OTHER_REPO_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo"], "acct-a"),
+    });
+    await post(narrow, adminAuth(), { taskId: "task-2", repo: "other/repo" });
+    const out = await narrow.request(
+      "/verification-checks?repo=other/repo&checkName=unit",
+      { headers: agentAuth() },
+    );
+    expect(out.status).toBe(200);
+    expect(((await out.json()) as { total: number }).total).toBe(0);
+  });
+
+  it("admin token is unrestricted across repos/accounts (regression)", async () => {
+    const app = scopedApp();
+    expect(
+      (await post(app, adminAuth(), { taskId: "task-2", repo: "other/repo" }))
+        .status,
+    ).toBe(201);
+    const res = await app.request("/verification-checks?taskId=task-3", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("admin ?accountId= narrows the repo+checkName history to one account", async () => {
+    const app = scopedApp();
+    await post(app, adminAuth(), { taskId: "task-1" });
+    await post(app, adminAuth(), { taskId: "task-3" });
+    const res = await app.request(
+      "/verification-checks?repo=org/repo&checkName=unit&accountId=acct-b",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as { checks: Array<{ taskId: string }> };
+    expect(body.checks.map((c) => c.taskId)).toEqual(["task-3"]);
+  });
+});

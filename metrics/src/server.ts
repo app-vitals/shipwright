@@ -21,11 +21,11 @@
  *                                                     set METRICS_OFFLINE=true)
  */
 
+import { initSentry } from "@app-vitals/agent-lib/sentry";
 import * as Sentry from "@sentry/bun";
-import { initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
-import { createMetricsApp, createPublicMetricsApp } from "./api.ts";
 import type { MetricsDeps } from "./api.ts";
+import { createMetricsApp, createPublicMetricsApp } from "./api.ts";
 import { HttpAccountsClient } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import {

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // On-demand review-candidacy diagnostic script (RCO-1.4).
 //
 // Fetches fresh LIVE state (GitHub PR metadata, live reviews, task-store PR
@@ -11,7 +12,7 @@
 // a single command anyone (including an agent debugging its own PR) can run.
 //
 // Deliberately imports traceReviewCandidacyDecision directly from
-// agent/src/check-review.ts rather than re-deriving the exclusion logic —
+// agent/src/coding/check-review.ts rather than re-deriving the exclusion logic —
 // see that file's doc comment ("Deliberately exported ... so RCO-1.4's
 // diagnostic script can call the same classification logic directly instead
 // of re-deriving it"). This is a narrow, intentional exception to the usual
@@ -21,8 +22,7 @@
 // — AC2 of this task explicitly requires calling the same function, not a
 // copy. plugins/shipwright/tsconfig.json's `include` array is extended with
 // `../../agent/src` to make this cross-package relative import satisfy TS's
-// rootDir constraint (mirrors agent/tsconfig.json's existing
-// `../admin/src` precedent for @shipwright/admin).
+// rootDir constraint.
 //
 // Note: this only covers the "later" exclusion checks that
 // traceReviewCandidacyDecision itself covers (live-review dedup,
@@ -37,20 +37,20 @@
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts org/repo#123
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts ok-wow/ok-wow-agency#66
 
-import { ghGraphql, ghJson } from "../../../agent/src/check-helpers.ts";
-import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
-import type { PrReviewData } from "../../../agent/src/check-patch.ts";
+import { ghGraphql, ghJson } from "@app-vitals/agent-runtime/gh-helpers";
+import type { LinkedTaskInfo } from "../../../agent/src/coding/check-helpers.ts";
+import type { PrReviewData } from "../../../agent/src/coding/check-patch.ts";
 import {
+  buildProductionDeps,
   type PrInfo,
   type PrRecord,
   type ReviewCandidacyTrace,
-  buildProductionDeps,
   traceReviewCandidacyDecision,
-} from "../../../agent/src/check-review.ts";
+} from "../../../agent/src/coding/check-review.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type DiagnoseTarget = { org: string; repo: string; prNumber: number };
+type DiagnoseTarget = { org: string; repo: string; prNumber: number };
 
 export interface DiagnoseDeps {
   fetchPrInfo: (org: string, repo: string, prNumber: number) => Promise<PrInfo>;
@@ -189,20 +189,23 @@ export async function fetchPrInfoViaGh(
   repo: string,
   prNumber: number,
 ): Promise<PrInfo> {
-  const pr = await ghJsonFn<PrInfo>([
-    "pr",
-    "view",
-    "--repo",
-    `${org}/${repo}`,
-    String(prNumber),
-    "--json",
-    "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
-  ]);
+  const pr = await ghJsonFn<PrInfo>(
+    [
+      "pr",
+      "view",
+      "--repo",
+      `${org}/${repo}`,
+      String(prNumber),
+      "--json",
+      "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
+    ],
+    org,
+  );
   return { ...pr, repo: `${org}/${repo}` };
 }
 
 /** Wire production implementations — real gh CLI + task-store calls. */
-export async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
+async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
   const productionDeps = await buildProductionDeps({ ghJson, ghGraphql });
   return {
     fetchPrInfo: (org: string, repo: string, prNumber: number) =>

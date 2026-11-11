@@ -56,18 +56,37 @@ If the `--init` flag was passed:
 3. Print: "Created `.claude/shipwright/security-principles.md`. Edit it to customize security checks for this project. Re-run `/security-scan` to start scanning."
 4. Stop — do not run the scan.
 
+See `references/principles-pattern.md` (relative to the plugin root) for the canonical
+description of this override pattern — schema, override semantics, and init flow —
+shared with `entropy-scan`.
+
 ---
 
-## Step 2: Detect Repo + Derive `repo-slug`
+## Step 2: Resolve Repo List, Detect Each Repo + Derive `repo-slug`
 
-Detect the current repo from git: run `git remote get-url origin` and strip the
-`https://github.com/` (or `git@github.com:`) prefix and the `.git` suffix to get the
-`org/repo` value — e.g. `app-vitals/shipwright`.
+This skill scans one repo at a time. Before Step 3, determine which repo(s) are in scope, in
+this priority order:
+
+1. **Precheck-driven (preferred).** The `security-patrol-maintenance` cron's `preCheck`
+   (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and its
+   stdout — which became this prompt (per the specialty manifest's cron `preCheck` contract:
+   "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") —
+   lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its local clone
+   directory per section. Parse the repo names and directories out of the invoking prompt and
+   use that as the repo list.
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Detect the
+   current repo from git directly (today's single-repo behavior, unchanged): run
+   `git remote get-url origin` and scan just the current working directory.
+
+For each repo in the resolved list, `cd` into its local clone directory, then detect that
+repo from git: run `git remote get-url origin` and strip the `https://github.com/` (or
+`git@github.com:`) prefix and the `.git` suffix to get the `org/repo` value — e.g.
+`app-vitals/shipwright`.
 
 Derive `repo-slug` from it: **the last path segment, lowercased** — e.g.
 `app-vitals/shipwright` → `shipwright`. (This mirrors the `repo-slug` derivation used by
-`entropy-fix`, `test-fix`, and `consolidation-fix`.) Compute this once here and reuse it for
-every ledger key and finding ID below.
+`entropy-fix`, `test-fix`, and `consolidation-fix`.) Compute this once per repo and reuse it
+for every ledger key and finding ID below, for that repo.
 
 **Why this matters (critical):** ledger keys and per-finding IDs are namespaced as
 `security-{rule}-{repo-slug}-{YYYY-Www}` — rule + **repo-slug** + ISO week — **not** just
@@ -77,7 +96,13 @@ repos in the same ISO week produces an identical ID, and the second repo's run s
 no-ops because the ID already exists from the first repo. The `{repo-slug}` component keeps
 IDs unique per repo so same-week multi-repo runs never collide.
 
-Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date.
+Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date — this is
+shared across every repo in the resolved list (the same run, the same week).
+
+Run Steps 3-9 below once per repo in the resolved list, scoped to that repo's working
+directory and its own `repo-slug`. After the last repo completes Step 9, Step 10's summary is
+printed once per repo processed (a single-repo fallback run prints exactly one summary block,
+as today).
 
 ---
 
@@ -360,6 +385,45 @@ Presence/configuration checks, each recorded as a finding when **absent/misconfi
 
 ---
 
+## Step 5.5: Apply Suppressions
+
+Runs once, after Tier 1-3 have produced their raw findings and before any of them becomes a
+Step 6 record. Suppressions are human-reviewed entries in `.shipwright/suppressions.yml` in
+the **scanned repo** (schema: `references/suppressions-schema.md`). This is in addition to,
+not a replacement for, the tool-native handling that already ran: `.gitleaksignore`
+(gitleaks) and `.github/zizmor.yml` (Step 3.5a) are unchanged.
+
+1. **Build the candidate list.** For each finding from osv-scanner, grype and the Tier 3
+   posture checks, emit one object with the suppression `rule` and its match-key fields
+   (never a line number):
+
+   | Scanner rule | Suppression `rule` | Match-key fields |
+   |---|---|---|
+   | `osv-cve` | `osv` | `cve`, `package` |
+   | `grype-cve` | `grype` | `cve`, `package` |
+   | `posture-*` | `posture` | `path` |
+
+   Findings from rules with no suppression schema (gitleaks, zizmor, authn/authz,
+   hardcoded-credential) are not candidates and pass through unchanged.
+2. **Filter.** Write the candidates to a temp JSON array and run the shared script from the
+   repo being scanned:
+   ```bash
+   bun "$CLAUDE_PLUGIN_ROOT/scripts/suppressions.ts" --filter .shipwright/suppressions.yml candidates.json
+   ```
+   It prints `{kept, suppressed, expired}`. A missing suppressions file is valid (nothing
+   suppressed). A non-zero exit means the file is invalid — print the error, treat it as
+   "no suppressions applied", and note it under the report's Skipped Tools-style gaps; never
+   abort the scan.
+3. **Drop suppressed findings here.** Every finding in `suppressed` is removed before Step 6:
+   it gets no finding record, never appears in `security-report.md` (Step 8), and is never
+   written to the ledger (Step 9). Step 7's "unresolved in ledger but absent this run ⇒
+   resolved" logic covers a finding that becomes suppressed on a later run.
+4. **Track the counts** for Step 10: `suppressed_count` = `suppressed.length`, and the
+   `expired` entries (rule, match key, `expires`). Expired entries stop suppressing, so their
+   findings stay in `kept` and surface normally.
+
+---
+
 ## Step 6: Finding-Record Shape
 
 zizmor findings reach this step only after passing the Step 3.5a suppression filter —
@@ -533,6 +597,11 @@ SECURITY SCAN COMPLETE
   REGRESSED  {N} findings
   ─────────────────────
   Unchanged (not reported): {N}
+  Suppressed: {N}   (.shipwright/suppressions.yml)
+
+{If any expired entries:}
+  Expired suppressions (no longer suppressing — their findings are reported again):
+    - {rule} {match key} — expired {expires}
 
 {If any new/regressed findings exist:}
   Run /security-fix to classify these findings and queue task-store tasks.
@@ -574,6 +643,10 @@ SECURITY SCAN COMPLETE
   drift-tolerant match runs before any zizmor finding reaches Step 6 — a finding matching an
   accepted-risk ignore entry is dropped, not merely deprioritized, and must never appear in
   `security-report.md` or the ledger.
+- **Never report a finding suppressed in `.shipwright/suppressions.yml`.** Step 5.5 drops
+  matching findings before Step 6 — they must never appear in `security-report.md` or the
+  ledger. Expired entries are not suppressions: report them in the summary and let their
+  findings through.
 - **Repo-namespaced IDs, always.** Every ledger key and finding ID is
   `security-{rule}-{repo-slug}-{YYYY-Www}` — never `{rule}-{YYYY-Www}` — so same-week
   multi-repo runs never collide (the `entropy-fix` task-ID collision bug).

@@ -27,7 +27,10 @@ interface StubState {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
-function startStubServer(port: number, state: StubState): ReturnType<typeof Bun.serve<any>> {
+function startStubServer(
+  port: number,
+  state: StubState,
+): ReturnType<typeof Bun.serve<any>> {
   return Bun.serve({
     port,
     fetch: async (req) => {
@@ -62,7 +65,10 @@ describe("createScopeResolver (integration)", () => {
 
   beforeEach(() => {
     state = {
-      responseBody: { repos: ["org/repo-a", "org/repo-b"] },
+      responseBody: {
+        repos: ["org/repo-a", "org/repo-b"],
+        accountId: "acct-a",
+      },
       status: 200,
       malformedJson: false,
       lastPath: null,
@@ -77,9 +83,12 @@ describe("createScopeResolver (integration)", () => {
 
   it("returns the repos array on a successful response", async () => {
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
+    const resolution = await resolver("agent-42");
 
-    expect(repos).toEqual(["org/repo-a", "org/repo-b"]);
+    expect(resolution).toEqual({
+      repos: ["org/repo-a", "org/repo-b"],
+      accountId: "acct-a",
+    });
     expect(state.lastPath).toBe("/agents/agent-42");
     expect(state.lastAuthHeader).toBe(`Bearer ${ADMIN_API_KEY}`);
   });
@@ -91,10 +100,14 @@ describe("createScopeResolver (integration)", () => {
   });
 
   it("filters out non-string entries from the repos array", async () => {
-    state.responseBody = { repos: ["org/repo-a", 42, null, "org/repo-b", {}] };
+    state.responseBody = {
+      repos: ["org/repo-a", 42, null, "org/repo-b", {}],
+      accountId: null,
+    };
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual(["org/repo-a", "org/repo-b"]);
+    const resolution = await resolver("agent-42");
+    expect(resolution.repos).toEqual(["org/repo-a", "org/repo-b"]);
+    expect(resolution.accountId).toBeNull();
   });
 
   it("rejects when the response is a non-ok status (e.g. 404)", async () => {
@@ -117,32 +130,40 @@ describe("createScopeResolver (integration)", () => {
     await expect(resolver("agent-42")).rejects.toThrow();
   });
 
-  it("returns [] when the repos field is missing from the body", async () => {
+  it("rejects when the repos field is missing from the body", async () => {
     state.responseBody = { other: "data" };
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
-  it("returns [] when the repos field is not an array", async () => {
+  it("rejects when the repos field is not an array", async () => {
     state.responseBody = { repos: "not-an-array" };
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
-  it("returns [] when the body is an array instead of an object", async () => {
+  it("rejects when the body is an array instead of an object", async () => {
     state.responseBody = ["org/repo-a"];
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
-  it("returns [] when the body is null", async () => {
+  it("rejects when accountId is missing from the body", async () => {
+    state.responseBody = { repos: ["org/repo-a"] };
+    const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
+    await expect(resolver("agent-42")).rejects.toThrow();
+  });
+
+  it("rejects when accountId is not a string or null", async () => {
+    state.responseBody = { repos: [], accountId: 42 };
+    const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
+    await expect(resolver("agent-42")).rejects.toThrow();
+  });
+
+  it("rejects when the body is null", async () => {
     state.responseBody = null;
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
   it("rejects when the network request throws (server unreachable)", async () => {

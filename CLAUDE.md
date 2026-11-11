@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Claude Code** — a deployable agent plus the autonomous coding system that powers it. The system is a Claude Code plugin (`shipwright`) covering the full delivery loop — **spec → plan → execute → review → deploy** — alongside a metrics dashboard and a Shipwright agent. The brand is **Shipwright Harness**; the installable package is **`shipwright`**.
 
-> The plugin is repo-agnostic: it runs its planning/execution/review/deploy commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
+> The plugin is repo-agnostic: it runs its planning/execution/review/merge commands against *any* repository. This repo is both the source of the plugin **and** the codebase it ships against.
 
 ## Architecture — four artifacts, sequenced A → B → C → D
 
@@ -37,11 +37,12 @@ task typecheck    # bun run --filter='*' --sequential typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
 ```
 
+The agent platform (runtime, admin, shared lib) lives in `app-vitals/agent` and is consumed as pinned `@app-vitals/agent-*` packages plus the `ghcr.io/app-vitals/agent` base image; to develop both together see `docs/local-platform-development.md`.
+
 Database (admin service):
 ```bash
 export DATABASE_URL_SHIPWRIGHT_ADMIN="postgresql://user:password@localhost:5432/shipwright_admin"
-task db:provision   # prisma migrate deploy (idempotent)
-task db:migrate     # prisma migrate dev (creates a new migration)
+task db:provision   # prisma migrate deploy (idempotent) — schema + migrations ship in @app-vitals/agent-admin
 ```
 
 Marketing site (run from `site/`, **not** part of `bun test`):
@@ -66,7 +67,19 @@ task agent-workspace-pull -- <id-or-name>  # mirror a real, already-deployed age
 
 **`task stack` needs `state/dev-agent.env`** — if it's missing, the first `task stack` run auto-creates it from `state/dev-agent.env.example` and exits; fill in `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in the newly-created file, then re-run `task stack`. See `docs/quickstart.md` for the full flow.
 
-`task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the chat service, :3003), **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. `task stack` creates zero agents automatically: the agent pane prints a pointer to `http://localhost:3001/admin/agents/new` and polls the admin DB (`scripts/wait-for-agent.ts`) until a developer creates one via the UI, then seeds that agent's chat token and starts its container with `SHIPWRIGHT_AGENT_ID` set to the resolved id — no stack restart required, and relaunching with an agent already created proceeds immediately. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`). It runs a Prisma `migrate deploy` preflight before the admin pane so the admin service's Postgres schema is up to date; the preflight first checks Postgres is reachable and, on macOS, prints the exact `brew`/`createdb` commands and offers to run them (`[y/N]`) before launching. The agent pane builds the Docker image from `agent/Dockerfile` and runs it with `--env-file state/dev-agent.env` so secrets are injected at runtime without appearing in the command or the image. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`. `scripts/seed-dev-agent.ts` still exists as a standalone, explicitly-invoked convenience script — `task stack` no longer calls it.
+`task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the platform-hosted chat service from `app-vitals/agent`, :3003 — run from a local platform checkout at `$AGENT_PLATFORM_DIR`, default `../agent`, or from the `ghcr.io/app-vitals/agent-chat` image when `SHIPWRIGHT_CHAT_IMAGE` is set; see docs/local-platform-development.md), **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. `task stack` creates zero agents automatically: the agent pane prints a pointer to `http://localhost:3001/admin/agents/new` and polls the admin DB (`scripts/wait-for-agent.ts`) until a developer creates one via the UI, then seeds that agent's chat token and starts its container with `SHIPWRIGHT_AGENT_ID` set to the resolved id — no stack restart required, and relaunching with an agent already created proceeds immediately. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`). It runs a Prisma `migrate deploy` preflight before the admin pane so the admin service's Postgres schema is up to date; the preflight first checks Postgres is reachable and, on macOS, prints the exact `brew`/`createdb` commands and offers to run them (`[y/N]`) before launching. The agent pane builds the Docker image from `agent/Dockerfile` and runs it with `--env-file state/dev-agent.env` so secrets are injected at runtime without appearing in the command or the image. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`. `scripts/seed-dev-agent.ts` still exists as a standalone, explicitly-invoked convenience script — `task stack` no longer calls it.
+
+### Shipwright Learned Facts
+
+> _Auto-maintained by Shipwright's toolchain detection — edits here are overwritten on the next run._
+
+- **Scoped-command variants:** `lintScoped` detected — `git diff --name-only --diff-filter=ACMR {base}...{head} -- '*.ts' '*.tsx' '*.js' '*.jsx' | xargs -r bunx biome lint`, which scopes lint to changed JS/TS files instead of the whole repo. No `typecheckScoped`/`testScoped` variant is available: `task typecheck` type-checks the whole project graph by design, and there's no monorepo affected-graph tool wired in, so both run full-repo.
+- **Enforced per-check verification budget:** `600s` (`fallback-10m` — CI-derived numbers for this repo's `lint / typecheck / test` job were observed non-representative of a fresh sandbox checkout, and an earlier 150s estimate padded from CI's 91s proved undersized against a full local `task test` run at ~236s, so the flat 10-minute constant is used instead).
+- **Skip-locally classifications:** none yet.
+
+  | Check | Reason | Classified At |
+  |-------|--------|----------------|
+  | _(none)_ | | |
 
 ## Before you commit — this repository is going public
 
@@ -94,9 +107,9 @@ Two surfaces — do not conflate them:
 
 **Status lifecycle:**
 ```
-pending → in_progress → pr_open → merged → deployed → done
+pending → in_progress → pr_open → merged → deployed | released
 ```
-plus `approved`, `blocked`, `cancelled`.
+plus `approved`, `done`, `blocked`, `cancelled`.
 
 Tasks sharing a non-blank `session` field (set only by `/shipwright:plan-session`) roll up into a
 **Session** — browsable in the admin UI's Sessions tab (`/admin/sessions`), which shows per-session
@@ -111,7 +124,7 @@ and [`docs/agent-web-ui.md`](./docs/agent-web-ui.md) for the full model.
 3. Build + land tests **in the same PR, at the correct layer** (no "tests later").
 4. Open a PR; move the status through its lifecycle.
 
-Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, plan, review, patch, deploy) in a single multi-step run until work is exhausted. The `plan` phase (PDR-4.1, `/shipwright:plan-session --autonomous`) ships disabled and is double-gated: it additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var, so with that unset the loop behaves exactly as the four-phase loop did.
+Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:merge`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, plan, review, patch, merge) in a single multi-step run until work is exhausted. The `plan` phase (PDR-4.1, `/shipwright:plan-session --autonomous`) ships disabled and is double-gated: it additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var, so with that unset the loop behaves exactly as the four-phase loop did.
 
 **Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 
@@ -159,9 +172,9 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 | Variable | Service | Schema |
 |----------|---------|--------|
-| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `admin/prisma/schema.prisma` |
+| `DATABASE_URL_SHIPWRIGHT_ADMIN` | `@shipwright/admin` | `prisma/schema/` in `@app-vitals/agent-admin` (via `admin/prisma.config.ts`) |
 | `DATABASE_URL_SHIPWRIGHT_TASK_STORE` | `@shipwright/task-store` | `task-store/prisma/schema.prisma` |
-| `DATABASE_URL_SHIPWRIGHT_CHAT` | `@shipwright/chat` | `chat/prisma/schema.prisma` |
+| `DATABASE_URL_SHIPWRIGHT_CHAT` | platform-hosted chat service (`agent-chat` image) | schema owned by `app-vitals/agent` |
 
 The schema uses `provider = "postgresql"`. All database connection strings must be Postgres connection strings: `postgresql://user:password@host:5432/database`.
 
@@ -182,19 +195,24 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/agent-web-ui.md** — Shipwright agent (C) browser-facing surfaces: admin chat UI, sessions list UI, session alert sweeper, public read-only task board, dev auto-login, and PWA shell — split out of docs/agent.md to stay under the docs line-count threshold
 - **docs/configuration-agent.md** — Shipwright agent (C) runtime env var reference (Claude/Anthropic, Slack, GitHub, Shipwright platform, server, database, provisioning, workspace/tooling, voice, dev-only) — split out of docs/configuration.md to stay under the docs line-count threshold
 - **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
+- **docs/local-platform-development.md** — working on app-vitals/agent and Shipwright together: `bun link` of `@app-vitals/agent-{runtime,admin,lib}`, which dev flows (`task dev`, `task hitl`, seed-dev-agent, `task stack`, minikube) pick the link up, running a local platform image, and how a platform release reaches Shipwright
 - **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`
-- **docs/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
-- **docs/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)
+- **docs/platform/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
+- **docs/platform/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)
 - **docs/agent-api-resources.md** — the admin CRUD API (D), per-agent resources: allowed-tools list, API tokens, plugins, chat-token-usage endpoints, and the work-queue snapshot
+- **docs/platform/github-multi-org.md** — multi-org GitHub App: one App installed on several orgs, discovery and per-owner token routing, operator and org-admin setup, the admin installations card, and troubleshooting
+- **docs/platform/github-enterprise-apps.md** — enterprise GitHub apps (optional, per deployment): the installer and lookup Apps, exact permissions, setup, why there is no shared published App, the admin isolation exception, key storage, and the admin settings page
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
+- **docs/task-store-pr-tracking.md** — task store PR origin metrics, verification checks, skip tracking, same-branch exclusivity guard, and session archive sweep
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
-- **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver, outbound reply notifier), data model, environment, and claim/reply queue behavior — full endpoint reference lives in `chat/openapi.json`
+- **docs/chat.md** — pointer: the chat service now lives in the platform repo (`agent-chat` image); details in `docs/platform/chat-service.md`
 - **docs/session-notifications.md** — session-follow subsystem (C): the follow/mute + notification-prefs data model, the session-notification detail-level policy (operator ceiling × per-subscription opt-in × per-call ceiling), the `/admin/settings/notifications` page and follow/unfollow routes, and the `session-scope.ts` visibility model (not yet wired into most routes)
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: auth modes, plus pointers to the networking model, cloud provider guides, agent provisioning model, and optional add-ons
 - **docs/deploy-kubernetes-networking.md** — Kubernetes networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services — split out of docs/deploy-kubernetes.md to stay under the docs line-count threshold
 - **docs/deploy-kubernetes-providers.md** — per-provider Kubernetes deployment walkthroughs: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster)
 - **docs/deploy-kubernetes-provisioning.md** — Kubernetes agent runtime provisioning model: RBAC, ServiceAccounts, the provisioner env contract, provisioning values, chat-service token provisioning, and the task-store claim TTL constraint — split out of docs/deploy-kubernetes.md to stay under the docs line-count threshold
+- **docs/platform/anthropic-usage-by-agent.md** — IT runbook: split the Anthropic usage report by per-agent service account and map each `svac_…` ID to its agent name and owner
 - **docs/deploy-kubernetes-addons.md** — optional Kubernetes deploy add-ons: agent voice (STT/TTS), Web Push notifications, bringing your own PostgreSQL, and bundled ingress-controllers/cert-manager
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
@@ -203,6 +221,9 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
 - **docs/observability.md** — Sentry error/log reporting: what's collected, what's scrubbed, how to disable, and self-hosted Sentry support
 - **docs/consolidation.md** — consolidation-patrol system: the ledger format, the decisions registry, and the cron (disabled by default, opt-in per agent)
+- **docs/prompt-audit.md** — prompt-audit patrol: `prompt-scan` finding classes and report-only contract, the propose-only `prompt-fix` task filer and its guardrails, the ledger and decisions registry, the `check-prompt-audit.ts` precheck, the disabled-by-default `prompt-audit-maintenance` cron, and cost/auth/version gates
+- **docs/prompt-audit-calibration.md** — the signed calibration record that gates the prompt-audit eval tier's quality claims: arms, paired McNemar/MDE results, known-bad detection, A/A noise, replayability of dev-task/review/patch under `claude plugin eval`, and the current FAIL verdict (tier off, cost-only findings)
+- **docs/suppressions.md** — finding suppressions: `.shipwright/suppressions.yml` match keys, `false_positive` vs `accepted_risk` expiry, which scan/fix skills honor it, how expired entries resurface, and the hitl proposal flow
 - **docs/site-docs-freshness.md** — site-docs-freshness (SDR): the `site/docs-source-map.json` format and its structural test enforcement, the page-scoped `check-site-docs-freshness.ts` precheck and its exit-code contract, and current cron-wiring status
 - **docs/test-readiness/** — the test-readiness pipeline: Phase 1 inventory (current test surface), Phase 2 ideal system design (blueprint), Phase 3 migration plan (from status quo to blueprint), Phase 4 executable roadmap (concrete tasks). The suite includes the **test-readiness decisions registry** (`.claude/shipwright/test-readiness-decisions.md`) — same tier as `consolidation-decisions.md` — for recording human-reviewed coverage decisions. `test-inventory` and `test-fix` both consume the registry to avoid re-flagging already-resolved ambiguous items — see Step 0 in `test-inventory/SKILL.md` and Step 4.5 in `test-fix/SKILL.md` for implementation details.
-- **docs/agent-types.md** — authoring guide for Agent Type manifests: field reference, blank template, worked examples, the FLOOR_TOOLS/no-secrets/crons-disabled rules, and a "Specified, not implemented" spec for GitHub-hosted custom Agent Type source references; regenerate the JSON Schema with `bun run scripts/generate-agent-type-schema.ts`
+- **docs/platform/specialties.md** — authoring guide for Specialty manifests: field reference, blank template, worked examples, the FLOOR_TOOLS/no-secrets/crons-disabled rules, and a "Specified, not implemented" spec for GitHub-hosted custom Specialty source references

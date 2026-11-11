@@ -39,14 +39,13 @@ jobs:
 
       - name: Filter paths
         id: filter
-        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           base: ${{ steps.base.outputs.sha }}
           ref: ${{ github.event.workflow_run.head_sha }}
           filters: |
             changed:
               - "metrics/**"
-              - "lib/**"
               - "package.json"
               - "bun.lock"
               - ".github/workflows/build-metrics.yml"
@@ -68,7 +67,7 @@ jobs:
 
       - name: Compute next tag
         id: tag
-        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7.0.0
         with:
           github_token: ${{ secrets.DISPATCH_TOKEN }}
           tag_prefix: "metrics-v"
@@ -77,7 +76,7 @@ jobs:
           dry_run: true
 
       - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

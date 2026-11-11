@@ -11,10 +11,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
+import type { PatchStateSnapshot } from "../agent/src/coding/patch-outcome-check.ts";
 import {
-  HITL_ALLOWED_TOOLS,
-  type Task,
   buildClaudeSpawnEnv,
   buildHitlConfig,
   buildTaskCommand,
@@ -23,13 +21,17 @@ import {
   createAppendLineSink,
   createTeeWriter,
   ensureHitlAgent,
+  HITL_ALLOWED_TOOLS,
   installLogFileTee,
   parseAdminSessionCookie,
   parseCreatedAgentId,
   parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
+  runWithPatchOutcomeCheck,
+  type Task,
 } from "./hitl.ts";
+import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
 
 /**
  * Injected fetch double for ensureHitlAgent()'s admin-API calls. Each entry
@@ -80,7 +82,9 @@ function redirect(location: string, setCookie?: string): Response {
  * path mints a session here because POST /admin/agents is session-gated
  * (there is no POST /agents JSON API anymore — ABF-3.2).
  */
-function devLoginRoute(setCookie = "admin_session=dev-sess; Path=/; HttpOnly"): Route {
+function devLoginRoute(
+  setCookie = "admin_session=dev-sess; Path=/; HttpOnly",
+): Route {
   return {
     method: "GET",
     match: (url) => url.endsWith("/admin/dev-login"),
@@ -147,24 +151,20 @@ describe("computeProvisionPlan", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos", "/ws/worktrees"],
       "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
       () => false,
     );
     expect(plan.missingDirs).toEqual(["/ws", "/ws/repos", "/ws/worktrees"]);
     expect(plan.needsClaudeMd).toBe(true);
-    expect(plan.needsAgentPolicy).toBe(true);
   });
 
   test("reports nothing missing when everything already exists", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos"],
       "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
       () => true,
     );
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(false);
-    expect(plan.needsAgentPolicy).toBe(false);
   });
 
   test("reports only the dirs that don't yet exist", () => {
@@ -172,54 +172,20 @@ describe("computeProvisionPlan", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos", "/ws/worktrees"],
       "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
       (path) => existing.has(path),
     );
     expect(plan.missingDirs).toEqual(["/ws/repos", "/ws/worktrees"]);
     expect(plan.needsClaudeMd).toBe(true);
-    expect(plan.needsAgentPolicy).toBe(true);
   });
 
   test("CLAUDE.md need is independent of dir existence", () => {
     const plan = computeProvisionPlan(
       ["/ws"],
       "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
       (path) => path === "/ws",
     );
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(true);
-    expect(plan.needsAgentPolicy).toBe(true);
-  });
-
-  test("agent-policy.md need is independent of CLAUDE.md need", () => {
-    const existing = new Set(["/ws", "/ws/CLAUDE.md"]);
-    const plan = computeProvisionPlan(
-      ["/ws"],
-      "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
-      (path) => existing.has(path),
-    );
-    expect(plan.missingDirs).toEqual([]);
-    expect(plan.needsClaudeMd).toBe(false);
-    expect(plan.needsAgentPolicy).toBe(true);
-  });
-
-  test("agent-policy.md not needed when it already exists", () => {
-    const existing = new Set([
-      "/ws",
-      "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
-    ]);
-    const plan = computeProvisionPlan(
-      ["/ws"],
-      "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
-      (path) => existing.has(path),
-    );
-    expect(plan.missingDirs).toEqual([]);
-    expect(plan.needsClaudeMd).toBe(false);
-    expect(plan.needsAgentPolicy).toBe(false);
   });
 });
 
@@ -597,7 +563,9 @@ describe("parseCreatedAgentId", () => {
   });
 
   test("returns null for the /admin/agents/new error redirect", () => {
-    expect(parseCreatedAgentId("/admin/agents/new?error=invalid_type")).toBeNull();
+    expect(
+      parseCreatedAgentId("/admin/agents/new?error=invalid_type"),
+    ).toBeNull();
     expect(parseCreatedAgentId("/admin/agents/new")).toBeNull();
   });
 
@@ -675,7 +643,9 @@ describe("ensureHitlAgent", () => {
         respond: () => json([]),
       },
       devLoginRoute(),
-      createFormRoute("/admin/agents/agent-9?warning=restrict_slack_no_members"),
+      createFormRoute(
+        "/admin/agents/agent-9?warning=restrict_slack_no_members",
+      ),
     ]);
 
     expect(await ensureHitlAgent(fetchDouble, [])).toBe("agent-9");
@@ -1002,5 +972,150 @@ describe("ensureHitlAgent", () => {
     const id = await ensureHitlAgent(fetchDouble, ["org/repo"], ["new-user"]);
 
     expect(id).toBe("agent-1");
+  });
+});
+
+describe("runWithPatchOutcomeCheck", () => {
+  const PR = "org/repo#7";
+  const unsettled: PatchStateSnapshot = {
+    headSha: "aaaaaaa1111",
+    findingRefs: ["f1"],
+    mergeDirty: false,
+    ciFailing: false,
+  };
+
+  function harness(snaps: Array<PatchStateSnapshot | null>) {
+    const escalations: Array<{
+      recordId: string;
+      reason: string;
+      headSha: string;
+    }> = [];
+    let i = 0;
+    return {
+      escalations,
+      snapshot: async () => snaps[Math.min(i++, snaps.length - 1)] ?? null,
+      escalate: async (
+        recordId: string,
+        _id: string,
+        reason: string,
+        headSha: string,
+      ) => {
+        escalations.push({ recordId, reason, headSha });
+      },
+    };
+  }
+
+  test("escalates an unchanged, unsettled run", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(code).toBe(0);
+    expect(h.escalations).toHaveLength(1);
+    expect(h.escalations[0]?.recordId).toBe("rec1");
+    expect(h.escalations[0]?.headSha).toBe(unsettled.headSha);
+  });
+
+  test("does not escalate a settled run", async () => {
+    const h = harness([
+      unsettled,
+      { ...unsettled, headSha: "bbbbbbb2222", findingRefs: [] },
+    ]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+  });
+
+  test("does not escalate a changed run", async () => {
+    const h = harness([unsettled, { ...unsettled, headSha: "ccccccc3333" }]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+  });
+
+  test("nonzero exit code goes through the same check", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 137,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(code).toBe(137);
+    expect(h.escalations).toHaveLength(1);
+  });
+
+  test("a throwing spawn still runs the check and rethrows", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    await expect(
+      runWithPatchOutcomeCheck({
+        phase: "patch",
+        prId: PR,
+        recordId: "rec1",
+        spawn: async () => {
+          throw new Error("boom");
+        },
+        snapshot: h.snapshot,
+        escalate: h.escalate,
+      }),
+    ).rejects.toThrow("boom");
+    expect(h.escalations).toHaveLength(1);
+  });
+
+  test("review dispatches and failed snapshots skip the check", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    await runWithPatchOutcomeCheck({
+      phase: "review",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    const h2 = harness([null, { ...unsettled }]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h2.snapshot,
+      escalate: h2.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+    expect(h2.escalations).toHaveLength(0);
+  });
+
+  test("escalation failure is swallowed", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: async () => {
+        throw new Error("store down");
+      },
+    });
+    expect(code).toBe(0);
   });
 });

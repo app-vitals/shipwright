@@ -12,7 +12,7 @@ suite: agent-provisioning RBAC + admin env contract (HD-4.2 / K8S-NS-1.1)
 tests:
   # ── (a) enabled → RBAC + agent SA ────────────────────────────────────────────
   # Cross-namespace mode (agent.provisioning.namespace set) → ClusterRole + ClusterRoleBinding
-  - it: renders a cluster-scoped ClusterRole with create/get/list/patch/update/delete on Deployments and create/get/delete on Secrets and PVCs (cross-namespace mode)
+  - it: renders a cluster-scoped ClusterRole with create/get/list/patch/update/delete on Deployments and create/get/delete on Secrets, PVCs and ServiceAccounts (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 0
     set:
@@ -53,6 +53,18 @@ tests:
       - equal:
           path: rules[2].verbs
           value: ["create", "get", "delete"]
+      - equal:
+          path: rules[3].apiGroups
+          value: [""]
+      - equal:
+          path: rules[3].resources
+          value: ["serviceaccounts"]
+      - equal:
+          path: rules[3].verbs
+          value: ["create", "get", "delete"]
+      - lengthEqual:
+          path: rules
+          count: 4
 
   - it: binds the ClusterRole to the admin ServiceAccount via a ClusterRoleBinding (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
@@ -115,6 +127,18 @@ tests:
       - equal:
           path: rules[2].resources
           value: ["persistentvolumeclaims"]
+      - equal:
+          path: rules[3].apiGroups
+          value: [""]
+      - equal:
+          path: rules[3].resources
+          value: ["serviceaccounts"]
+      - equal:
+          path: rules[3].verbs
+          value: ["create", "get", "delete"]
+      - lengthEqual:
+          path: rules
+          count: 4
 
   - it: binds the Role to the admin ServiceAccount via a RoleBinding (same-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
@@ -143,12 +167,13 @@ tests:
           path: subjects[0].namespace
           value: shipwright-ns
 
-  - it: renders the separate agent ServiceAccount when provisioning is enabled
+  - it: renders the separate agent ServiceAccount in the release namespace when provisioning is enabled without a namespace override
     template: templates/agent-serviceaccount.yaml
     set:
       agent.provisioning.enabled: true
     release:
       name: r
+      namespace: relns
     asserts:
       - isKind:
           of: ServiceAccount
@@ -156,8 +181,46 @@ tests:
           path: metadata.name
           value: r-shipwright-agent
       - equal:
+          path: metadata.namespace
+          value: relns
+      - equal:
           path: metadata.labels["app.kubernetes.io/component"]
           value: agent
+
+  - it: renders the agent ServiceAccount in agent.provisioning.namespace when set (cross-namespace mode)
+    template: templates/agent-serviceaccount.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.namespace: agents
+    release:
+      name: r
+      namespace: relns
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: r-shipwright-agent
+      - equal:
+          path: metadata.namespace
+          value: agents
+
+  - it: keeps the agent ServiceAccount name unchanged in cross-namespace mode (federation subject stays valid)
+    template: templates/agent-serviceaccount.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.namespace: agents
+      agent.provisioning.serviceAccount.name: my-agent-sa
+    release:
+      name: r
+      namespace: relns
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-agent-sa
+      - equal:
+          path: metadata.namespace
+          value: agents
 
   - it: skips the agent ServiceAccount when provisioning is enabled but create=false
     template: templates/agent-serviceaccount.yaml
@@ -188,6 +251,29 @@ tests:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+  - it: sets SHIPWRIGHT_AGENT_IMAGES to the JSON specialty map when agent.provisioning.images is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.tag: v1
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGES
+            value: '{"coding":{"repository":"ghcr.io/acme/agent-coding","tag":"v1"}}'
+  - it: omits SHIPWRIGHT_AGENT_IMAGES when agent.provisioning.images is unset
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name == "SHIPWRIGHT_AGENT_IMAGES")]
   - it: injects the agent image/tag/replicas and the in-cluster API URL matching buildProvisioner
     template: templates/admin-deployment.yaml
     set:

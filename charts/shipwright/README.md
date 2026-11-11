@@ -133,6 +133,14 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.service.port` | `3001` | Admin service port. |
 | `admin.replicas` | `1` | Admin replica count. |
 | `admin.appBaseUrl` | `""` | Public base URL for the admin service (`SHIPWRIGHT_ADMIN_APP_BASE_URL`, used for OAuth redirect URIs). An explicit value always wins; when empty and `networking.type` is `ingress` or `gateway`, it's auto-derived as `<scheme>://<public host>` from the active networking config (`https` when TLS is on); otherwise (`ClusterIP`/`NodePort`/`LoadBalancer`) the env var is omitted. |
+| `admin.ask.enabled` | `false` | Toggle the agent ask feature (`SHIPWRIGHT_AGENT_ASK_ENABLED`). |
+| `admin.ask.allowlist` | `[]` | Ask feature allowlist: array of `fromAgentId>toAgentId` pairs matching pattern `^[^,>]+>[^,>]+$` (comma-joined in env). Empty means no agent may ask any agent. |
+| `admin.chatCredentialMint.enabled` | `false` | Toggle chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). |
+| `admin.doc.enabled` | `false` | Toggle the admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). |
+| `admin.podServiceAccount.enabled` | `false` | Toggle the pod ServiceAccount flag (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). |
+| `admin.cronRunNow.enabled` | `false` | Toggle the cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). |
+| `admin.transcriptApi.enabled` | `false` | Toggle the cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). |
+| `admin.repoAccessCheck.enabled` | `false` | Toggle the agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). |
 | `metrics.enabled` | `true` | Toggle the metrics dashboard (port **3460**). |
 | `metrics.image.repository` | `ghcr.io/app-vitals/shipwright-metrics` | Metrics image repo (fully-qualified GHCR default). |
 | `metrics.image.tag` | pinned per release | Metrics image tag, rewritten on every chart release. |
@@ -148,6 +156,18 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.provisioning.persistence.size` | `2Gi` | Agent PVC size. |
 | `agent.provisioning.persistence.storageClass` | `""` | Agent PVC StorageClass (cluster default if empty). |
 | `agent.provisioning.homePath` | `/data/agent-home` | Mount path for the agent persistent home. |
+| `agent.provisioning.anthropicFederation.enabled` | `false` | Anthropic Workload Identity Federation for provisioned agent pods. Injects `SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT` (the agent ServiceAccount) and `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_*` into admin. Requires `agent.provisioning.enabled`, the three IDs below, and an agent ServiceAccount (`serviceAccount.create=true` or a non-empty `serviceAccount.name`). |
+| `agent.provisioning.anthropicFederation.federationRuleId` | `""` | Anthropic federation rule ID. Required when enabled. |
+| `agent.provisioning.anthropicFederation.organizationId` | `""` | Anthropic organization ID. Required when enabled. |
+| `agent.provisioning.anthropicFederation.serviceAccountId` | `""` | Anthropic service account ID. Required when enabled. |
+| `agent.provisioning.anthropicFederation.workspaceId` | `""` | Optional Anthropic workspace ID (env omitted when empty). |
+| `agent.provisioning.anthropicFederation.audience` | `https://api.anthropic.com` | Audience of the projected service-account token. |
+| `agent.provisioning.anthropicFederation.tokenExpirationSeconds` | `600` | Projected token lifetime in seconds, 600 to 3600. |
+| `agent.provisioning.anthropicFederation.identityMode` | `shared` | `shared` (one identity for all agents) or `perAgent` (each agent gets its own). perAgent requires `provisioning.enabled`, `organizationId`, `issuerId` and `adminFederation.*`; it does not need `federationRuleId`, `serviceAccountId` or an agent ServiceAccount, and mounts a projected token plus `ANTHROPIC_*` env into the admin pod. |
+| `agent.provisioning.anthropicFederation.issuerId` | `""` | perAgent only: Anthropic issuer ID of this cluster's OIDC issuer. Required in perAgent mode. |
+| `agent.provisioning.anthropicFederation.nameSuffix` | `""` | perAgent only: suffix for per-agent resource names (`^[a-z0-9-]*$`). |
+| `agent.provisioning.anthropicFederation.adminFederation.ruleId` | `""` | perAgent only: org:admin bootstrap federation rule ID for the admin pod. Required in perAgent mode. |
+| `agent.provisioning.anthropicFederation.adminFederation.serviceAccountId` | `""` | perAgent only: Anthropic service account ID the bootstrap rule is bound to. Required in perAgent mode. |
 | `agent.voice.enabled` | `false` | Master switch for agent voice (STT/TTS). Off = no Whisper pod/Service/Secret and no voice env (provisioned agents keep the 3 base vars). |
 | `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is Piper (self-hosted, in-image) unless `agent.voice.elevenlabs.apiKey` is set, in which case ElevenLabs is used instead for both providers. |
 | `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:v1.10.0` | Whisper ASR image (exposes `POST /asr`). Already pinned to a tested tag — do not float to `:latest`. |
@@ -181,6 +201,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.serviceAccount.name` | `""` | Admin ServiceAccount name (generated if empty). |
 | `admin.resources` | `50m/64Mi → 250m/256Mi` | Admin container resource requests/limits. |
 | `admin.podAnnotations` / `taskStore.podAnnotations` / `chat.podAnnotations` | `{}` | Extra annotations for the pod template (`spec.template.metadata.annotations`) — **not** the ServiceAccount. See [Protecting single-replica services from voluntary eviction](#protecting-single-replica-services-from-voluntary-eviction) below. |
+| `admin.podLabels` / `taskStore.podLabels` / `chat.podLabels` | `{}` | Extra labels for the pod template (`spec.template.metadata.labels`) — purely additive. The chart's own `app.kubernetes.io/*` selector labels always win. See [Opting a workload into a label-selecting cluster policy](#opting-a-workload-into-a-label-selecting-cluster-policy) below. |
 | `admin.podDisruptionBudget` / `taskStore.podDisruptionBudget` / `chat.podDisruptionBudget` | `{enabled: false, minAvailable: 1}` | Optional PodDisruptionBudget for the workload. Off by default — purely additive. See below. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
@@ -195,6 +216,11 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `ingress-nginx.enabled` | `false` | Deploy the bundled ingress-nginx subchart as the cluster's ingress controller. Mutually exclusive with `traefik.enabled`. |
 | `traefik.enabled` | `false` | Deploy the bundled Traefik subchart as the cluster's ingress controller. Mutually exclusive with `ingress-nginx.enabled`. Independent of `networking.ingress.controller: traefik` (set both to fully bundle and use Traefik). |
 | `cert-manager.enabled` | `false` | Deploy the bundled cert-manager subchart (controller + CRDs). Pairs with `tls.certManager.enabled` for the chart's own Issuer/Certificate wiring. |
+| `awsSecurityGroupPolicy.enabled` | `false` | Render an AWS VPC CNI `SecurityGroupPolicy` so matching pods get a branch ENI carrying `groupIds` (EKS only, requires the `vpcresources.k8s.aws` CRD). Off = nothing rendered. See [add-ons](../docs/deploy-kubernetes-addons.md#aws-pod-security-groups-eks-optional). |
+| `awsSecurityGroupPolicy.groupIds` | `[]` | Security group IDs attached to matching pods. Required once enabled (at least one). Include the cluster's **node** security group — a branch ENI carries only these groups, so omitting it costs the pod cluster networking and DNS. |
+| `awsSecurityGroupPolicy.podSelector.matchLabels` | `{}` | Labels a pod must carry to receive those groups. Empty = the chart's own selector labels (every pod this chart renders, but not bundled subchart pods such as the bundled PostgreSQL). |
+| `awsSecurityGroupPolicy.nameOverride` | `""` | Name for the rendered `SecurityGroupPolicy` (empty = chart fullname). |
+| `awsSecurityGroupPolicy.extraLabels` | `{}` | Extra labels merged into the resource metadata on top of the chart's common labels. |
 
 The full values surface is validated by `values.schema.json` (enums for
 `networking.type`, `auth.mode`, and image pull policies; required service shapes).
@@ -242,6 +268,48 @@ choice, not a chart default (a `PodDisruptionBudget` with `minAvailable: 1`
 on a single-replica Deployment can otherwise block legitimate node drains
 until you scale up or accept the disruption).
 
+## Opting a workload into a label-selecting cluster policy
+
+Plenty of cluster-level machinery picks its targets by pod label: a
+`NetworkPolicy`, a scheduling or admission webhook, a service-mesh sidecar
+injector, or a CNI feature such as an AWS
+[`SecurityGroupPolicy`](../docs/deploy-kubernetes-addons.md#aws-pod-security-groups-eks-optional).
+`admin.podLabels`, `taskStore.podLabels`, and `chat.podLabels` add labels to
+those workloads' pod templates so a policy can select **exactly** the pods that
+need it, rather than the whole release:
+
+```yaml
+admin:
+  podLabels:
+    example.com/peer-datastore: "true"
+
+taskStore:
+  podLabels:
+    example.com/peer-datastore: "true"
+
+chat:
+  podLabels:
+    example.com/peer-datastore: "true"
+```
+
+Scoping this way matters when the policy is one that can *reject* a pod it
+matches — an admission-time failure then costs you only the opted-in
+workloads, not every pod in the release.
+
+Notes:
+
+- **Purely additive, and the chart's labels win.** A key that collides with one
+  of the chart's `app.kubernetes.io/*` selector labels is dropped, not applied.
+  A Deployment's `spec.selector` is immutable after creation, so a value that
+  could rewrite it would break upgrades outright.
+- **Values render as strings.** Kubernetes label values are strings; `true`
+  and `"true"` both produce a valid `"true"` label.
+- **Empty by default**, and the default render is unchanged from a chart
+  without the hook — nothing is added to `spec.template.metadata.labels`
+  unless you set it.
+- Only `admin`, `taskStore`, and `chat` expose this. It is the DB-dependent
+  set — the workloads a datastore-reachability policy typically targets.
+
 ## Cloud-native install (single chart)
 
 For a fully self-contained install with **no pre-existing ingress controller or
@@ -276,7 +344,7 @@ for the full walkthrough and ready-to-use example values files.
 
 ## Dependencies
 
-The chart vendors **four optional subcharts** — each gated by its own
+Besides the [`agent-platform` library](#library-dependency-agent-platform), the chart vendors **four optional subcharts** — each gated by its own
 `condition` and off by default except PostgreSQL:
 
 | Subchart | Version | Repository | Condition | Default |
@@ -289,6 +357,29 @@ The chart vendors **four optional subcharts** — each gated by its own
 `ingress-nginx` and `traefik` are mutually exclusive — enabling both fails the
 render (`templates/_validation.tpl`). See [Cloud-native install](#cloud-native-install-single-chart)
 above for bundling `cert-manager` alongside either one.
+
+## Library dependency (`agent-platform`)
+
+The chart also depends on the **`agent-platform` library chart**, published
+from `app-vitals/agent` at `https://app-vitals.github.io/agent` and pinned to an
+exact version in `Chart.yaml` (see `Chart.lock`). A library chart renders
+nothing itself and shares this chart's values context, so it adds no values
+keys and no resource of its own.
+
+- **Where templates live.** Platform templates (admin, chat, whisper, agent
+  provisioning, and the shared httproute, ingress, health-check, tenant
+  network-policy and PostgreSQL bootstrap templates) are named templates in the
+  library; the matching files in `templates/` are one-line includes. The shared
+  ones are fed Shipwright's extra entries (task-store, metrics, mcp-server) by
+  `shipwright.platformExtensions` in `templates/_helpers.tpl`. Task-store,
+  metrics and mcp-server templates remain here.
+- **Release flow.** A new library version dispatches to this repo, which
+  re-pins the dependency, bumps the chart patch version and publishes — see
+  [docs/helm-repo.md](../../docs/helm-repo.md#how-a-library-release-reaches-a-chart-bump).
+- **Compatibility contract.** The chart name `shipwright`, the release name and
+  the `values.yaml` keys are relied on by downstream wrappers and do not change;
+  neither do rendered resource names. Verify with the render-parity check (see
+  [CONTRIBUTING.md](./CONTRIBUTING.md#render-parity-check)).
 
 ## ⚠️ Upgrading to chart 1.20.58+ — bundled PostgreSQL 17 → 18
 

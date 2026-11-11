@@ -47,7 +47,7 @@ function makeDeps(overrides: Partial<WaitDeps> = {}): {
     prisma: makePrismaDouble([
       null,
       null,
-      { id: "a1", name: "Agent", typeName: "coding" },
+      { id: "a1", name: "Agent", specialty: "coding" },
     ]).prisma,
     sleep: async (ms: number) => {
       sleepCalls.push(ms);
@@ -63,7 +63,7 @@ function makeDeps(overrides: Partial<WaitDeps> = {}): {
 describe("waitForAgent", () => {
   it("resolves immediately when an agent already exists (relaunch case — no forced wait)", async () => {
     const { prisma, callCount } = makePrismaDouble([
-      { id: "existing-1", name: "Existing Agent", typeName: "coding" },
+      { id: "existing-1", name: "Existing Agent", specialty: "coding" },
     ]);
     const statusLines: string[] = [];
     const results: string[] = [];
@@ -81,6 +81,7 @@ describe("waitForAgent", () => {
 
     expect(id).toBe("existing-1");
     expect(results).toEqual(["existing-1"]);
+    expect(statusLines.join("\n")).toContain("specialty: coding");
     expect(sleepCalls).toHaveLength(0);
     expect(callCount()).toBe(1);
   });
@@ -89,7 +90,7 @@ describe("waitForAgent", () => {
     const { prisma, callCount } = makePrismaDouble([
       null,
       null,
-      { id: "created-later", name: "New Agent", typeName: "coding" },
+      { id: "created-later", name: "New Agent", specialty: "coding" },
     ]);
     const sleepCalls: number[] = [];
 
@@ -111,7 +112,7 @@ describe("waitForAgent", () => {
   it("sleeps using the injected intervalMs, not a hardcoded value", async () => {
     const { prisma } = makePrismaDouble([
       null,
-      { id: "x", name: "X", typeName: "coding" },
+      { id: "x", name: "X", specialty: "coding" },
     ]);
     const sleepCalls: number[] = [];
 
@@ -130,7 +131,7 @@ describe("waitForAgent", () => {
 
   it("orders the findFirst query by createdAt asc (oldest/first-created agent wins)", async () => {
     const { prisma, calls } = makePrismaDouble([
-      { id: "first", name: "First", typeName: "coding" },
+      { id: "first", name: "First", specialty: "coding" },
     ]);
 
     await waitForAgent({

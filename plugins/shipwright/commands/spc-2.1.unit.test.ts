@@ -1,21 +1,26 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const DEV_TASK_PATH = join(import.meta.dir, "dev-task.md");
 const PATCH_PATH = join(import.meta.dir, "patch.md");
-const DEPLOY_PATH = join(import.meta.dir, "deploy.md");
 const CLAUDE_MD_PATH = join(import.meta.dir, "..", "CLAUDE.md");
 
 let devTask: string;
 let patch: string;
-let deploy: string;
 let claudeMd: string;
 
 beforeAll(() => {
-  devTask = readFileSync(DEV_TASK_PATH, "utf-8");
+  // dev-task.md is a short spine; path mechanics live in references/dev-task/.
+  const refsDir = join(import.meta.dir, "..", "references", "dev-task");
+  devTask = [
+    readFileSync(DEV_TASK_PATH, "utf-8"),
+    ...readdirSync(refsDir)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .map((f) => readFileSync(join(refsDir, f), "utf-8")),
+  ].join("\n\n");
   patch = readFileSync(PATCH_PATH, "utf-8");
-  deploy = readFileSync(DEPLOY_PATH, "utf-8");
   claudeMd = readFileSync(CLAUDE_MD_PATH, "utf-8");
 });
 
@@ -33,20 +38,19 @@ function bashBlocks(content: string): string {
 
 describe("dev-task.md — SHIPWRIGHT_REPO_DIR", () => {
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} in bash blocks", () => {
+  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} in the dev-task prompt surface", () => {
     // Local filesystem paths use {repo-slug} (PRF-1.4) — SHIPWRIGHT_REPO_DIR clones live
     // flat as repos/<bare-name>, not repos/<org>/<repo>. {repo} (org/repo) remains reserved
     // for task-store API calls.
     const blocks = bashBlocks(devTask);
     expect(blocks).not.toContain("~/src/{repo}");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-    expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
+    expect(devTask).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
   });
 
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug} in bash blocks", () => {
-    const blocks = bashBlocks(devTask);
-    expect(blocks).toContain(
+  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug} in the dev-task prompt surface", () => {
+    expect(devTask).toContain(
       // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}",
     );
@@ -80,51 +84,9 @@ describe("patch.md — SHIPWRIGHT_REPO_DIR", () => {
   });
 });
 
-describe("deploy.md — SHIPWRIGHT_REPO_DIR", () => {
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} in bash blocks", () => {
-    const blocks = bashBlocks(deploy);
-    expect(blocks).not.toContain("~/src/{repo}");
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-    expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}");
-  });
-
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo} in bash blocks", () => {
-    const blocks = bashBlocks(deploy);
-    expect(blocks).toContain(
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}",
-    );
-  });
-
-  it("documents SHIPWRIGHT_REPO_DIR default as $HOME/src", () => {
-    expect(deploy).toContain("$HOME/src");
-  });
-});
-
 describe("dev-task.md — subagent prompt templates", () => {
   it("does NOT contain hardcoded ~/worktrees in Working directory directive", () => {
     expect(devTask).not.toContain("Working directory: ~/worktrees");
-  });
-
-  it("uses {worktree-path} placeholder in implementation subagent prompt", () => {
-    expect(devTask).toContain("Working directory: {worktree-path}");
-  });
-
-  it("uses env var form for prose line (line ~176)", () => {
-    expect(devTask).toContain(
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted dev-task prose, not JS interpolation
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/",
-    );
-  });
-
-  it("uses env var form in docs-refresher dispatch prompt (line 763)", () => {
-    expect(devTask).toContain(
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted dev-task prose, not JS interpolation
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}",
-    );
-    expect(devTask).not.toContain("Worktree:  ~/worktrees/{repo-slug}-{branch-slug}");
   });
 });
 

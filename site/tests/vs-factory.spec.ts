@@ -87,7 +87,7 @@ test("every Factory claim carries a citation link, and the page shows a verified
   await page.goto("/vs/factory");
   await expect(page.getByText(/facts verified as of/i)).toBeVisible();
   await expect(
-    page.locator('a[href*="factory.ai"]').first(),
+    page.locator('a[href*="factory.com"]').first(),
   ).toBeVisible();
 });
 
@@ -99,7 +99,8 @@ test("every Factory claim carries a citation link, and the page shows a verified
 // comparisonRows: a future edit that silently drops a citation from any of
 // these rows will fail this test.
 const CITED_ROWS: Record<string, number> = {
-  Deployment: 1,
+  // Cites both the Missions announcement and the Factory Private launch.
+  Deployment: 2,
   Models: 1,
   "Plan approval": 1,
   "Tests-first": 1,
@@ -124,9 +125,30 @@ test("every cited Factory claim row renders its citation link(s) — per row, no
       has: page.locator("td").first().getByText(dimension, { exact: true }),
     });
     await expect(
-      row.locator('td a[href*="factory.ai"]'),
+      row.locator('td a[href*="factory.com"]'),
     ).toHaveCount(expectedLinkCount);
   }
+});
+
+test("Deployment row names Factory Private as private preview, by request, and links its source", async ({
+  page,
+}) => {
+  await page.goto("/vs/factory");
+  const row = page.locator("table tr").filter({
+    has: page.locator("td").first().getByText("Deployment", { exact: true }),
+  });
+  await expect(row).toContainText("Factory Private");
+  await expect(row).toContainText("private preview, by request");
+  await expect(
+    row.locator('a[href="https://factory.com/news/factory-private"]'),
+  ).toHaveCount(1);
+});
+
+test("no Factory citation still points at the retired factory.ai domain", async ({
+  page,
+}) => {
+  await page.goto("/vs/factory");
+  await expect(page.locator('main a[href*="factory.ai"]')).toHaveCount(0);
 });
 
 test("page markets no pricing anywhere", async ({ page }) => {

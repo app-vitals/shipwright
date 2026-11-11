@@ -32,14 +32,24 @@ Mode: auto (unattended)
 
 Determine the list of repos to process, in this priority order:
 
-1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the agent type manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
-2. **Fallback (manual invocation, or no repo list available in the prompt).** Iterate `repos/*` directly:
+1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the specialty manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Call the
+   config-driven resolver directly:
    ```bash
-   for dir in repos/*/; do
-     [ -d "$dir/.git" ] && basename "$dir"
-   done
+   bun run - <<EOF
+   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
+   const repos = await resolveScopedRepos(resolveWorkspacePath());
+   console.log(repos.join("\n"));
+   EOF
    ```
-   Process every git clone found this way.
+   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
+   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   Process every repo name it returns; an empty result means nothing configured to process.
+   Note: `check-docs-freshness.ts`'s own precheck (priority-1 list above) still resolves its
+   repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver — the two paths
+   are not yet unified, so this fallback can scope more narrowly than the precheck does.
 
 For each resolved repo, the local clone directory is `repos/{dirname}` (the directory name from the `repos/` scan — not necessarily the `org/repo` string, since the precheck output identifies repos by their parsed `org/repo` remote but the local clone folder name may differ). Match the precheck's `org/repo` name back to its local directory by checking each `repos/*/`'s `git remote get-url origin` (or `.git/config`) for that owner/repo.
 
@@ -97,7 +107,7 @@ Use the `Edit` tool for section-level changes; fall back to `Write` only for the
 
 Run immediately after Step A5, against each doc Step A5 just touched (stale candidates that were rewritten — not the full candidate set, and never a doc Step A5 left untouched).
 
-Apply the same three checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
+Apply the same four checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty, 6.5d Measured Values — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
 
 For each hit, file **one** task-store task via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
 
@@ -114,8 +124,9 @@ Task titles, one shape per check:
 - 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
 - 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`
 - 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
+- 6.5d hit → `title: "Review {doc} for observed measured value"`
 
-Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
+Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
@@ -126,7 +137,7 @@ After the quality-pass checks above, also check the doc's resulting **line count
 1. **Spec-backed, and the spec's routes already carry adequate descriptions** → file a **pointer-conversion** task instead of a split task:
    - `title: "Convert {doc} to a pointer to {spec} — exceeds {N} lines"`
    - `description`: which endpoint/param/response tables the spec already covers and can therefore be dropped, and which prose must be kept (the auth model, field semantics not expressible in OpenAPI, cross-cutting gotchas) — the same DOA-4 pattern Step 6.6 cites for `docs/agent-api.md` and `docs/agent-api-ops.md`
-   - `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being converted (**required**, see that step's note on why an unbranched task stalls silently)
+   - `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being converted (**required**, see that step's note on why an unbranched task stalls silently)
 2. **Spec-backed, but the spec isn't enriched** (routes exist but lack descriptions worth pointing to) → file the split task below, and state in its `description` that enriching the spec's route descriptions is a prerequisite for pointer-conversion on a future pass.
 3. **No spec exists** → file the split task below unchanged.
 
@@ -134,7 +145,7 @@ After the quality-pass checks above, also check the doc's resulting **line count
 
 - `title: "Split {doc} — exceeds {N} lines"`
 - `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6 — plus, for branch 2, the spec-enrichment prerequisite note above
-- `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
+- `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
 
 Track a running count of size-governance tasks filed this way for the current repo — split proposals and pointer-conversion proposals alike, since each oversized doc yields exactly one of the two. That combined count becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
 
@@ -162,9 +173,35 @@ curl -sf -X POST \
   --data-binary @/tmp/missing-docs-tasks.json | jq .
 ```
 
-Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased: lowercased, with every `/` and run of whitespace collapsed to a single `-`, so the slug is always one flat segment and never a nested git ref (e.g. `api/billing` → `api-billing`, giving `docs/api-billing-20260909`). `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
+Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased: lowercased, with every `/` and run of whitespace collapsed to a single `-`, so the slug is always one flat segment and never a nested git ref (e.g. `api/billing` → `api-billing`, giving `docs/api-billing-20260909`). `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
 
-Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased by the same rule as `{module-slug}` above: every `/` and run of whitespace collapses to a single `-`, producing one flat segment rather than a nested git ref (e.g. `authorization/access-control` → `authorization-access-control`, and `secrets/credential rotation` → `secrets-credential-rotation`, giving `docs/secrets-credential-rotation-20260909`), same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased by the same rule as `{module-slug}` above: every `/` and run of whitespace collapses to a single `-`, producing one flat segment rather than a nested git ref (e.g. `authorization/access-control` → `authorization-access-control`, and `secrets/credential rotation` → `secrets-credential-rotation`, giving `docs/secrets-credential-rotation-20260909`), same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+
+### Step A7.5: Commit and Open PR
+
+After all doc updates are complete for this repo (Steps A5 and A6), commit and open a PR for the doc-refresh changes, scoped to this repo's working directory.
+
+First, check whether there are any changes to commit:
+
+```bash
+git status --porcelain -- docs/ CLAUDE.md
+```
+
+If this prints nothing, there is nothing to commit — print `⏭ No doc changes to commit — skipping PR-open step` and continue to Step A8.
+
+Otherwise, create a dedicated branch, commit, push, and open a PR with the shipwright label:
+
+```bash
+YYYYMMDD=$(date -u +%Y%m%d)
+git checkout -b docs/auto-refresh-$YYYYMMDD
+git add docs/ CLAUDE.md
+git commit -m "docs: auto-refresh from docs-freshness cron"
+git push -u origin docs/auto-refresh-$YYYYMMDD
+gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force
+gh pr create --title "docs: auto-refresh ($YYYYMMDD)" --body "Automated doc refresh from docs-freshness cron run" --label shipwright
+```
+
+The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring. This allows reviewers to see this step in the command text without flagging it as a repeated mutation.
 
 ### Step A8: Write Sync Anchor
 
@@ -447,6 +484,7 @@ This sub-flow always runs when `testing.md` is missing — there is no skip path
    - CI shape and repo-config requirements
 4. Keep the digest concise (~150 lines max). Use the testing.md template from Step 4
 5. Add a `## References` section that links back to `docs/test-readiness/test-system.md` and `docs/test-readiness/test-readiness-plan.md` for full detail
+6. **Measured-values guard.** Observed figures in `test-readiness-plan.md` — current coverage %, test counts, timings, CI baselines — are linked to, never copied into `testing.md` (see the "Measured values" rule in `references/doc-refresh-recipe.md`). Policy still gets digested: speed budgets and coverage targets (e.g. a `fail_under` threshold, named with the config file that owns it) belong in the digest; the current figure does not — point to the plan or the latest CI run instead.
 
 **Path B — Tests exist but no test-readiness blueprint.** No `docs/test-readiness/test-system.md`, but Step 1 detected runner configs and/or test files. Infer from observed state:
 
@@ -540,9 +578,19 @@ Scan the doc for a convention described only as a principle — "services valida
   schema import) and name it, or drop the claim.
 ```
 
+### 6.5d: Measured Values
+
+Apply the "Measured values" rule from `references/doc-refresh-recipe.md`. Scan the doc for an **observed** value — current coverage %, test counts, timings, CI baselines, or a run id / PR number cited as a baseline — that was read off a run rather than configured. Configured policy values named with their owning file (e.g. `fail_under = 51` in `pyproject.toml`) are fine; `docs/test-readiness/**`, `planning/**` and explicitly dated snapshots are exempt. **The flag must cite `file:line` of the observed value** and propose the pointer replacement (the config file, or "latest CI run"), like 6.5b.
+
+```
+⚠ TESTING.md:14 — states "CI baseline 51.82% (CI run 12345 on PR #52)"
+  Observed value goes stale on the next commit — proposed pointer replacement:
+  "enforced against `fail_under = 51` in `pyproject.toml`; current figure is in the latest CI run"
+```
+
 ### Presenting flags
 
-These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5c together, grouped by doc:
+These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5d together, grouped by doc:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

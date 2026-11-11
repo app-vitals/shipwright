@@ -17,8 +17,11 @@
  *     bun agent/scripts/cutover-validate.ts
  */
 
-import { type CheckResult, validateCutover } from "../src/cutover-validate.ts";
-import { HttpShipwrightRuntimeClient } from "../src/shipwright-runtime-client.ts";
+import {
+  type CheckResult,
+  validateCutover,
+} from "@app-vitals/agent-runtime/cutover-validate";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
 
 const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_AGENT_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 
@@ -29,7 +32,7 @@ Required env vars:
 
 Checks performed:
   SLACK_BOT_TOKEN   — present in the agent's env bundle
-  github_auth       — GH_TOKEN or (GH_APP_ID + GH_APP_PRIVATE_KEY + GH_APP_INSTALLATION_ID)
+  github_auth       — GH_TOKEN or (GH_APP_ID + GH_APP_PRIVATE_KEY; GH_APP_INSTALLATION_ID optional pin)
   crons             — at least one cron job configured
 
 Exit codes:

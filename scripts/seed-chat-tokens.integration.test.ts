@@ -1,25 +1,20 @@
 /**
  * scripts/seed-chat-tokens.integration.test.ts
  *
- * Regression coverage for the gap flagged in review of the chat Prisma 7
- * upgrade: scripts/seed-chat-tokens.ts's `import.meta.main` block is the one
- * chat PrismaClient construction site that lives outside chat/src, so nothing
- * in the repo exercised it — it kept importing the Prisma 6 generator output
- * (`../chat/prisma/client/index.js`) and the removed
- * `new PrismaClient({ datasources })` constructor, and `task stack` broke at
- * its seeding preflight with "Cannot find module".
+ * CLI-entrypoint coverage for scripts/seed-chat-tokens.ts. A unit test cannot
+ * reach the `import.meta.main` block (it is false for an imported module), so
+ * this spawns the script the way `task stack` does (scripts/dev-tmux.ts ->
+ * `bun run scripts/seed-chat-tokens.ts --db-url ...`).
  *
- * A unit test cannot reach that code: `import.meta.main` is false for an
- * imported module, so the CLI block never runs under `bun test`. This test
- * therefore spawns the script the way `task stack` does (scripts/dev-tmux.ts
- * → `bun run scripts/seed-chat-tokens.ts --db-url ...`) and asserts it gets
- * all the way to a *database* failure — i.e. the client was constructed and a
- * query issued — rather than a module-resolution or constructor failure.
+ * Since CHX-3.3 the chat service is hosted in app-vitals/agent and the seeder
+ * writes to its ChatToken table over Bun.SQL, with no chat/ workspace or Prisma
+ * client from this repo. The test therefore asserts the script gets all the way
+ * to a *database connection* failure (the SQL client was built and a query was
+ * issued) rather than a module-resolution failure.
  *
- * "Integration" per this repo's layer convention: real spawn, real generated
- * client, no real Postgres. The database URL points at a closed loopback port
- * so the connection is refused immediately (no DNS, no waiting) and the
- * process never touches a live database.
+ * "Integration" per this repo's layer convention: real spawn, no real Postgres.
+ * The database URL points at a closed loopback port so the connection is
+ * refused immediately (no DNS, no waiting).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -57,7 +52,7 @@ async function runSeeder(
 }
 
 describe("seed-chat-tokens CLI entrypoint", () => {
-  test("constructs a Prisma 7 client and reaches the upsert (fails only on connectivity)", async () => {
+  test("builds the SQL client and reaches the insert (fails only on connectivity)", async () => {
     const { exitCode, output } = await runSeeder([
       "--db-url",
       UNREACHABLE_DB_URL,
@@ -69,15 +64,12 @@ describe("seed-chat-tokens CLI entrypoint", () => {
       "dev-agent",
     ]);
 
-    // The removed Prisma 6 client path and the dropped `datasources`
-    // constructor option both fail before any query is issued — these are the
-    // exact regressions this test exists to catch.
+    // No chat/ workspace import may remain: it would fail before any query.
     expect(output).not.toContain("Cannot find module");
-    expect(output).not.toContain("datasources");
 
-    // Getting an unreachable-database error proves the adapter-backed client
-    // was built and `chatToken.upsert()` actually ran.
-    expect(output).toContain("Can't reach database server at 127.0.0.1:1");
+    // A connection failure reported by the seeder's own handler proves the
+    // client was built and the insert was actually attempted.
+    expect(output).toContain("[seed-chat-tokens] failed to seed tokens");
     expect(exitCode).not.toBe(0);
   }, 30_000);
 
@@ -103,7 +95,7 @@ describe("seed-chat-tokens CLI entrypoint", () => {
     ]);
 
     expect(output).toContain("Missing flags");
-    expect(output).not.toContain("Can't reach database server");
+    expect(output).not.toContain("failed to seed tokens");
     expect(exitCode).toBe(1);
   }, 30_000);
 });

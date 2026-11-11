@@ -1,0 +1,446 @@
+/**
+ * Content guard for .github/workflows/platform-release.yml (AGR-4.1), the
+ * receiver of the platform's `platform-release` dispatch (AGR-3.3).
+ *
+ * Pins the trigger contract the sender relies on, the injection rule (the
+ * externally supplied version never appears as a `${{ }}` expression inside a
+ * run script), SHA-pinned actions, a pr-title-lint-clean title, the
+ * loud failure path. The bump logic itself is unit-tested
+ * in scripts/platform-release-bump.unit.test.ts, and the merge gate in
+ * scripts/platform-bump-gate.unit.test.ts.
+ *
+ * Lives at the repo root (not under .github/) because `bun test` never walks
+ * dot-directories.
+ */
+import { describe, expect, it } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+const ROOT = resolve(import.meta.dir);
+const PATH = join(ROOT, ".github/workflows/platform-release.yml");
+
+type Step = {
+  name?: string;
+  uses?: string;
+  id?: string;
+  run?: string;
+  if?: string;
+  env?: Record<string, string>;
+  with?: Record<string, string>;
+};
+type Workflow = {
+  on: {
+    repository_dispatch?: { types?: string[] };
+    workflow_dispatch?: {
+      inputs?: Record<
+        string,
+        { required?: boolean; type?: string; default?: string }
+      >;
+    };
+  };
+  permissions?: Record<string, string>;
+  jobs: Record<
+    string,
+    {
+      "timeout-minutes"?: number;
+      env?: Record<string, string>;
+      permissions?: Record<string, string>;
+      steps: Step[];
+    }
+  >;
+};
+
+const text = readFileSync(PATH, "utf8");
+const wf = Bun.YAML.parse(text) as Workflow;
+const job = wf.jobs.bump;
+const steps = job.steps;
+const runOf = (pred: (s: Step) => boolean) =>
+  steps.filter(pred).map((s) => s.run ?? "");
+const allRuns = runOf(() => true).join("\n");
+/** GitHub expression and shell-variable text, built so this source holds no literal template-looking strings. */
+const gha = (expr: string) => `$${"{{"} ${expr} }}`;
+const shellVar = (name: string) => ["$", "{", name, "}"].join("");
+
+describe("platform-release.yml triggers", () => {
+  it("receives the platform-release repository_dispatch", () => {
+    expect(wf.on.repository_dispatch?.types).toEqual(["platform-release"]);
+  });
+
+  it("can be run by hand with a required version input", () => {
+    const input = wf.on.workflow_dispatch?.inputs?.version;
+    expect(input?.required).toBe(true);
+    expect(input?.type).toBe("string");
+  });
+
+  it("reads the version from the sender's client_payload[version] or the input, via env", () => {
+    expect(job.env?.VERSION).toBe(
+      gha("github.event.client_payload.version || inputs.version"),
+    );
+  });
+});
+
+describe("platform-release.yml safety", () => {
+  it("never interpolates a GitHub expression into a run script", () => {
+    for (const step of steps) {
+      expect(step.run ?? "", `step: ${step.name ?? step.uses}`).not.toContain(
+        gha("").slice(0, 3),
+      );
+    }
+  });
+
+  it("pins every action to a full commit SHA", () => {
+    const uses = steps.map((s) => s.uses).filter((u): u is string => !!u);
+    expect(uses.length).toBeGreaterThan(0);
+    for (const u of uses) expect(u).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
+    // The version comment the rest of the repo keeps beside each pin.
+    for (const line of text.split("\n").filter((l) => /\buses:/.test(l))) {
+      expect(line).toMatch(/@[0-9a-f]{40} # v\d/);
+    }
+  });
+
+  it("keeps workflow-level permissions read-only and widens only the job", () => {
+    expect(wf.permissions).toEqual({ contents: "read" });
+    expect(job.permissions).toEqual({
+      contents: "write",
+      "pull-requests": "write",
+    });
+  });
+});
+
+describe("platform-release.yml bump", () => {
+  it("validates and re-pins through scripts/platform-release-bump.ts, then refreshes bun.lock", () => {
+    const bump = allRuns.indexOf(
+      'bun scripts/platform-release-bump.ts "$VERSION"',
+    );
+    const install = allRuns.indexOf("bun install");
+    expect(bump).toBeGreaterThanOrEqual(0);
+    expect(install).toBeGreaterThan(bump);
+  });
+
+  it("waits for every pinned package on npm before bun install, deriving the list from the bump script", () => {
+    const idx = steps.findIndex((s) => /npm view/.test(s.run ?? ""));
+    const lockIdx = steps.findIndex((s) => s.name === "Refresh bun.lock");
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(idx).toBeLessThan(lockIdx);
+    const wait = steps[idx];
+    expect(wait.run).toContain("platform-release-bump.ts --list-packages");
+    expect(wait.run).toContain("sleep 15");
+    expect(wait.run).toMatch(/npm view "\$\{?pkg\}?@\$\{?VERSION\}?" version/);
+    expect(wait.run).toContain("exit 1");
+    // The version must also have a servable tarball, not just a registry listing.
+    expect(wait.run).toMatch(/npm view "\$\{?pkg\}?@\$\{?VERSION\}?" dist\.tarball/);
+    expect(wait.run).toContain('curl -fsI "$tarball"');
+    expect(wait.run).toContain("seq 1 40");
+    // The version reaches the step through env only, never a template expression.
+    expect(wait.run).not.toContain("${{");
+    // The step precedes every `bun install` in the job.
+    const firstInstall = steps.findIndex((s) =>
+      /bun install/.test(s.run ?? ""),
+    );
+    expect(idx).toBeLessThan(firstInstall);
+  });
+
+  it("retries bun install only on registry 404 / failed-to-resolve and names VERSION on exhaustion", () => {
+    const run = steps.find((s) => s.name === "Refresh bun.lock")?.run ?? "";
+    expect(run).toContain("max_attempts=5");
+    expect(run).toContain("sleep 20");
+    expect(run).toMatch(/grep -Eqi '404\|failed to resolve'/);
+    // Non-registry errors fail immediately, before any sleep.
+    expect(run.indexOf("non-registry error")).toBeLessThan(
+      run.indexOf("sleep 20"),
+    );
+    expect(run).toContain("${VERSION}");
+    expect(run).toContain("${last_error}");
+    expect(run).not.toContain("${{");
+  });
+
+  it("commits only package.json files, bun.lock and the docs snapshot, on one fixed bump branch", () => {
+    expect(job.env?.BRANCH).toBe("chore/platform-release");
+    expect(allRuns).toContain("git add -A -- docs/platform");
+    expect(allRuns).toContain("git add -u -- bun.lock '*package.json'");
+    expect(allRuns).toContain('git push --force origin "$BRANCH"');
+  });
+
+  it("regenerates the admin spec and types after bun install and before detecting changes", () => {
+    const regen = steps.findIndex(
+      (s) =>
+        /bun run generate:admin-spec/.test(s.run ?? "") &&
+        /bun run generate:admin-types/.test(s.run ?? ""),
+    );
+    const lockIdx = steps.findIndex((s) => s.name === "Refresh bun.lock");
+    const detectIdx = steps.findIndex((s) => s.name === "Detect changes");
+    expect(regen).toBeGreaterThan(lockIdx);
+    expect(regen).toBeLessThan(detectIdx);
+    const run = steps[regen].run ?? "";
+    expect(run.indexOf("generate:admin-spec")).toBeLessThan(
+      run.indexOf("generate:admin-types"),
+    );
+    expect(run).not.toContain("${{");
+  });
+
+  it("stages the generated admin files and still rejects any other change", () => {
+    const commit = steps.find((s) => /git commit/.test(s.run ?? ""))?.run ?? "";
+    const add = commit.slice(commit.indexOf("git add -u"), commit.indexOf("#"));
+    for (const f of [
+      "admin/openapi.json",
+      "admin/src/coding/openapi.coding.json",
+      "admin/src/coding/admin-types.ts",
+    ]) {
+      expect(add).toContain(f);
+    }
+    expect(commit.indexOf("git add -u")).toBeLessThan(
+      commit.indexOf("unexpected changes"),
+    );
+    expect(commit).toContain("grep -v '^[MADR] '");
+    expect(commit).toContain("admin-types.ts:");
+  });
+
+  it("snapshots the platform docs from the release tag before committing", () => {
+    const checkout = steps.find(
+      (s) => s.with?.repository === "app-vitals/agent",
+    );
+    expect(checkout?.with?.ref).toBe(`refs/tags/v${gha("env.VERSION")}`);
+    expect(checkout?.with?.token).toBe(gha("secrets.DISPATCH_TOKEN"));
+    expect(checkout?.with?.["persist-credentials"]).toBe(false);
+    const snap = allRuns.indexOf(
+      'bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src',
+    );
+    expect(snap).toBeGreaterThan(allRuns.indexOf("platform-release-bump.ts"));
+    expect(snap).toBeLessThan(allRuns.indexOf("git commit"));
+  });
+
+  it("opens or updates the PR with a pr-title-lint-clean title", () => {
+    expect(allRuns).toContain(
+      `TITLE="chore(deps): bump @app-vitals/agent-* to ${shellVar("VERSION")}"`,
+    );
+    // pr-title-lint: conventional type(scope): subject.
+    expect("chore(deps): bump @app-vitals/agent-* to 0.2.0").toMatch(
+      /^(feat|fix|chore|docs|refactor|test|ci|perf|build)(\([\w-]+\))?: \S/,
+    );
+    expect(allRuns).toContain('gh pr list --head "$BRANCH" --state open');
+    expect(allRuns).toContain('gh pr edit "$PR_URL"');
+    expect(allRuns).toContain("gh pr create");
+    expect(allRuns).not.toContain("platform-cutover");
+  });
+
+  it("uses DISPATCH_TOKEN for the push and the PR so the PR's CI runs", () => {
+    const checkout = steps.find((s) => s.uses?.startsWith("actions/checkout@"));
+    expect(checkout?.with?.token).toBe(gha("secrets.DISPATCH_TOKEN"));
+    const pr = steps.find((s) => s.run?.includes("gh pr create"));
+    expect(pr?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
+  });
+
+  it("fails loudly without issue steps or the issues permission", () => {
+    expect(job.permissions?.issues).toBeUndefined();
+    expect(allRuns).not.toContain("gh issue");
+    expect(steps.some((s) => s.if === "failure()")).toBe(false);
+    expect(steps.some((s) => s.name?.includes("issue"))).toBe(false);
+  });
+});
+
+describe("platform-release.yml self-merge (PLD-2.3)", () => {
+  const prIdx = steps.findIndex((s) => s.run?.includes("gh pr create"));
+  const mergeIdx = steps.findIndex(
+    (s) => s.name === "Wait for checks and merge",
+  );
+  const merge = steps[mergeIdx];
+
+  it("gives the PR step id pr and writes pr_url to GITHUB_OUTPUT", () => {
+    expect(steps[prIdx].id).toBe("pr");
+    expect(steps[prIdx].run).toContain(
+      'echo "pr_url=$' + '{PR_URL}" >> "$GITHUB_OUTPUT"',
+    );
+    // Both the update and the create branch write the output.
+    expect(steps[prIdx].run?.split("pr_url=").length).toBe(3);
+  });
+
+  it("has a merge step gated on the diff, taking the PR URL and token via env", () => {
+    expect(mergeIdx).toBeGreaterThan(-1);
+    expect(merge.if).toBe("steps.diff.outputs.changed == 'true'");
+    expect(merge.env?.PR_URL).toBe(gha("steps.pr.outputs.pr_url"));
+    expect(merge.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
+  });
+
+  it("delegates the gate to scripts/platform-bump-gate.sh with the PR url, not an inline loop", () => {
+    // The wait / evaluate / merge decision is behavior-tested against recorded
+    // check timelines in scripts/platform-bump-gate.unit.test.ts.
+    expect(merge.run).toContain('bash scripts/platform-bump-gate.sh "$PR_URL"');
+    expect(merge.run).not.toContain("gh pr merge");
+    expect(merge.run).not.toContain("gh run list");
+    expect(existsSync(join(ROOT, "scripts/platform-bump-gate.sh"))).toBe(true);
+    // Neither the version nor the PR url is templated into the script call.
+    expect(merge.run).not.toContain("${{");
+  });
+
+  it("gates the merge on every required check being green (AXG-1.2)", () => {
+    // Root cause of #4639 (run 40610130677): after `gh run rerun --failed` the
+    // CI checks dropped out of the rollup, the watch saw only the title check
+    // and exited 0, and the gate admin-merged a red lint / typecheck / test.
+    // The merge command must sit after a full re-read of the required set,
+    // and the admin merge may not run in any other step.
+    const gate = readFileSync(
+      join(ROOT, "scripts/platform-bump-gate.sh"),
+      "utf8",
+    );
+    const verify = gate.indexOf("required_checks_all_green");
+    const callSite = gate.indexOf('required_checks_all_green "$CHECKS_JSON"');
+    const mergeCmd = gate.indexOf("gh pr merge");
+    expect(verify).toBeGreaterThanOrEqual(0);
+    expect(callSite).toBeGreaterThan(verify);
+    expect(mergeCmd).toBeGreaterThan(callSite);
+    expect(gate).toContain("not merging");
+    expect(allRuns).not.toContain("--admin");
+  });
+
+  it("runs after the PR step and is the last step", () => {
+    expect(mergeIdx).toBeGreaterThan(prIdx);
+    expect(mergeIdx).toBe(steps.length - 1);
+  });
+
+  it("allows 30 minutes for the job", () => {
+    expect(job["timeout-minutes"]).toBe(30);
+  });
+});
+
+describe("platform-release.yml conflict rebuild (PBP-1.2)", () => {
+  const merge = steps.find((s) => s.name === "Wait for checks and merge");
+  const run = merge?.run ?? "";
+
+  it("has an optional attempt input defaulting to 1", () => {
+    const input = wf.on.workflow_dispatch?.inputs?.attempt;
+    expect(input?.required).toBe(false);
+    expect(input?.type).toBe("string");
+    expect(String(input?.default)).toBe("1");
+  });
+
+  it("reads attempt via env, defaulting to 1 for repository_dispatch", () => {
+    expect(merge?.env?.ATTEMPT).toBe(gha("inputs.attempt || '1'"));
+    expect(merge?.env?.VERSION ?? job.env?.VERSION).toBeTruthy();
+  });
+
+  it("polls mergeable until it leaves UNKNOWN, before waiting on checks", () => {
+    const poll = run.indexOf("gh pr view");
+    expect(poll).toBeGreaterThanOrEqual(0);
+    expect(run).toContain("--json mergeable");
+    expect(run).toContain("UNKNOWN");
+    expect(poll).toBeLessThan(run.indexOf("platform-bump-gate.sh"));
+  });
+
+  it("logs a distinct ::error:: naming the conflict with main", () => {
+    expect(run).toContain("CONFLICTING");
+    expect(run).toMatch(/::error::[^\n]*conflict[^\n]*main/i);
+  });
+
+  it("re-dispatches once via workflow_dispatch with attempt+1, capped at 2", () => {
+    expect(run).toContain("gh workflow run platform-release.yml");
+    expect(run).toContain('-f version="$VERSION"');
+    expect(run).toMatch(/-f attempt="\$\{?NEXT_ATTEMPT\}?"/);
+    expect(run).toMatch(/MAX_REBUILD_ATTEMPTS=2/);
+    expect(run).toMatch(
+      /ATTEMPT" -lt "\$MAX_REBUILD_ATTEMPTS"|ATTEMPT" -ge "\$MAX_REBUILD_ATTEMPTS"/,
+    );
+  });
+
+  it("exits 0 with a ::warning:: after re-dispatching, and fails loudly on the second conflict", () => {
+    const dispatch = run.indexOf("gh workflow run");
+    const afterDispatch = run.slice(dispatch);
+    expect(afterDispatch).toMatch(/::warning::[^\n]*[Rr]egenerat/);
+    expect(afterDispatch.indexOf("exit 0")).toBeGreaterThan(-1);
+    // The cap branch fails with exit 1 and its own error text.
+    expect(run).toMatch(/::error::[^\n]*still conflicts[^\n]*attempt/i);
+  });
+
+  it("hands off to the gate script after the conflict check and never interpolates expressions", () => {
+    expect(run.indexOf("platform-bump-gate.sh")).toBeGreaterThan(
+      run.indexOf("CONFLICTING"),
+    );
+    expect(run).not.toContain("${{");
+    expect(merge?.env?.GH_TOKEN).toBe(gha("secrets.DISPATCH_TOKEN"));
+  });
+
+  it("gives the merge step id merge and the gate script writes merged=true to GITHUB_OUTPUT on success", () => {
+    expect(merge?.id).toBe("merge");
+    const script = readFileSync(
+      join(ROOT, "scripts/platform-bump-gate.sh"),
+      "utf8",
+    );
+    // The output must be written after the merge message, right before the exit 0 in the successful merge path.
+    const mergedOutputIdx = script.indexOf('echo "merged=true"');
+    const prUrl = ["$", "{", "PR_URL", "}"].join("");
+    const mergedPrintIdx = script.indexOf(`Merged ${prUrl}`);
+    const exitAfterMergeIdx = script.indexOf("exit 0", mergedOutputIdx);
+    expect(mergedOutputIdx).toBeGreaterThan(-1);
+    expect(mergedPrintIdx).toBeGreaterThan(-1);
+    expect(mergedOutputIdx).toBeGreaterThan(mergedPrintIdx);
+    expect(exitAfterMergeIdx).toBeGreaterThan(mergedOutputIdx);
+  });
+
+  it("documents the rebuild behaviour in the header", () => {
+    const header = text.slice(0, text.indexOf("\non:"));
+    expect(header).toMatch(/CONFLICTING/);
+    expect(header).toMatch(/attempt/);
+  });
+});
+
+describe("platform-docs-guard.yml", () => {
+  const guard = readFileSync(
+    join(ROOT, ".github/workflows/platform-docs-guard.yml"),
+    "utf8",
+  );
+
+  it("runs the guard on PRs with the head branch passed via env, not interpolated", () => {
+    expect(guard).toContain("pull_request:");
+    expect(guard).toContain(
+      'bun scripts/platform-docs-guard.ts "$RUNNER_TEMP/changed.txt" "$HEAD_REF"',
+    );
+    const run = (Bun.YAML.parse(guard) as Workflow).jobs["docs-guard"].steps
+      .map((s) => s.run ?? "")
+      .join("\n");
+    expect(run).not.toContain(gha("").slice(0, 3));
+  });
+});
+
+describe("PBF-1.1 guard open-PR semantics", () => {
+  const retry = readFileSync(
+    join(ROOT, ".github/workflows/platform-release-retry.yml"),
+    "utf8",
+  );
+  const gateSh = readFileSync(
+    join(ROOT, "scripts/platform-bump-gate.sh"),
+    "utf8",
+  );
+  it("retry workflow passes the open PR url to the guard", () => {
+    expect(retry).toContain(
+      'platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"',
+    );
+  });
+  it("gate squash-merge deletes the branch", () => {
+    expect(gateSh).toContain(
+      'gh pr merge "$PR_URL" --squash --admin --delete-branch',
+    );
+  });
+});
+
+describe("platform-release-retry.yml exhausted report", () => {
+  const retry = Bun.YAML.parse(
+    readFileSync(
+      join(ROOT, ".github/workflows/platform-release-retry.yml"),
+      "utf8",
+    ),
+  ) as Workflow;
+  const rjob = retry.jobs.retry;
+  const report = rjob.steps.find((s) => s.name === "Report exhausted retries");
+
+  it("opens no issue and drops the issues permission", () => {
+    expect(rjob.permissions?.issues).toBeUndefined();
+    const runs = rjob.steps.map((s) => s.run ?? "").join("\n");
+    expect(runs).not.toContain("gh issue");
+  });
+
+  it("still posts the platform-bump-exhausted marker comment once per PR", () => {
+    expect(report?.if).toContain("steps.select.outputs.reported == '0'");
+    expect(report?.run).toContain("<!-- platform-bump-exhausted -->");
+    expect(report?.run).toContain("gh pr comment");
+    expect(report?.run).not.toMatch(/issue/i);
+  });
+});

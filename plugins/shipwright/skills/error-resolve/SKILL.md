@@ -1,6 +1,6 @@
 ---
 name: error-resolve
-description: Read the error-patrol ledger, check each linked task's current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never resolves on merged or pr_open.
+description: Read the error-patrol ledger, check each linked task's current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never resolves on merged, released or pr_open.
 ---
 
 # Error Resolve
@@ -151,11 +151,15 @@ purposes: **not ready to resolve.** A cancelled task means the fix was abandoned
 reached `deployed` or `done` status — never `merged`, never `pr_open`, never any other
 status.**
 
+`deployed` and `done` are the only resolving statuses.
+`merged`, `released` and `pr_open` never resolve: `released` means a library was published, and a published library does not change a running
+service until a consumer deploys it.
+
 For each issue with a successfully-looked-up gating task status (Step 3):
 
 - Gating task status is `deployed` or `done` → **ready to resolve.**
 - Gating task status is anything else (`pending`, `in_progress`, `pr_open`, `approved`,
-  `merged`, `deploying`, `blocked`, or any other non-terminal/non-`deployed`/non-`done`
+  `merged`, `released`, `blocked`, or any other non-terminal/non-`deployed`/non-`done`
   value) → **not ready.** Record the blocking status for the summary (Step 8) so a human can
   see exactly what's still pending. `merged` and `pr_open` are explicitly **not** sufficient
   even though they're further along than `pending` — the task must have actually shipped
@@ -344,7 +348,7 @@ Stop after printing — this is the sole final output.
 - **Always a live task-store lookup.** Every gating task's status is queried fresh via `GET
   /tasks/:id` on this run (Step 3) before any Sentry action is taken. The ledger never stores
   task status and is never trusted as a status cache.
-- **Only `deployed`/`done` gates resolution.** `merged` and `pr_open` — and every other
+- **Only `deployed`/`done` gates resolution.** `merged`, `released` and `pr_open` — and every other
   status — are explicitly insufficient. Never call the Sentry resolve endpoint for an issue
   whose gating task hasn't reached `deployed` or `done`.
 - **Primary gates over companion.** When an issue has both a `primary` and a `companion`

@@ -18,13 +18,18 @@ import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { VerificationCheckServiceLike } from "./verification-check-service.ts";
 
 // ─── Stub deps — only route definitions matter for spec generation ────────────
 
 const stubTaskService: TaskServiceLike = {
+  async markMergedByPr() {
+    return { updated: [], unchanged: [], skipped: [] };
+  },
   async list() {
     return { tasks: [], total: 0, limit: 50, offset: 0 };
   },
@@ -69,6 +74,9 @@ const stubTaskService: TaskServiceLike = {
     return {} as never;
   },
   async resetSkip() {
+    return {} as never;
+  },
+  async unblock() {
     return {} as never;
   },
   async getEvents() {
@@ -125,6 +133,9 @@ const stubPrService: PullRequestServiceLike = {
   async resetSkip() {
     return {} as never;
   },
+  async unblock() {
+    return {} as never;
+  },
   async claimNext() {
     return null;
   },
@@ -160,6 +171,21 @@ const stubSessionService: SessionServiceLike = {
   },
 };
 
+const stubVerificationCheckService: VerificationCheckServiceLike = {
+  async record() {
+    return {} as never;
+  },
+  async listForTask() {
+    return { checks: [], total: 0 };
+  },
+  async listForPr() {
+    return { checks: [], total: 0 };
+  },
+  async listByRepoAndCheck() {
+    return { checks: [], total: 0 };
+  },
+};
+
 // ─── Spec assembly ────────────────────────────────────────────────────────────
 
 function prefixPaths(
@@ -183,6 +209,9 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensApp = createTokensRoutes(stubTokenService);
   const prsApp = createPrsRoutes(stubPrService);
   const sessionsApp = createSessionsRoutes(stubSessionService);
+  const verificationChecksApp = createVerificationChecksRoutes(
+    stubVerificationCheckService,
+  );
 
   const innerDocInfo = {
     openapi: "3.1.0" as const,
@@ -193,6 +222,8 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensSpec = tokensApp.getOpenAPI31Document(innerDocInfo);
   const prsSpec = prsApp.getOpenAPI31Document(innerDocInfo);
   const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
+  const verificationChecksSpec =
+    verificationChecksApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
     ...prefixPaths(
@@ -210,6 +241,13 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     ...prefixPaths(
       (sessionsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/sessions",
+    ),
+    ...prefixPaths(
+      (verificationChecksSpec.paths ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >,
+      "/verification-checks",
     ),
   };
 
@@ -229,6 +267,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(tokensSpec.components?.schemas ?? {}),
         ...(prsSpec.components?.schemas ?? {}),
         ...(sessionsSpec.components?.schemas ?? {}),
+        ...(verificationChecksSpec.components?.schemas ?? {}),
       },
     },
   };

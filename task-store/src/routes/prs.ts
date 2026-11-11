@@ -7,6 +7,10 @@
  *
  * Agent tokens (agentId set) are repo-scoped:
  *   - writes validate that the PR's repo is in c.get('repos')
+ *   - GET /prs is filtered to c.get('repos') (ANDed with ?repo/?org)
+ *   - /prs/:id/* routes 404 when the PR's repo is out of scope (same as missing)
+ *   - repos === [] means zero access (never "all"); POST /prs/claim → 400,
+ *     POST /prs/census + GET /prs/census/cursor → 403, /prs/:id/* → 404
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
@@ -23,6 +27,7 @@
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0; also clears blocked/blockedReason
  *                                but only when blockedReason matches the skip-auto-block pattern
+ *   POST   /prs/:id/unblock   atomically clear any block + skip/CI-streak counters (409 unless blocked, 404 when missing)
  *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
  *                              — source:"patch" may only submit disposition:"rejected" (400
  *                              otherwise); source:"review" may submit any disposition
@@ -30,17 +35,22 @@
  *                              ordered by `at` ascending (oldest first)
  */
 
+import { readJson } from "@app-vitals/agent-lib/http";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
-import { readJson } from "@shipwright/lib/http";
+import type { Context } from "hono";
+import {
+  resolveAccountScope,
+  resolveWriteAccountId,
+} from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
-import { PrOrigin } from "../index.ts";
 import type {
   PrFindingDisposition,
   PrFindingSource,
   PrState,
   PullRequest,
 } from "../index.ts";
+import { PrOrigin, PrPhase } from "../index.ts";
 import {
   CensusBodySchema,
   CensusCursorQuerySchema,
@@ -96,6 +106,13 @@ function validateCensusRepoScope(repo: string, repos: string[] | null): void {
 // Derived from the runtime PrOrigin enum rather than hand-listed, so this
 // stays in sync with the Prisma schema without a second literal to update.
 const PR_ORIGIN_VALUES = new Set<string>(Object.values(PrOrigin));
+// Valid pipeline phases, derived from the Prisma PrPhase enum so a dropped
+// value (e.g. `deploy`, MPD-3.5) is rejected with a 400 rather than reaching
+// Prisma and surfacing as a raw 500.
+const PR_PHASE_VALUES = new Set<string>(Object.values(PrPhase));
+function isPrPhase(value: unknown): value is PrPhase {
+  return typeof value === "string" && PR_PHASE_VALUES.has(value);
+}
 
 /** Parse a raw census-entry value into a nullable-or-undefined string field:
  * a real string or explicit null are passed through; anything else
@@ -103,6 +120,25 @@ const PR_ORIGIN_VALUES = new Set<string>(Object.values(PrOrigin));
 function stringOrNull(value: unknown): string | null | undefined {
   if (typeof value === "string" || value === null) return value;
   return undefined;
+}
+
+/** Parse a raw census-entry value into a nullable-or-undefined integer field:
+ * a real integer or explicit null are passed through; anything else
+ * (undefined, wrong type, non-integer) becomes undefined ("leave untouched"). */
+function numberOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  return undefined;
+}
+
+/** Parse a raw request-body value into a boolean-or-undefined field: a real
+ * boolean is passed through; anything else (undefined, null, wrong type)
+ * becomes undefined. Unlike stringOrNull/numberOrNull these fields (POF-1.1's
+ * `authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel`) are pure
+ * deriveOrigin() inputs, not persisted/refreshed columns, so there's no
+ * "explicit null clears it" semantics to preserve. */
+function boolOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 // ─── Route definitions ────────────────────────────────────────────────────────
@@ -113,7 +149,7 @@ const listRoute = createRoute({
   tags: ["PRs"],
   summary: "List pull requests",
   description:
-    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).",
+    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
   request: {
     query: PrListQuerySchema,
   },
@@ -131,7 +167,7 @@ const claimRoute = createRoute({
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
   description:
-    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.",
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -149,7 +185,8 @@ const claimRoute = createRoute({
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Bad request",
+      description:
+        "Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404)",
     },
     409: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -196,7 +233,7 @@ const getOneRoute = createRoute({
   tags: ["PRs"],
   summary: "Fetch a single pull request",
   description:
-    "Fetches a single PR record by its ID. Returns `404` if not found.",
+    "Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.",
   request: {
     params: PrIdParamSchema,
   },
@@ -207,7 +244,8 @@ const getOneRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -218,7 +256,7 @@ const updateRoute = createRoute({
   tags: ["PRs"],
   summary: "Update pull request fields",
   description:
-    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -237,7 +275,8 @@ const updateRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -256,6 +295,11 @@ const heartbeatRoute = createRoute({
     200: {
       content: { "application/json": { schema: PullRequestSchema } },
       description: "PR with updated heartbeatAt",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -277,7 +321,8 @@ const completeRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -304,7 +349,8 @@ const patchRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -326,7 +372,8 @@ const releaseRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -348,7 +395,8 @@ const skipRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -360,7 +408,7 @@ const skipResetRoute = createRoute({
   summary:
     "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
   description:
-    'Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.',
+    'Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips") or starting with the patch no-progress escalation prefix ("patch dispatch made no progress"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.',
   request: {
     params: PrIdParamSchema,
   },
@@ -371,7 +419,36 @@ const skipResetRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+    },
+  },
+});
+
+const unblockRoute = createRoute({
+  method: "post",
+  path: "/:id/unblock",
+  tags: ["PRs"],
+  summary:
+    "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+  description:
+    "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Unblocked PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Conflict — the PR is not currently blocked",
     },
   },
 });
@@ -403,7 +480,8 @@ const findingsRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -427,7 +505,8 @@ const eventsRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -437,7 +516,7 @@ const censusRoute = createRoute({
   path: "/census",
   tags: ["PRs"],
   summary: "Batch upsert PR origin/author/branch/title/state metadata",
-  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
+  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\`/\`commitCount\`/\`commitsDocsRefresh\`/\`commitsReviewPatch\`/\`commitsCiFix\`/\`commitsImplementation\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
   request: {
     body: {
       content: { "application/json": { schema: CensusBodySchema } },
@@ -494,6 +573,28 @@ export function createPrsRoutes(
 ): OpenAPIHono<TaskStoreAuthEnv> {
   const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
+  // Shared :id guard: load the PR and 404 ("pr not found") when it is missing
+  // or its repo is outside the token's scope — indistinguishable on purpose, so
+  // an out-of-scope id can't be probed. repos === null (admin) bypasses;
+  // repos === [] denies all. Runs before any write.
+  // SSP-6.6: also 404s when the PR belongs to another account (agent token:
+  // its resolved account; admin: only when narrowed via ?accountId=).
+  async function loadScopedPr(
+    c: Context<TaskStoreAuthEnv>,
+  ): Promise<PullRequest> {
+    const pr = await prService.get(c.req.param("id") ?? "");
+    const repos = c.get("repos");
+    const accountScope = resolveAccountScope(c);
+    if (
+      !pr ||
+      (repos !== null && !repos?.includes(pr.repo)) ||
+      (accountScope !== null && pr.accountId !== accountScope)
+    ) {
+      throw new NotFoundError("pr not found");
+    }
+    return pr;
+  }
+
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
@@ -516,6 +617,8 @@ export function createPrsRoutes(
       : undefined;
 
     const result = await prService.list({
+      repoScope: c.get("repos"),
+      accountScope: resolveAccountScope(c),
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       prNumber:
@@ -559,6 +662,9 @@ export function createPrsRoutes(
       authorLogin,
       headRef,
       title,
+      authorIsBot,
+      hasAutomatedLabel,
+      hasShipwrightLabel,
     } = body;
 
     // Validate required fields
@@ -595,10 +701,7 @@ export function createPrsRoutes(
     // matching callers (like review.md) that don't send phase at all.
     // readJson reads the raw body, not the Zod-validated payload — this guard
     // narrows phase to the allowed enum values before forwarding to the service.
-    const resolvedPhase =
-      phase === "review" || phase === "patch" || phase === "deploy"
-        ? phase
-        : undefined;
+    const resolvedPhase = isPrPhase(phase) ? phase : undefined;
 
     const resolvedPrCreatedAt =
       typeof prCreatedAt === "string" && prCreatedAt ? prCreatedAt : undefined;
@@ -613,6 +716,12 @@ export function createPrsRoutes(
       stringOrNull(authorLogin),
       stringOrNull(headRef),
       stringOrNull(title),
+      boolOrUndefined(authorIsBot),
+      boolOrUndefined(hasAutomatedLabel),
+      boolOrUndefined(hasShipwrightLabel),
+      // SSP-6.3: key/stamp the PR by the caller's account (agent token:
+      // resolved account; admin token: ?accountId= or 'default').
+      resolveWriteAccountId(c),
     );
 
     return c.json(record, status);
@@ -650,6 +759,7 @@ export function createPrsRoutes(
       resolvedAgentId,
       resolvedMaxConcurrent,
       agentId !== null ? (repos ?? undefined) : undefined,
+      resolveAccountScope(c),
     );
 
     if (result === null) {
@@ -714,11 +824,16 @@ export function createPrsRoutes(
           state,
           mergedAt: stringOrNull(raw.mergedAt),
           prCreatedAt: stringOrNull(raw.prCreatedAt),
+          commitCount: numberOrNull(raw.commitCount),
+          commitsDocsRefresh: numberOrNull(raw.commitsDocsRefresh),
+          commitsReviewPatch: numberOrNull(raw.commitsReviewPatch),
+          commitsCiFix: numberOrNull(raw.commitsCiFix),
+          commitsImplementation: numberOrNull(raw.commitsImplementation),
         };
       },
     );
 
-    const prs = await prService.census(entries);
+    const prs = await prService.census(entries, resolveWriteAccountId(c));
     return c.json({ prs }, 200);
   });
 
@@ -733,15 +848,17 @@ export function createPrsRoutes(
     }
     validateCensusRepoScope(repo, agentId !== null ? repos : null);
 
-    const cursor = await prService.getCensusCursor(repo);
+    const cursor = await prService.getCensusCursor(
+      repo,
+      resolveWriteAccountId(c),
+    );
     return c.json({ cursor }, 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(getOneRoute, async (c): Promise<any> => {
-    const pr = await prService.get(c.req.param("id"));
-    if (!pr) throw new NotFoundError("pr not found");
+    const pr = await loadScopedPr(c);
     return c.json(pr, 200);
   });
 
@@ -750,15 +867,15 @@ export function createPrsRoutes(
   // dedicated lifecycle endpoints (claim, complete, patch, release) that enforce
   // valid state transitions atomically.
   //
-  // Extensions for deploy.md upsert flow:
+  // Extensions for merge.md upsert flow:
   //   state, mergedAt, reviewState — set when marking a PR as merged
   //
   // Pipeline phase tracking:
-  //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
-  //   the review/patch/deploy skills to record when a PR enters each phase
+  //   phase, readyForReviewAt, readyForPatchAt, readyForMergeAt — set by the
+  //   review/patch/merge skills to record when a PR enters each phase
   //
   // PR-level block (blocks automation on a PR with no linked Task):
-  //   blocked, blockedReason
+  //   blocked, blockedReason, blockedHeadSha
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -770,30 +887,23 @@ export function createPrsRoutes(
     // reviewedAt is normally set by POST /:id/complete, but review.md's terminal-skip
     // write-back paths (Step 5, Step 14.3, Live-Review Pre-Check) need to advance it
     // directly via PATCH too — it's the watermark hasFreshNonAgentComment
-    // (agent/src/check-review.ts) uses to decide whether PR activity is "fresh"; without
+    // (agent/src/coding/check-review.ts) uses to decide whether PR activity is "fresh"; without
     // this, a PR skipped via those paths keeps a frozen reviewedAt and gets re-selected
     // for review on every subsequent tick (RWA-1.2).
     "reviewedAt",
     "phase",
     "readyForReviewAt",
     "readyForPatchAt",
-    "readyForDeployAt",
+    "readyForMergeAt",
     "blocked",
     "blockedReason",
+    "blockedHeadSha",
   ];
 
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(updateRoute, async (c): Promise<any> => {
-    const agentId = c.get("agentId");
-    const repos = c.get("repos");
     const body = await readJson(c);
-
-    // For agent tokens, validate the existing PR's repo is in scope
-    if (agentId !== null) {
-      const pr = await prService.get(c.req.param("id"));
-      if (!pr) throw new NotFoundError("pr not found");
-      validateRepo(pr.repo, repos);
-    }
+    await loadScopedPr(c);
 
     // Apply field allowlist — silently drop any fields not in the list
     const filtered: Partial<PullRequest> = {};
@@ -801,6 +911,22 @@ export function createPrsRoutes(
       if (key in body) {
         (filtered as Record<string, unknown>)[key] = body[key];
       }
+    }
+    if (
+      "blockedHeadSha" in filtered &&
+      filtered.blockedHeadSha !== null &&
+      typeof filtered.blockedHeadSha !== "string"
+    ) {
+      throw new BadRequestError("blockedHeadSha must be a string or null");
+    }
+    if (
+      "phase" in filtered &&
+      filtered.phase !== null &&
+      !isPrPhase(filtered.phase)
+    ) {
+      throw new BadRequestError(
+        `invalid phase: '${String(filtered.phase)}' (expected one of ${[...PR_PHASE_VALUES].join(", ")} or null)`,
+      );
     }
     if (Object.keys(filtered).length === 0) {
       throw new BadRequestError("no updatable fields provided");
@@ -813,6 +939,7 @@ export function createPrsRoutes(
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.heartbeat(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -820,6 +947,7 @@ export function createPrsRoutes(
   // ─── Complete ──────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(completeRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.complete(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -827,6 +955,7 @@ export function createPrsRoutes(
   // ─── Patch ─────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const body = await readJson(c);
     const commitSha =
       typeof body.commitSha === "string" && body.commitSha
@@ -847,6 +976,7 @@ export function createPrsRoutes(
   // ─── Release ───────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(releaseRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.release(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -854,6 +984,7 @@ export function createPrsRoutes(
   // ─── Skip ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(skipRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.recordSkip(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -861,7 +992,16 @@ export function createPrsRoutes(
   // ─── Skip reset ────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(skipResetRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.resetSkip(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Unblock ───────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(unblockRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
+    const pr = await prService.unblock(c.req.param("id"));
     return c.json(pr, 200);
   });
 
@@ -873,6 +1013,7 @@ export function createPrsRoutes(
   // source:"review" may write any disposition.
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(findingsRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const body = await readJson(c);
     const { ref, evidence, at, agentId } = body;
 
@@ -917,6 +1058,7 @@ export function createPrsRoutes(
   // ─── Events ────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(eventsRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
     const limit =

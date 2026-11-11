@@ -16,8 +16,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -120,7 +121,13 @@ describeOrSkip(
 
       // Exactly one claim landed in the DB, held by the winner.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row).not.toBeNull();
       if (!row) return;
@@ -160,7 +167,13 @@ describeOrSkip(
 
       // The original claim is untouched.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row?.claimedBy).toBe("agent-a");
     });
@@ -205,7 +218,13 @@ describeOrSkip(
 
       // Still held by the original claimant.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row?.claimedBy).toBe("agent-x");
     });
@@ -650,3 +669,60 @@ describeOrSkip(
     });
   },
 );
+
+describeOrSkip("PullRequestService.list() repoScope (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+  const A = "app-vitals/shipwright";
+  const B = "app-vitals/other-repo";
+  const C = "other-org/secret";
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.prFinding.deleteMany();
+    await prisma.pullRequestEvent.deleteMany();
+    await prisma.pullRequest.deleteMany();
+    for (const [i, repo] of [A, B, C].entries()) {
+      await prisma.pullRequest.create({ data: { repo, prNumber: 7100 + i } });
+    }
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  const repos = (r: { prs: Array<{ repo: string }> }) =>
+    r.prs.map((p) => p.repo).sort();
+
+  it("restricts results to the scoped repos", async () => {
+    const r = await service.list({ repoScope: [A, B] });
+    expect(repos(r)).toEqual([A, B].sort());
+    expect(r.total).toBe(2);
+  });
+
+  it("intersects with caller repo/org filters; out-of-scope filter yields empty", async () => {
+    expect(repos(await service.list({ repoScope: [A, B], repo: A }))).toEqual([
+      A,
+    ]);
+    expect(
+      repos(await service.list({ repoScope: [A, B], org: "app-vitals" })),
+    ).toEqual([A, B].sort());
+    const out = await service.list({ repoScope: [A], repo: C });
+    expect(out.prs).toEqual([]);
+    expect(out.total).toBe(0);
+    const outOrg = await service.list({ repoScope: [A], org: "other-org" });
+    expect(outOrg.total).toBe(0);
+  });
+
+  it("empty scope returns nothing", async () => {
+    const r = await service.list({ repoScope: [] });
+    expect(r.prs).toEqual([]);
+    expect(r.total).toBe(0);
+  });
+
+  it("no scope (null/undefined) is unrestricted", async () => {
+    expect((await service.list({ repoScope: null })).total).toBe(3);
+    expect((await service.list()).total).toBe(3);
+  });
+});
