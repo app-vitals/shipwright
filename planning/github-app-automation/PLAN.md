@@ -246,12 +246,14 @@ Scope: from admin, plan (read-only dry run) then apply a reconcile that brings a
 | GHE-3.3 | app-vitals/agent | feat: add reconcile audit table, apply service with removal cap, and the open-work port | Database | GHE-3.2 | 4 / sonnet | 5 |  |
 | GHE-3.4 | app-vitals/agent | feat: add admin-only reconcile plan and apply routes | API | GHE-3.3 | 3 / sonnet | 4 |  |
 | GHE-3.5 | app-vitals/agent | feat: add Reconcile section to the agent detail page, hidden when inert | Frontend | GHE-3.4 | 3 / sonnet | 4 |  |
-| GHE-3.6 | app-vitals/shipwright | feat: implement the reconcile open-work port to list and block tasks and PRs on removed repos | Shared | GHE-3.3 | 3 / sonnet | 4 |  |
+| GHE-3.6 | app-vitals/shipwright | feat: implement the reconcile open-work port to list and block tasks and PRs on removed repos | Shared | GHE-3.10 | 3 / sonnet | 4 |  |
 | GHE-3.7 | app-vitals/agent | docs: document reconcile, its safety rules, the audit entry and the member-edit caveat | Shared | GHE-3.5, GHE-3.6 | 2 / haiku | 2 |  |
 | GHE-3.8 | app-vitals/shipwright | chore: reconcile a real agent against a real user and verify the diff and blocks (HITL) | Shared | GHE-3.7 | 2 / sonnet | 2 | HITL |
+| GHE-3.9 | app-vitals/agent | feat: add an optional open-work seam to AdminExtensionServices and wire it into the reconcile service | API | GHE-3.4 | 3 / sonnet | 3 |  |
+| GHE-3.10 | app-vitals/shipwright | chore: wait for @app-vitals/agent >= X in shipwright (HITL) | Shared | GHE-3.9 | 1 / haiku | 1 | HITL |
 
 ### Breaking change safety
-All additive: new client methods, a new table, new routes, an optional port, a new page section. GHE-3.6 consumes the new port export from the platform package through a plain dependency edge. Safe to deploy standalone: yes, for every task.
+All additive: new client methods, a new table, new routes, an optional port, a new page section. GHE-3.6 consumes the open-work port through a producer, release gate, consumer chain: GHE-3.3 exported the port type, but no task gave a host a way to supply it, so GHE-3.9 adds the optional `openWork` seam on `AdminExtensionServices` (after GHE-3.4's routes), GHE-3.10 is the HITL release gate, and GHE-3.6 bumps `agent-*` to that release and supplies the port. Added 2026-11-11 after GHE-3.6 blocked on the missing seam; GHE-3.4 was already in progress and is unchanged. Safe to deploy standalone: yes, for every task.
 
 ## Scope decision: Phase 4 and the unscheduled items are not planned (2026-11-11)
 
