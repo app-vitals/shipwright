@@ -21,6 +21,9 @@
  *   specialtyDefaults   — the coding specialty's default crons, tools and
  *                         plugin (coding/coding-specialty-defaults.ts)
  *   agentTypes          — the `coding` type in the new-agent picker
+ *   openWork            — the GitHub reconcile's open-work port: lists and
+ *                         blocks the agent's open tasks/PRs on removed repos
+ *                         (coding/reconcile-open-work.ts)
  *
  * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
  * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
@@ -37,6 +40,7 @@ import type {
   AdminExtension,
   AdminExtensionContext,
 } from "@app-vitals/agent-admin/admin-extension";
+import type { OpenWorkPort } from "@app-vitals/agent-admin/reconcile-open-work";
 import type { ServiceIntegration } from "@app-vitals/agent-admin/service-integration";
 import { codingAgentDetailCards } from "./admin-ui-agent-cards.ts";
 import {
@@ -55,6 +59,7 @@ import {
   NoopTaskStoreProvisioningClient,
 } from "./coding-task-store-provisioning-client.ts";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
+import { createTaskStoreOpenWorkPort } from "./reconcile-open-work.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
@@ -167,6 +172,20 @@ export function taskStoreFetchers(
   return url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {};
 }
 
+/**
+ * The GitHub reconcile's open-work port (GHE-3.6), backed by the task-store.
+ * Unconfigured → nothing supplied, so the reconcile lists and blocks nothing.
+ */
+export function openWorkService(env: NodeJS.ProcessEnv): {
+  openWork?: OpenWorkPort;
+} {
+  const url = env.SHIPWRIGHT_TASK_STORE_URL;
+  const adminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  return url && adminToken
+    ? { openWork: createTaskStoreOpenWorkPort({ url, adminToken }) }
+    : {};
+}
+
 // One AgentPhaseMethodologyService per Prisma client, shared by every hook.
 const phaseMethodologyServices = new WeakMap<
   object,
@@ -192,6 +211,7 @@ export const codingAdminExtension: AdminExtension = {
       queueActivityLinks: true,
     },
     agentPhaseMethodologyService: phaseMethodologyService(ctx),
+    ...openWorkService(ctx.env),
   }),
   apiRoutes: (ctx) => [
     {
