@@ -174,3 +174,38 @@ Integration for the migration and set/clear, and for the resolver and client aga
 - **Phase 3 — Reconcile:** plan (dry-run diff for the installation and the agent config) then apply (installation first, then config; idempotent; audit entry with caller). Platform-admin only for both. Never remove from an incomplete or failed listing (the resolver's `complete` flag); cap removals; agent repos are always a subset of installation repos; newly accessible repos are not auto-added; open tasks and PRs on removed repos are surfaced to the admin, not auto-blocked. An agent with no bound username is skipped.
 - **Phase 4 — Create the apps from admin (manifest):** lookup app via the manifest flow (a normal org app; reuse `buildAgentAppManifest` and `exchangeManifestCode` with a different permission set); the installer app too if GitHub allows it. GitHub's manifest docs mention only personal and organization targets, nothing for enterprise or enterprise-level permissions, so assume paste-only for the installer until GHE-1.8's live check says otherwise. Extends the Phase 1 settings page; can start once GHE-1.4 is merged.
 - **Later, unscheduled:** a scheduled drift check; webhook triggers; verified owner self-serve binding (GitHub sign-in or device flow); unifying owner, members and GitHub identity into one model; filing the admin-key-created-agent owner gap; a sessions-page signal for a PR with red CI and no patch activity.
+
+## Phase 1 follow-ups: findings from the GHE-1.8 live check (planned 2026-11-11)
+
+Scope: polish and gaps found while configuring both apps on a real enterprise and test org. All code is in `app-vitals/agent`; the one Shipwright task is a live check. Everything is additive: no existing contract changes.
+
+### What the live check showed
+- Both apps validated; the lookup app installed on a test org via admin; a public agent App installed; a private App was refused with a clear message. No request-shape or permission-name divergence from the docs.
+- The installer needs `enterprise_organization_installation_repositories` (write) for Phase 3, and the lookup likely needs Organization Members read. The doc and validation only cover the first permission of each.
+- A validate 404 was an uninstalled installer app; the message does not say so.
+- The settings cards give no field locations, no enterprise-required notice, and no hint to ignore the callback/OAuth/token-expiry options.
+- The key field is paste-only; a `.pem` file upload is wanted.
+- An agent provisioned with only `GH_APP_SLUG` installs fine but its installations card stays empty: the runtime needs `GH_APP_ID` and a key to discover and report.
+- Admin already stores `GH_APP_CLIENT_ID` in the agent env for manifest-provisioned agents, but install ignores it and resolves the slug through the public `GET /apps/{slug}`. That is why a private App is refused.
+
+### Design
+- **Install and Check agent** prefer the agent's stored `GH_APP_CLIENT_ID`, falling back to the public lookup. The private-App refusal stays for agents with neither. Whether GitHub's endpoint accepts a private App is unverified and is settled by the live check (GHE-1.14).
+- **Validate** returns warnings, not failures, for the two newly documented permissions, so deployments configured before this change stay valid. The installation-lookup 404 gets a specific message.
+- **Settings page**: intro reworded, enterprise-required notice, per-card setup steps and field locations, `.pem` file upload beside paste (still never echoed). Role names `installer` and `lookup` stay; cards gain a plain descriptor.
+- **Docs**: permission tables, setup steps, the installations-card prerequisite.
+- **No release gate task.** Releases move quickly; the HITL task's first step is the pin check, as in GHE-2.7.
+
+### Tasks
+| ID | Repo | Title | Layer | Depends | Cx / model | Hrs |
+|----|------|-------|-------|---------|------------|-----|
+| GHE-1.9 | app-vitals/agent | feat: install and check-agent prefer the agent's stored GH_APP_CLIENT_ID | API | — | 3 / sonnet | 3 |
+| GHE-1.10 | app-vitals/agent | feat: specific validate errors and permission warnings for both apps | API | — | 3 / sonnet | 4 |
+| GHE-1.11 | app-vitals/agent | feat: add enterprise-required notice, setup steps and field guidance to the settings cards | Frontend | GHE-1.10 | 3 / sonnet | 4 |
+| GHE-1.12 | app-vitals/agent | feat: accept a .pem file upload on the key field | Frontend | GHE-1.11 | 3 / sonnet | 3 |
+| GHE-1.13 | app-vitals/agent | docs: update enterprise apps doc for both permissions, setup and the installations-card prerequisite | Shared | GHE-1.9, GHE-1.12 | 2 / haiku | 2 |
+| GHE-1.14 | app-vitals/shipwright | chore: verify private-app install via stored client id and the installations card (HITL) | Shared | GHE-1.13 | 2 / sonnet | 2 |
+
+GHE-1.11 and GHE-1.12 share the branch `feat/ghe-settings-cards-guidance`. GHE-2.7 is unaffected; its prerequisite GHE-1.8 is done.
+
+### Breaking change safety
+All additive: a new fallback in install, warnings alongside the existing validate result, new page copy and an optional upload. Safe to deploy standalone: yes, for every task.
