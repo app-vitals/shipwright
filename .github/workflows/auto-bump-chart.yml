@@ -897,6 +897,13 @@ jobs:
               echo "$merge_output" >&2
 
               if ! is_retryable_merge_error "$merge_output"; then
+                # A retry after an earlier transient error whose merge landed
+                # fails with a non-transient "already merged" message — re-read
+                # the PR state before giving up.
+                if [ "$attempt" -gt 1 ] && [ "$(gh pr view "$PR_URL" --json state -q .state 2>/dev/null)" = "MERGED" ]; then
+                  echo "Merge retry failed but ${PR_URL} is MERGED — treating as success."
+                  return 0
+                fi
                 echo "Merge failed on attempt ${attempt}/${max_attempts} — not retrying (not a stale-base or transient GitHub error)."
                 return 1
               fi
