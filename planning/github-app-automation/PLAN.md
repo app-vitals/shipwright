@@ -252,3 +252,7 @@ Scope: from admin, plan (read-only dry run) then apply a reconcile that brings a
 
 ### Breaking change safety
 All additive: new client methods, a new table, new routes, an optional port, a new page section. GHE-3.6 consumes the new port export from the platform package through a plain dependency edge. Safe to deploy standalone: yes, for every task.
+
+## Scope decision: Phase 4 and the unscheduled items are not planned (2026-11-11)
+
+Phases 1 to 3 and their follow-ups are the complete feature: both apps configured and verified, an agent's App installed on enterprise orgs, and an agent's repos reconciled against its bound user. Phase 4 (creating the apps from admin via the manifest flow) is only a convenience over the paste path, which is verified live, and the installer's manifest route for enterprise-level permissions is untested. The "Later phases" list (Phase 4, scheduled drift check, webhook triggers, verified owner self-serve binding, unifying owner/members/GitHub identity, the admin-key-created-agent owner gap, the sessions-page red-CI signal) is not scheduled and nothing depends on it. Revisit only if a live finding in GHE-1.14 or GHE-3.8 makes one of them necessary.
