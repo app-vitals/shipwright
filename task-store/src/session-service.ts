@@ -236,6 +236,24 @@ async function fetchExternalDependencies(
   return byAccount;
 }
 
+/** The tasks named by `sessionTasks[].dependencies` that are not part of
+ * `sessionTasks`, looked up by (accountId, id) in `knownById`. */
+function resolveExternalTasks(
+  sessionTasks: Task[],
+  knownById: Map<string, Task>,
+): Task[] {
+  const own = new Set(sessionTasks.map((t) => t.id));
+  const external = new Map<string, Task>();
+  for (const task of sessionTasks) {
+    for (const depId of task.dependencies ?? []) {
+      if (own.has(depId)) continue;
+      const dep = knownById.get(sessionKey(task.accountId, depId));
+      if (dep) external.set(dep.id, dep);
+    }
+  }
+  return [...external.values()];
+}
+
 /**
  * True when `session` should be treated as absent for the purposes of the
  * Session upsert hook: null, undefined, or a string that is empty or
@@ -319,6 +337,12 @@ export class SessionService implements SessionServiceLike {
       this.prisma,
       tasks,
     );
+    // Dependencies may also live in another session already loaded above, so
+    // index every known task by (accountId, id) before resolving per session.
+    const knownById = new Map<string, Task>();
+    for (const t of [...tasks, ...[...externalByAccount.values()].flat()]) {
+      knownById.set(sessionKey(t.accountId, t.id), t);
+    }
 
     let items: SessionListItem[] = sessionRows.map((session) => {
       const sessionTasks =
@@ -328,7 +352,7 @@ export class SessionService implements SessionServiceLike {
         prBlockedSet,
         this.clock,
         { archivedAt: session.archivedAt },
-        externalByAccount.get(session.accountId) ?? [],
+        resolveExternalTasks(sessionTasks, knownById),
       );
       return { ...session, ...rollup };
     });

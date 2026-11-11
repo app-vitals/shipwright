@@ -1083,20 +1083,35 @@ describeOrSkip(
       expect(a?.waitingTasks).toEqual([]);
     });
 
-    it("list() fetches external dependencies with one batched query", async () => {
-      await seed("done");
+    it("list() fetches out-of-session dependencies with one batched query", async () => {
+      // The dep belongs to no session, so it is not among the loaded tasks.
       await taskService.create({
-        id: "rcd-gated-2",
-        title: "another hitl task in session C",
-        status: "pending",
-        hitl: true,
-        dependencies: ["rcd-dep"],
-        session: "rcd-c",
+        id: "rcd-loose-dep",
+        title: "dep with no session",
+        status: "done",
       });
+      for (const [id, session] of [
+        ["rcd-gated-1", "rcd-b"],
+        ["rcd-gated-2", "rcd-c"],
+      ] as const) {
+        await taskService.create({
+          id,
+          title: `hitl task in ${session}`,
+          status: "pending",
+          hitl: true,
+          dependencies: ["rcd-loose-dep"],
+          session,
+        });
+      }
       const { service, calls } = countingService();
-      await service.list({ state: "all" });
+      const result = await service.list({ state: "all" });
       // One findMany for session tasks + one for all external dependencies.
       expect(calls()).toBe(2);
+      for (const slug of ["rcd-b", "rcd-c"]) {
+        expect(result.sessions.find((x) => x.slug === slug)?.state).toBe(
+          "waiting",
+        );
+      }
     });
 
     it("skips the external query when there are no cross-session dependencies", async () => {
