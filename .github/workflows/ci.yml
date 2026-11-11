@@ -158,6 +158,17 @@ jobs:
       - name: Check banned strings
         run: task check-strings
 
+      # The chart-bump shell suites hand-mirror the inline bash in
+      # auto-bump-chart.yml / check-chart-drift.yml, so without running them a
+      # workflow edit is unverified. They run in this required job (no new check
+      # name). The `changes` allowlist above only skips this job for pure
+      # version-bump diffs, so a PR touching only those workflows, the test
+      # scripts or lib/chart-tag-utils.sh still runs them.
+      - name: Chart-bump shell tests
+        run: |
+          bash .github/workflows/test-auto-bump-chart.sh
+          bash .github/workflows/test-check-chart-drift.sh
+
       - name: Typecheck
         run: task typecheck
 
