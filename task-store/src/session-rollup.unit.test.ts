@@ -258,4 +258,77 @@ describe("computeSessionRollup", () => {
       expect(result.state).toBe("active");
     });
   });
+  describe("externalTasks (cross-session dependency resolution)", () => {
+    const hitlTask = (deps: string[]) =>
+      makeTask({ id: "t1", hitl: true, dependencies: deps });
+
+    it("treats a closed external dependency as satisfied, so a hitl task is waiting", () => {
+      const ext = makeTask({ id: "ext-1", status: "done" });
+      const result = computeSessionRollup(
+        [hitlTask(["ext-1"])],
+        new Set(),
+        clock,
+        undefined,
+        [ext],
+      );
+      expect(result.state).toBe("waiting");
+      expect(result.waitingTasks).toEqual([{ id: "t1", kind: "hitl" }]);
+    });
+
+    it("treats an open external dependency as unmet, so the hitl task is not waiting", () => {
+      const ext = makeTask({ id: "ext-1", status: "pending" });
+      const result = computeSessionRollup(
+        [hitlTask(["ext-1"])],
+        new Set(),
+        clock,
+        undefined,
+        [ext],
+      );
+      expect(result.state).toBe("active");
+      expect(result.waitingTasks).toEqual([]);
+    });
+
+    it("is unchanged when externalTasks is absent (dep resolves as unknown)", () => {
+      const result = computeSessionRollup(
+        [hitlTask(["ext-1"])],
+        new Set(),
+        clock,
+      );
+      expect(result.state).toBe("active");
+      expect(result.waitingTasks).toEqual([]);
+    });
+
+    it("keeps an id missing from externalTasks unmet", () => {
+      const ext = makeTask({ id: "other", status: "done" });
+      const result = computeSessionRollup(
+        [hitlTask(["ext-1"])],
+        new Set(),
+        clock,
+        undefined,
+        [ext],
+      );
+      expect(result.waitingTasks).toEqual([]);
+    });
+
+    it("never counts external tasks in counts, agents, repos or lastActivityAt", () => {
+      const ext = makeTask({
+        id: "ext-1",
+        status: "done",
+        repo: "other/repo",
+        claimedBy: "ext-agent",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      });
+      const result = computeSessionRollup(
+        [hitlTask(["ext-1"])],
+        new Set(),
+        clock,
+        undefined,
+        [ext],
+      );
+      expect(result.counts).toEqual({ total: 1, open: 1, closed: 0 });
+      expect(result.agentIds).toEqual([]);
+      expect(result.repos).toEqual(["app-vitals/shipwright"]);
+      expect(result.lastActivityAt).toBe("2026-09-01T00:00:00.000Z");
+    });
+  });
 });
