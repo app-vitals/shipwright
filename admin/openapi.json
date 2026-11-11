@@ -3860,6 +3860,13 @@
               "null"
             ]
           },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advisory, non-failing notes (e.g. missing optional permissions). Never change `ok`."
+          },
           "app": {
             "$ref": "#/components/schemas/GithubEnterpriseApp"
           }
