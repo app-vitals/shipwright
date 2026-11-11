@@ -239,16 +239,16 @@ Scope: from admin, plan (read-only dry run) then apply a reconcile that brings a
 9. **Routes**: `POST /agents/:id/github-reconcile/plan` (read-only) and `.../apply` with `{planHash, addRepos?, confirmRemovals?}`, platform-admin only.
 
 ### Tasks
-| ID | Repo | Title | Layer | Depends | Cx / model | Hrs |
-|----|------|-------|-------|---------|------------|-----|
-| GHE-3.1 | app-vitals/agent | feat: add installation repository list, add and remove to the installer client | Shared | none | 3 / sonnet | 4 |
-| GHE-3.2 | app-vitals/agent | feat: add reconcile planner that never removes from incomplete listings and rejects basename collisions | Shared | GHE-2.8, GHE-3.1 | 4 / sonnet | 5 |
-| GHE-3.3 | app-vitals/agent | feat: add reconcile audit table, apply service with removal cap, and the open-work port | Database | GHE-3.2 | 4 / sonnet | 5 |
-| GHE-3.4 | app-vitals/agent | feat: add admin-only reconcile plan and apply routes | API | GHE-3.3 | 3 / sonnet | 4 |
-| GHE-3.5 | app-vitals/agent | feat: add Reconcile section to the agent detail page, hidden when inert | Frontend | GHE-3.4 | 3 / sonnet | 4 |
-| GHE-3.6 | app-vitals/shipwright | feat: implement the reconcile open-work port to list and block tasks and PRs on removed repos | Shared | GHE-3.3 | 3 / sonnet | 4 |
-| GHE-3.7 | app-vitals/agent | docs: document reconcile, its safety rules, the audit entry and the member-edit caveat | Shared | GHE-3.5, GHE-3.6 | 2 / haiku | 2 |
-| GHE-3.8 | app-vitals/shipwright | chore: reconcile a real agent against a real user and verify the diff and blocks (HITL) | Shared | GHE-3.7 | 2 / sonnet | 2 |
+| ID | Repo | Title | Layer | Deps | Cx / model | Hrs | HITL |
+|---|---|---|---|---|---|---|---|
+| GHE-3.1 | app-vitals/agent | feat: add installation repository list, add and remove to the installer client | Shared | — | 3 / sonnet | 4 |  |
+| GHE-3.2 | app-vitals/agent | feat: add reconcile planner that never removes from incomplete listings and rejects basename collisions | Shared | GHE-2.8, GHE-3.1 | 4 / sonnet | 5 |  |
+| GHE-3.3 | app-vitals/agent | feat: add reconcile audit table, apply service with removal cap, and the open-work port | Database | GHE-3.2 | 4 / sonnet | 5 |  |
+| GHE-3.4 | app-vitals/agent | feat: add admin-only reconcile plan and apply routes | API | GHE-3.3 | 3 / sonnet | 4 |  |
+| GHE-3.5 | app-vitals/agent | feat: add Reconcile section to the agent detail page, hidden when inert | Frontend | GHE-3.4 | 3 / sonnet | 4 |  |
+| GHE-3.6 | app-vitals/shipwright | feat: implement the reconcile open-work port to list and block tasks and PRs on removed repos | Shared | GHE-3.3 | 3 / sonnet | 4 |  |
+| GHE-3.7 | app-vitals/agent | docs: document reconcile, its safety rules, the audit entry and the member-edit caveat | Shared | GHE-3.5, GHE-3.6 | 2 / haiku | 2 |  |
+| GHE-3.8 | app-vitals/shipwright | chore: reconcile a real agent against a real user and verify the diff and blocks (HITL) | Shared | GHE-3.7 | 2 / sonnet | 2 | HITL |
 
 ### Breaking change safety
 All additive: new client methods, a new table, new routes, an optional port, a new page section. GHE-3.6 consumes the new port export from the platform package through a plain dependency edge. Safe to deploy standalone: yes, for every task.
