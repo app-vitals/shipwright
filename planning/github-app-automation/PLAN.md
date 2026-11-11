@@ -215,3 +215,40 @@ All additive: a new fallback in install, warnings alongside the existing validat
 The live access-preview check passed for admin and push-capable levels, and showed partial-results with "lookup app not installed" when the lookup app was uninstalled. It also showed a gap: with the lookup app installed on **selected repositories only**, the preview silently lists just those repos with no warning, so it looks complete. The doc requires all repositories, but nothing enforces or flags it.
 
 **GHE-2.8** (app-vitals/agent, API + Frontend, no dependencies, 3 / sonnet, 3h): when the lookup app's installation on an org has `repository_selection: "selected"`, the resolver marks that org partial with a reason, and the preview shows it in the existing partial-results banner; the lookup card guidance gains one line saying all repositories are required. Additive; an `all` installation is unchanged. Tests: resolver unit test and integration cassette for a selected installation, plus a preview page assertion; nothing retired. Unverified before the task starts: that the call the resolver makes returns `repository_selection` for the lookup app's own installation, and the exact preview wording.
+
+## Phase 3: Reconcile an agent's repos against its bound user (planned 2026-11-11)
+
+Scope: from admin, plan (read-only dry run) then apply a reconcile that brings an agent's installation repos and configured repos in line with what its bound GitHub user can push to. Platform admin only. Code is in `app-vitals/agent`, plus one task in `app-vitals/shipwright` for the open-work port. Builds on the Phase 2 resolver and the GHE-2.8 selected-repositories signal.
+
+### Findings
+- `Agent.repos` holds `owner/repo` entries. `POST /agents/{id}/repos` unions `org/repo` entries and returns 400 when two repos share a basename (clones are keyed by basename), so the planner must reject colliding adds.
+- Repos can be edited today by session members (`PATCH /agents/:id`, gate `isAdminOrSessionMember`) and, via `POST`/`DELETE /agents/{id}/repos`, by the admin, the agent's own key or `platform.ops`. Decision: reconcile is the enforcer. Write-time enforcement is not added in this phase; a member can add a repo the bound user cannot push to and the next plan shows it as a removal. The docs say so.
+- The resolver already returns per-org status, a `complete` flag and push-capable roles. The installer client has no repository list, add or remove methods yet; the installer app already holds `enterprise_organization_installation_repositories` write.
+- There is no audit table in the platform schema.
+- The platform admin has no task-store access; shipwright's composed admin does. Open tasks and PRs on removed repos are therefore listed and blocked through an optional port that shipwright implements.
+
+### Design
+1. **Desired agent repos** = current agent repos intersected with repos the bound user can push to. Removals only: newly accessible repos are never added on their own. An admin may name repos to add; each must be push-capable for the user and must not collide by basename.
+2. **Installation repos first**: add any agent repo missing from the installation, remove any the agent no longer has. Agent repos are always a subset of installation repos.
+3. **Never remove on an incomplete listing**: an org whose resolver result is partial or failed, or whose lookup installation is `selected` (GHE-2.8), is skipped for removals.
+4. **Removal cap**: apply refuses more than 10 removals unless the admin confirms. It limits the blast radius of a wrong username binding, a lookup misconfiguration or a resolver bug; a human reviews the diff, so it is a second guard, and it matters more once something automatic applies reconciles.
+5. **Inert when unbound or unconfigured**: no bound username, or enterprise apps not configured, behaves as if the feature did not exist: the Reconcile section does not render, the routes return `skipped` with a reason (no error, no audit entry, no change).
+6. **Idempotent**: a second apply with no drift does nothing.
+7. **Open work on removed repos**: the plan lists open tasks and PRs on the repos to be removed via an optional port (additive; without it nothing is listed or blocked). On apply, after the installation and agent config are updated, the port blocks them with `blockedReason: "repo removed from agent by GitHub reconcile (owner/repo)"`. The admin's confirm on apply is the confirmation.
+8. **Audit**: a new `GitHubReconcileAudit` table (agent, caller, plan hash, diff, result, time), additive migration. Apply re-plans server-side and refuses when the plan differs from the hash the admin saw.
+9. **Routes**: `POST /agents/:id/github-reconcile/plan` (read-only) and `.../apply` with `{planHash, addRepos?, confirmRemovals?}`, platform-admin only.
+
+### Tasks
+| ID | Repo | Title | Layer | Depends | Cx / model | Hrs |
+|----|------|-------|-------|---------|------------|-----|
+| GHE-3.1 | app-vitals/agent | feat: add installation repository list, add and remove to the installer client | Shared | none | 3 / sonnet | 4 |
+| GHE-3.2 | app-vitals/agent | feat: add reconcile planner that never removes from incomplete listings and rejects basename collisions | Shared | GHE-2.8, GHE-3.1 | 4 / sonnet | 5 |
+| GHE-3.3 | app-vitals/agent | feat: add reconcile audit table, apply service with removal cap, and the open-work port | Database | GHE-3.2 | 4 / sonnet | 5 |
+| GHE-3.4 | app-vitals/agent | feat: add admin-only reconcile plan and apply routes | API | GHE-3.3 | 3 / sonnet | 4 |
+| GHE-3.5 | app-vitals/agent | feat: add Reconcile section to the agent detail page, hidden when inert | Frontend | GHE-3.4 | 3 / sonnet | 4 |
+| GHE-3.6 | app-vitals/shipwright | feat: implement the reconcile open-work port to list and block tasks and PRs on removed repos | Shared | GHE-3.3 | 3 / sonnet | 4 |
+| GHE-3.7 | app-vitals/agent | docs: document reconcile, its safety rules, the audit entry and the member-edit caveat | Shared | GHE-3.5, GHE-3.6 | 2 / haiku | 2 |
+| GHE-3.8 | app-vitals/shipwright | chore: reconcile a real agent against a real user and verify the diff and blocks (HITL) | Shared | GHE-3.7 | 2 / sonnet | 2 |
+
+### Breaking change safety
+All additive: new client methods, a new table, new routes, an optional port, a new page section. GHE-3.6 consumes the new port export from the platform package through a plain dependency edge. Safe to deploy standalone: yes, for every task.
