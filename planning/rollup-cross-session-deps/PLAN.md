@@ -32,3 +32,14 @@ Safe to deploy standalone: yes (optional param + read-only query).
 
 ### RCD-1.1: fix: resolve cross-session dependencies in session rollup waiting classification
 Layer: Background · Branch: fix/rcd-1-1-rollup-cross-session-deps · 2h · complexity 3 · sonnet
+
+Add an optional `externalTasks` parameter to `computeSessionRollup` and have `SessionService.list()/get()` supply the out-of-session dependency tasks, so a hitl task whose dependencies live in another session is classified waiting once those dependencies are terminal.
+
+Acceptance criteria:
+- `computeSessionRollup` takes `externalTasks` as a new optional 5th parameter, after the existing optional `session` arg, so existing callers (including `session-retention-reaper.ts:127`, which passes no externals) compile and behave unchanged.
+- `externalTasks` is used only for dependency resolution in `classifyWaiting` (`[...tasks, ...externalTasks]`); counts, state, agentIds, repos and lastActivityAt are unchanged.
+- `SessionService.list()` makes one batched, account-scoped `task.findMany` for dependency ids outside the sessions' own task sets, skipped when there are none. `get()` does the same for its single session.
+- A hitl task whose cross-session deps are all terminal lands in `waitingTasks` (the `saul-lane-move` / SAL-3.1 shape). A hitl task with an unmet cross-session dep stays out of it.
+- Test decision: unit tests for `computeSessionRollup` with and without `externalTasks`, plus a `SessionService` test spanning two sessions. Extend `session-rollup.unit.test.ts`; retire none.
+
+Safe to deploy standalone: yes (optional param + read-only query).
