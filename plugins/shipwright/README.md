@@ -7,7 +7,8 @@ A shipwright builds ships. This one ships software.
 ## Installation
 
 ```
-/plugin install shipwright@app-vitals/shipwright
+/plugin marketplace add app-vitals/shipwright
+/plugin install shipwright@shipwright
 ```
 
 The plugin's version (`.claude-plugin/plugin.json`) advances automatically on

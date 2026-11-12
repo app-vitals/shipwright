@@ -55,7 +55,8 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 ## Install
 
 ```text
-/plugin install shipwright@app-vitals/shipwright
+/plugin marketplace add app-vitals/shipwright
+/plugin install shipwright@shipwright
 ```
 
 Requires [Claude Code](https://www.anthropic.com/claude-code). Point it at your own repository — Shipwright is repo-agnostic.
@@ -94,7 +95,8 @@ Set up Shipwright Harness locally and open the metrics dashboard.
    metrics dashboard offline (no accounts or secrets needed). Leave it running.
 
 2. Inside this Claude Code session, install the plugin:
-     /plugin install shipwright@app-vitals/shipwright
+     /plugin marketplace add app-vitals/shipwright
+     /plugin install shipwright@shipwright
 
 3. Open the dashboard in your browser:
      http://localhost:3460/dashboard
@@ -131,7 +133,8 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
      http://localhost:3460/dashboard
 
 4. Inside a Claude Code session:
-     /plugin install shipwright@app-vitals/shipwright
+     /plugin marketplace add app-vitals/shipwright
+     /plugin install shipwright@shipwright
 
 To stop: tmux kill-session -t shipwright
 ```

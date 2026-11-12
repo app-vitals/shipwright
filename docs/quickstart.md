@@ -32,7 +32,8 @@ Set up Shipwright Harness locally and open the metrics dashboard.
    metrics dashboard in offline mode (no accounts or secrets needed). Leave it running.
 
 2. Inside this Claude Code session, install the plugin:
-     /plugin install shipwright@app-vitals/shipwright
+     /plugin marketplace add app-vitals/shipwright
+     /plugin install shipwright@shipwright
 
 3. Open the dashboard in your browser:
      http://localhost:3460/dashboard
@@ -43,7 +44,7 @@ Set up Shipwright Harness locally and open the metrics dashboard.
 | Step | Where it runs | Command |
 |---|---|---|
 | 1. Clone + bootstrap + serve | **Terminal** (shell) | `git clone … && cd shipwright && ./scripts/quickstart.sh` |
-| 2. Install the plugin | **Inside the Claude Code session** | `/plugin install shipwright@app-vitals/shipwright` |
+| 2. Install the plugin | **Inside the Claude Code session** | `/plugin marketplace add app-vitals/shipwright`, then `/plugin install shipwright@shipwright` |
 | 3. Open the dashboard | **Browser** | `http://localhost:3460/dashboard` |
 
 The distinction matters: step 1 is a shell command, step 2 is a slash command that only works **inside** an interactive Claude Code session (it is not a terminal command).
@@ -75,7 +76,7 @@ This is primarily for CI and the smoke test (`scripts/quickstart.smoke.test.ts`)
 The two networked / interactive steps of the prompt are **not** part of the script (and are not run in CI):
 
 - The `git clone` itself — it lives in the prompt's shell line, before the script runs.
-- The `/plugin install shipwright@app-vitals/shipwright` step — it runs inside an interactive Claude Code session, not a shell.
+- The `/plugin marketplace add app-vitals/shipwright` and `/plugin install shipwright@shipwright` steps — they run inside an interactive Claude Code session, not a shell.
 
 Both are documented in the prompt above; only the deterministic shell portion is scripted and tested.
 
@@ -148,7 +149,8 @@ Relaunching the stack later with an agent already created proceeds immediately �
 > 🚧 The `/plugin install` step (Phase A) is not yet ready for general use. Once it ships, you'll run this inside a Claude Code session pointed at this repo:
 >
 > ```
-> /plugin install shipwright@app-vitals/shipwright
+> /plugin marketplace add app-vitals/shipwright
+> /plugin install shipwright@shipwright
 > ```
 
 Open the **Chat** tab in the admin console (<http://localhost:3001/admin/chat>), select the agent you created, create a thread, and send a message. The turn should round-trip through the Docker agent: the agent's chat poll loop claims the message from the chat service, runs it through Claude, and posts the reply back into the thread.
