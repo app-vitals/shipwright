@@ -1347,3 +1347,38 @@ describe("renderMergedQueueActivityPage", () => {
     expect(html).toContain("No runs across any accessible agent");
   });
 });
+
+describe("admin wide pages (AWT-1.1)", () => {
+  const WRAPPER = /<div class="vos-page[^"]*">/;
+  function expectWide(html: string) {
+    expect(html.match(WRAPPER)?.[0]).toContain("admin-wide-page");
+    expect(html).toContain(".admin-wide-page { max-width:none;width:100% }");
+  }
+
+  test("Queue & Activity (per agent) is wide", () => {
+    const html = renderQueueActivityPage({
+      agent: { id: "agent-123", name: "Test Agent" },
+      snapshot: null,
+      crons: [],
+      runs: [],
+      filters: {},
+      pagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+      timezone: "America/Los_Angeles",
+    });
+    expectWide(html);
+  });
+
+  test("Queue & Activity (all agents) is wide", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: [{ id: "agent-alpha", name: "Alpha Agent" }],
+      agentNames: { "agent-alpha": "Alpha Agent" },
+      workQueueRows: [],
+      workQueuePagination: { total: 0, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expectWide(html);
+  });
+});

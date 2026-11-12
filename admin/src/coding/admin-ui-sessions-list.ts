@@ -35,6 +35,10 @@ import {
   renderRepoOrgFilterFields,
   resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-work-item-pages.ts";
+import {
+  ADMIN_WIDE_PAGE_CLASS,
+  ADMIN_WIDE_PAGE_STYLES,
+} from "./admin-wide-page.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
@@ -451,8 +455,11 @@ function renderSessionsListPage(
 
   return renderAdminPage({
     title: "Sessions — Shipwright Admin",
+    extraStyles: `
+    ${ADMIN_WIDE_PAGE_STYLES}
+  `,
     body: `${renderAdminToolbar(userName, SESSIONS_LIST_PATH)}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header">
       <h1 class="page-title">Sessions</h1>
     </div>

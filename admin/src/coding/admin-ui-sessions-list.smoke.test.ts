@@ -867,3 +867,19 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
     expect(html).toContain("3–4 of 5");
   });
 });
+
+describe("GET /admin/sessions — full-width page (AWT-1.1)", () => {
+  it("wraps the page in the shared admin-wide-page class and emits the override", async () => {
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => ({
+        sessions: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const html = await (await app.request("/admin/sessions")).text();
+    expect(html).toMatch(/<div class="vos-page[^"]*admin-wide-page[^"]*">/);
+    expect(html).toContain("max-width:none;width:100%");
+  });
+});

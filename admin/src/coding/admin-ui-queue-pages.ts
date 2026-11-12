@@ -19,6 +19,10 @@ import {
 import type { ModelBreakdownEntry } from "@app-vitals/agent-admin/openapi-schemas";
 import { agentLink, taskLink } from "./admin-ui-work-item-pages.ts";
 import {
+  ADMIN_WIDE_PAGE_CLASS,
+  ADMIN_WIDE_PAGE_STYLES,
+} from "./admin-wide-page.ts";
+import {
   annotateEligibility,
   buildEligibilityIndex,
   mergeWorkQueueSnapshots,
@@ -678,9 +682,9 @@ export function renderQueueActivityPage(opts: {
 
   return renderAdminPage({
     title: `Queue & Activity — ${agent.name} — Shipwright Admin`,
-    extraStyles: "\n  ",
+    extraStyles: `\n    ${ADMIN_WIDE_PAGE_STYLES}\n  `,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
@@ -921,9 +925,9 @@ export function renderMergedQueueActivityPage(opts: {
 
   return renderAdminPage({
     title: "Queue & Activity — All Agents — Shipwright Admin",
-    extraStyles: "\n  ",
+    extraStyles: `\n    ${ADMIN_WIDE_PAGE_STYLES}\n  `,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents" style="color:#6b7280;font-size:13px;text-decoration:none">← Agents</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — All Agents</h1>
