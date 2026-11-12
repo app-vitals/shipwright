@@ -6170,3 +6170,97 @@ describe("unknown legacy task status", () => {
     expect(() => classifyTaskState(task)).not.toThrow();
   });
 });
+
+// ─── Admin wide pages (AWT-1.1) ──────────────────────────────────────────────
+
+describe("admin wide pages (AWT-1.1)", () => {
+  const WIDE_RULE = "max-width:none;width:100%";
+  const WRAPPER = /<div class="vos-page[^"]*">/;
+
+  function expectWide(html: string) {
+    const match = html.match(WRAPPER);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("admin-wide-page");
+    expect(html).toContain(`.admin-wide-page { ${WIDE_RULE} }`);
+  }
+
+  const tasksArgs = (
+    view: "board" | "table",
+  ): Parameters<typeof renderTasksPage> => [
+    [],
+    {},
+    false,
+    USER_NAME,
+    {},
+    { total: 0, limit: 50, page: 1 },
+    undefined,
+    undefined,
+    false,
+    "America/Los_Angeles",
+    {},
+    view,
+  ];
+
+  test("Tasks table view is wide", () => {
+    expectWide(renderTasksPage(...tasksArgs("table")));
+  });
+
+  test("Tasks board stays wide and keeps tasks-board-page", () => {
+    const html = renderTasksPage(...tasksArgs("board"));
+    expectWide(html);
+    expect(html.match(WRAPPER)?.[0]).toContain("tasks-board-page");
+  });
+
+  test("Task detail is wide and keeps its extra styles", () => {
+    const html = renderTaskDetailPage(
+      TASK_DETAIL,
+      "user@example.com",
+      {},
+      "UTC",
+    );
+    expectWide(html);
+    expect(html).toContain(".detail-table");
+  });
+
+  test("Session detail is wide and keeps its extra styles", () => {
+    const html = renderSessionDetailPage("session-abc", [], USER_NAME);
+    expectWide(html);
+    expect(html).toContain(".alert-warning");
+  });
+
+  test("PRs list is wide", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      "America/Los_Angeles",
+    );
+    expectWide(html);
+  });
+
+  test("PR detail is wide and keeps its extra styles", () => {
+    const html = renderPrDetailPage(
+      PR_DETAIL,
+      USER_NAME,
+      {},
+      "America/Los_Angeles",
+      [],
+    );
+    expectWide(html);
+    expect(html).toContain(".detail-table");
+  });
+
+  test("the wide rule is defined exactly once per page", () => {
+    const html = renderPrDetailPage(
+      PR_DETAIL,
+      USER_NAME,
+      {},
+      "America/Los_Angeles",
+      [],
+    );
+    expect(html.split(WIDE_RULE).length - 1).toBe(1);
+  });
+});
