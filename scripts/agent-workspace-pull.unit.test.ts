@@ -14,6 +14,7 @@ import {
   buildWorkspaceRoot,
   detectSecretEnvKeys,
   makeRealCloneRepo,
+  pullAgentWorkspace,
   resolveAgent,
   resolvePullRoot,
 } from "./agent-workspace-pull.ts";
@@ -201,5 +202,38 @@ describe("makeRealCloneRepo (GOR-1.3)", () => {
     await expect(makeRealCloneRepo(spawnSync)("a/b", "/tmp/b")).rejects.toThrow(
       "gh repo clone failed for a/b",
     );
+  });
+});
+
+describe("pullAgentWorkspace forwards bundle.specialty and bundle.marketplaces (AWF-1.1)", () => {
+  test("passes specialty to ensureAgentHome and marketplaces to installPlugins", async () => {
+    const marketplaces = [
+      { name: "shipwright", source: "app-vitals/shipwright", ref: null },
+    ];
+    let homeArgs: unknown[] = [];
+    let pluginArgs: unknown[] = [];
+    await pullAgentWorkspace("hitl", "/tmp/root", {
+      fetchAgents: async () => AGENTS,
+      fetchConfigBundle: async () =>
+        ({
+          repos: [],
+          plugins: [],
+          env: {},
+          specialty: "coding",
+          marketplaces,
+        }) as never,
+      exists: () => true,
+      cloneRepo: async () => {},
+      ensureAgentHome: (...args: unknown[]) => {
+        homeArgs = args;
+      },
+      installPlugins: async (...args: unknown[]) => {
+        pluginArgs = args;
+      },
+      log: () => {},
+      warn: () => {},
+    });
+    expect(homeArgs).toEqual([join("/tmp/root", "hitl"), "coding"]);
+    expect(pluginArgs[1]).toEqual(marketplaces);
   });
 });
