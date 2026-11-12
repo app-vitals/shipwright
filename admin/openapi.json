@@ -4758,7 +4758,7 @@
     "/agents/{id}/repos/{owner}/{name}": {
       "delete": {
         "summary": "Remove a repo from an agent",
-        "description": "Admin, the agent's own key, or platform.ops. Removes one `owner/name` repo from the agent's `repos`, preserving the order of the rest. 404 when the agent does not have that repo. Returns the full updated agent.",
+        "description": "Admin, the agent's own key, or platform.ops. Removes one `owner/name` repo from the agent's `repos`, preserving the order of the rest. The agent's open work on the repo is blocked through the optional open-work port (a failure there is a warning; the removal still succeeds), whoever the caller is; re-adding the repo never unblocks it. 404 when the agent does not have that repo. Returns the full updated agent.",
         "parameters": [
           {
             "schema": {
@@ -4795,6 +4795,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or repo not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/repos/{owner}/{name}/removal-preview": {
+      "get": {
+        "summary": "Preview the open work blocked by removing a repo from an agent",
+        "description": "Admin or session member. Read-only: lists the agent's open tasks and PRs that removing `owner/name` from its repos would block (via the optional open-work port); nothing is changed. `openWork` is empty when no port is wired; a port failure is reported in `warnings`. 404 when the agent does not have that repo.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-org"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-repo"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open work that would be blocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "openWork": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "repo": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "repo"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "openWork",
+                    "warnings"
+                  ]
                 }
               }
             }
