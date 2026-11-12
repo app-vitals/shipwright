@@ -189,6 +189,14 @@ describe("prd.md — Structural Validation of the dispatched subagent's output (
     expect(section).toContain("TBD");
   });
 
+  it("checks every feature section has at least one checkbox acceptance criterion", () => {
+    const section = extractDispatchSection(content);
+    expect(section).toMatch(
+      /Every `### Feature` section contains at least one checkbox acceptance criterion/,
+    );
+    expect(section).toContain("`- [ ]`");
+  });
+
   it("clarifies structural validation is not a re-grading of content quality/probing depth", () => {
     const section = extractDispatchSection(content);
     expect(section.toLowerCase()).toContain(
@@ -264,5 +272,18 @@ describe("prd.md — Phase 5 is path-agnostic (PRM-1.2)", () => {
       /Print just\s+`Resolved Decisions: \{N decisions recorded\}` on the dispatch path/,
     );
     expect(section).toContain("`(N driven from Q8, N from Phase 2b)` split is not");
+  });
+});
+
+describe("prd.md — Phase 3 acceptance criteria require automated verification", () => {
+  it("requires at least one criterion per feature that maps to automated verification", () => {
+    const phase3Idx = content.indexOf("## Phase 3: Draft PRODUCT-SPEC.md");
+    const phase4Idx = content.indexOf("## Phase 4: User Review and Finalize");
+    expect(phase3Idx).toBeGreaterThan(-1);
+    expect(phase4Idx).toBeGreaterThan(phase3Idx);
+    const section = content.slice(phase3Idx, phase4Idx);
+    expect(section).toContain(
+      "At least one criterion per feature must map to automated verification",
+    );
   });
 });
