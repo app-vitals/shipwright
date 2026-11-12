@@ -3516,50 +3516,7 @@
           "orgs"
         ]
       },
-      "GithubInstallationReposChange": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "applied"
-            ]
-          },
-          "auditId": {
-            "type": "string"
-          },
-          "repos": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "status",
-          "auditId",
-          "repos"
-        ]
-      },
-      "GithubInstallationReposBody": {
-        "type": "object",
-        "properties": {
-          "repos": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
-            },
-            "minItems": 1,
-            "maxItems": 100,
-            "description": "Repos (owner/repo) to change on the agent App's installation."
-          }
-        },
-        "required": [
-          "repos"
-        ]
-      },
-      "GithubLostAccessPreview": {
+      "GithubSyncPreview": {
         "type": "object",
         "properties": {
           "status": {
@@ -3573,24 +3530,26 @@
           "reason": {
             "type": "string"
           },
-          "repos": {
+          "appAdds": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Every repo the bound user can no longer push to that would be removed from the installation or the agent's repos."
+            "description": "Repos the bound user can push to, in orgs the agent App is installed on with a complete access listing, that are not on the installation. No cap."
           },
-          "installationRemoves": {
+          "appRemoves": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Installation repos the bound user can no longer push to."
           },
-          "configRemoves": {
+          "agentRemoves": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Configured agent repos the bound user can no longer push to. The agent's repos are never added to."
           },
           "skippedOrgs": {
             "type": "array",
@@ -3609,7 +3568,7 @@
                 "reason"
               ]
             },
-            "description": "Orgs whose access listing is missing, partial or failed, or whose lookup App is installed on selected repositories only; nothing there is removed."
+            "description": "Orgs whose access listing is missing, partial or failed, or whose lookup App is not installed or installed on selected repositories only; nothing there is added or removed."
           },
           "openWork": {
             "type": "array",
@@ -3631,7 +3590,7 @@
                 "repo"
               ]
             },
-            "description": "The agent's open tasks and PRs on those repos that removing them would block; empty when no open-work port is wired."
+            "description": "The agent's open tasks and PRs on the removed repos that the removals would block; empty when no open-work port is wired."
           },
           "warnings": {
             "type": "array",
@@ -3644,7 +3603,7 @@
           "status"
         ]
       },
-      "GithubLostAccessRemoveResult": {
+      "GithubSyncApplyResult": {
         "type": "object",
         "properties": {
           "status": {
@@ -3661,25 +3620,25 @@
           "auditId": {
             "type": "string"
           },
-          "repos": {
+          "appAdds": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "installationRemoves": {
+          "appRemoves": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "configRemoves": {
+          "agentRemoves": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "notRemoved": {
+          "notApplied": {
             "type": "array",
             "items": {
               "type": "object",
@@ -3696,7 +3655,7 @@
                 "reason"
               ]
             },
-            "description": "Named repos left alone: the user can still push, the org was skipped, or the repo is on neither the installation nor the agent."
+            "description": "Confirmed repos left alone: access changed since the preview, the org was skipped, or the repo is not where the change expected it."
           },
           "skippedOrgs": {
             "type": "array",
@@ -3727,27 +3686,44 @@
           "status"
         ]
       },
-      "GithubLostAccessRemoveBody": {
+      "GithubSyncApplyBody": {
         "type": "object",
         "properties": {
-          "repos": {
+          "appAdds": {
             "type": "array",
             "items": {
               "type": "string",
               "pattern": "^[^/\\s]+\\/[^/\\s]+$"
             },
-            "minItems": 1,
-            "maxItems": 100,
-            "description": "The repos (owner/repo) the admin confirmed from the preview. Each is re-checked; only those the user still cannot push to are removed."
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos (owner/repo) the admin confirmed to add to the agent App's installation."
+          },
+          "appRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+            },
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos the admin confirmed to remove from the agent App's installation."
+          },
+          "agentRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+            },
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos the admin confirmed to remove from the agent's repos."
           },
           "confirmRemovals": {
             "type": "boolean",
-            "description": "Required when more than 10 repos would be removed."
+            "description": "Required when more than 10 distinct repos would be removed."
           }
-        },
-        "required": [
-          "repos"
-        ]
+        }
       },
       "AgentConfigResponse": {
         "type": "object",
@@ -8001,228 +7977,12 @@
             }
           }
         }
-      },
-      "post": {
-        "summary": "Add repos to the agent App's installation",
-        "description": "Platform-admin only. Grants the agent's own GitHub App installation access to the named repos; the agent's configured repos are not changed. Writes one audit entry (GitHubReconcileAudit, planHash `direct:add`) recording the caller and repos. 404 unknown agent; 422 no GH_APP_ID; 409 when the App is not installed on a repo's org (nothing is changed or audited); 502 when GitHub refuses (a failed audit entry is written).",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "example": "clx1234567890"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GithubInstallationReposBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Repos added",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GithubInstallationReposChange"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Platform admin required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Agent App not installed on the org",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Agent has no GH_APP_ID (its own GitHub App is not set up)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "GitHub unavailable or refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "GitHub Apps are not configured",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
       }
     },
-    "/agents/{id}/github-installation/repos/remove": {
-      "post": {
-        "summary": "Remove repos from the agent App's installation",
-        "description": "Platform-admin only. Revokes the agent's own GitHub App installation access to the named repos; the agent's configured repos are not changed. Writes one audit entry (GitHubReconcileAudit, planHash `direct:remove`) recording the caller and repos. Same errors as the add route.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "example": "clx1234567890"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GithubInstallationReposBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Repos removed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GithubInstallationReposChange"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Platform admin required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Agent App not installed on the org",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Agent has no GH_APP_ID (its own GitHub App is not set up)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "GitHub unavailable or refused",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "GitHub Apps are not configured",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/github-lost-access/preview": {
+    "/agents/{id}/github-sync/preview": {
       "get": {
-        "summary": "Preview removing the repos the bound user can no longer push to",
-        "description": "Platform-admin only (session members, ops keys and agent keys get 403). Read-only: nothing is changed or audited. Lists the repos on the agent App's installation or in the agent's repos that the bound githubUsername can no longer push to, and the agent's open tasks and PRs on them (via the optional open-work port; a port failure is a warning). Orgs whose access listing is missing, partial or failed, or whose lookup App is installed on selected repositories only, are skipped and reported. 200 with `status: skipped` when the user is unbound, not found or unverified, the agent has no GH_APP_ID, or the Apps are not configured.",
+        "summary": "Preview syncing the agent's GitHub access with its bound user",
+        "description": "Platform-admin only (session members, ops keys and agent keys get 403). Read-only: nothing is changed or audited. Lists (1) repos to add to the agent App's installation, (2) installation repos to remove and (3) agent repos to remove, based on what the bound githubUsername can push to, plus the agent's open tasks and PRs the removals would block (via the optional open-work port; a port failure is a warning). The agent's repos are never added to. Orgs whose access listing is missing, partial or failed, or whose lookup App is not installed or installed on selected repositories only, are skipped (adds included) and reported. 200 with `status: skipped` when the user is unbound, not found or unverified, the agent has no GH_APP_ID, or the Apps are not configured.",
         "parameters": [
           {
             "schema": {
@@ -8236,11 +7996,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Lost-access removal preview",
+            "description": "Sync preview",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GithubLostAccessPreview"
+                  "$ref": "#/components/schemas/GithubSyncPreview"
                 }
               }
             }
@@ -8298,10 +8058,10 @@
         }
       }
     },
-    "/agents/{id}/github-lost-access/remove": {
+    "/agents/{id}/github-sync/apply": {
       "post": {
-        "summary": "Remove the confirmed repos the bound user can no longer push to",
-        "description": "Platform-admin only. Never adds repos. Takes the repos the admin confirmed from the preview, re-checks each against the bound user's current access, and removes only those still without push access: first from the agent App's installation, then from the agent's repos; then writes one audit entry (GitHubReconcileAudit, planHash `lost-access:remove`) and blocks the agent's open work on the removed repos through the optional open-work port (a failure there is a warning). Named repos left alone are reported in `notRemoved`. Same skip rules as the preview: a skipped call (200 `status: skipped`) changes and audits nothing; `noop` when nothing named still lacks access. 422 when more than 10 repos would be removed without `confirmRemovals: true`. 502 when GitHub refuses (a failed audit entry records only what landed).",
+        "summary": "Apply the confirmed sync changes",
+        "description": "Platform-admin only. Takes the exact lists the admin confirmed from the preview, re-checks each against the bound user's current access, and applies only what still qualifies: installation adds, installation removes, then agent-repo removes. Writes one audit entry (GitHubReconcileAudit, planHash `sync:apply`) and blocks the agent's open work on the removed repos through the optional open-work port (a failure there is a warning). Confirmed repos left alone are reported in `notApplied`. Same skip rules as the preview: a skipped call (200 `status: skipped`) changes and audits nothing; `noop` when nothing confirmed still applies. 422 when more than 10 repos would be removed without `confirmRemovals: true`. 502 when GitHub refuses (a failed audit entry records only what landed).",
         "parameters": [
           {
             "schema": {
@@ -8318,18 +8078,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GithubLostAccessRemoveBody"
+                "$ref": "#/components/schemas/GithubSyncApplyBody"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Removal result",
+            "description": "Sync result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GithubLostAccessRemoveResult"
+                  "$ref": "#/components/schemas/GithubSyncApplyResult"
                 }
               }
             }
