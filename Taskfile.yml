@@ -133,6 +133,11 @@ tasks:
         echo "To apply the packaged migrations to your database, run: task db:provision"
         exit 1
 
+  store:local:
+    desc: Boot a local task store (Postgres + published image via Docker) and print the SHIPWRIGHT_TASK_STORE_URL/TOKEN exports. Idempotent; pass `-- --down` to remove it.
+    cmds:
+      - ./scripts/local-store.sh {{.CLI_ARGS}}
+
   db:provision:task-store:
     desc: Create the task-store database (idempotent — safe to re-run)
     cmds:
