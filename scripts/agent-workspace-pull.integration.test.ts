@@ -96,6 +96,7 @@ describe("HttpShipwrightRuntimeClient.getAgentConfigBundle (via agent-workspace-
         reviewAuthorAllowlist: [],
         restrictSlackToMembers: false,
         memberEmails: [],
+        specialty: "default",
       });
     }) as typeof fetch;
 
@@ -123,13 +124,17 @@ function makeDeps(overrides: Partial<PullAgentWorkspaceDeps> = {}): {
   deps: PullAgentWorkspaceDeps;
   cloned: string[];
   scaffolded: string[];
+  scaffoldedSpecialties: Array<string | undefined>;
   installedPlugins: unknown[];
+  installedMarketplaces: unknown[];
   logs: string[];
   warnings: string[];
 } {
   const cloned: string[] = [];
   const scaffolded: string[] = [];
+  const scaffoldedSpecialties: Array<string | undefined> = [];
   const installedPlugins: unknown[] = [];
+  const installedMarketplaces: unknown[] = [];
   const logs: string[] = [];
   const warnings: string[] = [];
 
@@ -145,23 +150,37 @@ function makeDeps(overrides: Partial<PullAgentWorkspaceDeps> = {}): {
       reviewAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
+      specialty: "default",
     }),
     exists: () => false,
     cloneRepo: async (repo: string, dest: string) => {
       cloned.push(`${repo}->${dest}`);
     },
-    ensureAgentHome: (home: string) => {
+    ensureAgentHome: (home: string, specialty?: string) => {
       scaffolded.push(home);
+      scaffoldedSpecialties.push(specialty);
     },
-    installPlugins: async (plugins: unknown[]) => {
-      installedPlugins.push(...plugins);
+    installPlugins: async (plugins: unknown[], marketplaces?: unknown[]) => {
+      installedPlugins.push(...(Array.isArray(plugins) ? plugins : []));
+      if (marketplaces) {
+        installedMarketplaces.push(...marketplaces);
+      }
     },
     log: (line: string) => logs.push(line),
     warn: (line: string) => warnings.push(line),
     ...overrides,
   };
 
-  return { deps, cloned, scaffolded, installedPlugins, logs, warnings };
+  return {
+    deps,
+    cloned,
+    scaffolded,
+    scaffoldedSpecialties,
+    installedPlugins,
+    installedMarketplaces,
+    logs,
+    warnings,
+  };
 }
 
 describe("pullAgentWorkspace", () => {
@@ -197,6 +216,7 @@ describe("pullAgentWorkspace", () => {
         reviewAuthorAllowlist: [],
         restrictSlackToMembers: false,
         memberEmails: [],
+        specialty: "default",
       }),
     });
 
@@ -260,6 +280,7 @@ describe("pullAgentWorkspace", () => {
         reviewAuthorAllowlist: [],
         restrictSlackToMembers: false,
         memberEmails: [],
+        specialty: "default",
       }),
       ensureAgentHome: (home: string) => {
         sawHome = home;
@@ -271,5 +292,67 @@ describe("pullAgentWorkspace", () => {
     // ensureAgentHome only ever receives a path string — proving the env
     // bundle (and its secret) never reaches a filesystem-writing call.
     expect(sawHome).toBe("/home/dev/.shipwright-agents/hitl");
+  });
+
+  test("passes bundle.specialty to ensureAgentHome as the 2nd argument", async () => {
+    const { deps, scaffoldedSpecialties } = makeDeps({
+      fetchConfigBundle: async () => ({
+        env: {},
+        allowedTools: [],
+        plugins: [],
+        repos: [],
+        reviewAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        memberEmails: [],
+        specialty: "data-science",
+      }),
+    });
+
+    await pullAgentWorkspace("agent-1", "/home/dev/.shipwright-agents", deps);
+
+    expect(scaffoldedSpecialties).toEqual(["data-science"]);
+  });
+
+  test("passes bundle.marketplaces to installPlugins as the 2nd argument", async () => {
+    const { deps, installedMarketplaces } = makeDeps({
+      fetchConfigBundle: async () => ({
+        env: {},
+        allowedTools: [],
+        plugins: [],
+        repos: [],
+        reviewAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        memberEmails: [],
+        specialty: "default",
+        marketplaces: [
+          { name: "custom", source: "https://example.com/repo", ref: "main" },
+        ],
+      }),
+    });
+
+    await pullAgentWorkspace("agent-1", "/home/dev/.shipwright-agents", deps);
+
+    expect(installedMarketplaces).toEqual([
+      { name: "custom", source: "https://example.com/repo", ref: "main" },
+    ]);
+  });
+
+  test("handles undefined marketplaces (when bundle has none)", async () => {
+    const { deps, installedMarketplaces } = makeDeps({
+      fetchConfigBundle: async () => ({
+        env: {},
+        allowedTools: [],
+        plugins: [],
+        repos: [],
+        reviewAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        memberEmails: [],
+        specialty: "default",
+      }),
+    });
+
+    await pullAgentWorkspace("agent-1", "/home/dev/.shipwright-agents", deps);
+
+    expect(installedMarketplaces).toEqual([]);
   });
 });
