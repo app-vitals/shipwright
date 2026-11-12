@@ -202,9 +202,12 @@ export interface PullAgentWorkspaceDeps {
   /** Clones a single repo ("org/repo") to `dest` via `gh repo clone`. */
   cloneRepo: (repo: string, dest: string) => Promise<void>;
   /** Scaffolds the workspace dir structure + identity files. */
-  ensureAgentHome: (home: string) => void;
+  ensureAgentHome: (home: string, specialty?: string) => void;
   /** Installs the bundle's plugins (defaults + agent-specific). */
-  installPlugins: (agentPlugins: AgentPlugin[]) => Promise<void>;
+  installPlugins: (
+    agentPlugins: AgentPlugin[],
+    marketplaces?: Array<{ name: string; source: string; ref: string | null }>,
+  ) => Promise<void>;
   log: (line: string) => void;
   warn: (line: string) => void;
 }
@@ -265,10 +268,10 @@ export async function pullAgentWorkspace(
     deps.log(`${repo} already present — skipping clone`);
   }
 
-  deps.ensureAgentHome(workspaceRoot);
+  deps.ensureAgentHome(workspaceRoot, bundle.specialty);
 
   deps.log("installing plugins...");
-  await deps.installPlugins(bundle.plugins);
+  await deps.installPlugins(bundle.plugins, bundle.marketplaces);
 
   return {
     agent,
@@ -336,9 +339,19 @@ if (import.meta.main) {
       fetchConfigBundle: (agentId) => client.getAgentConfigBundle(agentId),
       exists: existsSync,
       cloneRepo: realCloneRepo,
-      ensureAgentHome: (home) => ensureAgentHome(home),
-      installPlugins: (agentPlugins) =>
-        realInstallPlugins(undefined, undefined, agentPlugins),
+      ensureAgentHome: (home, specialty) => ensureAgentHome(home, specialty),
+      installPlugins: (agentPlugins, marketplaces) =>
+        realInstallPlugins(
+          undefined,
+          undefined,
+          agentPlugins,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          marketplaces,
+        ),
       log: (line) => console.log(`[agent-workspace-pull] ${line}`),
       warn: (line) => console.warn(`[agent-workspace-pull] warning: ${line}`),
     });
