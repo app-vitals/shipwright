@@ -5,6 +5,8 @@
  * agent/src/ and plugins/shipwright/scripts/ is documented in docs/configuration.md,
  * docs/configuration-agent.md (the coding half) or the vendored platform snapshot
  * docs/platform/configuration-agent.md (env vars that moved with the runtime).
+ * The platform runtime's own sources live in app-vitals/agent (AGR-4.4) and are not
+ * scanned here; that repository enforces its own configuration docs.
  *
  * Usage (CLI):
  *   bun scripts/check-config-docs.ts

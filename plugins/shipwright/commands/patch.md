@@ -177,7 +177,7 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 - **One or more tasks match**: this PR can have more than one task linked to it (e.g. a
   bundled multi-task branch), so compute `PATCH_MODEL` from the **highest tier among ALL
   matched tasks' `.model` fields** (`model ?? 'sonnet'` for any task with the field unset),
-  escalated one tier up the same ladder `dev-task.md`'s Step 5c BLOCKED handling already
+  escalated one tier up the same ladder `references/dev-task/implementation-dispatch.md`'s "Status handling" BLOCKED ladder already
   climbs — a patch dispatch is always reacting to a problem the way a BLOCKED
   implementation subagent is, so it starts where that ladder's first escalation would land,
   instead of waiting to hit it: `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already
@@ -452,7 +452,7 @@ connection objects — `{ nodes: [...] }` — passed through unchanged), plus `C
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
   "$(jq -n --arg currentUser "$CURRENT_USER" \
     --arg prAuthor "$PR_AUTHOR" \
-    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --arg headRefOid "$HEAD_REF_OID" \
     --argjson reviews "$REVIEWS_JSON" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \
@@ -787,8 +787,8 @@ another patch run (or a stale leftover claim from `/shipwright:review`, e.g. a
 still-claimed `phase: "review"` record left behind after posting — the record stays
 claimed until released or reaped). Without a pre-work claim, two overlapping patch runs
 could both dispatch competing fix subagents against the same branch. Claim the PR record
-with `phase: "patch"` now, before starting the merge/resolve, mirroring deploy.md's Step
-4a pre-merge claim:
+with `phase: "patch"` now, before starting the merge/resolve, mirroring merge.md's pre-merge
+claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
 it against this site's live head before trusting it — the head can have moved since Step 2
@@ -1098,7 +1098,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -1895,7 +1895,7 @@ The fix subagent dispatched next can run long enough to overlap with another pat
 `phase: "review"` record left behind after posting — the record stays claimed until
 released or reaped). Without a pre-work claim, two overlapping patch runs could both
 dispatch competing fix subagents against the same branch. Claim the PR record with
-`phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
+`phase: "patch"` now, before starting the fix, mirroring merge.md's pre-merge
 claim:
 
 **Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
@@ -2011,7 +2011,7 @@ same signal before dispatch is ever considered — but that filter only guards t
 `shipwright-loop`-driven path. A human running `/shipwright:patch org/repo#123` directly
 bypasses `check-patch.ts` entirely, and time can also pass between candidate selection and
 this point in the run (a bundle-mate task can start, or get blocked, after this PR was
-selected). Mirror deploy.md's Step 2b here, immediately before Step 6c's dispatch, so an
+selected). Mirror merge.md's live-state re-check here, immediately before Step 6c's dispatch, so an
 incomplete bundle is caught on both paths — this is where a prior CI-fix-on-an-incomplete-
 bundle incident actually happened: re-query the same sibling-branch-status signal now, right
 before dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.
@@ -2145,10 +2145,31 @@ Store both durations (or a note that typical duration was unavailable) as
 ### Step 6b.9: Out-of-Scope CI Judgment (SLS-2.2)
 
 Having read the CI logs in Step 6b, decide whether the failing check is caused by this PR.
+
+**Main-red path (MRB-1.1) — check this first.** Before judging anything out of scope, check
+whether the same failing jobs are failing on the base branch. Look up the latest completed CI
+run of the base branch (`gh run list --repo {org}/{repo} --branch {base} --status completed
+--limit 1 --json databaseId,headSha,conclusion`), list its failed jobs, and compare them with
+`CI_FAILURE_SIGNATURE`. If the same jobs fail there, the PR is waiting on main, not on a fix:
+
+1. Escalate via [escalation-pattern.md](references/escalation-pattern.md) with
+   `{blockedReason}` = `main_red: {base} @ {main-sha} is failing {CI_FAILURE_SIGNATURE}` (task
+   `blocked`, or the PR record `blocked: true` when no task is linked) and `{temp_file_slug}` =
+   `main-red`.
+2. The one PR comment (`{comment_body}`) explains the PR is waiting on a red `{base}` (name the
+   sha and failing jobs) and how to resume: once `{base}` is green, re-run CI or update the
+   branch, then run `/shipwright:unblock`.
+3. The escalation sequence releases the claim. Skip Steps 6c–6e and move to the next PR.
+4. **Do NOT write the `ci:` ledger entry on this path** — an unblock at the same head SHA would
+   otherwise stay settled and never re-run.
+
+This path ends blocked, so it never ends `[silent]`. If main is green, or its failing jobs
+differ, fall through to the judgment below.
+
 If it is not — for example the same check already fails on the base branch, or the failure
 is in code this PR does not touch and no change to the PR can fix it — the run must not end
 with nothing recorded: without a ledger entry, `check-patch.ts` re-selects the PR every tick.
-Write the `ci` ref before ending, and **never exit `[silent]` without it**.
+For these other out-of-scope judgments, write the `ci` ref before ending, and **never exit `[silent]` without it**.
 
 Reuse `CI_FAILURE_SIGNATURE` from Step 6b (no new computation) and the head SHA the PR
 record is keyed on. The ref is `ci:{headSha}:{ciFailureSignature}` — the format SLS-2.1's
@@ -2423,9 +2444,9 @@ Otherwise, proceed below.
 ### Step 6.5a: Poll for the Final CI Result
 
 Reuse the same "poll the GitHub Actions API, dedupe by latest run per workflow, skip
-cleanly when nothing is configured" pattern as `dev-task.md`'s Step 9b.2 — same shape, a
+cleanly when nothing is configured" pattern as `references/dev-task/push-and-ci.md`'s CI gate — same shape, a
 tighter cadence: 30-second interval, capped at **~5 minutes** (10 polls max) rather than
-Step 9b.2's 10-minute cap, since this is a final gate on a patch cycle that already ran
+that CI gate's 10-minute cap, since this is a final gate on a patch cycle that already ran
 fixes, not a first-attempt wait.
 
 Resolve the repo and current HEAD SHA (the worktree for whichever of Steps 4/5/6 pushed
@@ -2458,7 +2479,7 @@ workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task
 9b.2, to avoid a stale failed run being counted alongside its passing rerun.
 
 **No CI configured:** if no matching runs appear after 60 seconds (2 polls), skip the rest
-of Step 6.5 and proceed to Step 7 — mirroring `dev-task.md` Step 9b.2's identical
+of Step 6.5 and proceed to Step 7 — mirroring `references/dev-task/push-and-ci.md`'s CI gate's identical
 no-CI-configured skip. Print:
 ```
 ⏭ No CI checks configured — skipping CI verification gate

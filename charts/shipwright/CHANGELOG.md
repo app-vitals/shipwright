@@ -10,6 +10,984 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.32.136] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.136 triggered by release tag(s): `admin-v1.327.0`
+
+## [1.32.135] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.135 triggered by release tag(s): `agent-v1.460.0`
+
+## [1.32.134] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.134 triggered by release tag(s): `admin-v1.326.8`, `agent-v1.459.7`, `metrics-v1.178.7`, `task-store-v1.228.8`
+
+## [1.32.133] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.133 triggered by release tag(s): `agent-chat-v1.36.2`
+
+## [1.32.132] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.132 triggered by release tag(s): `admin-v1.326.7`, `agent-v1.459.6`, `metrics-v1.178.6`, `task-store-v1.228.7`
+
+## [1.32.131] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.131 triggered by release tag(s): `agent-chat-v1.36.1`
+
+## [1.32.130] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.130 triggered by release tag(s): `admin-v1.326.6`, `agent-v1.459.5`, `metrics-v1.178.5`, `task-store-v1.228.6`
+
+## [1.32.129] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.129 triggered by release tag(s): `agent-chat-v1.36.0`
+
+## [1.32.128] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.128 triggered by release tag(s): `admin-v1.326.5`, `agent-v1.459.4`, `metrics-v1.178.4`, `task-store-v1.228.5`
+
+## [1.32.127] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.127 triggered by release tag(s): `agent-chat-v1.35.1`
+
+## [1.32.126] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.126 triggered by release tag(s): `admin-v1.326.4`, `agent-v1.459.3`, `metrics-v1.178.3`, `task-store-v1.228.4`
+
+## [1.32.125] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.125 triggered by release tag(s): `agent-chat-v1.35.0`
+
+## [1.32.124] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.124 triggered by release tag(s): `admin-v1.326.3`, `agent-v1.459.2`, `metrics-v1.178.2`, `task-store-v1.228.3`
+
+## [1.32.123] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.123 triggered by release tag(s): `agent-chat-v1.34.0`
+
+## [1.32.122] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.122 triggered by release tag(s): `admin-v1.326.2`, `agent-v1.459.1`, `metrics-v1.178.1`, `task-store-v1.228.2`
+
+## [1.32.121] - 2026-11-12
+
+### Changed
+
+- auto-bump to chart v1.32.121 triggered by release tag(s): `agent-chat-v1.33.0`
+
+## [1.32.120] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.120 triggered by release tag(s): `admin-v1.326.1`, `agent-v1.459.0`, `metrics-v1.178.0`, `task-store-v1.228.1`
+
+## [1.32.119] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.119 triggered by release tag(s): `agent-chat-v1.32.0`
+
+## [1.32.118] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.118 triggered by release tag(s): `admin-v1.326.0`, `task-store-v1.228.0`
+
+## [1.32.117] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.117 triggered by release tag(s): `admin-v1.325.11`, `agent-v1.458.13`, `metrics-v1.177.10`, `task-store-v1.227.12`
+
+## [1.32.116] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.116 triggered by release tag(s): `agent-chat-v1.31.0`
+
+## [1.32.115] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.115 triggered by release tag(s): `admin-v1.325.10`, `agent-v1.458.12`, `metrics-v1.177.9`, `task-store-v1.227.11`
+
+## [1.32.114] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.114 triggered by release tag(s): `agent-chat-v1.30.0`
+
+## [1.32.113] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.113 triggered by release tag(s): `admin-v1.325.9`, `agent-v1.458.11`, `metrics-v1.177.8`, `task-store-v1.227.10`
+
+## [1.32.112] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.112 triggered by release tag(s): `agent-chat-v1.29.0`
+
+## [1.32.111] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.111 triggered by release tag(s): `admin-v1.325.8`, `agent-v1.458.10`, `metrics-v1.177.7`, `task-store-v1.227.9`
+
+## [1.32.110] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.110 triggered by release tag(s): `agent-chat-v1.28.0`
+
+## [1.32.109] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.109 triggered by release tag(s): `admin-v1.325.7`, `agent-v1.458.9`, `metrics-v1.177.6`, `task-store-v1.227.8`
+
+## [1.32.108] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.108 triggered by release tag(s): `agent-chat-v1.27.0`
+
+## [1.32.107] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.107 triggered by release tag(s): `admin-v1.325.6`, `agent-v1.458.8`, `metrics-v1.177.5`, `task-store-v1.227.7`
+
+## [1.32.106] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.106 triggered by release tag(s): `agent-chat-v1.26.0`
+
+## [1.32.105] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.105 triggered by release tag(s): `admin-v1.325.5`, `agent-v1.458.7`, `metrics-v1.177.4`, `task-store-v1.227.6`
+
+## [1.32.104] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.104 triggered by release tag(s): `admin-v1.325.4`, `agent-chat-v1.25.0`, `agent-v1.458.6`, `metrics-v1.177.3`, `task-store-v1.227.5`
+
+## [1.32.103] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.103 triggered by release tag(s): `agent-chat-v1.24.0`
+
+## [1.32.102] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.102 triggered by release tag(s): `admin-v1.325.3`, `agent-v1.458.5`, `metrics-v1.177.2`, `task-store-v1.227.4`
+
+## [1.32.101] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.101 triggered by release tag(s): `agent-chat-v1.23.0`
+
+## [1.32.100] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.100 triggered by release tag(s): `admin-v1.325.2`, `agent-v1.458.4`, `metrics-v1.177.1`, `task-store-v1.227.3`
+
+## [1.32.99] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.99 triggered by release tag(s): `agent-chat-v1.22.0`
+
+## [1.32.98] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.98 triggered by release tag(s): `admin-v1.325.1`, `agent-v1.458.3`, `metrics-v1.177.0`, `task-store-v1.227.2`
+
+## [1.32.97] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.97 triggered by release tag(s): `agent-chat-v1.21.0`
+
+## [1.32.96] - 2026-11-11
+
+### Changed
+
+- auto-bump to chart v1.32.96 triggered by release tag(s): `task-store-v1.227.1`
+
+## [1.32.95] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.95 triggered by release tag(s): `agent-v1.458.2`
+
+## [1.32.94] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.94 triggered by release tag(s): `agent-v1.458.1`
+
+## [1.32.93] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.93 triggered by release tag(s): `admin-v1.325.0`, `agent-v1.458.0`, `task-store-v1.227.0`
+
+## [1.32.92] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.92 triggered by release tag(s): `admin-v1.324.0`, `task-store-v1.226.0`
+
+## [1.32.91] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.91 triggered by release tag(s): `agent-v1.457.0`
+
+## [1.32.90] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.90 triggered by release tag(s): `task-store-v1.225.0`
+
+## [1.32.89] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.89 triggered by release tag(s): `admin-v1.323.7`
+
+## [1.32.88] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.88 triggered by release tag(s): `admin-v1.323.6`, `agent-v1.456.7`, `metrics-v1.176.6`, `task-store-v1.224.6`
+
+## [1.32.87] - 2026-11-10
+
+### Changed
+
+- auto-bump to chart v1.32.87 triggered by release tag(s): `admin-v1.323.5`, `agent-chat-v1.20.1`, `agent-v1.456.6`, `metrics-v1.176.5`, `task-store-v1.224.5`
+
+## [1.32.86] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.86 triggered by release tag(s): `admin-v1.323.3`, `agent-v1.456.3`, `metrics-v1.176.3`, `task-store-v1.224.3`
+
+## [1.32.85] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.85 triggered by release tag(s): `agent-chat-v1.6.0`
+
+## [1.32.84] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.84 triggered by release tag(s): `admin-v1.323.2`, `agent-v1.456.2`, `metrics-v1.176.2`, `task-store-v1.224.2`
+
+## [1.32.83] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.83 triggered by release tag(s): `agent-chat-v1.5.0`
+
+## [1.32.82] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.82 triggered by release tag(s): `admin-v1.323.1`, `agent-v1.456.1`, `metrics-v1.176.1`, `task-store-v1.224.1`
+
+## [1.32.81] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.81 triggered by release tag(s): `agent-chat-v1.4.0`
+
+## [1.32.80] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.80 triggered by release tag(s): `admin-v1.323.0`, `agent-v1.456.0`, `metrics-v1.176.0`, `task-store-v1.224.0`
+
+## [1.32.79] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.79 triggered by release tag(s): `agent-chat-v1.3.0`
+
+## [1.32.78] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.78 triggered by release tag(s): `admin-v1.322.5`, `agent-v1.455.7`, `metrics-v1.175.3`, `task-store-v1.223.2`
+
+## [1.32.77] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.77 triggered by release tag(s): `agent-chat-v1.2.7`
+
+## [1.32.76] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.76 triggered by release tag(s): `admin-v1.322.4`
+
+## [1.32.75] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.75 triggered by release tag(s): `admin-v1.322.3`, `agent-v1.455.6`, `metrics-v1.175.2`, `task-store-v1.223.1`
+
+## [1.32.74] - 2026-11-09
+
+### Changed
+
+- auto-bump to chart v1.32.74 triggered by release tag(s): `agent-chat-v1.2.6`
+
+## [1.32.73] - 2026-11-08
+
+### Changed
+
+- auto-bump to chart v1.32.73 triggered by release tag(s): `admin-v1.322.2`, `agent-v1.455.5`, `metrics-v1.175.1`, `task-store-v1.223.0`
+
+## [1.32.72] - 2026-11-08
+
+### Changed
+
+- auto-bump to chart v1.32.72 triggered by release tag(s): `admin-v1.322.1`, `agent-v1.455.4`, `metrics-v1.175.0`
+
+## [1.32.71] - 2026-11-08
+
+### Changed
+
+- auto-bump to chart v1.32.71 triggered by release tag(s): `admin-v1.322.0`, `agent-v1.455.3`
+
+## [1.32.70] - 2026-11-08
+
+### Changed
+
+- auto-bump to chart v1.32.70 triggered by release tag(s): `agent-v1.455.2`
+
+## [1.32.69] - 2026-11-07
+
+### Changed
+
+- auto-bump to chart v1.32.69 triggered by release tag(s): `agent-v1.455.1`
+
+## [1.32.68] - 2026-11-07
+
+### Changed
+
+- auto-bump to chart v1.32.68 triggered by release tag(s): `agent-v1.455.0`
+
+## [1.32.67] - 2026-11-07
+
+### Changed
+
+- auto-bump to chart v1.32.67 triggered by release tag(s): `admin-v1.321.0`
+
+## [1.32.66] - 2026-11-06
+
+### Changed
+
+- auto-bump to chart v1.32.66 triggered by release tag(s): `admin-v1.320.0`, `agent-v1.454.0`, `metrics-v1.174.0`, `task-store-v1.222.0`
+
+## [1.32.65] - 2026-11-06
+
+### Changed
+
+- auto-bump to chart v1.32.65 triggered by release tag(s): `agent-chat-v1.2.5`
+
+## [1.32.64] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.64 triggered by release tag(s): `admin-v1.319.1`, `agent-v1.453.1`, `metrics-v1.173.0`, `task-store-v1.221.1`
+
+## [1.32.63] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.63 triggered by release tag(s): `agent-chat-v1.2.4`
+
+## [1.32.62] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.62 triggered by release tag(s): `task-store-v1.221.0`
+
+## [1.32.61] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.61 triggered by release tag(s): `admin-v1.319.0`, `agent-v1.453.0`
+
+## [1.32.60] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.60 triggered by release tag(s): `agent-v1.452.0`
+
+## [1.32.59] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.59 triggered by release tag(s): `admin-v1.318.0`, `agent-v1.451.0`, `metrics-v1.172.0`
+
+## [1.32.58] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.58 triggered by release tag(s): `agent-v1.450.0`
+
+## [1.32.57] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.57 triggered by release tag(s): `task-store-v1.220.0`
+
+## [1.32.56] - 2026-11-05
+
+### Changed
+
+- auto-bump to chart v1.32.56 triggered by release tag(s): `admin-v1.317.0`, `agent-v1.449.0`, `metrics-v1.171.0`, `task-store-v1.219.0`
+
+## [1.32.55] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.55 triggered by release tag(s): `admin-v1.316.3`, `agent-v1.448.4`, `metrics-v1.170.3`, `task-store-v1.218.3`
+
+## [1.32.54] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.54 triggered by release tag(s): `agent-chat-v1.2.3`
+
+## [1.32.53] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.53 triggered by release tag(s): `admin-v1.316.2`, `agent-v1.448.3`, `metrics-v1.170.2`, `task-store-v1.218.2`
+
+## [1.32.52] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.52 triggered by release tag(s): `agent-chat-v1.2.2`
+
+## [1.32.51] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.51 triggered by release tag(s): `admin-v1.316.1`, `agent-v1.448.2`, `metrics-v1.170.1`, `task-store-v1.218.1`
+
+## [1.32.50] - 2026-11-04
+
+### Changed
+
+- auto-bump to chart v1.32.50 triggered by release tag(s): `agent-chat-v1.2.1`
+
+## [1.32.49] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.49 triggered by release tag(s): `agent-v1.448.1`
+
+## [1.32.48] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.48 triggered by release tag(s): `admin-v1.316.0`, `task-store-v1.218.0`
+
+## [1.32.47] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.47 triggered by release tag(s): `metrics-v1.170.0`
+
+## [1.32.46] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.46 triggered by release tag(s): `agent-v1.448.0`
+
+## [1.32.45] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.45 triggered by release tag(s): `agent-chat-v1.2.0`
+
+## [1.32.44] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.44 triggered by release tag(s): `agent-v1.447.2`
+
+## [1.32.43] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.43 triggered by release tag(s): `agent-v1.447.1`
+
+## [1.32.42] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.42 triggered by release tag(s): `admin-v1.315.2`, `agent-v1.447.0`, `metrics-v1.169.1`, `task-store-v1.217.1`
+
+## [1.32.41] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.41 triggered by release tag(s): `admin-v1.315.1`, `metrics-v1.169.0`, `task-store-v1.217.0`
+
+## [1.32.40] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.40 triggered by release tag(s): `admin-v1.315.0`
+
+## [1.32.39] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.39 triggered by release tag(s): `agent-v1.446.0`
+
+## [1.32.38] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.38 triggered by release tag(s): `admin-v1.314.0`
+
+## [1.32.37] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.37 triggered by release tag(s): `admin-v1.313.0`
+
+## [1.32.36] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.36 triggered by release tag(s): `admin-v1.312.0`, `agent-v1.445.1`
+
+## [1.32.35] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.35 triggered by release tag(s): `agent-v1.445.0`
+
+## [1.32.34] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.34 triggered by release tag(s): `agent-v1.444.4`
+
+## [1.32.33] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.33 triggered by release tag(s): `admin-v1.311.2`
+
+## [1.32.32] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.32 triggered by release tag(s): `admin-v1.311.1`, `agent-v1.444.3`, `metrics-v1.168.1`, `task-store-v1.216.1`
+
+## [1.32.31] - 2026-11-03
+
+### Changed
+
+- auto-bump to chart v1.32.31 triggered by release tag(s): `agent-chat-v1.1.0`
+
+## [1.32.30] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.30 triggered by release tag(s): `agent-v1.444.2`
+
+## [1.32.29] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.29 triggered by release tag(s): `agent-v1.444.1`
+
+## [1.32.28] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.28 triggered by release tag(s): `admin-v1.311.0`, `agent-v1.444.0`, `metrics-v1.168.0`, `task-store-v1.216.0`
+
+## [1.32.27] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.27 triggered by release tag(s): `agent-chat-v1.0.0`
+
+## [1.32.26] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.26 triggered by release tag(s): `agent-v1.443.2`
+
+## [1.32.25] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.25 triggered by release tag(s): `agent-v1.443.1`
+
+## [1.32.24] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.24 triggered by release tag(s): `admin-v1.310.1`, `agent-v1.443.0`
+
+## [1.32.23] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.23 triggered by release tag(s): `admin-v1.310.0`
+
+## [1.32.22] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.22 triggered by release tag(s): `agent-v1.442.6`
+
+## [1.32.21] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.21 triggered by release tag(s): `agent-v1.442.5`
+
+## [1.32.20] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.20 triggered by release tag(s): `admin-v1.309.4`, `agent-v1.442.4`, `metrics-v1.167.1`, `task-store-v1.215.2`
+
+## [1.32.19] - 2026-11-02
+
+### Changed
+
+- auto-bump to chart v1.32.19 triggered by release tag(s): `agent-chat-v0.16.2`
+
+## [1.32.18] - 2026-11-01
+
+### Changed
+
+- auto-bump to chart v1.32.18 triggered by release tag(s): `admin-v1.309.3`
+
+## [1.32.17] - 2026-11-01
+
+### Changed
+
+- auto-bump to chart v1.32.17 triggered by release tag(s): `agent-v1.442.3`
+
+## [1.32.16] - 2026-11-01
+
+### Changed
+
+- auto-bump to chart v1.32.16 triggered by release tag(s): `agent-v1.442.2`
+
+## [1.32.15] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.15 triggered by release tag(s): `admin-v1.309.2`, `task-store-v1.215.1`
+
+## [1.32.14] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.14 triggered by release tag(s): `admin-v1.309.1`, `agent-v1.442.0`, `metrics-v1.167.0`, `task-store-v1.215.0`
+
+## [1.32.13] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.13 triggered by release tag(s): `agent-chat-v0.16.1`
+
+## [1.32.12] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.12 triggered by release tag(s): `admin-v1.309.0`
+
+## [1.32.11] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.11 triggered by release tag(s): `agent-v1.441.0`
+
+## [1.32.10] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.10 triggered by release tag(s): `admin-v1.308.0`
+
+## [1.32.9] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.9 triggered by release tag(s): `admin-v1.307.1`, `metrics-v1.166.1`
+
+## [1.32.8] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.8 triggered by release tag(s): `admin-v1.307.0`, `agent-v1.440.1`, `metrics-v1.166.0`, `task-store-v1.214.0`
+
+## [1.32.7] - 2026-10-30
+
+### Changed
+
+- auto-bump to chart v1.32.7 triggered by release tag(s): `agent-chat-v0.16.0`
+
+## [1.32.6] - 2026-10-29
+
+### Changed
+
+- auto-bump to chart v1.32.6 triggered by release tag(s): `agent-v1.440.0`
+
+## [1.32.5] - 2026-10-28
+
+### Added
+
+- allow `agent.provisioning.images` (per-specialty agent images) in the values schema, with a documented empty default
+
+## [1.32.4] - 2026-10-28
+
+### Changed
+
+- document the agent-platform library dependency, the library-release bump flow and the render-parity check (docs only)
+
+## [1.32.3] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.3 triggered by release tag(s): `admin-v1.306.9`, `agent-v1.439.6`, `metrics-v1.165.4`, `task-store-v1.213.6`
+
+## [1.32.2] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.2 triggered by release tag(s): `agent-chat-v0.15.0`
+
+## [1.32.1] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.32.1 triggered by release tag(s): `admin-v1.306.8`, `agent-chat-v0.14.0`, `agent-v1.439.5`, `metrics-v1.165.3`, `task-store-v1.213.5`
+
+## [1.32.0] - 2026-10-28
+
+### Changed
+
+- shared networking and database templates are now library includes driven by Shipwright extension lists (no rendered change)
+
+## [1.31.3] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.3 triggered by release tag(s): `admin-v1.306.7`, `agent-v1.439.4`
+
+## [1.31.2] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.2 triggered by release tag(s): `agent-chat-v0.13.2`
+
+## [1.31.1] - 2026-10-28
+
+### Changed
+
+- auto-bump to chart v1.31.1 triggered by release tag(s): `agent-chat-v0.13.1`
+
+## [1.31.0] - 2026-10-28
+
+### Changed
+
+- chat, whisper and voice-secret templates are now one-line includes of the agent-platform library (no rendered change)
+
+## [1.30.6] - 2026-10-28
+
+### Changed
+
+- bump the agent-platform library chart to 0.4.0
+
+## [1.30.5] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.5 triggered by release tag(s): `admin-v1.306.6`, `agent-v1.439.3`, `metrics-v1.165.2`, `task-store-v1.213.4`
+
+## [1.30.4] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.4 triggered by release tag(s): `agent-chat-v0.13.0`
+
+## [1.30.3] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.3 triggered by release tag(s): `admin-v1.306.5`, `agent-v1.439.2`, `metrics-v1.165.1`, `task-store-v1.213.3`
+
+## [1.30.2] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.30.2 triggered by release tag(s): `agent-v1.439.1`
+
+## [1.30.1] - 2026-10-27
+
+### Changed
+
+- admin and agent-provisioning templates replaced with agent-platform library stubs (no rendered change)
+
+## [1.30.0] - 2026-10-27
+
+### Changed
+
+- depend on the agent-platform library chart; shipwright.* name/label/image helpers now delegate to it (no rendered change)
+
+## [1.29.13] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.13 triggered by release tag(s): `admin-v1.306.4`
+
+## [1.29.12] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.12 triggered by release tag(s): `agent-chat-v0.12.0`
+
+## [1.29.11] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.11 triggered by release tag(s): `admin-v1.306.3`, `agent-v1.439.0`, `metrics-v1.165.0`, `task-store-v1.213.2`
+
+## [1.29.10] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.10 triggered by release tag(s): `task-store-v1.213.0`
+
+## [1.29.9] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.9 triggered by release tag(s): `admin-v1.306.1`
+
+## [1.29.8] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.8 triggered by release tag(s): `agent-chat-v0.9.0`
+
+## [1.29.7] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.7 triggered by release tag(s): `admin-v1.306.0`
+
+## [1.29.6] - 2026-10-27
+
+### Changed
+
+- point the chat image default at ghcr.io/app-vitals/agent-chat (tag follows the platform release)
+
+## [1.29.5] - 2026-10-27
+
+### Changed
+
+- auto-bump to chart v1.29.5 triggered by release tag(s): `admin-v1.305.1`
+
+## [1.29.4] - 2026-10-26
+
+### Changed
+
+- auto-bump to chart v1.29.4 triggered by release tag(s): `admin-v1.305.0`, `agent-v1.438.2`, `chat-v1.162.1`, `metrics-v1.164.0`, `task-store-v1.212.0`
+
+## [1.29.3] - 2026-10-26
+
+### Changed
+
+- auto-bump to chart v1.29.3 triggered by release tag(s): `chat-v1.162.0`
+
+## [1.29.2] - 2026-10-26
+
+### Changed
+
+- auto-bump to chart v1.29.2 triggered by release tag(s): `agent-v1.438.1`
+
+## [1.29.1] - 2026-10-26
+
+### Changed
+
+- auto-bump to chart v1.29.1 triggered by release tag(s): `agent-v1.438.0`
+
+## [1.29.0] - 2026-10-26
+
+### Added
+
+- expose the pod ServiceAccount flag as a chart value
+
+## [1.28.3] - 2026-10-26
+
+### Changed
+
+- auto-bump to chart v1.28.3 triggered by release tag(s): `agent-v1.437.1`
+
 ## [1.28.2] - 2026-10-26
 
 ### Changed

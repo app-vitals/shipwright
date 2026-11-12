@@ -2,7 +2,7 @@
 
 The Shipwright task store is the backing database for the plan-execute-review loop — it holds all tasks, their statuses, dependencies, and PR tracking records.
 
-The HTTP service (artifact **D**) is the **only** backend — a Postgres-backed Hono service reached via `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`. The plugin has no local file or Jira fallback and no bundled CLI script; every command and skill (`dev-task`, `review`, `patch`, `deploy`, `plan-session`, the `task-store` skill) talks to the HTTP API directly via `curl`. See [configuration.md](configuration.md) for env vars.
+The HTTP service (artifact **D**) is the **only** backend — a Postgres-backed Hono service reached via `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`. The plugin has no local file or Jira fallback and no bundled CLI script; every command and skill (`dev-task`, `review`, `patch`, `plan-session`, the `task-store` skill) talks to the HTTP API directly via `curl`. See [configuration.md](configuration.md) for env vars.
 
 **Full endpoint reference** — every route, parameter, request/response shape, and status code, including behavioral nuance like atomic claim semantics and lifecycle-guard restrictions — lives in the generated [`task-store/openapi.json`](../task-store/openapi.json) spec (human-browsable summary: [`docs/mcp-tools.md`](./mcp-tools.md)). **Practical usage** — curl-based examples for auth setup, common queries, and claim/release/patch calls — lives in [`plugins/shipwright/skills/task-store/SKILL.md`](../plugins/shipwright/skills/task-store/SKILL.md).
 
@@ -42,7 +42,7 @@ A single `app.onError` hook (`task-store/src/app.ts`) dispatches every thrown er
 
 ### Outbound webhook
 
-The task store can notify a downstream service of task writes via a generic `{ type, data }` webhook — configured entirely through env vars (`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS`, see [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)). `task.write` is the only event type today, firing from every `TaskService` method that creates or mutates a task row (`create`, `bulk`, `update`, `claim`, `complete`, `fail`, `release`, `unblock`, `recordSkip`, `resetSkip`) — `remove()` and `heartbeat()` deliberately don't fire it. Delivery is **fail-closed with no retry**: the dispatch happens inside the same transaction as the write it announces, so a delivery failure rolls back the entire write rather than leaving an unannounced task row. See `task-store/src/webhook-dispatcher.ts` for the envelope/signature implementation.
+The task store can notify a downstream service of task writes via a generic `{ type, data }` webhook — configured entirely through env vars (`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS`, see [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)). `task.write` is the only event type today, firing from every `TaskService` method that creates or mutates a task row (`create`, `bulk`, `markMergedByPr`, `update`, `claim`, `complete`, `fail`, `release`, `unblock`, `recordSkip`, `resetSkip`) — `remove()` and `heartbeat()` deliberately don't fire it. Delivery is **fail-closed with no retry**: the dispatch happens inside the same transaction as the write it announces, so a delivery failure rolls back the entire write rather than leaving an unannounced task row. See `task-store/src/webhook-dispatcher.ts` for the envelope/signature implementation.
 
 ### Sessions
 
@@ -52,14 +52,23 @@ A `Session` row is upserted automatically whenever a task write sets a non-blank
 
 `Task.pr` is an integer column. `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` normalize a supplied `pr` (`normalizePr` in `task-store/src/validate.ts`) to a positive integer: a positive integer, an integer string, or a `https://github.com/<owner>/<repo>/pull/<n>` URL are all accepted (`null` clears it). Anything else, or a value above the INT4 maximum, is a `400` naming the accepted forms rather than a Prisma `500`.
 
+### PATCH request field validation
+
+`PATCH /tasks/:id` rejects any body key that is not a valid Task column with a `400` error, naming the unknown field(s). This prevents typos (e.g., `notes` instead of `note`) and malformed requests from reaching Prisma's validation layer, which would otherwise surface as a `500` error. The set of valid fields (`TASK_PATCH_FIELDS` in `task-store/src/routes/tasks.ts`) is kept in sync with `Prisma.TaskScalarFieldEnum` via a unit test — mismatch is a build-time failure, not a deployment surprise.
+
+`POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` also type-check the non-string columns that the passthrough body schemas leave untyped (`assertTaskFieldTypes` in `task-store/src/routes/tasks.ts`): integer fields such as `complexity`, `skipCount` and the token counters must be an integer or `null`; `hours`, `coverageDelta` and `costUsd` a finite number or `null`; `hitl` a boolean or `null`; `acceptanceCriteria` and `dependencies` an array of strings. A mistyped value (e.g. `complexity: "S"`) is a `400` naming the field — there is no string-to-number coercion — rather than a Prisma `500`.
+
 ### Task status lifecycle
 
 ```
-pending → in_progress → pr_open → approved → merged → deploying → deployed
+pending → in_progress → pr_open → approved → merged → deployed
+                                                    ↘ released
                                                     ↘ done
 ```
 
-Terminal statuses (closed): `merged`, `done`, `deploying`, `deployed`, `cancelled`.
+Terminal statuses (closed): `merged`, `done`, `deployed`, `released`, `cancelled`.
+`released` (with its `releasedAt` stamp) mirrors `deployed`/`deployedAt` for changes that ship on a
+release cadence rather than a direct deploy.
 Paused status: `blocked` (returned to `pending` on retry).
 
 ### Task kind
@@ -86,7 +95,7 @@ filter.
 
 When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it checks whether all of the task's dependencies are "satisfied." A task's dependencies are specified in its `dependencies` array (a list of task IDs). A single dependency is satisfied when its task meets one of these conditions:
 
-1. **Terminal status** — the dependency's `status` is `merged`, `done`, `deploying`, `deployed`, or `cancelled`. These statuses indicate the dependency is complete and no longer blocking.
+1. **Terminal status** — the dependency's `status` is `merged`, `done`, `deployed`, `released`, or `cancelled`. These statuses indicate the dependency is complete and no longer blocking.
 
 2. **Same-branch bundled** — the dependency has `status = pr_open` or `status = approved` AND its `branch` field equals the requesting task's `branch`. This indicates both tasks are part of the same feature branch and their PRs are bundled together in the queue (reviewed/approved as a unit).
 
@@ -97,6 +106,23 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 ### PR tracking & dispatch guards
 
 PR origin metrics, verification checks, skip tracking (reason-aware auto-block), the same-branch exclusivity guard, and the session archive sweep are documented in [`task-store-pr-tracking.md`](./task-store-pr-tracking.md).
+
+### Marking merged tasks deployed or released by PR
+
+`PATCH /tasks/by-pr` is for external deployment/release automation that knows PR numbers, not task ids.
+
+Request body: `{ "repo": "org/repo", "prNumbers": [101, 102], "status": "deployed" | "released", "at"?: "<ISO timestamp>" }`.
+
+- `prNumbers` must hold 1 to 100 positive integers; an empty list, an over-large batch, a non-integer entry, an unknown `status` (only `deployed` and `released` are accepted), a malformed `repo` or an unparseable `at` is a `400`.
+- Every task of `repo` whose `pr` is listed is considered. Only tasks currently `merged` transition: they get the requested `status` and `deployedAt` / `releasedAt` set to `at` (default: now), with TaskEvent audit rows.
+- Idempotent: a task already at the requested `status` is reported under `unchanged` and left untouched, so repeating a call is safe.
+- Tasks in any other status (`pr_open`, `approved`, `blocked`, `done`, ...) are never modified and are reported under `skipped` with their current status. Note that a task already `deployed` is `skipped` (not `unchanged`) when `released` is requested, and vice versa.
+- Everything runs in one transaction (including the single `task.write` webhook dispatch): a bundle of tasks on one PR is updated all-or-nothing. A task changing status concurrently aborts the call with `409`; retry.
+- Scope: agent tokens may only target a `repo` in their repo scope (`403` otherwise) and only see tasks of their own account; admin tokens are unrestricted or narrowed with `?accountId=`.
+
+Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<id>", "status": "pr_open" }] }`.
+
+The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
 
 ### Token management
 

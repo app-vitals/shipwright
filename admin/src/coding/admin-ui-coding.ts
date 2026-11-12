@@ -723,7 +723,7 @@ export function createCodingAdminUIApp(
               } else if (view === "board") {
                 // TBC-2.1: with no explicit status/state filter, the
                 // default board query excludes the fully-closed statuses
-                // (merged/done/deploying/deployed/cancelled) so Done tasks
+                // (merged/done/deployed/released/cancelled) so Done tasks
                 // never crowd out the shared recency window. This can't
                 // exclude "claimed" specifically at the query level —
                 // claimed and queued share the same "pending" status,

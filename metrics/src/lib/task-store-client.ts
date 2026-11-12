@@ -13,7 +13,7 @@
  *   const tasks = await client.listTasks({ from, to });
  */
 
-import type { components } from "@app-vitals/agent-lib/task-store-types";
+import type { components } from "../../../admin/src/coding/task-store-types.ts";
 
 // ─── Record types derived from the generated task-store schema ───────────────
 //
@@ -36,7 +36,7 @@ type TaskOptionalOverrides = Pick<TaskSchema, "createdAt">;
 
 /**
  * Slim Task record — only the fields the metrics provider reads. Terminal /
- * completed statuses are `merged | done | deployed | deploying`; `blocked` is
+ * completed statuses are `merged | done | deployed | released`; `blocked` is
  * blocked; `in_progress | pr_open | approved` are mid-flight.
  */
 export type TaskRecord = Pick<

@@ -1955,7 +1955,9 @@ describe("patch.md — capture and report CI failure signature (CSD-1.2)", () =>
 
   it("Step 6b computes the failing-job-name signature via gh run view --json jobs --jq, sorted and comma-joined", () => {
     const section = getStep6bSection();
-    expect(section).toContain('gh run view "$RUN_ID" --repo {org}/{repo} --json jobs');
+    expect(section).toContain(
+      'gh run view "$RUN_ID" --repo {org}/{repo} --json jobs',
+    );
     expect(section).toContain("--jq");
     expect(section).toContain('select(.conclusion=="failure")');
     expect(section).toContain(".name");
@@ -2967,6 +2969,26 @@ describe("patch.md — settle-with-rejected outcome for nothing-actionable List 
     expect(section).toContain("/findings");
     expect(section).toContain("never exit `[silent]` without it");
   });
+
+  it("Step 6b.9 blocks main-red failures via escalation-pattern without a ledger write (MRB-1.1)", () => {
+    const section = stepSection("### Step 6b.9:", "### Step 6c:");
+    const mainRed = section
+      .slice(
+        section.indexOf("**Main-red path"),
+        section.indexOf("If it is not"),
+      )
+      .replace(/\s+/g, " ");
+    expect(mainRed).toContain("latest completed CI run");
+    expect(mainRed).toContain("CI_FAILURE_SIGNATURE");
+    expect(mainRed).toContain("escalation-pattern.md");
+    expect(mainRed).toContain("main_red:");
+    expect(mainRed).toContain("/shipwright:unblock");
+    expect(mainRed).toContain("Skip Steps 6c–6e");
+    expect(mainRed).toContain("Do NOT write the `ci:` ledger entry");
+    expect(section.indexOf("**Main-red path")).toBeLessThan(
+      section.indexOf("ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE"),
+    );
+  });
 });
 
 describe("patch.md — Step 3a classifies List A via compute-unaddressed-findings.ts (PRL-1.1)", () => {
@@ -3114,7 +3136,9 @@ describe("patch.md — BEHIND PRs handled via update-branch (SBU-1.1)", () => {
   it("Step 2.5 runs `gh pr update-branch` without --rebase for BEHIND", () => {
     const behind = getBehindSection();
     expect(behind).toContain('mergeStateStatus == "BEHIND"');
-    expect(behind).toContain("gh pr update-branch {number} --repo {org}/{repo}");
+    expect(behind).toContain(
+      "gh pr update-branch {number} --repo {org}/{repo}",
+    );
     expect(behind).not.toContain("--rebase {number}");
     expect(behind).not.toMatch(/update-branch\s+--rebase/);
   });
@@ -3158,6 +3182,26 @@ describe("patch.md — BEHIND PRs handled via update-branch (SBU-1.1)", () => {
     expect(section).toContain('`"BEHIND"`');
     expect(section).toContain("never add to");
     expect(section).toContain("**List C**");
-    expect(section).not.toMatch(/mergeStateStatus.*"BEHIND".*→ add to \*\*List C/);
+    expect(section).not.toMatch(
+      /mergeStateStatus.*"BEHIND".*→ add to \*\*List C/,
+    );
+  });
+});
+
+describe("patch.md — jq -Rs fix for headRefOid newline (JNL-1.1)", () => {
+  it("does not use jq -Rs . <<< for headRefOid anywhere", () => {
+    expect(content).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("uses --arg headRefOid for passing HEAD_REF_OID to jq", () => {
+    const step3aIdx = content.indexOf(
+      "### Step 3a: Check for Unaddressed Review Findings",
+    );
+    const step3bIdx = content.indexOf("### Step 3b:");
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3bIdx).toBeGreaterThan(-1);
+    const section = content.slice(step3aIdx, step3bIdx);
+
+    expect(section).toContain('--arg headRefOid "$HEAD_REF_OID"');
   });
 });

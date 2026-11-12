@@ -17,7 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -83,6 +83,9 @@ async function clear(prisma: PrismaClient): Promise<void> {
   await prisma.pullRequestEvent.deleteMany();
   await prisma.pullRequest.deleteMany();
   await prisma.$executeRawUnsafe('DELETE FROM "Session";');
+  // TaskEvent's FK (TaskEvent_taskId_fkey) is ON DELETE RESTRICT — clear it
+  // before Task rows, since sibling suites on the shared TEST_DB leave events behind.
+  await prisma.taskEvent.deleteMany();
   await prisma.$executeRawUnsafe('DELETE FROM "Task";');
 }
 
@@ -176,5 +179,25 @@ describeOrSkip("add accountId migration (integration)", () => {
       data: { id: "t-new", title: "new", status: "pending", repo: "a/b" },
     });
     expect(task.accountId).toBe(DEFAULT_ACCOUNT_ID);
+  });
+
+  it("clear() removes Task rows even when TaskEvent rows reference them", async () => {
+    await runMigration(prisma);
+    await prisma.task.create({
+      data: { id: "t-evt", title: "evt", status: "pending", repo: "a/b" },
+    });
+    await prisma.taskEvent.create({
+      data: {
+        taskId: "t-evt",
+        field: "status",
+        method: "test",
+        at: new Date().toISOString(),
+      },
+    });
+
+    await clear(prisma);
+
+    expect(await prisma.taskEvent.count()).toBe(0);
+    expect(await prisma.task.count()).toBe(0);
   });
 });

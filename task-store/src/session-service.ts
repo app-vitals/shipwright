@@ -12,6 +12,15 @@
  * title, archive state or rollup. Every method takes the account it operates
  * in; the upsert hook stamps the writing task's own accountId.
  *
+ * Cross-session dependencies (RCD-1.1): a task's `dependencies` may name
+ * tasks in another session of the SAME account. list()/get() collect the
+ * dependency ids not in the session's own task set and fetch them with one
+ * batched task.findMany per call (skipped when there are none), then hand
+ * them to computeSessionRollup as `externalTasks` — used only to resolve
+ * dependencies for the "waiting" classification, never counted. Lookups are
+ * keyed by (accountId, id), so another account's same-id task never resolves
+ * a dependency. Unknown ids stay unmet.
+ *
  * upsert() is designed to run inside the SAME transaction as the Task write
  * that triggers it: it accepts an explicit tx-compatible client
  * (PrismaTxClient, mirrors the identically-named alias in task-service.ts /
@@ -20,9 +29,9 @@
  * on and get one atomic write across both tables.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import {
@@ -189,6 +198,63 @@ function toBlockedLookupKeys(
 }
 
 /**
+ * Fetch the tasks named by `tasks[].dependencies` that are not themselves in
+ * `tasks`, in ONE findMany (skipped when none). Returns a map keyed by the
+ * depending task's accountId → the fetched tasks of that account, so
+ * cross-account isolation holds even when `accountIds` spans several accounts.
+ */
+async function fetchExternalDependencies(
+  prisma: PrismaClient,
+  tasks: Task[],
+): Promise<Map<string, Task[]>> {
+  const own = new Set(tasks.map((t) => sessionKey(t.accountId, t.id)));
+  const wanted = new Map<string, Set<string>>();
+  for (const task of tasks) {
+    for (const depId of task.dependencies ?? []) {
+      if (own.has(sessionKey(task.accountId, depId))) continue;
+      const ids = wanted.get(task.accountId);
+      if (ids) ids.add(depId);
+      else wanted.set(task.accountId, new Set([depId]));
+    }
+  }
+  const byAccount = new Map<string, Task[]>();
+  if (wanted.size === 0) return byAccount;
+
+  const fetched = await prisma.task.findMany({
+    where: {
+      OR: [...wanted].map(([accountId, ids]) => ({
+        accountId,
+        id: { in: [...ids] },
+      })),
+    },
+  });
+  for (const task of fetched) {
+    const bucket = byAccount.get(task.accountId);
+    if (bucket) bucket.push(task);
+    else byAccount.set(task.accountId, [task]);
+  }
+  return byAccount;
+}
+
+/** The tasks named by `sessionTasks[].dependencies` that are not part of
+ * `sessionTasks`, looked up by (accountId, id) in `knownById`. */
+function resolveExternalTasks(
+  sessionTasks: Task[],
+  knownById: Map<string, Task>,
+): Task[] {
+  const own = new Set(sessionTasks.map((t) => t.id));
+  const external = new Map<string, Task>();
+  for (const task of sessionTasks) {
+    for (const depId of task.dependencies ?? []) {
+      if (own.has(depId)) continue;
+      const dep = knownById.get(sessionKey(task.accountId, depId));
+      if (dep) external.set(dep.id, dep);
+    }
+  }
+  return [...external.values()];
+}
+
+/**
  * True when `session` should be treated as absent for the purposes of the
  * Session upsert hook: null, undefined, or a string that is empty or
  * whitespace-only. Pure logic, no I/O — kept as a standalone export so it
@@ -267,6 +333,17 @@ export class SessionService implements SessionServiceLike {
       toBlockedLookupKeys(tasks),
     );
 
+    const externalByAccount = await fetchExternalDependencies(
+      this.prisma,
+      tasks,
+    );
+    // Dependencies may also live in another session already loaded above, so
+    // index every known task by (accountId, id) before resolving per session.
+    const knownById = new Map<string, Task>();
+    for (const t of [...tasks, ...[...externalByAccount.values()].flat()]) {
+      knownById.set(sessionKey(t.accountId, t.id), t);
+    }
+
     let items: SessionListItem[] = sessionRows.map((session) => {
       const sessionTasks =
         tasksBySession.get(sessionKey(session.accountId, session.slug)) ?? [];
@@ -275,6 +352,7 @@ export class SessionService implements SessionServiceLike {
         prBlockedSet,
         this.clock,
         { archivedAt: session.archivedAt },
+        resolveExternalTasks(sessionTasks, knownById),
       );
       return { ...session, ...rollup };
     });
@@ -376,9 +454,18 @@ export class SessionService implements SessionServiceLike {
       toBlockedLookupKeys(tasks),
     );
 
-    const rollup = computeSessionRollup(tasks, prBlockedSet, this.clock, {
-      archivedAt: session.archivedAt,
-    });
+    const externalByAccount = await fetchExternalDependencies(
+      this.prisma,
+      tasks,
+    );
+
+    const rollup = computeSessionRollup(
+      tasks,
+      prBlockedSet,
+      this.clock,
+      { archivedAt: session.archivedAt },
+      externalByAccount.get(accountId) ?? [],
+    );
 
     return { ...session, ...rollup };
   }

@@ -251,6 +251,29 @@ tests:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+  - it: sets SHIPWRIGHT_AGENT_IMAGES to the JSON specialty map when agent.provisioning.images is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.images.coding.repository: ghcr.io/acme/agent-coding
+      agent.provisioning.images.coding.tag: v1
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGES
+            value: '{"coding":{"repository":"ghcr.io/acme/agent-coding","tag":"v1"}}'
+  - it: omits SHIPWRIGHT_AGENT_IMAGES when agent.provisioning.images is unset
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name == "SHIPWRIGHT_AGENT_IMAGES")]
   - it: injects the agent image/tag/replicas and the in-cluster API URL matching buildProvisioner
     template: templates/admin-deployment.yaml
     set:

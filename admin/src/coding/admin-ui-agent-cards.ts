@@ -11,13 +11,13 @@ import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { AgentCronRunService } from "@app-vitals/agent-admin/agent-cron-runs";
 import type { AgentGitHubInstallationsService } from "@app-vitals/agent-admin/agent-github-installations";
 import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import {
   renderVerificationActivityCard,
   type VerificationCheckItem,
 } from "./admin-ui-verification-cards.ts";
 import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { buildVerificationActivityRollup } from "./verification-checks.ts";
 
 export interface GitHubInstallationsCardData {
@@ -140,7 +140,7 @@ export function renderPhaseMethodologyCard(
   return `<div class="card">
       <div class="card-title">Phase Methodology</div>
       <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
-        Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
+        Override which subagent type handles each pipeline phase. The review phase also accepts a comma-separated list (up to 5, duplicates dropped); other phases take a single value. Clear the field and Save to fall back to the default.
       </p>
       <div class="data-table-wrapper">
         <table class="data-table">

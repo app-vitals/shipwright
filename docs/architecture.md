@@ -17,26 +17,26 @@ The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic
 
 ## A — Plugin
 
-The plugin drives the delivery loop: **spec → plan → execute → review → deploy**. It is repo-agnostic — it runs its commands against *any* repository, and this repo is both its source and a codebase it ships against.
+The plugin drives the delivery loop: **spec → plan → execute → review → merge**. It is repo-agnostic — it runs its commands against *any* repository, and this repo is both its source and a codebase it ships against.
 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
-- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `research`, `research-docs`, and more.
-- **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, and `test-debt`.
+- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `research`, `research-docs`, and more.
+- **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `investigate-stuck`, `learning-capture`, `task-store`, `test-readiness`, and `test-debt`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
-`dev-task`, `review`, `patch`, `merge`, and `deploy` are item-addressed executors, not self-discovering
+`dev-task`, `review`, `patch`, and `merge` are item-addressed executors, not self-discovering
 standalone crons: each requires an explicit target (a task id for `dev-task`; an
-`org/repo#number` PR for the other four) and does no candidate scanning of its own.
-Candidate selection for the five loop-driven phases — `dev-task`, `plan-session`, `review`, `patch`, and `deploy` — happens once, upstream, in the Shipwright agent's `shipwright-loop`
+`org/repo#number` PR for the other three) and does no candidate scanning of its own.
+Candidate selection for the five loop-driven phases — `dev-task`, `plan-session`, `review`, `patch`, and `merge` — happens once, upstream, in the Shipwright agent's `shipwright-loop`
 cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supported driver for
 these five phases; it merges candidates from `agent/src`'s per-phase qualification
 functions and dispatches the winning item's command with its id/PR embedded directly in the
-prompt. The `plan-session` phase (PDR-4.1) is the newest and is dispatched as
-`/shipwright:plan-session {repo} {session} --autonomous {task-id}`; it ships disabled and is
+prompt. The `plan-session` phase (PDR-4.1) and the `merge` phase (MPD-1.3) are the newest additions and both are gated behind opt-in toggles in the agent manifest. The `plan-session` phase
+is dispatched as `/shipwright:plan-session {repo} {session} --autonomous {task-id}`; it ships disabled and is
 double-gated behind the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var on top of its
-cron toggle. `merge` is currently human-invoked only and is **not** loop-driven. A human can invoke any of these commands directly with an explicit target.
+cron toggle. The `merge` phase is dispatched as `/shipwright:merge {org/repo}#{prNumber}`. A human can invoke any of these commands directly with an explicit target.
 
 The `review` command performs dependency-risk-aware analysis on pull requests that modify dependency manifests (e.g., `package.json`, `Gemfile`), analyzing the nature and scope of version changes and producing a risk assessment that informs the review verdict — see `commands/review.md` for details.
 
@@ -52,7 +52,7 @@ A Hono service that turns pipeline events into analytics. Two sets of read-only 
 
 A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP surfaces: a machine-polled **runtime API** (`/agents/:id/config`, `/agents/:id/crons`), a human-facing **admin CRUD API** (`/agents` and `/agents/:id/...` for reading/updating agents and their envs, crons, tools, tokens, plugins — unified surface with runtime API, separate auth; agent *creation* is not on this API, it lives on the admin UI form `POST /admin/agents`), a server-rendered **admin UI** (`/admin/...` — login, agent list/detail, Slack provisioning, tasks), and a public **read-only task board** (`GET /public/tasks` — unauthenticated, scoped to a configurable repo, no mutations). See **[agent.md](./agent.md)**.
 
-> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, Shipwright's composition root: it boots the platform admin from the registry package `@app-vitals/agent-admin` (which runs migrations and mounts all admin + runtime routes) with the coding extension (`admin/src/coding`). The agent process (`agent/src/index.ts`) wires the health server (dedicated port via `startHealthServer`), config/cron sync loops, the chat poll loop, and the Slack Bolt app. For a full agent startup sequence (env validation, config fetch, GitHub auth, mise, plugin install) run `agent/src/entrypoint-main.ts`, which starts the health server in-process before setup and then spawns `index.ts`; this one-shot boot call to `setupGitHubAuth()` handles credentials available at pod start. `index.ts`'s config-sync loop (60s tick) also retries Slack and GitHub auth setup (via `startSlackIfPossible()` and `startGitHubAuthIfPossible()`), so credentials arriving after boot (e.g. installed via the admin UI after the pod started) become active without a pod restart. Implemented surfaces: the admin CRUD API, the admin UI, the runtime API, and the Prisma store (all from `@app-vitals/agent-admin` — AGR-4.2) plus the coding admin extension (`admin/src/coding`), the Slack event handler (`slack.ts`), the cron runtime (`cron-handler.ts`), and the chat poll loop (`chat-poller.ts`, enabled by `SHIPWRIGHT_CHAT_SERVICE_URL` + `SHIPWRIGHT_CHAT_SERVICE_TOKEN`).
+> The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, Shipwright's composition root: it boots the platform admin from the registry package `@app-vitals/agent-admin` (which runs migrations and mounts all admin + runtime routes) with the coding extension (`admin/src/coding`). The agent process (`agent/src/index.ts`) wires the health server (dedicated port via `startHealthServer`), config/cron sync loops, the chat poll loop, and the Slack Bolt app. For a full agent startup sequence (env validation, config fetch, GitHub auth, mise, plugin install) the platform image's `ENTRYPOINT` runs `runtime/entrypoint-main.ts` (from `@app-vitals/agent-runtime`; `/app/runtime/entrypoint-main.ts` in the image), which starts the health server in-process before setup and then spawns `index.ts`; this one-shot boot call to `setupGitHubAuth()` handles credentials available at pod start. `index.ts`'s config-sync loop (60s tick) also retries Slack and GitHub auth setup (via `startSlackIfPossible()` and `startGitHubAuthIfPossible()`), so credentials arriving after boot (e.g. installed via the admin UI after the pod started) become active without a pod restart. Implemented surfaces: the admin CRUD API, the admin UI, the runtime API, and the Prisma store (all from `@app-vitals/agent-admin` — AGR-4.2) plus the coding admin extension (`admin/src/coding`), the Slack event handler (`slack.ts`), the cron runtime (`cron-handler.ts`), and the chat poll loop (`chat-poller.ts`, enabled by `SHIPWRIGHT_CHAT_SERVICE_URL` + `SHIPWRIGHT_CHAT_SERVICE_TOKEN`).
 
 ## D — Task store service
 
@@ -85,9 +85,7 @@ The Hono app (`mcp-server/src/index.ts`) exposes a lightweight `GET /mcp/tools` 
 
 ## Chat Service
 
-Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). The Hono app is composed from injected services by `createChatServiceApp` (`chat/src/app.ts`); `/health` is unauthenticated, all other routes require a valid bearer token (scoped to agents via `agentId`). Provides `/tokens/*` (admin token create/list/revoke/update), `/threads/*` (thread CRUD), and `/threads/:threadId/messages/*` (message CRUD + attachment streaming) endpoints.
-
-**Ephemeral attachments:** Messages may carry file attachments (stored as binary `attachmentBytes` in Postgres, up to 10 MB). Attachments are **not** persisted long-term — the agent is expected to stream them via `GET /:id/attachment` (which returns the bytes and immediately clears them from the database). This pattern avoids disk bloat while supporting the agent's workflow of pulling files into its workspace. Attachment validation (size and MIME type) is performed in the admin upload route before the message reaches the chat service.
+The chat service (web chat threads, messages, and scoped agent tokens) is hosted in the platform repo (`app-vitals/agent`) and published as the `ghcr.io/app-vitals/agent-chat` image; this repo's Helm chart deploys it (opt-in, `chat.enabled`). It owns three Prisma models (`ChatToken`, `Thread`, `Message`) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_CHAT`). See [chat.md](chat.md) and [platform/chat-service.md](platform/chat-service.md).
 
 ## Supporting surfaces
 
@@ -99,7 +97,7 @@ Postgres-backed service for web chat conversations (`chat/`). Owns three Prisma 
 
 ## Workspace layout
 
-The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Eight workspaces — `plugins/shipwright`, `metrics`, `agent`, `agent/src/runtime`, `admin`, `task-store`, `chat`, `mcp-server` — are wired into the root `package.json`. The platform's shared modules (sentry, pricing, request-context, chat-notify, claim-ttl, default-account, http, the generated admin and task-store types, ...) are not a workspace: they come from the published `@app-vitals/agent-lib` package, pinned to an exact version in every `package.json` that uses it and bumped by `.github/workflows/platform-release.yml` when the platform releases (Renovate is the fallback). `agent/src/runtime` is the `@app-vitals/agent-runtime` package: code outside that directory (the coding extension, `agent/src/index.ts`, `agent/scripts`, root scripts, plugin scripts) imports it only through that specifier and its `exports` map, never a relative path (enforced by `agent/src/import-boundary.unit.test.ts`). The platform admin (API, UI, auth, the Prisma schema and the single migration history) is the published `@app-vitals/agent-admin` package, pinned to the same exact version as `@app-vitals/agent-lib`. `admin` is the `@shipwright/admin` workspace and holds only Shipwright's composition root (`main.ts`), the coding extension (`coding/*`), the composed OpenAPI spec and the Prisma CLI config; other workspaces import platform admin modules from `@app-vitals/agent-admin/*` and the Shipwright pieces from `@shipwright/admin/*`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
+The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the single local entrypoint. Six workspaces — `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `mcp-server` — are wired into the root `package.json`. The platform (runtime, admin, shared lib) lives in `app-vitals/agent` as the published `@app-vitals/agent-runtime`, `@app-vitals/agent-admin` and `@app-vitals/agent-lib` packages, each pinned to an exact version in every `package.json` that uses it and bumped by `.github/workflows/platform-release.yml` when the platform releases (Renovate is the fallback). Code outside the platform (the coding extension, `agent/src/index.ts`, `agent/scripts`, root scripts, plugin scripts) imports platform modules only through their specifiers and `exports` maps, never relative paths (enforced by `agent/src/import-boundary.unit.test.ts`). `admin` is the `@shipwright/admin` workspace and holds only Shipwright's composition root (`main.ts`), the coding extension (`coding/*`), the composed OpenAPI spec and the Prisma CLI config; other workspaces import platform admin modules from `@app-vitals/agent-admin/*` and the Shipwright pieces from `@shipwright/admin/*`. The `site/` is intentionally excluded from the root `bun test` scan (its Playwright `*.spec.ts` files would crash Bun's runner).
 
 ```
 shipwright/
@@ -109,7 +107,6 @@ shipwright/
 ├── admin/                C — Admin service: CRUD API, admin UI, Prisma store (@shipwright/admin)
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
 ├── mcp-server/           D — MCP server: exposes task-store API as Model Context Protocol tools (generated from OpenAPI spec)
-├── chat/                 Chat service: web conversation threads, Postgres + Prisma
 ├── site/                 marketing site (Astro, separate toolchain)
 ├── brand/                locked design system
 ├── state/                local task-store / review-cache fallback

@@ -10,7 +10,7 @@
 #     shipwright-task-store
 
 # ─── Stage 1: dependencies ────────────────────────────────────────────────────
-FROM oven/bun:1-slim AS deps
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS deps
 
 WORKDIR /app
 
@@ -19,22 +19,20 @@ COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
-COPY chat/package.json ./chat/
-COPY chat/prisma ./chat/prisma/
 COPY agent/package.json ./agent/
 COPY metrics/package.json ./metrics/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
-COPY agent/src/runtime/package.json ./agent/src/runtime/
 COPY mcp-server/package.json ./mcp-server/
 COPY patches/ ./patches/
 
 RUN bun install --frozen-lockfile
 
 # ─── Stage 2: production image ────────────────────────────────────────────────
-FROM oven/bun:1-slim AS production
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS production
 
 # Install system dependencies (ca-certificates only — no Claude Code, no gh CLI, no mise)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

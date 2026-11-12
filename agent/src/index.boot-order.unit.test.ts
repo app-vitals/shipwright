@@ -4,8 +4,18 @@ import { join } from "node:path";
 // boot.ts holds the boot sequence and index.ts is the thin entry that runs it
 // (importing either would boot an agent), so both are asserted structurally
 // against their source text.
+// boot.ts ships in the @app-vitals/agent-runtime package (AGR-4.4), so it is
+// read from the installed copy.
 const source = await Bun.file(
-  join(import.meta.dir, "runtime", "boot.ts"),
+  join(
+    import.meta.dir,
+    "..",
+    "..",
+    "node_modules",
+    "@app-vitals",
+    "agent-runtime",
+    "boot.ts",
+  ),
 ).text();
 const entrySource = await Bun.file(join(import.meta.dir, "index.ts")).text();
 

@@ -201,8 +201,14 @@
           "restrictSlackToMembers": {
             "type": "boolean"
           },
-          "typeName": {
+          "specialty": {
             "type": "string"
+          },
+          "podServiceAccountName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "accountId": {
             "type": [
@@ -240,6 +246,23 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "githubUsername": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "octocat"
+          },
+          "bakedMarketplaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "example-marketplace",
+              "shipwright"
+            ]
           },
           "autoPostReviews": {
             "type": "boolean",
@@ -302,7 +325,8 @@
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
-          "typeName",
+          "specialty",
+          "podServiceAccountName",
           "accountId",
           "createdAt",
           "updatedAt",
@@ -332,6 +356,11 @@
           "selfHosted": {
             "type": "boolean",
             "example": false
+          },
+          "specialty": {
+            "type": "string",
+            "minLength": 1,
+            "example": "specialist"
           },
           "repos": {
             "type": "array",
@@ -371,6 +400,22 @@
             ],
             "minLength": 1,
             "example": "acct_123"
+          },
+          "podServiceAccountName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 63,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "example": "agent-pod-sa"
+          },
+          "githubUsername": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "octocat"
           },
           "trialExpiresAt": {
             "type": [
@@ -519,16 +564,16 @@
             "type": "boolean",
             "example": false
           },
-          "typeName": {
+          "specialty": {
             "type": "string",
-            "example": "coding"
+            "example": "specialist"
           }
         },
         "required": [
           "id",
           "name",
           "selfHosted",
-          "typeName"
+          "specialty"
         ]
       },
       "CreateAgentBody": {
@@ -539,10 +584,10 @@
             "minLength": 1,
             "example": "Bodhi"
           },
-          "typeName": {
+          "specialty": {
             "type": "string",
             "minLength": 1,
-            "example": "coding"
+            "example": "specialist"
           },
           "runtime": {
             "type": "string",
@@ -577,7 +622,7 @@
         },
         "required": [
           "name",
-          "typeName"
+          "specialty"
         ]
       },
       "Ok": {
@@ -2306,11 +2351,109 @@
               "null"
             ],
             "minLength": 1,
-            "example": "shipwright:code-reviewer"
+            "example": "shipwright:code-reviewer",
+            "description": "Subagent type for the phase, or null to clear. For the `review` phase only, a comma-separated list of up to 5 types (trimmed, de-duplicated, no empty entries); other phases accept a single value."
           }
         },
         "required": [
           "subagentType"
+        ]
+      },
+      "MarketplacesWrapper": {
+        "type": "object",
+        "properties": {
+          "marketplaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMarketplace"
+            }
+          }
+        },
+        "required": [
+          "marketplaces"
+        ]
+      },
+      "AgentMarketplace": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "name",
+          "source",
+          "ref",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "MarketplaceWrapper": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "$ref": "#/components/schemas/AgentMarketplace"
+          }
+        },
+        "required": [
+          "marketplace"
+        ]
+      },
+      "UpsertAgentMarketplaceBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "description": "GitHub `owner/repo` or an https git URL",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          }
+        },
+        "required": [
+          "name",
+          "source"
         ]
       },
       "CronRunTokenStats": {
@@ -2951,7 +3094,7 @@
               "plan",
               "review",
               "patch",
-              "deploy"
+              "merge"
             ],
             "example": "dev-task"
           },
@@ -2986,6 +3129,21 @@
         "required": [
           "computedAt",
           "items"
+        ]
+      },
+      "SessionFollowsResponse": {
+        "type": "object",
+        "properties": {
+          "sessionSlugs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Slugs of the sessions the caller follows and has not muted"
+          }
+        },
+        "required": [
+          "sessionSlugs"
         ]
       },
       "GitHubInstallationsSnapshotWrapper": {
@@ -3160,6 +3318,413 @@
         ],
         "additionalProperties": false
       },
+      "BakedMarketplacesResult": {
+        "type": "object",
+        "properties": {
+          "bakedMarketplaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "example-marketplace"
+            ]
+          }
+        },
+        "required": [
+          "bakedMarketplaces"
+        ]
+      },
+      "PutBakedMarketplacesBody": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "maxItems": 100,
+            "example": [
+              "example-marketplace",
+              "shipwright"
+            ]
+          }
+        },
+        "required": [
+          "names"
+        ],
+        "additionalProperties": false
+      },
+      "GithubAccessPreview": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "user_not_found",
+              "unconfigured"
+            ],
+            "description": "`unconfigured` when the installer or lookup App is not set (no GitHub call was made)."
+          },
+          "access": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "user_not_found"
+                ]
+              },
+              "userVerified": {
+                "type": "boolean"
+              },
+              "orgs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "org": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "lookup_app_not_installed",
+                        "rate_limited",
+                        "partial",
+                        "error"
+                      ]
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fullName": {
+                            "type": "string"
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "admin",
+                              "maintain",
+                              "write",
+                              "triage",
+                              "read",
+                              "none"
+                            ]
+                          },
+                          "canPush": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "fullName",
+                          "level",
+                          "canPush"
+                        ]
+                      }
+                    },
+                    "unresolved": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "org",
+                    "status",
+                    "repos",
+                    "unresolved"
+                  ]
+                }
+              },
+              "unresolved": {
+                "type": "integer"
+              },
+              "complete": {
+                "type": "boolean"
+              },
+              "checkedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "username",
+              "outcome",
+              "userVerified",
+              "orgs",
+              "unresolved",
+              "complete",
+              "checkedAt"
+            ],
+            "description": "Resolver output; absent when unconfigured."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GithubInstallationReposList": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "integer"
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "org": {
+                  "type": "string"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string"
+                      },
+                      "userCanPush": {
+                        "type": "boolean",
+                        "description": "Whether the agent's bound GitHub user can push. Omitted when no username is bound or the org's access lookup is incomplete; never reported as false for unknown."
+                      }
+                    },
+                    "required": [
+                      "fullName"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "org",
+                "repos"
+              ]
+            }
+          }
+        },
+        "required": [
+          "appId",
+          "orgs"
+        ]
+      },
+      "GithubSyncPreview": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "previewed",
+              "skipped"
+            ],
+            "description": "`skipped` (not an error) when no GitHub username is bound, the user is not found or unverified, the agent has no GH_APP_ID, or the Apps are not configured; `reason` says why."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "appAdds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repos the bound user can push to, in orgs the agent App is installed on with a complete access listing, that are not on the installation. No cap."
+          },
+          "appRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Installation repos the bound user can no longer push to."
+          },
+          "agentRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Configured agent repos the bound user can no longer push to. The agent's repos are never added to."
+          },
+          "skippedOrgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "org": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "org",
+                "reason"
+              ]
+            },
+            "description": "Orgs whose access listing is missing, partial or failed, or whose lookup App is not installed or installed on selected repositories only; nothing there is added or removed."
+          },
+          "openWork": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "repo"
+              ]
+            },
+            "description": "The agent's open tasks and PRs on the removed repos that the removals would block; empty when no open-work port is wired."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GithubSyncApplyResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "noop",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "appAdds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notApplied": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "reason"
+              ]
+            },
+            "description": "Confirmed repos left alone: access changed since the preview, the org was skipped, or the repo is not where the change expected it."
+          },
+          "skippedOrgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "org": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "org",
+                "reason"
+              ]
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GithubSyncApplyBody": {
+        "type": "object",
+        "properties": {
+          "appAdds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+            },
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos (owner/repo) the admin confirmed to add to the agent App's installation."
+          },
+          "appRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+            },
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos the admin confirmed to remove from the agent App's installation."
+          },
+          "agentRemoves": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+            },
+            "maxItems": 500,
+            "default": [],
+            "description": "Repos the admin confirmed to remove from the agent's repos."
+          },
+          "confirmRemovals": {
+            "type": "boolean",
+            "description": "Required when more than 10 distinct repos would be removed."
+          }
+        }
+      },
       "AgentConfigResponse": {
         "type": "object",
         "properties": {
@@ -3186,6 +3751,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentConfigPlugin"
+            }
+          },
+          "marketplaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfigMarketplace"
             }
           },
           "repos": {
@@ -3268,9 +3839,14 @@
             ],
             "example": "active"
           },
+          "specialty": {
+            "type": "string",
+            "example": "specialist"
+          },
           "typeName": {
             "type": "string",
-            "example": "coding"
+            "example": "specialist",
+            "deprecated": true
           },
           "phaseMethodology": {
             "type": "object",
@@ -3308,6 +3884,7 @@
           "cleanupAfterDays",
           "restrictSlackToMembers",
           "memberEmails",
+          "specialty",
           "phaseMethodology"
         ]
       },
@@ -3326,6 +3903,31 @@
         "required": [
           "marketplace",
           "plugin"
+        ]
+      },
+      "AgentConfigMarketplace": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "source": {
+            "type": "string",
+            "example": "app-vitals/shipwright"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "main"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "ref"
         ]
       },
       "AgentConfigFeatures": {
@@ -3357,6 +3959,314 @@
         },
         "required": [
           "error"
+        ]
+      },
+      "GithubEnterpriseStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "installer": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          },
+          "lookup": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          }
+        },
+        "required": [
+          "configured",
+          "installer",
+          "lookup"
+        ]
+      },
+      "GithubEnterpriseApp": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "example": "installer"
+          },
+          "appId": {
+            "type": "string",
+            "example": "12345"
+          },
+          "slug": {
+            "type": "string",
+            "example": "example-installer"
+          },
+          "enterpriseSlug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "acme"
+          },
+          "keySet": {
+            "type": "boolean",
+            "description": "True when a private key is stored. The key is never returned."
+          },
+          "lastValidationStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "valid"
+          },
+          "lastValidatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastValidationError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "appId",
+          "slug",
+          "enterpriseSlug",
+          "keySet",
+          "lastValidationStatus",
+          "lastValidatedAt",
+          "lastValidationError",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PutGithubEnterpriseAppBody": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string",
+            "pattern": "^\\d+$",
+            "example": "12345"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+            "example": "example-installer"
+          },
+          "enterpriseSlug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+            "description": "Required for the installer role.",
+            "example": "acme"
+          },
+          "privateKey": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PEM private key. Write-only: encrypted at rest, never returned."
+          }
+        },
+        "required": [
+          "appId",
+          "slug",
+          "privateKey"
+        ]
+      },
+      "GithubEnterpriseValidateResult": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "missing_permission",
+              "error"
+            ]
+          },
+          "requiredPermission": {
+            "type": "string"
+          },
+          "grantedPermissions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advisory, non-failing notes (e.g. missing optional permissions). Never change `ok`."
+          },
+          "app": {
+            "$ref": "#/components/schemas/GithubEnterpriseApp"
+          }
+        },
+        "required": [
+          "role",
+          "ok",
+          "status",
+          "requiredPermission",
+          "grantedPermissions",
+          "error",
+          "app"
+        ]
+      },
+      "GithubEnterpriseOrgs": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "agentAppSlug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentAppReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the agent's App cannot be installed through the enterprise API (private App with no stored GH_APP_CLIENT_ID, or no App at all). Null when it can; present only with agentId."
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "number"
+                },
+                "login": {
+                  "type": "string"
+                },
+                "lookupAppInstalled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Null when no lookup App is configured."
+                },
+                "agentAppInstalled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Null when no agentId (or no slug) was given."
+                }
+              },
+              "required": [
+                "id",
+                "login",
+                "lookupAppInstalled",
+                "agentAppInstalled"
+              ]
+            }
+          }
+        },
+        "required": [
+          "configured",
+          "orgs"
+        ]
+      },
+      "GithubEnterpriseInstallResult": {
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "False when the App was already installed."
+          },
+          "installation": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "appSlug": {
+                "type": "string"
+              },
+              "accountLogin": {
+                "type": "string"
+              },
+              "repositorySelection": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "selected",
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "appSlug",
+              "accountLogin",
+              "repositorySelection"
+            ]
+          }
+        },
+        "required": [
+          "org",
+          "created",
+          "installation"
+        ]
+      },
+      "GithubEnterpriseInstallBody": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "example": "agent-id"
+          },
+          "repositorySelection": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "none"
+            ],
+            "default": "all"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "agentId"
         ]
       }
     },
@@ -3522,7 +4432,7 @@
     "/agents/{id}": {
       "get": {
         "summary": "Get an agent",
-        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `specialty`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type with no corresponding AgentEnv row yet (informational only).",
         "parameters": [
           {
             "schema": {
@@ -3569,7 +4479,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, `githubUsername` (platform admin only — 403 otherwise; `null` clears it; lower-cased on save; 422 for invalid GitHub login syntax; no GitHub call), `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows), and/or `podServiceAccountName` (platform admin only — 403 otherwise; `null` clears it; 409 unless SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED is on; 422 for agents with a per-agent federated identity; reconciles the workload so the pod is recreated under the new ServiceAccount). `specialty` (platform admin only — 403 otherwise; 422 when the type is unknown; a no-op when unchanged; otherwise persists the new type, reconciles the agent's system crons against it — system crons the new type does not declare are deleted, user crons survive — and reconciles the workload of in-cluster agents so the pod runs the image mapped to the new specialty). `trialExpiryWarnedAt` is not updatable via this route. `repos` here REPLACES the whole list; for incremental changes use `POST /agents/{id}/repos` (add) and `DELETE /agents/{id}/repos/{owner}/{name}` (remove). Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -3623,6 +4533,26 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "podServiceAccountName supplied while the pod ServiceAccount flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "podServiceAccountName supplied for an agent with a per-agent federated identity, or `specialty` naming an unknown type",
             "content": {
               "application/json": {
                 "schema": {
@@ -3762,7 +4692,7 @@
     "/agents/{id}/repos/{owner}/{name}": {
       "delete": {
         "summary": "Remove a repo from an agent",
-        "description": "Admin, the agent's own key, or platform.ops. Removes one `owner/name` repo from the agent's `repos`, preserving the order of the rest. 404 when the agent does not have that repo. Returns the full updated agent.",
+        "description": "Admin, the agent's own key, or platform.ops. Removes one `owner/name` repo from the agent's `repos`, preserving the order of the rest. The agent's open work on the repo is blocked through the optional open-work port (a failure there is a warning; the removal still succeeds), whoever the caller is; re-adding the repo never unblocks it. 404 when the agent does not have that repo. Returns the full updated agent.",
         "parameters": [
           {
             "schema": {
@@ -3826,10 +4756,114 @@
         }
       }
     },
+    "/agents/{id}/repos/{owner}/{name}/removal-preview": {
+      "get": {
+        "summary": "Preview the open work blocked by removing a repo from an agent",
+        "description": "Admin or session member. Read-only: lists the agent's open tasks and PRs that removing `owner/name` from its repos would block (via the optional open-work port); nothing is changed. `openWork` is empty when no port is wired; a port failure is reported in `warnings`. 404 when the agent does not have that repo.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-org"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "my-repo"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open work that would be blocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "openWork": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "repo": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "repo"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "openWork",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or repo not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents": {
       "get": {
         "summary": "List all agents",
-        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
+        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `specialty` — used for metrics name resolution.",
         "responses": {
           "200": {
             "description": "List of agents",
@@ -3858,7 +4892,7 @@
       },
       "post": {
         "summary": "Create an agent",
-        "description": "Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
+        "description": "Admin-only. Validates name/specialty, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4163,7 +5197,7 @@
     "/agents/{id}/crons/reconcile": {
       "post": {
         "summary": "Reconcile system crons",
-        "description": "Reconciles the agent's system crons against the cron list declared by its Specialty manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
+        "description": "Reconciles the agent's system crons against the cron list supplied by the AdminExtension for its specialty. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the defaults. Called automatically on agent startup; returns created/updated/deleted counts.",
         "parameters": [
           {
             "schema": {
@@ -5616,7 +6650,7 @@
     "/agents/{id}/phase-methodology/{phase}": {
       "put": {
         "summary": "Set a phase's subagent-type override",
-        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types; entries are trimmed, duplicates dropped, and empty entries rejected. Any other phase rejects a multi-value list with a 400. `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
         "parameters": [
           {
             "schema": {
@@ -5666,7 +6700,7 @@
             }
           },
           "400": {
-            "description": "Bad request — invalid phase",
+            "description": "Bad request — invalid phase, or an invalid/disallowed subagentType list",
             "content": {
               "application/json": {
                 "schema": {
@@ -5677,6 +6711,132 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/marketplaces": {
+      "get": {
+        "summary": "List marketplaces",
+        "description": "Returns every remote plugin marketplace configured for the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of marketplaces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplacesWrapper"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add or update a marketplace",
+        "description": "Upserts a remote plugin marketplace by `name`. `source` must be a GitHub `owner/repo` or an https git URL (no credentials); `ref` optionally pins a branch, tag or sha. 422 on an invalid `name`, `source` or `ref`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertAgentMarketplaceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Marketplace added or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid name, source or ref",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/marketplaces/{marketplaceId}": {
+      "delete": {
+        "summary": "Remove a marketplace",
+        "description": "Removes the marketplace row by id. 404 when the id does not exist or belongs to a different agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "marketplaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marketplace removed"
+          },
+          "404": {
+            "description": "Marketplace not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -5947,7 +7107,7 @@
     "/agents/all/cron-runs/dev-task-adherence": {
       "get": {
         "summary": "Get dev-task adherence report",
-        "description": "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
+        "description": "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Each series also carries `outcomes` (DTA-8.2): PRs, mean patch/review cycles, share of tasks with 0 and 2+ patch cycles, CI first-pass rate and mean ciFixAttempts, computed over tasks whose runs all used one arm; tasks that ran in more than one commandVariant are excluded and reported as `counts.mixedTasks`. Each series also carries `cost` (DTA-9.3): mean cost per run and token totals summed from the run's model breakdown (arm series exclude mixed-arm tasks; overall keeps every run). With `command=patch`, each series also carries `patchGuardrails` — repeat-patch rate (patched again after a push), CI-green-after-patch rate (a proxy: patched PRs with no CI failure recorded) and mean patch cycles over single-arm PRs — and `counts.mixedPrs` reports PRs that ran in both arms. Optional `from`/`to` ISO datetime params bound startedAt. Optional `command` (`dev-task` default, or `patch`) selects which phase to score: patch runs are scored against the patch required-steps table (lane-agnostic first cut; fix dispatch and PR-record push proof measured, other steps unmeasured) and grouped by commandVariant, with `command` echoed in the response.",
         "parameters": [
           {
             "schema": {
@@ -5967,6 +7127,21 @@
             },
             "required": false,
             "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dev-task",
+                "patch"
+              ],
+              "example": "patch",
+              "description": "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table."
+            },
+            "required": false,
+            "description": "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table.",
+            "name": "command",
             "in": "query"
           }
         ],
@@ -6018,7 +7193,7 @@
     "/agents/{id}/dev-task-adherence": {
       "get": {
         "summary": "Get this agent's dev-task adherence report",
-        "description": "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.",
+        "description": "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to`/`command` params as GET /agents/all/cron-runs/dev-task-adherence.",
         "parameters": [
           {
             "schema": {
@@ -6047,6 +7222,21 @@
             },
             "required": false,
             "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dev-task",
+                "patch"
+              ],
+              "example": "patch",
+              "description": "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table."
+            },
+            "required": false,
+            "description": "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table.",
+            "name": "command",
             "in": "query"
           }
         ],
@@ -6370,6 +7560,54 @@
         }
       }
     },
+    "/session-follows": {
+      "get": {
+        "summary": "List the caller's followed sessions",
+        "description": "Returns the session slugs of the non-muted SessionFollow rows belonging to the signed-in user. The user is taken from the verified session token (`admin_session` cookie) — never from the request — so a caller can only read their own follows. Bearer credentials (agent tokens, admin API keys) carry no user identity and are rejected with 403.",
+        "responses": {
+          "200": {
+            "description": "Non-muted followed session slugs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionFollowsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential is not bound to a user (bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session follows not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/{id}/github-installations": {
       "put": {
         "summary": "Replace the agent's GitHub installations snapshot",
@@ -6495,6 +7733,430 @@
         }
       }
     },
+    "/agents/{id}/baked-marketplaces": {
+      "put": {
+        "summary": "Report the marketplaces baked into the agent's image",
+        "description": "Runtime-only report, authenticated with the agent's own key. Overwrites the stored list of baked marketplace names (the image's current state); it is exposed read-only as `bakedMarketplaces` on GET /agents/{id}. Other callers, including another agent's key, get 403.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutBakedMarketplacesBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Baked marketplaces stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BakedMarketplacesResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — only the agent's own key may report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-access": {
+      "get": {
+        "summary": "Preview the repos the agent's bound GitHub user can reach",
+        "description": "Platform-admin only (session members, ops keys and agent keys get 403): the response lists repo names the bound user can reach. Read-only; nothing is stored. 404 for an unknown agent; 422 when no githubUsername is bound. Returns `status: unconfigured` (not an error, no GitHub call) when the enterprise Apps are not configured, and `status: user_not_found` when the user does not exist on GitHub; otherwise `access` is the resolver output (per-org status, repos with level and canPush, unresolved count, complete flag).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubAccessPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Agent has no githubUsername",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-installation/repos": {
+      "get": {
+        "summary": "List the repos on the agent App's installation",
+        "description": "Platform-admin only (session members, ops keys and agent keys get 403). Per org the agent's own GitHub App (its GH_APP_ID) is installed on, lists the installation's repos. When the agent has a bound githubUsername, each repo carries `userCanPush` from the access lookup only when that org's lookup result is complete; otherwise the field is omitted (never false). 404 for an unknown agent; 422 when the agent has no GH_APP_ID.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Installation repos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubInstallationReposList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Agent has no GH_APP_ID (its own GitHub App is not set up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "GitHub Apps are not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-sync/preview": {
+      "get": {
+        "summary": "Preview syncing the agent's GitHub access with its bound user",
+        "description": "Platform-admin only (session members, ops keys and agent keys get 403). Read-only: nothing is changed or audited. Lists (1) repos to add to the agent App's installation, (2) installation repos to remove and (3) agent repos to remove, based on what the bound githubUsername can push to, plus the agent's open tasks and PRs the removals would block (via the optional open-work port; a port failure is a warning). The agent's repos are never added to. Orgs whose access listing is missing, partial or failed, or whose lookup App is not installed or installed on selected repositories only, are skipped (adds included) and reported. 200 with `status: skipped` when the user is unbound, not found or unverified, the agent has no GH_APP_ID, or the Apps are not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubSyncPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "GitHub Apps are not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-sync/apply": {
+      "post": {
+        "summary": "Apply the confirmed sync changes",
+        "description": "Platform-admin only. Takes the exact lists the admin confirmed from the preview, re-checks each against the bound user's current access, and applies only what still qualifies: installation adds, installation removes, then agent-repo removes. Writes one audit entry (GitHubReconcileAudit, planHash `sync:apply`) and blocks the agent's open work on the removed repos through the optional open-work port (a failure there is a warning). Confirmed repos left alone are reported in `notApplied`. Same skip rules as the preview: a skipped call (200 `status: skipped`) changes and audits nothing; `noop` when nothing confirmed still applies. 422 when more than 10 repos would be removed without `confirmRemovals: true`. 502 when GitHub refuses (a failed audit entry records only what landed).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubSyncApplyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sync result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubSyncApplyResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Removal cap needs confirmRemovals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "GitHub Apps are not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/{id}/config": {
       "get": {
         "tags": [
@@ -6545,6 +8207,499 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps": {
+      "get": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "GitHub Enterprise App status",
+        "description": "Admin-only. Metadata and key-set flag per role; never the key. Returns configured=false with null roles when nothing is set.",
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps/{role}": {
+      "put": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Create or replace the App for a role",
+        "description": "Admin-only. Stores the App id, slug, enterprise slug (installer) and the encrypted private key, and resets validation state. 422 when SHIPWRIGHT_ENCRYPTION_KEY is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutGithubEnterpriseAppBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved (metadata only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid key, or encryption unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Remove the App for a role",
+        "description": "Admin-only. No-op when the role is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/apps/{role}/validate": {
+      "post": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Validate the App for a role",
+        "description": "Admin-only. Authenticates as the App and checks the required permission (installer: enterprise_organization_installations write; lookup: metadata read). The outcome is persisted and returned; GitHub failures are reported as status=error with a generic message.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "installer",
+                "lookup"
+              ],
+              "example": "installer"
+            },
+            "required": true,
+            "name": "role",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseValidateResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Role not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/orgs": {
+      "get": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "List installable organizations",
+        "description": "Admin-only. Lists the enterprise's installable organizations, whether each has the lookup App installed, and (with agentId) whether each has that agent's App installed. Returns configured=false and no orgs when the installer App is not set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseOrgs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (or not found at GitHub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused or rejected by GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "GitHub refused the configured App credentials or permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "GitHub rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/orgs/{org}/install": {
+      "post": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Install an agent's App on an organization",
+        "description": "Admin-only. Uses the agent's stored GH_APP_CLIENT_ID when set; otherwise resolves the stored GH_APP_SLUG and looks the App up through the public GET /apps/{slug} to get its client id. Installs it on the org with the installer App. 422 for an agent with neither a stored client id nor a slug, and for a private App (not visible to the public lookup) with no stored client id; 409 when the installer App is not configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+              "example": "example-org"
+            },
+            "required": true,
+            "name": "org",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubEnterpriseInstallBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Installed (or already installed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseInstallResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (or not found at GitHub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Installer App not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused or rejected by GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "GitHub refused the configured App credentials or permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "GitHub rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

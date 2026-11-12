@@ -137,6 +137,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.ask.allowlist` | `[]` | Ask feature allowlist: array of `fromAgentId>toAgentId` pairs matching pattern `^[^,>]+>[^,>]+$` (comma-joined in env). Empty means no agent may ask any agent. |
 | `admin.chatCredentialMint.enabled` | `false` | Toggle chat credential minting (`SHIPWRIGHT_CHAT_TOKEN_MINT_ENABLED`). |
 | `admin.doc.enabled` | `false` | Toggle the admin documentation feature (`SHIPWRIGHT_ADMIN_DOC_ENABLED`). |
+| `admin.podServiceAccount.enabled` | `false` | Toggle the pod ServiceAccount flag (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). |
 | `admin.cronRunNow.enabled` | `false` | Toggle the cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). |
 | `admin.transcriptApi.enabled` | `false` | Toggle the cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). |
 | `admin.repoAccessCheck.enabled` | `false` | Toggle the agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). |
@@ -343,7 +344,7 @@ for the full walkthrough and ready-to-use example values files.
 
 ## Dependencies
 
-The chart vendors **four optional subcharts** — each gated by its own
+Besides the [`agent-platform` library](#library-dependency-agent-platform), the chart vendors **four optional subcharts** — each gated by its own
 `condition` and off by default except PostgreSQL:
 
 | Subchart | Version | Repository | Condition | Default |
@@ -356,6 +357,29 @@ The chart vendors **four optional subcharts** — each gated by its own
 `ingress-nginx` and `traefik` are mutually exclusive — enabling both fails the
 render (`templates/_validation.tpl`). See [Cloud-native install](#cloud-native-install-single-chart)
 above for bundling `cert-manager` alongside either one.
+
+## Library dependency (`agent-platform`)
+
+The chart also depends on the **`agent-platform` library chart**, published
+from `app-vitals/agent` at `https://app-vitals.github.io/agent` and pinned to an
+exact version in `Chart.yaml` (see `Chart.lock`). A library chart renders
+nothing itself and shares this chart's values context, so it adds no values
+keys and no resource of its own.
+
+- **Where templates live.** Platform templates (admin, chat, whisper, agent
+  provisioning, and the shared httproute, ingress, health-check, tenant
+  network-policy and PostgreSQL bootstrap templates) are named templates in the
+  library; the matching files in `templates/` are one-line includes. The shared
+  ones are fed Shipwright's extra entries (task-store, metrics, mcp-server) by
+  `shipwright.platformExtensions` in `templates/_helpers.tpl`. Task-store,
+  metrics and mcp-server templates remain here.
+- **Release flow.** A new library version dispatches to this repo, which
+  re-pins the dependency, bumps the chart patch version and publishes — see
+  [docs/helm-repo.md](../../docs/helm-repo.md#how-a-library-release-reaches-a-chart-bump).
+- **Compatibility contract.** The chart name `shipwright`, the release name and
+  the `values.yaml` keys are relied on by downstream wrappers and do not change;
+  neither do rendered resource names. Verify with the render-parity check (see
+  [CONTRIBUTING.md](./CONTRIBUTING.md#render-parity-check)).
 
 ## ⚠️ Upgrading to chart 1.20.58+ — bundled PostgreSQL 17 → 18
 

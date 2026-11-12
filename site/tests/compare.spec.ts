@@ -230,7 +230,7 @@ test("landscape table reflects corrected Cursor values (re-verified 2026-09-05)"
   const rowText = (await row.textContent()) ?? "";
   expect(rowText).toContain("Team dashboard");
   expect(rowText).toContain("Model/MCP/repo allowlists");
-  expect(rowText).toContain("No shared backlog");
+  expect(rowText).toContain("no native backlog");
   expect(rowText).toContain("PR review, no plan gate");
   // Slack workflow cell (9th column, 0-indexed 8) must now read the
   // corrected value, not "No".
@@ -272,9 +272,9 @@ test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
   const text = (await section.textContent()) ?? "";
   // Stale, uncited star count is gone; the re-verified figure is cited.
   expect(text).not.toContain("78K");
-  expect(text).toContain("~89.8k");
+  expect(text).toContain("~92.5k");
   await expect(
-    section.getByRole("link", { name: /89\.8k GitHub stars/i }),
+    section.getByRole("link", { name: /92\.5k GitHub stars/i }),
   ).toHaveAttribute("href", "https://github.com/OpenHands/OpenHands");
   // Decision-relevant context the corrected row already substantiates.
   expect(text).toContain("Agent Canvas");
@@ -288,7 +288,7 @@ test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
 test("compare page shows a verified-date marker", async ({ page }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
-  expect(text).toContain("October 2, 2026");
+  expect(text).toContain("November 2, 2026");
   expect(text.toLowerCase()).toContain("facts verified as of");
 });
 
@@ -400,7 +400,7 @@ test("each pillar cites the competitors its own body names", async ({
   const testsPillar = card("Tests are enforced, not offered");
   for (const url of [
     "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
-    "https://docs.factory.com/features/missions/overview",
+    "https://docs.factory.com/missions/overview",
     "https://docs.augmentcode.com/using-augment/agent",
     "https://cursor.com/for/test-generation",
   ]) {
@@ -408,7 +408,7 @@ test("each pillar cites the competitors its own body names", async ({
   }
 
   // Pillar 2 names OpenHands' trigger-to-PR flow (Plan Mode included) and its
-  // ephemeral, run-scoped tracking, plus the ownable-queue point naming
+  // issue-to-PR automations, plus the ownable-queue point naming
   // Devin, Augment, and GitHub Copilot (MKT-PIPELINE-PARITY-1) — all need a
   // primary source on this card. Factory is not named in this pillar's body,
   // so its citation must not appear here. This pillar is about
@@ -417,17 +417,17 @@ test("each pillar cites the competitors its own body names", async ({
   const loopPillar = card("An opinionated loop you can take apart");
   for (const url of [
     "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
-    "https://docs.factory.com/features/missions/overview",
+    "https://docs.factory.com/missions/overview",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(0);
   }
   for (const url of [
     "https://www.openhands.dev/blog/ai-agent-workflow-automation",
-    "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management",
+    "https://docs.openhands.dev/openhands/usage/automations/prebuilt/issue-to-pr",
     "https://docs.devin.ai/release-notes/2026",
     "https://docs.devin.ai/integrations/jira",
-    "https://www.augmentcode.com/blog/introducing-remote-agent",
-    "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent",
+    "https://docs.augmentcode.com/cosmos/experts-ticket-manager",
+    "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-on-github",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
@@ -478,11 +478,14 @@ test("pillar 2 states the run-vs-backlog distinction and leaves OpenHands' human
 }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
-  expect(text).toContain(
+  expect(text).not.toContain(
     "For OpenHands the unit of work is a run; for Shipwright it is a backlog.",
   );
   expect(text).toContain(
-    "the plan is a markdown file, not tracked work, and nothing survives the run",
+    "its issue-to-PR automations now work a GitHub, GitLab, Jira or Linear backlog on a schedule",
+  );
+  expect(text).toContain(
+    "The plan itself is still a markdown file, not tracked work with dependency edges and a status lifecycle.",
   );
   const row = page.locator("table tr").filter({
     has: page.locator("td").first().getByText("OpenHands", { exact: true }),
@@ -500,7 +503,7 @@ test("pillar 2 states the ownable-queue point", async ({ page }) => {
     "The difference that holds is not whether the backlog exists",
   );
   expect(text).toContain(
-    "In every one of those cases the queue is in someone else's SaaS.",
+    "For Devin, Augment and Copilot the queue is in their SaaS; for OpenHands it is a label convention in your issue tracker.",
   );
   expect(text).toContain(
     "Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
@@ -521,19 +524,19 @@ test("landscape intro strengthens the contested claim with per-vendor citations"
   // Devin, GitHub Copilot, and Factory's citation URLs are also already used
   // by their own landscape-table row (same section) — assert "at least one",
   // not an exact count, so a legitimate shared citation isn't flagged.
-  // Augment's Remote Agent URL is new to this section, so it gets an exact
+  // Augment's Ticket Manager URL is new to this section, so it gets an exact
   // count of 1.
   for (const url of [
     "https://docs.devin.ai/release-notes/2026",
-    "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent",
-    "https://docs.factory.com/features/missions/overview",
+    "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-on-github",
+    "https://docs.factory.com/missions/overview",
   ]) {
     const count = await section.locator(`a[href="${url}"]`).count();
     expect(count).toBeGreaterThan(0);
   }
   await expect(
     section.locator(
-      'a[href="https://www.augmentcode.com/blog/introducing-remote-agent"]',
+      'a[href="https://docs.augmentcode.com/cosmos/experts-ticket-manager"]',
     ),
   ).toHaveCount(1);
 });

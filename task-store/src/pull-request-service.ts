@@ -1,7 +1,7 @@
 /**
  * task-store/src/pull-request-service.ts
  * PullRequestService — operations for tracking GitHub PRs through the
- * Shipwright review → patch → deploy pipeline.
+ * Shipwright review → patch → merge pipeline.
  *
  * claim() is atomic via a Prisma $transaction:
  *   1. Find existing record by @@unique([accountId, repo, prNumber])
@@ -24,9 +24,9 @@
  * only createdAt/updatedAt are DateTime columns.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
   type PrFinding,
@@ -367,6 +367,7 @@ export interface PullRequestServiceLike {
   release(id: string): Promise<PullRequest>;
   recordSkip(id: string): Promise<PullRequest>;
   resetSkip(id: string): Promise<PullRequest>;
+  unblock(id: string): Promise<PullRequest>;
   claimNext(
     agentId: string,
     maxConcurrent: number,
@@ -555,21 +556,21 @@ export class PullRequestService implements PullRequestServiceLike {
       const updateData: Prisma.PullRequestUpdateInput = { ...data };
 
       // When a caller transitions reviewState to 'approved' and hasn't already
-      // supplied readyForDeployAt, stamp it now rather than leaving it to be
+      // supplied readyForMergeAt, stamp it now rather than leaving it to be
       // set lazily on the next claim/claimNext. claimNext's
       // COALESCE(...) NULLS LAST ordering tolerates an unset value, but setting
-      // it at the actual approval moment keeps the deploy-readiness ordering
+      // it at the actual approval moment keeps the merge-readiness ordering
       // accurate for PRs that sit approved-but-unclaimed for a while.
       if (
         data.reviewState === "approved" &&
-        data.readyForDeployAt === undefined
+        data.readyForMergeAt === undefined
       ) {
         const existing = await this.prisma.pullRequest.findUnique({
           where: { id },
-          select: { readyForDeployAt: true },
+          select: { readyForMergeAt: true },
         });
-        if (existing && existing.readyForDeployAt === null) {
-          updateData.readyForDeployAt = this.clock.now().toISOString();
+        if (existing && existing.readyForMergeAt === null) {
+          updateData.readyForMergeAt = this.clock.now().toISOString();
         }
       }
 
@@ -587,7 +588,7 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.phase = null;
       }
 
-      // deploy.md's merge-completion PATCH transitions state to 'merged' —
+      // merge.md's merge-completion PATCH transitions state to 'merged' —
       // explicitly release the claim in the same call, mirroring patch()'s
       // always-release behavior. Defense-in-depth: claimNext()'s WHERE clause
       // already excludes state:'merged' records, so this is currently
@@ -622,7 +623,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     on first creation of the record, also stamps readyForReviewAt=now
    *     (mirrors claimNext()'s behaviour for pre-existing records)
    *   - patch: sets phase='patch', claim fields; does NOT touch reviewState
-   *   - deploy: sets phase='deploy', claim fields, sets readyForDeployAt=now if null
+   *   - merge: sets phase='merge', claim fields, sets readyForMergeAt=now if null
+   *     (MPD-1.1); does NOT touch reviewState
    *
    * Conflict detection:
    *   - Same commitSha AND claimedBy IS NOT NULL for same phase → 409. Staleness of
@@ -679,10 +681,10 @@ export class PullRequestService implements PullRequestServiceLike {
 
         if (phase === "review") {
           updateData.reviewState = "in_progress";
-        } else if (phase === "deploy") {
-          // Set readyForDeployAt only if not already set
-          if (existing.readyForDeployAt === null) {
-            updateData.readyForDeployAt = now;
+        } else if (phase === "merge") {
+          // Set readyForMergeAt only if not already set
+          if (existing.readyForMergeAt === null) {
+            updateData.readyForMergeAt = now;
           }
         }
         // phase === 'patch': do NOT touch reviewState (preserve 'posted')
@@ -797,8 +799,8 @@ export class PullRequestService implements PullRequestServiceLike {
         if (phase === "review") {
           createData.reviewState = "in_progress";
           createData.readyForReviewAt = now;
-        } else if (phase === "deploy") {
-          createData.readyForDeployAt = now;
+        } else if (phase === "merge") {
+          createData.readyForMergeAt = now;
         }
 
         await tx.pullRequest.create({ data: createData });
@@ -1004,9 +1006,9 @@ export class PullRequestService implements PullRequestServiceLike {
    * Steps (all in one transaction):
    *   1. Count active claims by agentId — if >= maxConcurrent, return null
    *   2. Find oldest unclaimed eligible PR ordered by
-   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ASC
+   *      COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt) ASC
    *      WHERE claimedBy IS NULL AND state='open' AND reviewState IN ('pending','posted','approved')
-   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→deploy
+   *   3. Determine phase from reviewState: pending→review, posted→patch, approved→merge
    *   4. Set readyForReviewAt=now if null (first claim)
    *   5. Claim with the appropriate phase
    *   6. Return {pr, phase}
@@ -1020,7 +1022,7 @@ export class PullRequestService implements PullRequestServiceLike {
     const now = this.clock.now();
     const nowIso = now.toISOString();
     // Cutoff for "fresh" heartbeat — mirrors the reaper's own default
-    // (DEFAULT_CLAIM_TTL_MS in @app-vitals/agent-lib/claim-ttl).
+    // (DEFAULT_CLAIM_TTL_MS in task-store/src/claim-ttl.ts).
     const cutoffMs = Number(
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
     );
@@ -1062,7 +1064,7 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
            ${accountFilter}
-         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
+         ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
       `;
@@ -1086,7 +1088,7 @@ export class PullRequestService implements PullRequestServiceLike {
       } else if (target.reviewState === "posted") {
         phase = "patch";
       } else {
-        phase = "deploy"; // approved
+        phase = "merge"; // approved
       }
 
       // Step 4 & 5: Build claim update
@@ -1103,9 +1105,9 @@ export class PullRequestService implements PullRequestServiceLike {
         if (target.readyForReviewAt === null) {
           updateData.readyForReviewAt = nowIso;
         }
-      } else if (phase === "deploy") {
-        if (target.readyForDeployAt === null) {
-          updateData.readyForDeployAt = nowIso;
+      } else if (phase === "merge") {
+        if (target.readyForMergeAt === null) {
+          updateData.readyForMergeAt = nowIso;
         }
       }
       // patch: preserve reviewState='posted', no readyForPatchAt change here
@@ -1308,6 +1310,53 @@ export class PullRequestService implements PullRequestServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
+  }
+
+  /**
+   * Human-driven unblock (UBL-1.2): atomically clears a block regardless of
+   * which mechanism set it. A single conditional updateMany (WHERE id AND
+   * blocked=true) resets blocked, blockedReason, blockedHeadSha, skipCount,
+   * lastSkippedAt, consecutiveCiFailureCount and lastCiFailureSignature —
+   * the CI-streak counter/signature must go too, otherwise the next patch()
+   * would re-trip the threshold. Throws NotFoundError when the PR is missing
+   * and ConflictError when it is not currently blocked (never a silent
+   * no-op). The preserved lastAutoBlock* history is left untouched. Records
+   * PullRequestEvent rows (method "unblock") in the same transaction.
+   */
+  async unblock(id: string): Promise<PullRequest> {
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.pullRequest.findUnique({ where: { id } });
+      if (!before) {
+        throw new NotFoundError("pr not found");
+      }
+      const { count } = await tx.pullRequest.updateMany({
+        where: { id, blocked: true },
+        data: {
+          blocked: false,
+          blockedReason: null,
+          blockedHeadSha: null,
+          skipCount: 0,
+          lastSkippedAt: null,
+          consecutiveCiFailureCount: 0,
+          lastCiFailureSignature: null,
+        },
+      });
+      if (count === 0) {
+        throw new ConflictError("pr is not currently blocked");
+      }
+      const after = await tx.pullRequest.findUnique({ where: { id } });
+      if (!after) {
+        throw new NotFoundError("pr not found");
+      }
+      await this.recordTransition(
+        tx,
+        before,
+        after,
+        "unblock",
+        before.claimedBy ?? "system",
+      );
+      return after;
+    });
   }
 
   /**

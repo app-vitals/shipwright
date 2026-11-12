@@ -10,7 +10,7 @@ next: "/docs/the-shipwright-loop"
 # Cron Jobs
 
 Every agent runs a set of scheduled prompts — crons — that pick up work, review and patch PRs,
-deploy, and run periodic maintenance without a human in the loop. This page covers how crons work
+merge, and run periodic maintenance without a human in the loop. This page covers how crons work
 end to end, and how to investigate a specific run as an operator.
 
 ## How crons work
@@ -59,9 +59,9 @@ A `preCheck` value is resolved either as a file path (relative to the agent's wo
 System crons — the ones seeded automatically for every agent — are created and kept in sync by a
 reconcile pass (`POST /agents/:id/crons/reconcile`), which runs at agent startup and can also be
 triggered on demand. Reconcile is a two-pass strategy over the cron list declared by the agent's
-type manifest (`specialties/{typeName}/manifest.yaml`):
+specialty defaults (the coding specialty's are code, in `admin/src/coding/coding-specialty-defaults.ts`):
 
-1. **Pass 1** creates or updates each manifest cron entry by name. If a matching row already
+1. **Pass 1** creates or updates each default cron entry by name. If a matching row already
    exists, it's updated in place — schedule, prompt, `silent`, and `preCheck` are refreshed, but
    the row's `id` is preserved (so its `AgentCronRun` history survives) and, importantly, **the
    `enabled` toggle is never touched on update**. A human's enable/disable decision survives every
@@ -72,17 +72,17 @@ type manifest (`specialties/{typeName}/manifest.yaml`):
    cleared back to `null`.
 
 A final orphan pass deletes any existing system cron whose name is no longer present in the
-manifest, so removed crons clean themselves up on the next reconcile.
+defaults, so removed crons clean themselves up on the next reconcile.
 
 Because of this, **system crons can't be edited directly** via the admin API or console — they're
 read-only after creation except for the `enabled` toggle. Anything else (schedule, prompt,
-preCheck) is owned by the specialty manifest and only changes when the manifest changes and a
+preCheck) is owned by the specialty defaults and only changes when the defaults change and a
 reconcile runs.
 
 ### Loop-driven vs standalone crons
 
 Not every cron discovers its own work. The five pipeline crons — `shipwright-plan`,
-`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy` — are children of
+`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-merge` — are children of
 `shipwright-loop` (linked via `parentCronId`). They are **loop-driven, item-addressed executors**,
 not self-discovering standalone crons:
 
@@ -117,7 +117,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 | `shipwright-dev-task` | every minute | `/shipwright:dev-task` | — | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-review` | every minute | `/shipwright:review` | — | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-patch` | every minute | `/shipwright:patch` | — | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-deploy` | every minute | `/shipwright:deploy` | — | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-merge` | every minute | `/shipwright:merge` | — | off | Merges the approved, CI-green PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-loop` | every minute | internal | — | off | Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
 | `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
@@ -150,7 +150,7 @@ cron the agent owns, filterable by **Cron** and **Outcome** (`posted` / `dm` / `
 - **Outcome** — what actually happened on that tick
 - **Started** and **Duration** — when it ran and how long it took
 - **Tokens** and **Model** — token counts and per-model cost, if a Claude turn was actually spent
-- **Phase** — for `shipwright-loop` runs, which phase (plan/dev-task/review/patch/deploy) it dispatched
+- **Phase** — for `shipwright-loop` runs, which phase (plan/dev-task/review/patch/merge) it dispatched
 - **Item** — the specific Task or PR the run was dispatched against, if any
 
 If you're chasing a specific PR or task, filter or scan for its **Item** badge rather than trying
@@ -165,9 +165,10 @@ posted message is the cron's own summary of its conclusion. If the outcome was `
 
 For a deeper narrative — the actual prompt, Claude's reasoning, and the specific commands it ran —
 ask the agent to investigate on your behalf via Slack chat. The agent has a dedicated
-`/shipwright:investigate-cron` tool for exactly this: given a cron name and approximate time, or a
-specific PR/task id, it resolves the matching run and reads the underlying session transcript to
-explain what happened in plain language. You don't need transcript or log access yourself — just
+`/shipwright:investigate-stuck` tool for exactly this: given a specific PR/task id, it checks the
+work queue and task/PR records, resolves the matching runs and reads the underlying session
+transcripts to explain what happened in plain language (for a cron by name and approximate time,
+the platform's `agent-platform:investigate-cron` does the same). You don't need transcript or log access yourself — just
 ask the agent to run it, and it will report back the prompt, the key steps taken, and its
 conclusion.
 
@@ -180,7 +181,7 @@ Use this table when a cron produces no output or shows an unexpected outcome. Ar
 | A cron run shows outcome `silent` in Cron Logs | Look at the run details — this is normal. The run completed successfully and simply had no qualifying work to report. | Most cron ticks find no work and end silently by design. This is the system working correctly, not a bug. |
 | A cron run shows outcome `skipped` in Cron Logs | Look at the run's outcome in Cron Logs. A `skipped` outcome means the cron's `preCheck` script exited non-zero or produced empty output. The tick was suppressed *before* a Claude turn even started. | This is the expected shape for a cron with no work ready. The `preCheck` script found nothing to act on and correctly short-circuited the expensive Claude run. |
 | A cron never appears in Cron Logs at all (no recent runs, no `silent`, no `skipped`) | Check the enabled/disabled badge on the cron's row in the agent's **Cron Jobs** card in the admin console. | If the badge shows **disabled**, the cron doesn't run at all — `node-cron` never scheduled it in the first place. Re-enable it if you want it to fire. |
-| A pipeline cron (`shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-deploy`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
+| A pipeline cron (`shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-merge`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
 
 ## Next steps
 

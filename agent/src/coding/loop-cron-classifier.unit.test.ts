@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import {
   type CronJobLike,
   classifyCronJobsForScheduling,
+  LOOP_PHASE_JOB_NAMES,
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 
@@ -29,7 +30,6 @@ const PIPELINE_NAMES = [
   "shipwright-review",
   "shipwright-patch",
   "shipwright-review-patch",
-  "shipwright-deploy",
 ] as const;
 
 function makePipelineJobs(enabled = true): CronJobLike[] {
@@ -69,11 +69,11 @@ describe("classifyCronJobsForScheduling", () => {
     const result = classifyCronJobsForScheduling(jobs);
     // loop job is disabled -> never included
     expect(result.some((r) => r.job.id === "loop-1")).toBe(false);
-    // all 5 pipeline jobs included as generic
+    // all 4 pipeline jobs included as generic
     const pipelineResults = result.filter((r) =>
       PIPELINE_NAMES.includes(r.job.name as (typeof PIPELINE_NAMES)[number]),
     );
-    expect(pipelineResults).toHaveLength(5);
+    expect(pipelineResults).toHaveLength(4);
     for (const entry of pipelineResults) {
       expect(entry.dispatch).toBe("generic");
     }
@@ -249,20 +249,14 @@ describe("resolveLoopPhaseToggles", () => {
         enabled: true,
         parentCronId: LOOP_ID,
       }),
-      makeJob({
-        id: "4",
-        name: "shipwright-deploy",
-        enabled: false,
-        parentCronId: LOOP_ID,
-      }),
     ];
     const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
     expect(toggles).toEqual({
       devTask: true,
       review: false,
       patch: true,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 
@@ -280,8 +274,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: true,
       review: false,
       patch: false,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 
@@ -305,20 +299,14 @@ describe("resolveLoopPhaseToggles", () => {
         enabled: true,
         parentCronId: LOOP_ID,
       }),
-      makeJob({
-        id: "4",
-        name: "shipwright-deploy",
-        enabled: true,
-        parentCronId: LOOP_ID,
-      }),
     ];
     const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
     expect(toggles).toEqual({
       devTask: true,
       review: true,
       patch: true,
-      deploy: true,
       plan: false,
+      merge: false,
     });
   });
 
@@ -340,12 +328,6 @@ describe("resolveLoopPhaseToggles", () => {
         id: "3",
         name: "shipwright-patch",
         enabled: true,
-        parentCronId: LOOP_ID,
-      }),
-      makeJob({
-        id: "4",
-        name: "shipwright-deploy",
-        enabled: false,
         parentCronId: LOOP_ID,
       }),
     ];
@@ -380,8 +362,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: true,
       review: false,
       patch: true,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 
@@ -400,8 +382,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: false,
       review: false,
       patch: false,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 
@@ -419,12 +401,72 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: false,
       review: false,
       patch: false,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 
   // ─── plan phase (PDR-4.1) ────────────────────────────────────────────────
+
+  // ─── merge phase (MPD-1.4) ───────────────────────────────────────────────
+
+  it("resolves merge: true from an enabled shipwright-merge child row", () => {
+    const jobs = [
+      makeJob({
+        id: "m1",
+        name: "shipwright-merge",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+    ];
+    expect(resolveLoopPhaseToggles(jobs, LOOP_ID)).toEqual({
+      devTask: false,
+      review: false,
+      patch: false,
+      plan: false,
+      merge: true,
+    });
+  });
+
+  it("resolves merge: false for a disabled or top-level shipwright-merge row", () => {
+    expect(
+      resolveLoopPhaseToggles(
+        [
+          makeJob({
+            id: "m1",
+            name: "shipwright-merge",
+            enabled: false,
+            parentCronId: LOOP_ID,
+          }),
+        ],
+        LOOP_ID,
+      ).merge,
+    ).toBe(false);
+    expect(
+      resolveLoopPhaseToggles(
+        [makeJob({ id: "m2", name: "shipwright-merge", enabled: true })],
+        LOOP_ID,
+      ).merge,
+    ).toBe(false);
+  });
+
+  it("a top-level shipwright-merge row is loop-config-only when shipwright-loop is enabled, generic otherwise", () => {
+    const withLoop = classifyCronJobsForScheduling([
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: true }),
+      makeJob({ id: "m-1", name: "shipwright-merge", enabled: true }),
+    ]);
+    expect(withLoop.some((r) => r.job.id === "m-1")).toBe(false);
+    const noLoop = classifyCronJobsForScheduling([
+      makeJob({ id: "m-1", name: "shipwright-merge" }),
+    ]);
+    expect(noLoop.find((r) => r.job.id === "m-1")?.dispatch).toBe("generic");
+  });
+
+  it("shipwright-merge is NOT in LOOP_PHASE_JOB_NAMES (no false unreconciled warning)", () => {
+    expect(LOOP_PHASE_JOB_NAMES as readonly string[]).not.toContain(
+      "shipwright-merge",
+    );
+  });
 
   it("resolves plan: true from an enabled shipwright-plan child row", () => {
     const jobs = [
@@ -439,8 +481,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: false,
       review: false,
       patch: false,
-      deploy: false,
       plan: true,
+      merge: false,
     });
   });
 
@@ -482,8 +524,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: true,
       review: false,
       patch: false,
-      deploy: false,
       plan: true,
+      merge: false,
     });
   });
 
@@ -509,8 +551,8 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: false,
       review: false,
       patch: false,
-      deploy: false,
       plan: false,
+      merge: false,
     });
   });
 });

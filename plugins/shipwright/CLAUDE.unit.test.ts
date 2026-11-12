@@ -123,8 +123,8 @@ describe("CLAUDE.md — skills listed in context of principles", () => {
     expect(content).toContain("review");
   });
 
-  it("mentions deploy skill in context of principles", () => {
-    expect(content).toContain("deploy");
+  it("mentions merge skill in context of principles", () => {
+    expect(content).toContain("merge");
   });
 
   it("mentions dev-task skill in context of principles", () => {
@@ -140,7 +140,7 @@ describe("CLAUDE.md — skills listed in context of principles", () => {
   it("mentions candidate provider scripts by name", () => {
     const hasScripts =
       content.includes("check-review") ||
-      content.includes("check-deploy") ||
+      content.includes("check-merge") ||
       content.includes("check-dev-task") ||
       content.includes("check-patch");
     expect(hasScripts).toBe(true);

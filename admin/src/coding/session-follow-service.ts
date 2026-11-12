@@ -80,6 +80,15 @@ interface UpdatePrefsInput {
   reminderHourLocal?: number;
 }
 
+/**
+ * Session slugs of the follows that are not muted, preserving input order.
+ * A muted follow is still a row (so re-following un-mutes it) but is not an
+ * active follow from the user's point of view.
+ */
+export function nonMutedSessionSlugs(rows: SessionFollowRow[]): string[] {
+  return rows.filter((r) => !r.muted).map((r) => r.sessionSlug);
+}
+
 export class SessionFollowService {
   private readonly clock: Clock;
 

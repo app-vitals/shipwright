@@ -52,12 +52,11 @@ const ALL_PHASES_ON: CronJobLike[] = [
   job("shipwright-dev-task", true),
   job("shipwright-review", true),
   job("shipwright-patch", true),
-  job("shipwright-deploy", true),
 ];
 
 /**
  * Builds a CronJobLike fixture representing a child phase row exactly as
- * reconcileSystemCrons() (specialties/coding/manifest.yaml, LPC-1.2) produces
+ * reconcileSystemCrons() (admin/src/coding/coding-specialty-defaults.ts, LPC-1.2) produces
  * it — parentCronId set to the loop row's own id. Distinct from the local job()
  * helper above (which defaults parentCronId to the CBD-2.1 test's fixed
  * "shipwright-loop" id) since this section's tests use their own explicit
@@ -79,7 +78,7 @@ function task(id: string, createdAt: string): WorkTaskCandidate {
 function pr(
   id: string,
   age: string,
-  phase: "review" | "patch" | "deploy",
+  phase: "review" | "patch" | "merge",
 ): WorkPrCandidate {
   return { id, age, phase, commitSha: `${id}-sha` };
 }
@@ -201,7 +200,6 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       },
       getReviewCandidates: async () => (reviewConsumed ? [] : reviewCandidates),
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: realClaim,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -283,7 +281,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
   /**
    * A realistic reconciled cron-job set: a parent loop row plus four child
    * phase rows (parentCronId: PARENT_LOOP_ID), mirroring exactly what
-   * reconcileSystemCrons() produces per specialties/coding/manifest.yaml's
+   * reconcileSystemCrons() produces per the coding specialty defaults'
    * parentCron: "shipwright-loop" declarations. Only the dev-task child's
    * enabled flag varies between fixtures below.
    */
@@ -298,7 +296,6 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
       childPhaseJob("shipwright-dev-task", devTaskEnabled, PARENT_LOOP_ID),
       childPhaseJob("shipwright-review", false, PARENT_LOOP_ID),
       childPhaseJob("shipwright-patch", false, PARENT_LOOP_ID),
-      childPhaseJob("shipwright-deploy", false, PARENT_LOOP_ID),
     ];
   }
 
@@ -321,7 +318,6 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
           consumed.has("SWC-1") ? [] : [task("SWC-1", "2026-01-01T00:00:00Z")],
         getReviewCandidates: async () => [],
         getPatchCandidates: async () => [],
-        getDeployCandidates: async () => [],
         claimTask: async (id) => {
           consumed.add(id);
           return true;
@@ -490,7 +486,6 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -552,7 +547,6 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
         devTaskCandidates.filter((t) => !consumed.has(t.id)),
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       // Claim succeeding removes the item from candidacy (matches real
       // claimTask semantics) — without this, CBD-2.3's caught-and-isolated
       // dispatch throw would keep re-selecting the same always-failing item
@@ -644,7 +638,6 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
         devTaskCalls === 0 ? devTaskCandidates : [],
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -786,7 +779,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -840,7 +832,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -879,7 +870,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -924,7 +914,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
         claimedThisTick ? [] : [task("DTW-9.4", "2026-01-01T00:00:00Z")],
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => {
         claimedThisTick = true;
         return true;
@@ -972,7 +961,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
   });
 
   test("a review dispatch never consults getTaskState — it gets a PR-phase nonce sessionKey and, with no getPrState wired, never resumes", async () => {
-    // CRT-1.3 updated this test's premise: review/patch/deploy DO get a
+    // CRT-1.3 updated this test's premise: review/patch/merge DO get a
     // sessionKey now (a per-dispatch `{phase}:{itemId}:{uuid}` nonce), so the
     // old "undefined sessionKey" assertion no longer describes the design.
     // What still holds — and is the point worth keeping here — is that a PR
@@ -993,7 +982,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
           ? []
           : [pr("acme/x#7", "2026-01-01T00:00:00Z", "review")],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => {
         reviewConsumed = true;
@@ -1054,7 +1042,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1093,7 +1080,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1132,7 +1118,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1178,7 +1163,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1226,7 +1210,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1272,7 +1255,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1326,7 +1308,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1355,7 +1336,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
   });
 
   test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
-    // Regression test for the third-round review finding: lib/claim-ttl.ts
+    // Regression test for the third-round review finding: agent/src/coding/claim-ttl.ts
     // sizes DEFAULT_CLAIM_TTL_MS as "one Claude session + 5min buffer", an
     // invariant that assumes a claim spans exactly one session. This loop can
     // hold one claim across up to 4 sequential runner() calls, and an attempt
@@ -1387,7 +1368,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1436,7 +1416,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1482,7 +1461,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
@@ -1509,7 +1487,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
 
   // ─── CRT-1.3: the same resume loop, widened to the PR phases ───────────────
   //
-  // review/patch/deploy now participate in the auto-resume loop too, but on
+  // review/patch/merge now participate in the auto-resume loop too, but on
   // their OWN mechanism — deliberately parallel to dev-task's rather than
   // shared with it:
   //   - sessionKey is a PER-DISPATCH nonce (`{phase}:{itemId}:{uuid}`), i.e.
@@ -1522,15 +1500,15 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
   //     is ever meant to resume it.
   // dev-task's DTR-1.1 behavior above is untouched by any of this.
 
-  /** The three PR phases CRT-1.3 widened the resume gate to. */
-  const PR_PHASES = ["review", "patch", "deploy"] as const;
+  /** The PR phases CRT-1.3 widened the resume gate to. */
+  const PR_PHASES = ["review", "patch", "merge"] as const;
   type PrPhase = (typeof PR_PHASES)[number];
 
   /** Maps a PR phase to the child cron job name that enables it. */
   const PR_PHASE_JOB: Record<PrPhase, string> = {
     review: "shipwright-review",
     patch: "shipwright-patch",
-    deploy: "shipwright-deploy",
+    merge: "shipwright-merge",
   };
 
   /**
@@ -1625,7 +1603,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       getDevTaskCandidates: async () => [],
       getReviewCandidates: opts.phase === "review" ? candidates : noCandidates,
       getPatchCandidates: opts.phase === "patch" ? candidates : noCandidates,
-      getDeployCandidates: opts.phase === "deploy" ? candidates : noCandidates,
+      getMergeCandidates: opts.phase === "merge" ? candidates : noCandidates,
       claimTask: async () => true,
       claimPr: async () => {
         consumed = true;
@@ -1817,7 +1795,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
                 commitSha,
               },
             ],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async () => {
         consumed = true;
@@ -1859,14 +1836,14 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     const { getPrState } = makePrStateStub([null]);
 
     const loop = makePrPhaseLoop({
-      phase: "deploy",
+      phase: "merge",
       prId: "acme/x#23",
       runner,
       reporter,
       getPrState,
     });
 
-    await loop([job("shipwright-deploy", true)]);
+    await loop([job("shipwright-merge", true)]);
 
     expect(sessionKeys).toHaveLength(1);
     expect(completes).toEqual([{ itemId: "acme/x#23", outcome: "completed" }]);
@@ -1927,14 +1904,14 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     const { getPrState } = makePrStateStub(["mine", { claimedBy: null }]);
 
     const loop = makePrPhaseLoop({
-      phase: "deploy",
+      phase: "merge",
       prId: "acme/x#26",
       runner,
       reporter,
       getPrState,
     });
 
-    await loop([job("shipwright-deploy", true)]);
+    await loop([job("shipwright-merge", true)]);
 
     // 1 initial + 1 resume, then the released claim stops the loop.
     expect(sessionKeys).toHaveLength(2);
@@ -1971,7 +1948,7 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     // The limit of the fail-open stance above: skipping the owner-match half
     // must not mean skipping the gate entirely. `claimedBy: null` is the shape
     // every real PR completion path leaves behind (review posted, patch
-    // pushed, deploy merged, explicit release, reaper), so resuming against it
+    // pushed, merge, explicit release, reaper), so resuming against it
     // would re-run a finished PR — the PR-side analog of dev-task's
     // unconditional `status !== "in_progress"` check, which also holds with no
     // agentId configured.
@@ -2080,7 +2057,6 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
       getReviewCandidates: async () => [],
       getPatchCandidates: async () =>
         prConsumed ? [] : [pr("acme/x#30", "2026-01-02T00:00:00Z", "patch")],
-      getDeployCandidates: async () => [],
       claimTask: async () => {
         taskConsumed = true;
         return true;
@@ -2210,7 +2186,6 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
       getReviewCandidates: async () => [],
       getPatchCandidates: async () =>
         consumed ? [] : [pr("acme/x#7", "2026-01-01T00:00:00Z", "patch")],
-      getDeployCandidates: async () => [],
       claimTask: async () => true,
       claimPr: async (p) => {
         consumed = true;

@@ -88,7 +88,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     deployedAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
@@ -132,6 +131,9 @@ function fakeTaskService(
   storedTasks: Map<string, Task> = new Map(),
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },

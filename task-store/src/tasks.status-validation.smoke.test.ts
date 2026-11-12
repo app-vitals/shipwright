@@ -82,7 +82,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -106,6 +105,9 @@ function fakeTaskService(
   opts: { listResult?: Task[]; capturedListFilters?: TaskListFilters[] } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?: TaskListFilters) {
       if (opts.capturedListFilters && filters) {
         opts.capturedListFilters.push({ ...filters });
@@ -254,8 +256,8 @@ describe("GET /tasks status validation (smoke)", () => {
       "approved",
       "merged",
       "done",
-      "deploying",
       "deployed",
+      "released",
       "blocked",
       "cancelled",
     ];
@@ -274,5 +276,124 @@ describe("GET /tasks status validation (smoke)", () => {
     const res = await app.request("/tasks", { headers: auth() });
     expect(res.status).toBe(200);
     expect(capturedListFilters[0]?.status).toBeUndefined();
+  });
+});
+
+describe("released status end to end at the route layer (MPD-1.1, smoke)", () => {
+  it("GET /tasks?status=released returns 200 and forwards the filter", async () => {
+    const capturedListFilters: TaskListFilters[] = [];
+    const app = makeApp(fakeTaskService({ capturedListFilters }));
+    const res = await app.request("/tasks?status=released", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedListFilters[0]?.status).toBe("released");
+  });
+
+  it("POST /tasks accepts status 'released' with releasedAt", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Released task",
+        status: "released",
+        repo: "org/repo",
+        releasedAt: "2026-01-07T00:00:00.000Z",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("released");
+    expect(body.releasedAt).toBe("2026-01-07T00:00:00.000Z");
+  });
+
+  it("PATCH /tasks/:id accepts {status:'released', releasedAt}", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        status: "released",
+        releasedAt: "2026-01-07T00:00:00.000Z",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("released");
+    expect(body.releasedAt).toBe("2026-01-07T00:00:00.000Z");
+  });
+
+  it("POST /tasks/bulk accepts status 'released'", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks/bulk", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify([
+        { id: "rel-1", title: "Released", status: "released", repo: null },
+      ]),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("dropped deploying status is rejected (MPD-3.5, smoke)", () => {
+  it("GET /tasks?status=deploying returns 400", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks?status=deploying", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks with status 'deploying' returns 400", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Deploying task",
+        status: "deploying",
+        repo: "org/repo",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /tasks/:id with status 'deploying' returns 400", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ status: "deploying" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /tasks/:id silently strips the dropped deployingAt field (REMOVED_TASK_FIELDS)", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        note: "x",
+        deployingAt: "2026-01-07T00:00:00.000Z",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("deployingAt");
+  });
+
+  it("POST /tasks/bulk with status 'deploying' returns 400", async () => {
+    const app = makeApp(fakeTaskService());
+    const res = await app.request("/tasks/bulk", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify([
+        { id: "dep-1", title: "Deploying", status: "deploying", repo: null },
+      ]),
+    });
+    expect(res.status).toBe(400);
   });
 });

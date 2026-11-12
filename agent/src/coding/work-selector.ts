@@ -4,7 +4,7 @@
  * Pure helper: selectNextWorkItem(tasks, prs) → WorkItem | null
  *
  * Given a list of ready tasks (aged by createdAt) and a list of ready PRs
- * (aged by COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt),
+ * (aged by COALESCE(readyForReviewAt, readyForPatchAt),
  * already filtered by the caller to only the pipeline phases currently
  * enabled), returns the single oldest ready item across both entity types —
  * strict age-based FIFO, no phase-priority bias.
@@ -19,7 +19,7 @@
  * status === "pending" and createdAt age.
  *
  * `prs` is, likewise, already an unclaimed-only candidate set — the
- * check-review/check-patch/check-deploy collectors (LPF-2.2) request only
+ * check-review/check-patch/check-merge collectors (LPF-2.2) request only
  * unclaimed PR records from the task-store via its `?ready=true` filter (or,
  * for check-review's specific need to distinguish "no record" from "claimed
  * record", perform an equivalent claim check inline before ever returning a
@@ -59,7 +59,7 @@ export interface WorkTaskCandidate {
 export interface WorkPrCandidate {
   id: string;
   age: string;
-  phase?: "review" | "patch" | "deploy";
+  phase?: "review" | "patch" | "merge";
   title?: string;
   /**
    * The PR author's GitHub login (POM-1.2) — forwarded by loop-orchestrator's
@@ -107,7 +107,7 @@ type WorkItem =
  * or "plan"); an untagged one falls back to "dev-task", which is exactly
  * what every pre-PDR-4.1 task candidate meant when the field didn't exist.
  * Every real caller of getReviewCandidates/getPatchCandidates/
- * getDeployCandidates always sets WorkPrCandidate.phase (it's set once at
+ * getMergeCandidates always sets WorkPrCandidate.phase (it's set once at
  * each candidate's single construction site, unconditionally) — so by the
  * time a PR candidate reaches rankWorkItems(), phase is never actually
  * undefined in practice, even though the field's declared type is optional
@@ -121,7 +121,7 @@ export interface RankedWorkItem {
   type: "task" | "pr";
   id: string;
   title?: string;
-  phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
+  phase: "dev-task" | "plan" | "review" | "patch" | "merge";
   age: string;
 }
 

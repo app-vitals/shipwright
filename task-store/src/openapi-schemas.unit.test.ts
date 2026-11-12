@@ -47,7 +47,6 @@ const validTask = {
   priority: "high",
   cancelledAt: null,
   completedAt: null,
-  deployingAt: null,
   deployedAt: null,
   ciFixAttempts: 2,
   mergeCommit: "abc123def456",
@@ -100,7 +99,6 @@ const validPullRequest = {
   phase: "review",
   readyForReviewAt: yesterday,
   readyForPatchAt: null,
-  readyForDeployAt: null,
   blocked: false,
   blockedReason: null,
   skipCount: 0,
@@ -169,8 +167,8 @@ describe("TaskSchema", () => {
       "approved",
       "merged",
       "done",
-      "deploying",
       "deployed",
+      "released",
       "blocked",
       "cancelled",
     ];
@@ -181,6 +179,14 @@ describe("TaskSchema", () => {
       });
       expect(result.success).toBe(true);
     }
+  });
+
+  test("rejects the dropped deploying TaskStatus (MPD-3.5)", () => {
+    const result = TaskSchema.safeParse({
+      ...validTask,
+      status: "deploying",
+    });
+    expect(result.success).toBe(false);
   });
 
   test("rejects invalid TaskStatus", () => {
@@ -400,7 +406,7 @@ describe("PullRequestSchema", () => {
   });
 
   test("accepts all valid PrPhase enum values", () => {
-    const phases = ["review", "patch", "deploy"];
+    const phases = ["review", "patch", "merge"];
     for (const phase of phases) {
       const result = PullRequestSchema.safeParse({
         ...validPullRequest,
@@ -408,6 +414,14 @@ describe("PullRequestSchema", () => {
       });
       expect(result.success).toBe(true);
     }
+  });
+
+  test("rejects the dropped deploy PrPhase (MPD-3.5)", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      phase: "deploy",
+    });
+    expect(result.success).toBe(false);
   });
 
   test("parses pull request with null phase", () => {

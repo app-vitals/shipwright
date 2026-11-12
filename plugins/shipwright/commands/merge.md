@@ -1,15 +1,15 @@
 ---
-description: Merge an approved, CI-green PR and mark its task-store record merged — no canary/promote
+description: Merge an approved, CI-green PR, mark its task-store records merged, and watch post-merge CI — the loop's merge phase, no canary/promote
 argument-hint: "[org/repo#number | number]"
 ---
 
 # Merge
 
-Merge a PR and mark its linked task-store record merged. This command does NOT run
-`/shipwright:deploy`'s Deploy → Canary → Promote pipeline — merging is its entire scope.
-It exists for setups (like a deploy-disabled configuration) where deploy stays disabled and
-a human decides when to merge; `/shipwright:merge` handles the merge sub-step without
-triggering any post-merge pipeline.
+Merge a PR, mark its linked task-store records merged, and watch post-merge CI on the squash
+commit. This is the loop's merge phase: the orchestrator dispatches it for approved, CI-green
+PRs. There is no Deploy → Canary → Promote pipeline —
+merging and watching post-merge CI is its entire scope. A post-merge CI failure blocks the
+affected tasks for a human; there is no canary and no promote.
 
 **This command runs autonomously. Do not pause for user input unless pre-flight fails.**
 
@@ -27,9 +27,14 @@ this command always targets an explicit PR:
   **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
 - _(no arguments)_: respond `[silent]` and stop — no GitHub scan across own open PRs.
 
-This command has no candidate-provider wiring yet — it is invoked explicitly by a human or
-orchestrator with a known target, so it does not accept the `[preclaim:...]` marker that
-`review`/`patch`/`deploy` do.
+- Optional trailing **pre-claim marker** — `[preclaim:{recordId}:{commitSha}]` — appended
+  after `org/repo#number`/`number` by the loop orchestrator (`agent/src/loop-orchestrator.ts`'s
+  `formatPreClaimMarker`) when it already claimed this PR in the task store (phase `merge`)
+  before dispatch, e.g. `app-vitals/shipwright#123 [preclaim:ckz1abc123:8cb7b38cdb6a...]`.
+  When present, strip it before parsing `org/repo#number`/`number` above and extract
+  `PRECLAIM_RECORD_ID` and `PRECLAIM_COMMIT_SHA` from it. If absent, leave both unset. See
+  Step 3a's Pre-Claim Fast Path for how the marker is validated against the live head. A human
+  invoking this command directly never supplies this marker.
 
 ---
 
@@ -45,10 +50,29 @@ TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$S
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
+TASK_IDS=$(echo "$TASK_JSON" | jq -r '[.tasks[] | select(.status == "pr_open") | .id] | join(" ")')
+```
+
+**Bundled PRs (`TASK_IDS`).** A single PR can carry several tasks. `TASK_IDS` is the
+space-separated list of every `pr_open` task on this PR, including the primary — bundle-mates
+already past `pr_open` (e.g. `deployed`/`done`) are excluded so they are never regressed to
+`merged`. Marking merged (Step 3b)
+and the post-merge CI watch (Step 4) loop over `TASK_IDS`, so bundle-mates are merged and
+watched or blocked together.
+
+**Releasing a pre-claim.** If a pre-claim marker was supplied, the orchestrator already holds
+a `phase: "merge"` claim on this PR. Every early exit below (not authored by us, bundle gate,
+pre-flight failure) must release it first so the PR is not stuck until the claim TTL:
+
+```bash
+[ -n "$PRECLAIM_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release"
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **merge-only mode** — no
-todos update will be performed.
+todos update will be performed. Set `MERGE_ONLY=true` for this case (else `MERGE_ONLY=false`);
+Step 4's failure path reads it.
 
 ### 1a. Own-PRs-Only Check
 
@@ -65,7 +89,7 @@ Compare canonical forms on both sides — `gh pr view` reports a bot as `app/<sl
 PR_AUTHOR_CANON=$(printf '%s' "$PR_AUTHOR" | sed -E 's#^app/##; s#\[bot\]$##' | tr '[:upper:]' '[:lower:]')
 ```
 
-If `PR_AUTHOR_CANON != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this merge command.
+If `PR_AUTHOR_CANON != AGENT_LOGIN`, this PR was not authored by the current agent — release any pre-claim (see above), skip it silently and stop. Only PRs we authored go through this merge command.
 
 Print:
 ```
@@ -90,7 +114,7 @@ INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pen
 INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```
 
-**If `INCOMPLETE > 0`**: do NOT proceed to pre-flight. Print:
+**If `INCOMPLETE > 0`**: do NOT proceed to pre-flight. Release any pre-claim first, then print:
 ```
 ⏸ Bundle gate: {INCOMPLETE} task(s) on branch {HEAD_BRANCH} are still in flight:
   {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
@@ -141,7 +165,7 @@ reviews from GitHub and check if any review has a clean APPROVE body — either 
 `APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
 posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
 self-review convention, case-insensitive, optional `**` around either word — mirrors
-`agent/src/check-helpers.ts`'s `isCleanApproveBody`, shared by `agent/src/check-deploy.ts`'s
+`agent/src/check-helpers.ts`'s `isCleanApproveBody`, shared by `agent/src/check-merge.ts`'s
 `hasSelfApproveReview` and `agent/src/check-patch.ts`'s `isSelfCleanApprove`):
 
 ```bash
@@ -160,7 +184,8 @@ Print:
 ℹ No GitHub approval. Proceeding on clean APPROVE review.
 ```
 
-If no matching review is found (or `allow_self_review` is false), print and stop:
+If no matching review is found (or `allow_self_review` is false), release any pre-claim
+(`/prs/$PRECLAIM_RECORD_ID/release`, see Step 1), then print and stop:
 ```
 ✗ Pre-flight failed: PR #{pr} is not approved.
   GitHub reviewDecision: {decision}
@@ -193,7 +218,8 @@ A run is green when its latest-per-`workflow_id` entry has `conclusion` of `succ
 `skipped`, or `neutral`. All latest-per-workflow runs must be green, and there must be at
 least one run — an empty run list is not green (fail-closed).
 
-If `ALL_GREEN` is not `"true"` (or the run list is empty), print and stop:
+If `ALL_GREEN` is not `"true"` (or the run list is empty), release any pre-claim
+(`/prs/$PRECLAIM_RECORD_ID/release`, see Step 1), then print and stop:
 ```
 ✗ Pre-flight failed: not all checks are green on PR #{pr} head ({HEAD_SHA[0..7]}).
   Resolve check failures before merging.
@@ -214,27 +240,42 @@ If both checks pass:
 
 ### 3a. Claim PR Record (pre-merge lock)
 
-Before merging, claim the PR record with `phase: "deploy"` — reusing the existing `deploy`
-`PrPhase` enum value (`task-store/prisma/schema.prisma`'s `PrPhase` enum has `review | patch
-| deploy`, no `merge` value, and none is added here — this command occupies the same
-pipeline slot deploy would). GitHub itself prevents a PR from being double-merged, but
-without this claim, two overlapping merge/deploy runs can both pass Step 2's approval/CI
-checks and both proceed to merge, risking duplicate work.
+Before merging, claim the PR record with `phase: "merge"`. GitHub itself prevents a PR from
+being double-merged, but without this claim, two overlapping merge runs can both pass Step 2's
+approval/CI checks and both proceed to merge and watch post-merge CI, risking duplicate work.
 
 ```bash
 HEAD_SHA_PRE_MERGE=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+**Pre-Claim Fast Path.** If a pre-claim marker was captured in Step 1, validate it against
+`HEAD_SHA_PRE_MERGE` — the live head just fetched above — before trusting it; the head can
+have moved since the orchestrator claimed (Step 2's pre-flight checks take time):
+
+- **`HEAD_SHA_PRE_MERGE == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip the claim call below** — the orchestrator's
+  pre-claim already holds this PR under `phase: "merge"`. Proceed directly to Step 3b
+  (`PR_RECORD_ID` is reused by the post-merge update in Step 3c).
+- **`HEAD_SHA_PRE_MERGE != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between
+  the orchestrator's claim and now) **or no marker present**: self-claim with the call below.
+  If the marker was stale, release the stale pre-claim (`/prs/$PRECLAIM_RECORD_ID/release`)
+  first.
+
+```bash
 PR_CLAIM=$(curl -s -o /tmp/pr_claim_merge.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_MERGE\", \"phase\": \"deploy\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_MERGE" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$HEAD_BRANCH" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "merge", authorLogin: $authorLogin, headRef: $headRef}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_merge.json)
 ```
 
-**If `PR_CLAIM` is `409`** (another deploy/merge run already claimed this PR at phase
-`deploy`): do NOT merge. Print:
+**If `PR_CLAIM` is `409`** (another merge run already claimed this PR at phase `merge`):
+do NOT merge. Print:
 ```
-⏸ PR #{pr} is already claimed by another deploy/merge run — skipping.
+⏸ PR #{pr} is already claimed by another merge run — skipping.
 ```
 There is no other candidate to fall back to. Stop here.
 
@@ -287,7 +328,7 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d '{"status": "blocked", "note": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+    -d '{"status": "blocked", "blockedReason": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -320,7 +361,7 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "$(jq -n --arg note "Squash merge failed — $MERGE_OUTPUT" '{"status": "blocked", "note": $note}')" | jq .
+    -d "$(jq -n --arg reason "Squash merge failed — $MERGE_OUTPUT" '{"status": "blocked", "blockedReason": $reason}')" | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -349,7 +390,7 @@ SQUASH_SHA=$(gh api "repos/{org}/{repo}/git/refs/heads/main" --jq '.object.sha')
 ```
 
 If the state has not become `"MERGED"` after 60 seconds, release the pre-merge claim from
-Step 3a so a subsequent retry is not blocked by a stale `phase: "deploy"` lock — the merge
+Step 3a so a subsequent retry is not blocked by a stale `phase: "merge"` lock — the merge
 never completed, so nothing is actually in flight:
 
 ```bash
@@ -377,14 +418,17 @@ Print:
   Squash SHA: {SQUASH_SHA[0..7]}
 ```
 
-Mark the task merged via the task store — skip if in merge-only mode:
+Mark the task (and every bundle-mate task on `TASK_IDS`) merged via the task store — skip if
+in merge-only mode:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "$(jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{"status": "merged", "mergedAt": $at}')" | jq .
+done
 ```
 
 ### 3c. Update PullRequest Record (post-merge)
@@ -405,13 +449,83 @@ else
 fi
 ```
 
-This command stops here. No post-merge CI watch, no canary, no promote, no health probe,
-no deployed-status update — that pipeline is `/shipwright:deploy`'s scope, not this
-command's.
+Release the claim now that the merge and record update are done, so the PR is not held
+until the claim TTL (the post-merge CI watch below does not need it):
+
+```bash
+[ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+```
 
 ---
 
-## Step 4: Print Handoff
+## Step 4: Post-Merge CI Watch
+
+Poll CI on `SQUASH_SHA` every 30 seconds for up to 10 minutes (20 polls). This watch never
+runs canary or promote and never marks anything deployed — it only decides whether the merged
+tasks stay `merged` or get `blocked` for a human.
+
+```bash
+REPO="{org}/{repo}"
+RUNS_JSON=$(gh api "repos/$REPO/actions/runs?per_page=50" \
+  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, workflow_id, run_number, status, conclusion}]")
+ALL_GREEN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON")
+```
+
+Print progress on each poll: `[{elapsed}m] {name}: {status}/{conclusion} | ...` (use `-` for
+runs not yet seen). `is-ci-green.ts` dedups by `workflow_id` (latest `run_number`), treats
+`success`, `skipped` and `neutral` as green, and fails closed on an empty run list.
+
+**Green** (`ALL_GREEN == "true"`):
+```
+✓ Post-merge CI passed ({elapsed}m)
+```
+Tasks stay `merged` — no further task-store writes. Proceed to Step 5.
+
+**Failed run** (`ALL_GREEN` is not `"true"` and a latest-per-workflow run has a terminal
+non-green `conclusion` — `failure`, `cancelled`, `timed_out`, `action_required`, `stale`, or
+`startup_failure`):
+```
+✗ Post-merge CI failed — {name}
+  Logs: gh run view {id} --log --failed
+```
+Block every task on `TASK_IDS` (not just the primary — bundle-mates were merged together and
+fail together). Only do so when Step 3b actually marked them merged: in merge-only mode
+(`MERGE_ONLY=true`) the tasks were never moved to `merged`, so PATCHing `blocked` onto them
+would regress their status (e.g. an already `deployed`/`done` task). In merge-only mode, or when
+no task is linked, flag the PR record instead:
+```bash
+if [ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"blocked\", \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+  done
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"blocked\": true, \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+fi
+```
+Proceed to Step 5.
+
+**Pending at timeout** (10 minutes elapsed, `ALL_GREEN` still not `"true"`, every run still
+`queued`/`in_progress`): leave the tasks `merged` — do not block them and do not change their
+status. Print:
+```
+⚠ Post-merge CI still pending after 10 minutes.
+  Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
+```
+Proceed to Step 5.
+
+---
+
+## Step 5: Print Handoff
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

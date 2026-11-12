@@ -23,8 +23,8 @@ export type TaskStatus =
   | "approved"
   | "merged"
   | "done"
-  | "deploying"
   | "deployed"
+  | "released"
   | "blocked"
   | "cancelled";
 
@@ -55,8 +55,8 @@ export interface Task {
   file?: string;
   cancelledAt?: string;
   completedAt?: string;
-  deployingAt?: string;
   deployedAt?: string;
+  releasedAt?: string;
   ciFixAttempts?: number;
   mergeCommit?: string;
   prNumber?: number;

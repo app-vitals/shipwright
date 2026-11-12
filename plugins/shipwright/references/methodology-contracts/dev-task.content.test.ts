@@ -119,7 +119,7 @@ describe("dev-task.md — output", () => {
   });
 
   it("attributes the shared caller-performs-the-side-effect pattern to the patch and deploy contracts", () => {
-    expect(content).toContain("the patch- and deploy-phase contracts");
+    expect(content).toContain("the patch- and merge-phase contracts");
     expect(content).not.toContain("the patch- and review-phase contracts");
   });
 });

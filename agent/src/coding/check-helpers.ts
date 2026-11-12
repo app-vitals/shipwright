@@ -23,6 +23,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { canonicalLogin } from "../../../plugins/shipwright/scripts/login-identity.ts";
 import {
   type AllowSelfReviewRef,
   allowSelfReviewRef,
@@ -38,8 +39,8 @@ export type TaskStatus =
   | "approved"
   | "merged"
   | "done"
-  | "deploying"
   | "deployed"
+  | "released"
   | "blocked"
   | "cancelled";
 
@@ -70,7 +71,6 @@ export interface Task {
   file?: string;
   cancelledAt?: string;
   completedAt?: string;
-  deployingAt?: string;
   deployedAt?: string;
   ciFixAttempts?: number;
   mergeCommit?: string;
@@ -150,13 +150,24 @@ export function isTerminalReviewLabel(review: {
  *   self-review convention, which ends a summary with the verdict rather
  *   than leading with it).
  *
- * Shared by check-deploy.ts's hasSelfApproveReview and check-patch.ts's
+ * Shared by check-merge.ts's hasSelfApproveReview and check-patch.ts's
  * isSelfCleanApprove so the two self-review consumers can't diverge again.
  */
 export function isCleanApproveBody(body: string): boolean {
   return (
     body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
     VERDICT_APPROVE_LABEL.test(body)
+  );
+}
+
+export function hasSelfApproveReview(
+  reviews: Array<{ author: { login: string }; body: string }>,
+  userLogin: string,
+): boolean {
+  return reviews.some(
+    (r) =>
+      canonicalLogin(r.author.login) === canonicalLogin(userLogin) &&
+      isCleanApproveBody(r.body),
   );
 }
 
@@ -517,7 +528,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     repo: string;
     prNumber: number;
     commitSha: string;
-    phase: "review" | "patch" | "deploy";
+    phase: "review" | "patch" | "merge";
     /** POM-1.2: forwarded to POST /prs/claim so origin can be derived server-side. */
     authorLogin?: string | null;
     /**
@@ -712,7 +723,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       repo: string;
       prNumber: number;
       commitSha: string;
-      phase: "review" | "patch" | "deploy";
+      phase: "review" | "patch" | "merge";
       authorLogin?: string | null;
       headRefName?: string;
       title?: string;
@@ -792,7 +803,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
 // ─── PR candidate helpers ─────────────────────────────────────────────────────
 //
 // Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
-// check-deploy.ts) so the id/org-repo/task-store-record logic can't diverge
+// check-merge.ts) so the id/org-repo/task-store-record logic can't diverge
 // across the three phase-specific ports.
 
 /** Stable, human-readable candidate id: "org/repo#prNumber". */
@@ -889,6 +900,36 @@ export interface LinkedTaskInfo {
    * (CBD-2.2), before the PR ever reaches the loop orchestrator.
    */
   hitl?: boolean;
+  /**
+   * The linked tasks that contributed to a hitl/blocked signal (TLH-1.2), so
+   * a task-blocked skip can name the offending task ids instead of leaving a
+   * stale linked task invisible. Empty/absent when nothing gates the PR.
+   */
+  blockingTasks?: BlockingTaskRef[];
+}
+
+/** A linked task that gates its PR (hitl:true or status:"blocked"). */
+export interface BlockingTaskRef {
+  id: string;
+  status: TaskStatus;
+  hitl?: boolean;
+}
+
+/**
+ * Format the task-blocked skip reason, in the same `phase:reason:detail` style
+ * as the `review:deferred:...` skip-reasons, e.g.
+ * `task-blocked:TLH-1.2(hitl,status=pr_open),X-1(status=blocked)` (TLH-1.2).
+ * Falls back to the bare `task-blocked` when no contributing ids are known.
+ */
+export function formatTaskBlockedReason(
+  task: Pick<LinkedTaskInfo, "blockingTasks"> | null | undefined,
+): string {
+  const refs = task?.blockingTasks ?? [];
+  if (refs.length === 0) return "task-blocked";
+  const parts = refs.map(
+    (t) => `${t.id}(${t.hitl === true ? "hitl," : ""}status=${t.status})`,
+  );
+  return `task-blocked:${parts.join(",")}`;
 }
 
 /**
@@ -898,9 +939,9 @@ export interface LinkedTaskInfo {
  * neither condition alone is sufficient.
  *
  * Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
- * check-deploy.ts) so all three exclude a blocked/escalated task's PR at
+ * check-merge.ts) so all three exclude a blocked/escalated task's PR at
  * candidate-collection time instead of each hand-rolling this check —
- * check-deploy.ts previously checked `status === "blocked"` while
+ * check-merge.ts previously checked `status === "blocked"` while
  * check-patch.ts/check-review.ts didn't, and this function exists to close
  * that drift (PRB-2.1).
  */
@@ -1038,6 +1079,15 @@ export async function clearStaleSkipBlock(
   }
 }
 
+/** Task statuses past which a task no longer gates its linked PR. */
+const TERMINAL_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set([
+  "merged",
+  "done",
+  "deployed",
+  "released",
+  "cancelled",
+]);
+
 /**
  * Merge every task matched by a `?repo=&pr=` lookup into a single
  * LinkedTaskInfo, OR-ing the blocked/hitl signal across ALL of them (PTL-1.1).
@@ -1052,18 +1102,29 @@ export async function clearStaleSkipBlock(
  * them beyond the blocked override below).
  */
 function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
-  const [first, ...rest] = tasks;
+  const [first] = tasks;
   if (!first) return null;
-  const anyBlockedStatus = tasks.some((t) => t.status === "blocked");
-  const anyHitl = first.hitl === true || rest.some((t) => t.hitl === true);
+  // Terminal tasks (e.g. a stale done task with hitl:true) must not gate the
+  // PR (TLH-1.1). When every linked task is terminal, fall back to all of them.
+  const active = tasks.filter((t) => !TERMINAL_TASK_STATUSES.has(t.status));
+  const gating = active.length > 0 ? active : tasks;
+  const primary = gating[0] ?? first;
+  const anyBlockedStatus = gating.some((t) => t.status === "blocked");
+  const anyHitl = gating.some((t) => t.hitl === true);
+  const blockingTasks = gating
+    .filter((t) => t.hitl === true || t.status === "blocked")
+    .map((t) => ({ id: t.id, status: t.status, hitl: t.hitl }));
   return {
     status:
-      anyBlockedStatus && first.status !== "blocked" ? "blocked" : first.status,
+      anyBlockedStatus && primary.status !== "blocked"
+        ? "blocked"
+        : primary.status,
     createdAt: first.createdAt,
-    // Preserve first.hitl's original value (including undefined) unless a
-    // bundle-mate is hitl:true, in which case the merged result must report
-    // hitl:true regardless of what the first task's own hitl field was.
-    hitl: anyHitl ? true : first.hitl,
+    // Preserve the primary (first gating) task's original hitl value
+    // (including undefined) unless a bundle-mate is hitl:true, in which case
+    // the merged result must report hitl:true.
+    hitl: anyHitl ? true : primary.hitl,
+    blockingTasks: blockingTasks.length > 0 ? blockingTasks : undefined,
   };
 }
 
@@ -1138,7 +1199,7 @@ const INCOMPLETE_BUNDLE_STATUSES: ReadonlySet<TaskStatus> = new Set([
 
 /**
  * Build a `(branch: string) => Promise<boolean>` query function against the
- * task-store `/tasks` endpoint's `?branch=` filter, mirroring deploy.md's Step
+ * task-store `/tasks` endpoint's `?branch=` filter, mirroring the former deploy.md's Step
  * 2b bundle-completeness bash logic exactly: a branch is "complete" iff none
  * of its tasks are `pending`, `in_progress`, or `blocked` (a branch with zero
  * tasks counts as complete — there are no bundle-mates to wait on).
@@ -1146,7 +1207,7 @@ const INCOMPLETE_BUNDLE_STATUSES: ReadonlySet<TaskStatus> = new Set([
  * Throws on missing config, a non-ok response, or a malformed/unreachable
  * response — matching createTaskStatusQuery's fail-closed-by-throwing style,
  * NOT createPrRecordQuery's fail-open-by-catching style. The existing call
- * site (check-deploy.ts's getDeployCandidates) already wraps this call in
+ * site (check-merge.ts's getMergeCandidates) already wraps this call in
  * `.catch(() => true)` to fail open at that layer, so this function itself
  * must not swallow errors.
  *
@@ -1206,11 +1267,11 @@ export function createBundleCompleteQuery(opts?: {
  * failing outright) — and iteration continues with the remaining repos.
  *
  * Shared by check-review.ts's listOpenPrs, check-patch.ts's listOwnOpenPrs,
- * and check-deploy.ts's listOpenPrs collection so a single inaccessible repo
+ * and check-merge.ts's listOpenPrs collection so a single inaccessible repo
  * in the agent's configured repos list can't abort candidate collection for
  * every phase and every other repo that tick (see runLoopTick's unguarded
  * await chain over getReviewCandidates / getPatchCandidates /
- * getDeployCandidates).
+ * getMergeCandidates).
  */
 export async function mapReposTolerant<T>(
   repos: string[],

@@ -45,8 +45,12 @@ packaged a `.tgz` is allowed to finish rather than being cancelled mid-publish.
 Chart version bumps are **automated** by the
 [`auto-bump-chart.yml`](../.github/workflows/auto-bump-chart.yml) workflow.
 Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, `metrics-v*`,
-`task-store-v*`, or `chat-v*` (created by the service build workflows on
-successful image push), the automation detects the tag, increments the chart
+or `task-store-v*` (created by the service build workflows on successful image
+push), or `PLATFORM_VERSION` in `agent/Dockerfile` changes on `main` (the
+`platform-release` dispatch from app-vitals/agent, which also publishes the
+`ghcr.io/app-vitals/agent-chat` image the `chat` block defaults to; the pin is
+credited as `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`),
+the automation detects the tag, increments the chart
 patch version in `Chart.yaml`, pins each released tag into the matching
 `values.yaml` image defaults, opens a PR (targeting `main`), and merges it
 once checks pass. Once the PR merges, `chart-release.yml` fires and publishes
@@ -100,6 +104,121 @@ If every retry attempt still collides, the workflow fails loudly, naming the
 release tag(s) that could not be pinned, rather than silently exiting
 success and dropping those tags. This ensures no release tags ever disappear
 from the chart version bump without surfacing the failure.
+
+## Automating library chart releases
+
+When the **agent-platform library chart** (`app-vitals/agent`'s published
+`shipwright` chart dependency) publishes a new version, the Shipwright repo
+**automatically** picks it up via the
+[`library-chart-release.yml`](../.github/workflows/library-chart-release.yml)
+workflow.
+
+The app-vitals/agent `chart-release` workflow dispatches to Shipwright with the
+new version (CHM-2.7 design):
+
+```bash
+gh api POST repos/app-vitals/shipwright/dispatches \
+  -f event_type=chart-release -f client_payload[version]=$VERSION
+```
+
+On receipt, `library-chart-release.yml`:
+
+1. Validates the version is strict `X.Y.Z` format.
+2. Waits for the version to appear in the agent-platform's published Helm index.
+3. Runs `lib/library-pin.sh` to re-pin the dependency in `charts/shipwright/Chart.yaml` and `Chart.lock`.
+4. Bumps the Shipwright chart patch version in `Chart.yaml`.
+5. Updates `CHANGELOG.md` with an `artifacthub.io/changes` annotation.
+6. Swaps the vendored agent-platform chart tarballs in `charts/shipwright/charts/`.
+7. Opens (or updates) a PR on the fixed branch `chore/library-chart-release`.
+
+The PR runs the full CI suite, but skips the `helm.yml` render-parity check
+(refactor-only gate — library-chart-release PRs have `chore(deps):` titles and
+do not run this check). Intentional library chart changes affect the renders and
+are expected. Once checks pass, the workflow auto-merges the PR using the
+platform release merge gate (`scripts/platform-bump-gate.sh`). When the PR
+merges, `chart-release.yml` publishes the bumped chart version to the
+`gh-pages` branch as usual.
+
+**Drift detection:** [`check-chart-drift.yml`](../.github/workflows/check-chart-drift.yml)
+runs daily to verify the agent-platform pin in `charts/shipwright` is not
+stale relative to the published index. It fails loudly if a newer version is
+available, signaling either a missed dispatch or a Renovate fallback that needs
+attention.
+
+**Manual runs:** Developers can trigger `library-chart-release.yml` manually
+via **Actions → Library Chart Release Bump → Run workflow**, entering the
+library version to pin.
+
+## Library-backed chart
+
+The platform half of the chart (admin, chat, whisper, agent provisioning and
+the shared networking and database templates) lives in the **`agent-platform`
+library chart**, published from `app-vitals/agent` to
+`https://app-vitals.github.io/agent`. `charts/shipwright` declares it as a
+dependency in `Chart.yaml` (pinned to an exact version, with `Chart.lock` and
+the vendored `.tgz` committed) and stays the one **deployable** chart.
+
+- **Where templates live.** The platform templates are named templates in the
+  library. The matching files under `charts/shipwright/templates/` are
+  one-line includes, e.g. `{{ include "agent-platform.admin.service" . }}`.
+  Shared templates (httproute, ingress, health checks, tenant network policy,
+  PostgreSQL initdb and db-bootstrap) take an *extension list* from
+  `shipwright.platformExtensions`, which is how Shipwright adds its own
+  task-store, metrics and mcp-server entries. Templates for Shipwright-only
+  services (task-store, metrics, mcp-server) stay in this repo.
+- **Why a library.** A library chart shares the parent's values context and
+  renders nothing on its own, so no values nest under a subchart key and
+  resource names are still derived from the `shipwright` chart and release.
+- **Compatibility contract.** The chart name (`shipwright`), the release name
+  and the `values.yaml` keys do not change. Downstream consumers (for example
+  the private wrapper deployed with Argo CD `prune: true`) depend on every
+  rendered resource name staying identical; anything that renders under a
+  different name is pruned. Treat a change to any of these as a breaking
+  change.
+
+### How a library release reaches a chart bump
+
+1. `app-vitals/agent` publishes a new `agent-platform` version to its Pages
+   Helm repo and dispatches `chart-release` to this repo (see
+   [Automating library chart releases](#automating-library-chart-releases)).
+2. `library-chart-release.yml` re-pins `Chart.yaml` / `Chart.lock`, bumps the
+   `shipwright` chart patch version and opens the `chore/library-chart-release`
+   PR, which auto-merges once checks pass.
+3. The merge changes the chart version, so `chart-release.yml` publishes the
+   new `shipwright` chart to `gh-pages` as described above.
+4. `check-chart-drift.yml` runs daily and fails if the pin is behind the
+   published index, catching a missed dispatch.
+
+### Render-parity check
+
+`scripts/chart-render-parity.ts` is the gate that proves a template move did
+not change what the chart renders. It renders the chart at a base (a git ref or
+a directory) and at head with the same values, normalizes only the
+`helm.sh/chart` label (it embeds the chart name and version), and exits
+non-zero on any object, name, namespace or field change. Fields that differ
+between two renders of the same base (generated secrets and certs) are ignored.
+
+In CI, the `render-parity` job in
+[`helm.yml`](../.github/workflows/helm.yml) runs it against `origin/<base>` for
+every `ci/` and `examples/` values file, but **only on PRs whose title starts
+with `refactor`**: `feat`, `fix`, `chore` and `docs` PRs, and library-pin
+bumps, may change output and skip it.
+
+To run it locally from the repo root (needs `helm` and `bun`):
+
+```bash
+args=()
+for f in charts/shipwright/ci/*.yaml charts/shipwright/examples/*.yaml; do
+  args+=(--values "$f")
+done
+bun run scripts/chart-render-parity.ts \
+  --base origin/main --head charts/shipwright \
+  --chart charts/shipwright "${args[@]}"
+```
+
+Pass `--names-file <path>` (one `Kind/namespace/name` per line) to also assert
+that a list of expected objects, such as a private production inventory, still
+renders at head. The full flag reference is in the script's header comment.
 
 ## How downstream consumers pick up new versions
 

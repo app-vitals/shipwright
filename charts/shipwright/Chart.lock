@@ -1,4 +1,7 @@
 dependencies:
+- name: agent-platform
+  repository: https://app-vitals.github.io/agent
+  version: 0.4.0
 - name: postgresql
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 18.12.15
@@ -11,5 +14,5 @@ dependencies:
 - name: cert-manager
   repository: https://charts.jetstack.io
   version: v1.21.3
-digest: sha256:fa64c26853f3e5a77b059765bac63db59df56ed71626cce62406c137b0ec0311
-generated: "2026-10-26T12:14:56.059860136Z"
+digest: sha256:6001d39ea31366c98db5ddc56946c03085e9be0c47c6766284da2c30d7d3cead
+generated: "2026-11-12T22:18:24.940678249Z"

@@ -27,6 +27,9 @@ import type { VerificationCheckServiceLike } from "./verification-check-service.
 // ─── Stub deps — only route definitions matter for spec generation ────────────
 
 const stubTaskService: TaskServiceLike = {
+  async markMergedByPr() {
+    return { updated: [], unchanged: [], skipped: [] };
+  },
   async list() {
     return { tasks: [], total: 0, limit: 50, offset: 0 };
   },
@@ -128,6 +131,9 @@ const stubPrService: PullRequestServiceLike = {
     return {} as never;
   },
   async resetSkip() {
+    return {} as never;
+  },
+  async unblock() {
     return {} as never;
   },
   async claimNext() {

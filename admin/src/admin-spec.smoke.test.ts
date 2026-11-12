@@ -27,6 +27,7 @@ import {
   parseAdminApiKeys,
 } from "@app-vitals/agent-admin/agents-api";
 import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
+import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { adminExtensions } from "./main.ts";
 
@@ -79,7 +80,7 @@ function buildSpecApp() {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        specialty: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
         missingRequiredEnv: [],
@@ -98,7 +99,7 @@ function buildSpecApp() {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        specialty: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
         missingRequiredEnv: [],
@@ -109,10 +110,10 @@ function buildSpecApp() {
       runTransaction: async (fn) => fn(undefined as never),
     },
     specialtyRegistry: {
-      getManifest: () => {
+      getType: () => {
         throw new Error("not implemented");
       },
-      tryGetManifest: () => undefined,
+      tryGetType: () => undefined,
       listTypes: () => [],
     },
     agentEnvService: {
@@ -466,6 +467,19 @@ function buildSpecApp() {
   const root = new OpenAPIHono();
   root.route("/agents", runtimeApp);
   root.route("/", adminApp);
+  // The /github-enterprise routes live in their own app, mounted at the root
+  // in admin-boot.ts; stub deps suffice since only the spec is read.
+  root.route(
+    "/",
+    createGithubEnterpriseApp({
+      appService: {} as never,
+      agentService: {} as never,
+      agentEnvService: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+    }),
+  );
   root.doc("/doc", {
     openapi: "3.1.0",
     info: { title: "Shipwright Admin API", version: "0.1.0" },

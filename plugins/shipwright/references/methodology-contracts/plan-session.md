@@ -149,7 +149,7 @@ A single JSON object:
   text the reference implementation would use for
   `blockedReason: "plan_session_autonomous_hard_contradiction: {...}"`) instead of `null`,
   and `tasks[]`/`planMarkdown` are empty/omitted. The caller uses this verbatim to PATCH the
-  originating task to `blocked, hitl: true` and stops before Step 6 — mirroring the reference
+  originating task to `blocked` and stops before Step 6 — mirroring the reference
   implementation's Step 4/5 escape hatch. Outside `--autonomous` this field is always `null`;
   there is no `taskId` to PATCH and no automated escape hatch to trigger — an interactive
   subagent instead keeps iterating with the human as the reference implementation's Step 4/5

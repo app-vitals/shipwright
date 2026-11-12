@@ -339,3 +339,136 @@ describeOrSkip("TaskService dispatcher wiring (TSW-1.2, integration)", () => {
     expect(calls[0]?.data).toEqual([result]);
   });
 });
+
+// TLH-2.1: colliding task `pr` links warn (never reject).
+describeOrSkip("TaskService colliding pr link warning (integration)", () => {
+  let prisma: PrismaClient;
+  let service: TaskService;
+  let warnings: string[];
+  const realWarn = console.warn;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new TaskService(prisma);
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+    warnings = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+  });
+
+  afterEach(async () => {
+    console.warn = realWarn;
+    await prisma.$disconnect();
+  });
+
+  const collisionWarnings = () =>
+    warnings.filter((w) => w.includes("pr collision"));
+
+  async function seedHolder(over: Record<string, unknown> = {}): Promise<void> {
+    await prisma.task.create({
+      data: {
+        id: "HOLDER-1",
+        title: "holder",
+        status: "pr_open",
+        repo: "org/repo",
+        branch: "feat/a",
+        pr: 42,
+        ...over,
+      },
+    });
+  }
+
+  it("PATCH to a pr held by a non-terminal task on a different branch warns and still succeeds", async () => {
+    await seedHolder();
+    await prisma.task.create({
+      data: {
+        id: "NEW-1",
+        title: "new",
+        status: "in_progress",
+        repo: "org/repo",
+        branch: "feat/b",
+      },
+    });
+    const updated = await service.update("NEW-1", { pr: 42 });
+    expect(updated.pr).toBe(42);
+    expect(collisionWarnings()).toHaveLength(1);
+    expect(collisionWarnings()[0]).toContain("HOLDER-1");
+  });
+
+  it("create() with a colliding pr warns and still succeeds", async () => {
+    await seedHolder();
+    const created = await service.create({
+      id: "NEW-2",
+      title: "new",
+      status: "pr_open",
+      repo: "org/repo",
+      branch: "feat/b",
+      pr: 42,
+    });
+    expect(created.pr).toBe(42);
+    expect(collisionWarnings()).toHaveLength(1);
+  });
+
+  it("bulk() with a colliding pr warns and still succeeds", async () => {
+    await seedHolder();
+    const res = await service.bulk([
+      {
+        id: "NEW-3",
+        title: "new",
+        status: "pr_open",
+        repo: "org/repo",
+        branch: "feat/b",
+        pr: 42,
+      },
+    ]);
+    expect(res.inserted).toBe(1);
+    expect(collisionWarnings()).toHaveLength(1);
+  });
+
+  it("does not warn for same-branch bundle-mates", async () => {
+    await seedHolder();
+    await service.create({
+      id: "NEW-4",
+      title: "mate",
+      status: "pr_open",
+      repo: "org/repo",
+      branch: "feat/a",
+      pr: 42,
+    });
+    expect(collisionWarnings()).toHaveLength(0);
+  });
+
+  it("does not warn when the holder is terminal", async () => {
+    await seedHolder({ status: "merged" });
+    await service.create({
+      id: "NEW-5",
+      title: "new",
+      status: "pr_open",
+      repo: "org/repo",
+      branch: "feat/b",
+      pr: 42,
+    });
+    expect(collisionWarnings()).toHaveLength(0);
+  });
+
+  it("does not warn for a different repo", async () => {
+    await seedHolder();
+    await service.create({
+      id: "NEW-6",
+      title: "new",
+      status: "pr_open",
+      repo: "org/other",
+      branch: "feat/b",
+      pr: 42,
+    });
+    expect(collisionWarnings()).toHaveLength(0);
+  });
+
+  it("does not warn when re-setting the task's own pr", async () => {
+    await seedHolder();
+    await service.update("HOLDER-1", { pr: 42 });
+    expect(collisionWarnings()).toHaveLength(0);
+  });
+});

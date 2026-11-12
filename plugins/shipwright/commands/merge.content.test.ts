@@ -72,10 +72,18 @@ describe("merge.md — Arguments section (AC1)", () => {
     expect(section).toContain("[silent]");
   });
 
-  it("does NOT document a [preclaim:...] marker — merge has no candidate-provider wiring", () => {
-    expect(content).not.toContain("[preclaim:{recordId}:{commitSha}]");
-    expect(content).not.toContain("PRECLAIM_RECORD_ID");
-    expect(content).not.toContain("formatPreClaimMarker");
+  it("accepts the [preclaim:{recordId}:{commitSha}] marker exactly as review/patch/merge do", () => {
+    const section = extractArgsSection(content);
+    expect(section).toContain("[preclaim:{recordId}:{commitSha}]");
+    expect(section).toContain("formatPreClaimMarker");
+    expect(section).toContain("PRECLAIM_RECORD_ID");
+    expect(section).toContain("PRECLAIM_COMMIT_SHA");
+    expect(content).toContain("Pre-Claim Fast Path");
+  });
+
+  it("describes merge as the loop's merge phase, not 'deploy-disabled setups only'", () => {
+    expect(content).toContain("merge phase");
+    expect(content.toLowerCase()).not.toContain("deploy-disabled");
   });
 });
 
@@ -227,16 +235,36 @@ describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", 
     return match?.[0] ?? "";
   }
 
-  it("claims the PR record under phase: deploy (reusing the existing PrPhase enum value)", () => {
+  it("claims the PR record under phase: merge", () => {
     const section = extractStep3Section(content);
     expect(section).toContain("/prs/claim");
-    expect(section).toContain('\\"phase\\": \\"deploy\\"');
+    expect(section).toContain('phase: "merge"');
+    expect(section).not.toContain('phase: "deploy"');
+    expect(section).not.toContain('\\"phase\\": \\"deploy\\"');
   });
 
-  it("does not introduce a new 'merge' PrPhase enum value in the claim body", () => {
+  it("pre-claim fast path skips the claim call when the marker matches the live head", () => {
     const section = extractStep3Section(content);
-    expect(section).not.toContain('\\"phase\\": \\"merge\\"');
-    expect(section).not.toContain('"phase": "merge"');
+    expect(section).toContain("HEAD_SHA_PRE_MERGE == PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("skip the claim call below");
+    expect(section).toContain("HEAD_SHA_PRE_MERGE != PRECLAIM_COMMIT_SHA");
+  });
+
+  it("releases a pre-claim on pre-flight failure and early exits (no leaked phase=merge claim)", () => {
+    const step1 = content.slice(
+      content.indexOf("## Step 1:"),
+      content.indexOf("## Step 3:"),
+    );
+    expect(step1).toContain("PRECLAIM_RECORD_ID");
+    expect(step1).toContain("/prs/$PRECLAIM_RECORD_ID/release");
+    expect(step1.toLowerCase()).toContain("release");
+    expect(step1).toContain("Pre-flight failed");
+  });
+
+  it("releases the claim after the post-merge record update", () => {
+    const idx = content.indexOf("### 3c.");
+    const after = content.slice(idx, content.indexOf("## Step 4"));
+    expect(after).toContain("/prs/$PR_RECORD_ID/release");
   });
 
   it("claim call appears before the gh pr merge call", () => {
@@ -352,9 +380,9 @@ describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", 
   });
 });
 
-describe("merge.md — Step 4: Print Handoff", () => {
+describe("merge.md — Step 5: Print Handoff", () => {
   it("has a terminal handoff block with MERGED, PR, and SHA lines", () => {
-    const match = content.match(/## Step 4: Print Handoff[\s\S]*$/);
+    const match = content.match(/## Step 5: Print Handoff[\s\S]*$/);
     expect(match).not.toBeNull();
     const section = match?.[0] ?? "";
     expect(section).toContain("MERGED:");
@@ -382,5 +410,73 @@ describe("merge.md — out of scope: no deploy/canary/promote pipeline logic", (
   it("does not mark the task status as deploying/deployed", () => {
     expect(content).not.toContain('"status": "deploying"');
     expect(content).not.toContain('"status": "deployed"');
+  });
+});
+
+describe("merge.md — Step 4: post-merge CI watch", () => {
+  function extractWatch(md: string): string {
+    const match = md.match(/## Step 4: Post-Merge CI Watch[\s\S]*?(?=\n## Step 5)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("polls CI on the squash SHA every 30s for up to 10 minutes via is-ci-green.ts", () => {
+    const section = extractWatch(content);
+    expect(section).toContain("SQUASH_SHA");
+    expect(section).toContain("30 seconds");
+    expect(section).toContain("10 minutes");
+    expect(section).toContain("is-ci-green.ts");
+  });
+
+  it("marks every bundle-mate task merged and watches them together", () => {
+    expect(content).toContain("TASK_IDS");
+    expect(content).toContain('"status": "merged"');
+    expect(extractWatch(content)).toContain("every task on `TASK_IDS`");
+  });
+
+  it("builds TASK_IDS from pr_open tasks only so later-status bundle-mates are not regressed", () => {
+    expect(content).toContain('select(.status == "pr_open") | .id');
+  });
+
+  it("blocks every linked task with blockedReason naming the failed run id (no legacy note)", () => {
+    const section = extractWatch(content);
+    expect(section).toContain("Post-merge CI failed — run ID: {id}");
+    expect(section).toContain("blockedReason");
+    expect(section).toMatch(/\\"status\\": \\"blocked\\"/);
+    expect(section).not.toContain('\\"note\\"');
+  });
+
+  it("guards the failure-path task block with the merge-only condition", () => {
+    const section = extractWatch(content);
+    expect(content).toContain("MERGE_ONLY=true");
+    expect(section).toContain('[ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]');
+  });
+
+  it("flags the PR record blocked:true with blockedReason when no task is linked", () => {
+    const section = extractWatch(content);
+    expect(section).toContain("/prs/$PR_RECORD_ID");
+    expect(section).toContain('\\"blocked\\": true');
+  });
+
+  it("leaves tasks merged on green and on pending-at-timeout, printing a manual-check line", () => {
+    const section = extractWatch(content);
+    expect(section).toContain("Post-merge CI passed");
+    expect(section).toContain("still pending after 10 minutes");
+    expect(section).toContain("Check manually");
+    expect(section).toContain("leave");
+    expect(section).toContain("merged");
+  });
+});
+
+describe("merge.md — out of scope: no revert PR, no deployed writes", () => {
+  it("does not port the canary-failure revert PR or the 'Post-merge CI failed' sweep", () => {
+    expect(content).not.toContain("gh pr create");
+    expect(content.toLowerCase()).not.toContain("revert pr");
+    expect(content).not.toContain("Step 2-pre");
+  });
+
+  it("never writes deployed / deployedAt", () => {
+    expect(content).not.toContain("deployedAt");
+    expect(content).not.toMatch(/\\?"status\\?"\s*:\s*\\?"deployed\\?"/);
   });
 });

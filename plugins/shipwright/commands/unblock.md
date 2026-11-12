@@ -9,7 +9,7 @@ Discover every `status: 'blocked'` task and `blocked: true` PR in the task store
 which pipeline phase escalated each one from its `blockedReason` text, and walk through
 them one at a time so a human can decide: **retry**, **redirect**, or **abandon**.
 
-Unlike `dev-task`/`review`/`patch`/`deploy`, this command is **not** dispatched by the
+Unlike `dev-task`/`review`/`patch`/`merge`, this command is **not** dispatched by the
 `shipwright-loop` cron and is exempt from the Candidate Selection Contract (see
 `plugins/shipwright/CLAUDE.md`) — it self-discovers its own targets because it is a
 human-facing triage tool, not an autonomous pipeline phase. It never runs unattended.
@@ -123,14 +123,8 @@ containment, not exact equality — several patterns include a dynamic suffix (a
 subagent's own detail) after a fixed prefix.
 
 - **PR-only records:** parse `.blockedReason` on the PR.
-- **Tasks:** parse `.blockedReason` first. If it's empty, also check `.note` — `deploy.md`
-  writes its five escalation strings (`Post-merge CI failed`, `Deploy stage failed`,
-  `canary_blocked`, `Pipeline timeout`, `Canary failed after deploy`) into the task's `note`
-  field when a task is linked (`$TASK_ID` set), not `blockedReason`; `blockedReason` on a
-  task-linked deploy escalation stays `null`. `blockedReason` is only populated for these
-  five deploy patterns in the PR-only branch (`$PR_RECORD_ID`, no linked task). All other
-  phases (dev-task, patch, spin-detection) write to `blockedReason` on tasks as usual — the
-  `.note` fallback only matters for deploy-originated task escalations.
+- **Tasks:** parse `.blockedReason`. `merge.md` writes its escalation strings to `blockedReason` on
+  both the linked task and the PR record, so no `.note` fallback is needed.
 
 | Origin phase | pattern (substring match) | field(s) to check |
 |---|---|---|
@@ -142,15 +136,13 @@ subagent's own detail) after a fixed prefix.
 | **patch** | `second-round disagreement` (reviewer vs. automated fix, escalated to HITL) | task: `blockedReason` |
 | **patch** | `structurally unfixable` (finding requires a write under `.claude/**`, which the CLI blocks unconditionally — escalated to HITL on the first round) | task: `blockedReason` |
 | **patch** | `review-finding fix blocked` | task: `blockedReason` |
+| **patch** | `main_red:` (the PR's CI failure is inherited from a red base branch — nothing for patch to fix on the PR; `blockedReason` is `main_red: {base} @ {main-sha} is failing {signature}`) | task: `blockedReason`; PR: `blockedReason` |
 | **patch** | `CI-fix blocked` | task: `blockedReason` |
-| **deploy** | `Post-merge CI failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Deploy stage failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `canary_blocked` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Pipeline timeout` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Canary failed after deploy` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
-| **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a; the task-linked branch of that same step sets `status=deployed` with no note/blockedReason at all, so this pattern never appears on a task) | PR: `blockedReason` only |
+| **merge** | `Post-merge CI failed` | task: `blockedReason`; PR: `blockedReason` |
+| **merge** | `Squash merge failed` | task: `blockedReason`; PR: `blockedReason` |
+| **merge** | `Merge blocked by branch protection` (a self-review APPROVE does not satisfy the required-review rule — a human adds a real approval or configures a ruleset bypass actor before retry) | task: `blockedReason`; PR: `blockedReason` |
 | **spin-detection — skip-count (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — tracked via `skipCount`; **not task-only** — `Task` and `PullRequest` each carry their own `skipCount`/`lastSkippedAt` (`task-store/prisma/schema.prisma`) and `PullRequestService.recordSkip()` produces this identical blockedReason string on a PR-only record (no linked task), just like `TaskService.recordSkip()` does on a task — distinct from (though similarly named to) the PR CI-failure-streak variant below | task: `blockedReason`; PR: `blockedReason` |
-| **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately | PR: `blockedReason` only |
+| **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); `POST /prs/:id/unblock` (Step 6b) resets the streak counter and signature along with the block, so the next patch cycle starts a fresh streak | PR: `blockedReason` only |
 
 If neither field matches any pattern above (both empty, or genuinely unrecognized text),
 present it as **unknown origin phase** — do not guess which phase set it. Never crash on an
@@ -168,9 +160,9 @@ BLOCKED: {task-id or org/repo#pr}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Title:         {title}
 Repo:          {repo}
-Origin phase:  {dev-task | patch | deploy | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
+Origin phase:  {dev-task | patch | merge | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
 Blocked at:    {blockedAt}
-Blocked reason: {blockedReason, or task.note when blockedReason is empty (deploy escalations on a linked task)}
+Blocked reason: {blockedReason}
 PR:            {task.pr or "(none)"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -187,35 +179,19 @@ action taken, move to the next).
 
 ## Step 6: Act on the Human's Choice
 
-There are three retry destinations, chosen per item:
+Each retry is a single call — the task-store picks the destination and resets all the
+counters atomically, so there is no follow-up PATCH or reset step:
 
-- **task.pr is set** (escalation happened mid-review/patch/deploy, after a PR already
-  existed) → PATCH the task directly to `status: 'pr_open'`. Do **not** use `/release` here
-  — `/release` resets to `'pending'`, which would let `dev-task` open a duplicate PR.
-- **task.pr is empty** (no PR exists yet) → use the single `POST /tasks/:id/unblock` call.
-  It atomically resets `status` to `'pending'` and clears `blockedReason`, `blockedAt`,
-  `claimedBy`, `claimedAt`, and `heartbeatAt` — and also resets `skipCount`/`lastSkippedAt` —
-  all in one round-trip, via a single conditional `UPDATE ... WHERE status='blocked'`. No
-  follow-up PATCH is needed. Returns `409` if the task isn't currently `status: 'blocked'`
-  (never a silent no-op, unlike `/release` on a task that isn't `in_progress`).
-- **PR-only record** (no linked task) → `PATCH /prs/:id` with `blocked: false` (and clear
-  `blockedReason`). No task-side call needed.
+- **Task** → `POST /tasks/:id/unblock`. With no body the target is inferred (no `pr` →
+  `pending`; PR open → `pr_open`; PR merged → `merged`); pass `{"to": "..."}` only to override
+  (`pending`, `pr_open`, `merged`, `deployed`, `released`). Do **not** use `/release` — it
+  resets to `'pending'`, which would let `dev-task` open a duplicate PR. Returns `409` if the
+  task isn't currently `status: 'blocked'`, or if its PR was closed without merging and no
+  `to` was given.
+- **PR-only record** (no linked task) → `POST /prs/:id/unblock`. Returns `409` if the PR
+  isn't currently blocked.
 
-### 6a. Retry — task.pr is set
-
-```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d '{"status": "pr_open", "blockedReason": null, "blockedAt": null}' | jq .
-```
-
-### 6b. Retry — task.pr is empty (no PR yet)
-
-A single call resets `status` to `'pending'`, clears `blockedReason`/`blockedAt`
-(and `claimedBy`/`claimedAt`/`heartbeatAt`), and resets `skipCount`/`lastSkippedAt` —
-all automatically, in one round-trip. No follow-up PATCH is needed:
+### 6a. Retry — task
 
 ```bash
 curl -sf -X POST \
@@ -223,50 +199,30 @@ curl -sf -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/unblock" | jq .
 ```
 
-Returns `409` if the task is not currently `status: 'blocked'`.
-
-### 6c. Retry — PR-only record (no linked task)
-
-```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID" \
-  -d '{"blocked": false, "blockedReason": null}' | jq .
-```
-
-### 6d. Spin-detection skipCount reset — PR-only records
-
-If `blockedReason` matches the **skip-count** spin-detection variant (starts with
-`Auto-blocked after` and contains `consecutive skips` — the `recordSkip()` pattern):
-
-- **Task:** nothing extra to do here — Step 6b's `POST /tasks/:id/unblock` call already
-  resets `skipCount`/`lastSkippedAt` to `0`/`null` automatically as part of its single
-  atomic update.
-- **PR-only record** (no linked task): `/tasks/:id/unblock` is task-only and does not
-  apply to PR-only records, so in addition to the 6c retry, reset `skipCount` via the
-  purpose-built endpoint — prefer this over a raw PATCH of `skipCount`:
+To override the inferred destination:
 
 ```bash
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/skip/reset" | jq .
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/unblock" \
+  -d '{"to": "pending"}' | jq .
 ```
 
-(`resetSkip()` sets `skipCount: 0, lastSkippedAt: null` on the PR record.) Without this
-step, a PR-only record blocked by this exact reason re-blocks on its very next skip — its
-elevated `skipCount` is untouched by a 6c retry.
+### 6b. Retry — PR-only record (no linked task)
 
-**Does not apply to the PR CI-failure-streak variant.** If `blockedReason` instead matches
-the **PR CI-failure streak** spin-detection variant (contains `consecutive patch cycles
-hitting the same CI failure` — the `consecutiveCiFailureCount` pattern), there is no
-reset endpoint for that counter today — neither `/tasks/:id/skip/reset` nor
-`/prs/:id/skip/reset` touches it, since both reset `skipCount`, a different field entirely.
-A 6c retry clears `blocked`/`blockedReason`, but `consecutiveCiFailureCount` stays elevated,
-so one more patch cycle hitting the same CI failure signature re-blocks the PR immediately.
-Tell the human this before retrying so they aren't surprised by an immediate re-block.
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/unblock" | jq .
+```
 
-### 6e. Redirect
+**`main_red:` blocks (patch).** Before retrying, tell the human to confirm the base branch is
+green again (the sha and failing jobs are named in `blockedReason`), then refresh CI — re-run
+the failed checks or update the PR branch onto the new base. Retrying while `main` is still
+red just re-blocks the PR on the next patch cycle.
+
+### 6c. Redirect
 
 Ask the human what to change in the description and/or acceptance criteria. PATCH those
 fields first:
@@ -280,11 +236,11 @@ curl -sf -X PATCH \
     '{description: $desc, acceptanceCriteria: $ac}')" | jq .
 ```
 
-Then run the **same retry logic as above** (6a/6b as applicable, plus 6d if spin-detected)
+Then run the **same retry logic as above** (6a)
 against the now-updated task. Redirect has no PR-only variant — a PR-only blocked record
 has no description/acceptanceCriteria to edit; offer only retry/abandon for those.
 
-### 6f. Abandon
+### 6d. Abandon
 
 Task-only (PR-only records have no `status` field to cancel — abandon a PR-only record via
 its linked repo/PR directly on GitHub, or simply leave it blocked; this command does not
@@ -306,7 +262,7 @@ curl -sf -X PATCH \
 After acting on an item, print a one-line confirmation and move to the next item:
 
 ```
-✓ {task-id or org/repo#pr}: {retried → pr_open | retried → pending | retried → unblocked | redirected → retried | abandoned}
+✓ {task-id or org/repo#pr}: {retried → {status} | retried → unblocked | redirected → retried | abandoned}
 ```
 
 Once every discovered item has been triaged (or explicitly skipped), print a final summary:

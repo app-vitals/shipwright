@@ -17,14 +17,14 @@ and does no phase-specific adaptation.
 > **Subagent selection is wired up (DTM-1.2).** A per-agent, per-phase `AgentPhaseMethodology`
 > record (`{phase, subagentType | null}`, with `dev-task` as a valid phase key) exists as a
 > Prisma model plus CRUD service in `admin/src/coding/agent-phase-methodology.ts`.
-> `commands/dev-task.md`'s Step 5a.5 reads `phaseMethodology["dev-task"]` off
+> `commands/dev-task.md` (via `references/dev-task/implementation-dispatch.md`, "Resolving the subagent type") reads `phaseMethodology["dev-task"]` off
 > `GET /agents/{id}/config` once per run and resolves `DEV_TASK_SUBAGENT_TYPE` — falling back
 > to the built-in `general-purpose` when no override is configured, or on any lookup failure
-> (fail-closed, never fail-open). Step 5b dispatches `DEV_TASK_SUBAGENT_TYPE` instead of a
+> (fail-closed, never fail-open). The Step 5 dispatch uses `DEV_TASK_SUBAGENT_TYPE` instead of a
 > hardcoded literal. This contract specifies the wire shape any subagent plugged in this way
 > — built-in or operator-configured — must satisfy.
 
-`plugins/shipwright/commands/dev-task.md`'s Step 5 (5a through 5d) is the **reference
+`plugins/shipwright/commands/dev-task.md`'s Step 5 (detailed in `references/dev-task/implementation-dispatch.md`) is the **reference
 implementation** this contract was extracted from — TDD red-green-refactor enforcement,
 spawning the `shipwright:researcher` agent for discovery, the model-escalation ladder on a
 BLOCKED report (haiku → sonnet → opus), and the claim-heartbeat renewal that brackets the
@@ -58,7 +58,7 @@ specifies the wire shape, not implementation policy.
 ## Output
 
 A dev-task-phase subagent's output is **dual** — a text report, plus the actual committed
-code changes left on disk. This is a deliberate difference from the review/patch/deploy
+code changes left on disk. This is a deliberate difference from the review/patch/merge
 contracts, whose callers parse the subagent's returned text as the entire result: here, Step 6
 onward (Simplify, spec compliance, requirements verification) all operate on `git diff
 main...HEAD` — they re-derive what changed by reading the branch's commits, not by parsing
@@ -90,11 +90,11 @@ BLOCKER:  {if BLOCKED}
   escalate-to-HITL decision** — but the subagent itself does not perform the actual escalation
   mechanics. It does not PATCH the task record `blocked`, and it does not decide which model
   tier to retry at. The caller (`/shipwright:dev-task`) is the one that runs the
-  model-escalation ladder (Step 5c: haiku → sonnet → opus, re-dispatching once per tier with
+  model-escalation ladder (`implementation-dispatch.md` "Status handling": haiku → sonnet → opus, re-dispatching once per tier with
   the same prompt plus the blocker context appended) and, only after that ladder is exhausted,
   PATCHes the task `blocked` with `blockedReason: "implementation_blocked_after_model_escalation"`
   — the same "caller performs the actual side effect, subagent only reports a verdict" pattern
-  the patch- and deploy-phase contracts use for their own escalation/status transitions.
+  the patch- and merge-phase contracts use for their own escalation/status transitions.
 
 ## Scope
 
@@ -117,7 +117,7 @@ skips or replaces them:
   5 on any NOT MET/PARTIAL criterion.
 - **Step 8.5 (Auto-Refresh Docs)** — the `shipwright:docs-refresher` agent runs against the
   branch's diff and commits a docs-only commit when anything is stale.
-- **Step 9b (CI Gate)** — the post-PR merge-conflict check and CI-fix loop (up to 6 retry
+- **Step 9b (CI Gate; `references/dev-task/push-and-ci.md`)** — the post-PR merge-conflict check and CI-fix loop (up to 6 retry
   attempts) runs against whatever GitHub Actions reports for the pushed branch, independent of
   which subagent authored the original commits.
 
@@ -136,10 +136,10 @@ responsibilities stay entirely with the caller, never delegated to the subagent:
   worktree, checks out the branch, and resolves the test/lint/typecheck/validate commands
   before dispatch; the subagent works inside an already-prepared worktree and does not resolve
   its own toolchain.
-- **Model-tier resolution and escalation** (Step 5b/5c) — the caller resolves which model tier
+- **Model-tier resolution and escalation** (Step 5, `implementation-dispatch.md`) — the caller resolves which model tier
   the dispatch runs at (`task.model ?? 'sonnet'`) and owns the haiku → sonnet → opus escalation
   ladder on a BLOCKED report; the subagent does not choose its own tier.
-- **Claim-heartbeat renewal** (Step 5b/5d) — the caller renews the task-store claim heartbeat
+- **Claim-heartbeat renewal** (Step 5, `implementation-dispatch.md` "Heartbeat") — the caller renews the task-store claim heartbeat
   immediately before and after Step 5's dispatch so the stale-claim reaper does not reclaim the
   task mid-implementation; the subagent has no visibility into or responsibility for the claim
   TTL.

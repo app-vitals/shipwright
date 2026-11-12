@@ -44,3 +44,31 @@ describe("research-docs.md — Step A0 fallback uses the config-driven resolver"
     expect(section.toLowerCase()).toContain("closed");
   });
 });
+
+describe("research-docs.md — measured-values guard (NMV-1.2)", () => {
+  const content = readResearchDocs();
+
+  it("defines a 6.5d measured-values check citing the recipe rule and file:line", () => {
+    const start = content.indexOf("### 6.5d: Measured Values");
+    expect(start).toBeGreaterThan(-1);
+    const section = content.slice(start, content.indexOf("### Presenting flags"));
+    expect(section).toContain("references/doc-refresh-recipe.md");
+    expect(section).toContain("Measured values");
+    expect(section).toContain("`file:line`");
+  });
+
+  it("applies 6.5d in auto-mode Step A5.5", () => {
+    const start = content.indexOf("### Step A5.5:");
+    const section = content.slice(start, content.indexOf("Track a running count", start));
+    expect(section).toContain("6.5d");
+    expect(section).toContain("Review {doc} for observed measured value");
+  });
+
+  it("Path A digest links observed figures but still digests budgets and targets", () => {
+    const start = content.indexOf("**Path A");
+    const section = content.slice(start, content.indexOf("**Path B"));
+    expect(section).toContain("Measured-values guard");
+    expect(section).toContain("linked to, never copied");
+    expect(section).toContain("speed budgets and coverage targets");
+  });
+});

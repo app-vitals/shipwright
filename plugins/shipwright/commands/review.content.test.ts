@@ -48,7 +48,10 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
 
   it("Pre-Claim Fast Path validates the marker's commitSha against the live headRefOid", () => {
     const sectionIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
-    const nextSectionIdx = content.indexOf("2. Fetch the PR record from the task store:", sectionIdx);
+    const nextSectionIdx = content.indexOf(
+      "2. Fetch the PR record from the task store:",
+      sectionIdx,
+    );
     expect(sectionIdx).toBeGreaterThan(-1);
     expect(nextSectionIdx).toBeGreaterThan(-1);
     const section = content.slice(sectionIdx, nextSectionIdx);
@@ -59,7 +62,10 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
 
   it("Pre-Claim Fast Path trusts a matching marker and sets PR_RECORD_ID directly", () => {
     const sectionIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
-    const nextSectionIdx = content.indexOf("2. Fetch the PR record from the task store:", sectionIdx);
+    const nextSectionIdx = content.indexOf(
+      "2. Fetch the PR record from the task store:",
+      sectionIdx,
+    );
     const section = content.slice(sectionIdx, nextSectionIdx);
 
     expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
@@ -69,7 +75,10 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
 
   it("Pre-Claim Fast Path falls back to self-claiming on a stale or absent marker", () => {
     const sectionIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
-    const nextSectionIdx = content.indexOf("2. Fetch the PR record from the task store:", sectionIdx);
+    const nextSectionIdx = content.indexOf(
+      "2. Fetch the PR record from the task store:",
+      sectionIdx,
+    );
     const section = content.slice(sectionIdx, nextSectionIdx);
 
     expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
@@ -78,19 +87,25 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
   });
 
   it("Step 4's claim subsection skips its own /prs/claim call when PR_RECORD_ID was already set by the fast path", () => {
-    const sectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const sectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const nextSectionIdx = content.indexOf("## Step 5: Gather Context");
     expect(sectionIdx).toBeGreaterThan(-1);
     expect(nextSectionIdx).toBeGreaterThan(-1);
     const section = content.slice(sectionIdx, nextSectionIdx);
 
-    expect(section).toContain("Skip this subsection if `PR_RECORD_ID` was already set");
+    expect(section).toContain(
+      "Skip this subsection if `PR_RECORD_ID` was already set",
+    );
     expect(section).toContain("CBD-1.4");
     expect(section).toContain("/prs/claim");
   });
 
   it("Step 1 of Step 14 parses and strips the pre-claim marker before parsing org/repo/pr", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
     expect(step14Idx).toBeGreaterThan(-1);
     expect(fastPathIdx).toBeGreaterThan(-1);
@@ -104,7 +119,9 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
 
 describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.1)", () => {
   it("Step 4 (after the claim subsection, before Step 5) resolves TASK_MODEL from the linked task", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     expect(claimSectionIdx).toBeGreaterThan(-1);
     expect(step5Idx).toBeGreaterThan(-1);
@@ -116,7 +133,9 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
   });
 
   it("no longer reads PullRequest.taskId off the claimed PR record (PTL-1.2)", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
 
@@ -125,16 +144,22 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
   });
 
   it("queries GET /tasks?repo={org}/{repo}&pr={pr} directly, same shape as check-helpers.ts's createTaskStatusQuery (PTL-1.2)", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
 
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    expect(section).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
     expect(section).toContain("createTaskStatusQuery");
   });
 
   it("documents the highest-tier-wins rule for multiple matched tasks (PTL-1.2)", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
 
@@ -146,7 +171,9 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
   });
 
   it("the TASK_MODEL lookup runs once, regardless of which Step 14 path produced PR_RECORD_ID", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
 
@@ -157,19 +184,26 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
   });
 
   it("the TASK_MODEL lookup fails gracefully -- warns and continues, never a hard stop", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
     const lookupIdx = section.indexOf("TASKS_RESPONSE");
     expect(lookupIdx).toBeGreaterThan(-1);
-    const lookupSection = section.slice(Math.max(0, lookupIdx - 200), lookupIdx + 800);
+    const lookupSection = section.slice(
+      Math.max(0, lookupIdx - 200),
+      lookupIdx + 800,
+    );
 
     expect(lookupSection).toContain("continuing");
     expect(lookupSection).not.toContain("set -e");
   });
 
   it("zero matching tasks (the common case today) leaves TASK_MODEL unset, falling back to the existing default unchanged", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
 
@@ -191,7 +225,9 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
 describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)", () => {
   it("Step 1 captures WORKSPACE_ROOT before the Step 4 worktree checkout", () => {
     const step1Idx = content.indexOf("## Step 1: Load Policy");
-    const step3Idx = content.indexOf("## Step 3: Resolve Current User and Target");
+    const step3Idx = content.indexOf(
+      "## Step 3: Resolve Current User and Target",
+    );
     expect(step1Idx).toBeGreaterThan(-1);
     expect(step3Idx).toBeGreaterThan(-1);
     const section = content.slice(step1Idx, step3Idx);
@@ -219,7 +255,9 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     expect(step10Idx).toBeGreaterThan(-1);
     const section = content.slice(step9Idx, step10Idx);
 
-    expect(section).toContain("Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`");
+    expect(section).toContain(
+      "Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`",
+    );
   });
 
   it("Step 5.7's test-readiness read is anchored to the SHIPWRIGHT_WORKTREE_DIR convention", () => {
@@ -244,7 +282,9 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     expect(section).toContain(
       "detected by the local file `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`",
     );
-    expect(section).toContain("test -f $WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md");
+    expect(section).toContain(
+      "test -f $WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md",
+    );
   });
 
   it("Step 10's write path is qualified with $WORKSPACE_ROOT", () => {
@@ -254,7 +294,9 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     expect(step11Idx).toBeGreaterThan(-1);
     const section = content.slice(step10Idx, step11Idx);
 
-    expect(section).toContain("Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`");
+    expect(section).toContain(
+      "Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`",
+    );
   });
 
   it("Step 10's diff-line-mapping git diff call is unchanged -- cwd stays inside the worktree", () => {
@@ -266,23 +308,34 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     expect(section).toContain("git diff origin/{base}...HEAD -- {file}");
     // This must NOT be qualified with WORKSPACE_ROOT -- it correctly runs from
     // inside the worktree, unlike the file-write paths above.
-    const diffLineIdx = section.indexOf("git diff origin/{base}...HEAD -- {file}");
-    const surrounding = section.slice(Math.max(0, diffLineIdx - 100), diffLineIdx);
+    const diffLineIdx = section.indexOf(
+      "git diff origin/{base}...HEAD -- {file}",
+    );
+    const surrounding = section.slice(
+      Math.max(0, diffLineIdx - 100),
+      diffLineIdx,
+    );
     expect(surrounding).not.toContain("WORKSPACE_ROOT");
   });
 
   it("Step 11's --input flag references $WORKSPACE_ROOT/state/reviews/", () => {
     const step11Idx = content.indexOf("## Step 11: Post or Stage");
-    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
     expect(step11Idx).toBeGreaterThan(-1);
     expect(step11bIdx).toBeGreaterThan(-1);
     const section = content.slice(step11Idx, step11bIdx);
 
-    expect(section).toContain("--input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json");
+    expect(section).toContain(
+      "--input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json",
+    );
   });
 
   it("Step 14's cross-reference to the Step 9 re-review file is qualified with $WORKSPACE_ROOT", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     expect(step14Idx).toBeGreaterThan(-1);
     const section = content.slice(step14Idx);
 
@@ -301,7 +354,9 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     const section = content.slice(step5Idx, step6Idx);
 
     // The unresolved-feedback skip path should NOT have the old release call
-    expect(section).not.toContain("POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release");
+    expect(section).not.toContain(
+      "POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release",
+    );
   });
 
   it("Step 5's Unresolved Comment Check contains a PATCH call to /prs/{PR_RECORD_ID} with reviewState:posted", () => {
@@ -412,10 +467,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     const step14Idx = content.indexOf(
       "## Step 14: Resolve and Claim the Target PR",
     );
-    const step14EndIdx = content.indexOf(
-      "## Review Quality Rules",
-      step14Idx,
-    );
+    const step14EndIdx = content.indexOf("## Review Quality Rules", step14Idx);
     expect(step14Idx).toBeGreaterThan(-1);
     expect(step14EndIdx).toBeGreaterThan(step14Idx);
     step14Section = content.slice(step14Idx, step14EndIdx);
@@ -426,9 +478,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
   });
 
   it("the Live-Review Pre-Check heading appears before the Pre-Claim Fast Path heading", () => {
-    const preCheckIdx = content.indexOf(
-      "### Live-Review Pre-Check (RVD-1.2)",
-    );
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
     const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
     expect(preCheckIdx).toBeGreaterThan(-1);
     expect(fastPathIdx).toBeGreaterThan(-1);
@@ -436,9 +486,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
   });
 
   it("the Live-Review Pre-Check section appears before the task-store record fetch", () => {
-    const preCheckIdx = content.indexOf(
-      "### Live-Review Pre-Check (RVD-1.2)",
-    );
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
     const recordFetchIdx = content.indexOf(
       "Fetch the PR record from the task store",
     );
@@ -664,7 +712,9 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     // server-side when reviewState transitions to "posted" via the PATCH below.
     expect(section).not.toContain("/release");
     expect(section).toContain("PRECLAIM_RECORD_ID");
-    expect(section.toLowerCase()).toMatch(/auto-clears|cleared as a side effect/);
+    expect(section.toLowerCase()).toMatch(
+      /auto-clears|cleared as a side effect/,
+    );
   });
 
   it("the write-back PATCH appears before the 'Skipping' message", () => {
@@ -677,7 +727,9 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
     // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${PR_RECORD_ID} placeholder in asserted task-store URL text, not JS interpolation
-    const patchIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}");
+    const patchIdx = section.indexOf(
+      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}",
+    );
     const skippingIdx = section.indexOf("Skipping #{pr}");
 
     expect(patchIdx).toBeGreaterThan(-1);
@@ -827,7 +879,9 @@ describe("review.md — RVD-1.2 terminal-review skip writes back task-store revi
 
 describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
   it("the already-reviewed-at-commit skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     expect(step14Idx).toBeGreaterThan(-1);
     expect(endIdx).toBeGreaterThan(step14Idx);
@@ -851,7 +905,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent]
   });
 
   it("still stops after emitting the markers", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
 
@@ -867,7 +923,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent]
 
 describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back terminal reviewState (RVD-2.3)", () => {
   it("the skip block contains a PATCH call to /prs/{PR_RECORD_ID} with reviewState:posted before the [silent] stop", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     expect(step14Idx).toBeGreaterThan(-1);
     expect(endIdx).toBeGreaterThan(step14Idx);
@@ -880,7 +938,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
     const dedupSection = section.slice(dedupIdx);
 
     expect(dedupSection).toContain("PATCH");
-    expect(dedupSection).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}");
+    expect(dedupSection).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}",
+    );
     expect(dedupSection).toContain('"reviewState": "posted"');
     expect(dedupSection).toContain('"reviewedCommitSha": "{headRefOid}"');
 
@@ -891,7 +951,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
   });
 
   it("the write-back is unconditional, not re-gated on record.reviewState", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
 
@@ -910,7 +972,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
   });
 
   it("documents that this reuses the record already fetched in this step, without an extra query", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
 
@@ -923,7 +987,9 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
   });
 
   it("the PATCH body also advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
 
@@ -953,7 +1019,9 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
 
   it("Step 11's APPROVE staging PATCH call sets reviewedCommitSha", () => {
     const step11Idx = content.indexOf("## Step 11: Post or Stage");
-    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
     expect(step11Idx).toBeGreaterThan(-1);
     expect(step11bIdx).toBeGreaterThan(step11Idx);
     const section = content.slice(step11Idx, step11bIdx);
@@ -966,7 +1034,9 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
 
   it("Step 11's COMMENT staging PATCH call sets reviewedCommitSha", () => {
     const step11Idx = content.indexOf("## Step 11: Post or Stage");
-    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
     const section = content.slice(step11Idx, step11bIdx);
 
     const commentIdx = section.indexOf('"reviewState": "posted"');
@@ -976,7 +1046,9 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
   });
 
   it("Step 14's stale-staged-review detection captures reviewedCommitSha (not commitSha) as lastReviewedCommit", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     expect(step14Idx).toBeGreaterThan(-1);
     expect(endIdx).toBeGreaterThan(step14Idx);
@@ -988,7 +1060,9 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
   });
 
   it("Step 14's stale-staged-review comparisons reference record.reviewedCommitSha, not record.commitSha", () => {
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
 
@@ -999,8 +1073,12 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
   });
 
   it("Step 11b's PATCH_DATA sets reviewedCommitSha for both the APPROVE branch and the else branch", () => {
-    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     expect(step11bIdx).toBeGreaterThan(-1);
     expect(step14Idx).toBeGreaterThan(step11bIdx);
     const section = content.slice(step11bIdx, step14Idx);
@@ -1036,12 +1114,16 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     expect(step6Idx).toBeGreaterThan(-1);
     const section = content.slice(step5Idx, step6Idx);
 
-    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    const itemIdx = section.indexOf(
+      "Existing reviews, comments, and inline review threads",
+    );
     expect(itemIdx).toBeGreaterThan(-1);
     const itemBlock = section.slice(itemIdx, itemIdx + 1500);
 
     expect(itemBlock).toContain("gh api graphql -f query=");
-    expect(itemBlock).not.toContain("gh pr view {pr} --repo {org}/{repo} --json comments,reviews");
+    expect(itemBlock).not.toContain(
+      "gh pr view {pr} --repo {org}/{repo} --json comments,reviews",
+    );
   });
 
   it("Step 5.5's GraphQL query fetches reviewThreads with isResolved and inline comment author/body/path/line", () => {
@@ -1049,7 +1131,9 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
     const section = content.slice(step5Idx, step6Idx);
 
-    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    const itemIdx = section.indexOf(
+      "Existing reviews, comments, and inline review threads",
+    );
     expect(itemIdx).toBeGreaterThan(-1);
     const itemBlock = section.slice(itemIdx, itemIdx + 1500);
 
@@ -1066,7 +1150,9 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
     const section = content.slice(step5Idx, step6Idx);
 
-    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    const itemIdx = section.indexOf(
+      "Existing reviews, comments, and inline review threads",
+    );
     expect(itemIdx).toBeGreaterThan(-1);
     const itemBlock = section.slice(itemIdx, itemIdx + 1500);
 
@@ -1079,7 +1165,9 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
     const section = content.slice(step5Idx, step6Idx);
 
-    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    const itemIdx = section.indexOf(
+      "Existing reviews, comments, and inline review threads",
+    );
     expect(itemIdx).toBeGreaterThan(-1);
     const itemBlock = section.slice(itemIdx, itemIdx + 1500);
 
@@ -1101,12 +1189,16 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     expect(step6Idx).toBeGreaterThan(step5Idx);
     const step5Section = content.slice(step5Idx, step6Idx);
 
-    const itemIdx = step5Section.indexOf("Existing reviews, comments, and inline review threads");
+    const itemIdx = step5Section.indexOf(
+      "Existing reviews, comments, and inline review threads",
+    );
     expect(itemIdx).toBeGreaterThan(-1);
     const itemBlock = step5Section.slice(itemIdx, itemIdx + 3000);
 
     // The graphql call's response must be captured so the extraction below can read it.
-    expect(itemBlock).toContain("RESPONSE=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query=");
+    expect(itemBlock).toContain(
+      "RESPONSE=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query=",
+    );
 
     // Each JSON variable must be built by example from the literal jq extraction, not left
     // to prose inference -- and must hold the full connection object, not the bare inner
@@ -1144,9 +1236,7 @@ describe("review.md — Unresolved Comment Check is mechanized via compute-unres
     expect(unresolvedSection).toContain(
       "This is computed mechanically, not freehand.",
     );
-    expect(unresolvedSection).toContain(
-      "compute-unresolved-comment-check.ts",
-    );
+    expect(unresolvedSection).toContain("compute-unresolved-comment-check.ts");
   });
 
   it("invokes compute-unresolved-comment-check.ts via bun run against the plugin scripts dir and prints hasSubstantiveUnresolvedFeedback", () => {
@@ -1161,9 +1251,7 @@ describe("review.md — Unresolved Comment Check is mechanized via compute-unres
       'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unresolved-comment-check.ts"',
     );
     expect(unresolvedSection).toContain("hasSubstantiveUnresolvedFeedback");
-    expect(unresolvedSection).toContain(
-      "HAS_SUBSTANTIVE_UNRESOLVED_FEEDBACK",
-    );
+    expect(unresolvedSection).toContain("HAS_SUBSTANTIVE_UNRESOLVED_FEEDBACK");
   });
 
   it("reuses isAddressedByAuthorReply and isThreadAddressedByAuthorReply from compute-unaddressed-findings.ts, the same exclusion Step 9.5 applies", () => {
@@ -1292,7 +1380,9 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     // unnamed mechanical paragraph -- Step 9.5's cross-reference must point at the
     // mechanical computation (the selfReview input), not at the now-deleted subsection name
     // (RUC-1.1/DRO-1.1 review finding: a dangling cross-reference to removed prose).
-    expect(gateBlock).not.toContain("Step 10 self-review COMMENT-forcing override");
+    expect(gateBlock).not.toContain(
+      "Step 10 self-review COMMENT-forcing override",
+    );
     expect(gateBlock).toContain("`selfReview` input");
     expect(gateBlock).toContain("Step 10's mechanical");
   });
@@ -1365,7 +1455,9 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     // computeVerdict() inputs that reaches verdictLabel "APPROVE" while
     // unaddressedFindings is true (DRO-1.1/DRO-1.2 review finding, observed on this PR's
     // own review history).
-    expect(gateBlock).toContain("superseded by a later, genuinely clean self-review");
+    expect(gateBlock).toContain(
+      "superseded by a later, genuinely clean self-review",
+    );
     expect(gateBlock).toContain("DRO-1.2");
   });
 });
@@ -1390,7 +1482,9 @@ describe("review.md — Step 9.5 invokes compute-unaddressed-findings.ts mechani
 
   it("states the computation is mechanical, not freehand narrative judgment", () => {
     expect(step95Section).toContain("computed mechanically, not freehand");
-    expect(step95Section).toContain("do not decide `unaddressedFindings` by narrative judgment");
+    expect(step95Section).toContain(
+      "do not decide `unaddressedFindings` by narrative judgment",
+    );
   });
 
   it("passes through the Step 5.5 GraphQL data (reviews, reviewThreads, comments, headRefOid) and Step 3's CURRENT_USER, without re-fetching", () => {
@@ -1445,7 +1539,9 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
 
   it("references that this failure mode was observed on real production PRs (one self-authored, one not)", () => {
     expect(workedExampleSection.toLowerCase()).toContain("production");
-    expect(workedExampleSection.toLowerCase()).toContain("self-authored, one not");
+    expect(workedExampleSection.toLowerCase()).toContain(
+      "self-authored, one not",
+    );
   });
 
   it("references the literal observed failure mode -- body said Verdict: COMMENT despite a clean narrative", () => {
@@ -1486,7 +1582,9 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
   });
 
   it("makes explicit that Case 1 and Case 2 share the same event but require different body verdict labels", () => {
-    expect(workedExampleSection.toLowerCase()).toContain('same `event: "comment"`');
+    expect(workedExampleSection.toLowerCase()).toContain(
+      'same `event: "comment"`',
+    );
     expect(workedExampleSection.toLowerCase()).toContain("different");
   });
 
@@ -1508,13 +1606,19 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
     expect(case3Idx).toBeGreaterThan(-1);
     const case3Block = workedExampleSection.slice(case3Idx, case3Idx + 700);
 
-    expect(case3Block.toLowerCase()).toContain("silently compute as a clean `approve`");
-    expect(case3Block.toLowerCase()).toContain("the same\n  failure mode as case 1");
+    expect(case3Block.toLowerCase()).toContain(
+      "silently compute as a clean `approve`",
+    );
+    expect(case3Block.toLowerCase()).toContain(
+      "the same\n  failure mode as case 1",
+    );
   });
 
   it("references the currentPassHasBlockingFindings input computed by Step 8, distinct from Step 9.5's unaddressedFindings", () => {
     expect(workedExampleSection).toContain("currentPassHasBlockingFindings");
-    expect(workedExampleSection).toContain("Step 8's threshold-filtered `findings[]`");
+    expect(workedExampleSection).toContain(
+      "Step 8's threshold-filtered `findings[]`",
+    );
   });
 
   it("includes the 8-row truth table with its header row covering all three boolean inputs", () => {
@@ -1543,15 +1647,21 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
 
 describe("review.md — Step 8 computes CURRENT_PASS_HAS_BLOCKING_FINDINGS from threshold-filtered findings (DRO-1.1)", () => {
   it("defines CURRENT_PASS_HAS_BLOCKING_FINDINGS as true when any remaining finding is important or critical severity", () => {
-    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    const computeIdx = content.indexOf(
+      "**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**",
+    );
     expect(computeIdx).toBeGreaterThan(-1);
     const computeBlock = content.slice(computeIdx, computeIdx + 700);
 
-    expect(computeBlock).toContain("`true` if any remaining finding is `important` or `critical` severity, else `false`");
+    expect(computeBlock).toContain(
+      "`true` if any remaining finding is `important` or `critical` severity, else `false`",
+    );
   });
 
   it("ties CURRENT_PASS_HAS_BLOCKING_FINDINGS to Step 10/10.5's compute-review-verdict.ts input and cross-references Case 3", () => {
-    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    const computeIdx = content.indexOf(
+      "**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**",
+    );
     expect(computeIdx).toBeGreaterThan(-1);
     const computeBlock = content.slice(computeIdx, computeIdx + 700);
 
@@ -1560,11 +1670,15 @@ describe("review.md — Step 8 computes CURRENT_PASS_HAS_BLOCKING_FINDINGS from 
   });
 
   it("distinguishes CURRENT_PASS_HAS_BLOCKING_FINDINGS (this pass, fresh) from Step 9.5's unaddressedFindings (prior, posted state)", () => {
-    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    const computeIdx = content.indexOf(
+      "**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**",
+    );
     expect(computeIdx).toBeGreaterThan(-1);
     const computeBlock = content.slice(computeIdx, computeIdx + 700);
 
-    expect(computeBlock).toContain("independent of Step\n9.5's `unaddressedFindings`");
+    expect(computeBlock).toContain(
+      "independent of Step\n9.5's `unaddressedFindings`",
+    );
   });
 });
 
@@ -1644,7 +1758,10 @@ describe("review.md — Step 7 dispatch prompt includes prior findings input whe
   it("documents the input is only included when priorQualifyingReviews is non-empty, omitted otherwise", () => {
     const priorIdx = step7Section.indexOf("priorQualifyingReviews");
     expect(priorIdx).toBeGreaterThan(-1);
-    const priorBlock = step7Section.slice(Math.max(0, priorIdx - 300), priorIdx + 600);
+    const priorBlock = step7Section.slice(
+      Math.max(0, priorIdx - 300),
+      priorIdx + 600,
+    );
 
     expect(priorBlock.toLowerCase()).toContain("omit");
   });
@@ -1718,7 +1835,9 @@ describe("review.md — Step 9.5 unaddressed-findings gate retains its PVD-1.1 c
 
   it("still forces the verdict to COMMENT when unaddressed findings are present, with the same override language", () => {
     expect(step95Section).toContain("force the verdict to `COMMENT`");
-    expect(step95Section).toContain("Overrides the code-reviewer subagent's severity-based recommendation");
+    expect(step95Section).toContain(
+      "Overrides the code-reviewer subagent's severity-based recommendation",
+    );
   });
 });
 
@@ -1760,7 +1879,9 @@ describe("review.md — Step 9.5 excludes prior reviews via the findings ledger 
 
   it("passes PRIOR_FINDINGS_STATUS_JSON through the CLI invocation from Step 7's subagent output", () => {
     expect(step95Section).toContain("PRIOR_FINDINGS_STATUS_JSON");
-    expect(step95Section).toContain("priorFindingsStatus: $priorFindingsStatus");
+    expect(step95Section).toContain(
+      "priorFindingsStatus: $priorFindingsStatus",
+    );
   });
 
   it("notes the ledger exclusion is not gated on self-authorship, unlike the removed inference heuristics", () => {
@@ -1861,10 +1982,14 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
     const step7Ledger = step7Section.slice(step7LedgerIdx);
 
     for (const section of [step5Ledger, step7Ledger]) {
-      expect(section).toContain("Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN");
+      expect(section).toContain(
+        "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN",
+      );
       expect(section).toContain("Content-Type: application/json");
       // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${PR_RECORD_ID} placeholder in asserted task-store URL text, not JS interpolation
-      expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings");
+      expect(section).toContain(
+        "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings",
+      );
     }
   });
 
@@ -1888,7 +2013,9 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
     const step11bIdx = content.indexOf(
       "## Step 11b: Mark PullRequest Record Posted",
     );
-    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
     expect(step11bIdx).toBeGreaterThan(-1);
     expect(step14Idx).toBeGreaterThan(step11bIdx);
     const step11bSection = content.slice(step11bIdx, step14Idx);
@@ -1904,7 +2031,9 @@ describe("review.md — self-review ledger write at post time (PFL-5.2)", () => 
 
   beforeAll(() => {
     const step11Idx = content.indexOf("## Step 11: Post or Stage");
-    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
     expect(step11Idx).toBeGreaterThan(-1);
     expect(step11bIdx).toBeGreaterThan(step11Idx);
     step11Section = content.slice(step11Idx, step11bIdx);
@@ -1928,7 +2057,9 @@ describe("review.md — self-review ledger write at post time (PFL-5.2)", () => 
 
     expect(ledgerSection).toContain('[ "$SELF_REVIEW" = "true" ]');
     expect(ledgerSection).toContain('[ "$UNADDRESSED_FINDINGS" = "false" ]');
-    expect(ledgerSection).toContain('[ "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" = "false" ]');
+    expect(ledgerSection).toContain(
+      '[ "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" = "false" ]',
+    );
     expect(ledgerSection).toContain('[ -n "$SUBMITTED_AT" ]');
   });
 
@@ -2042,7 +2173,9 @@ function extractStep58Section(md: string): string {
 describe("review.md — Step 5.8 exists between Step 5 and Step 6 (DBR-3.2)", () => {
   it("has a '## Step 5.8: Dependency Manifest Detection' heading positioned after Step 5 and before Step 6", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
-    const step58Idx = content.indexOf("## Step 5.8: Dependency Manifest Detection");
+    const step58Idx = content.indexOf(
+      "## Step 5.8: Dependency Manifest Detection",
+    );
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
 
     expect(step5Idx).toBeGreaterThan(-1);
@@ -2090,9 +2223,13 @@ describe("review.md — Step 5.8 documents the universal fallback list (DBR-3.2)
   it("lists at least one common lockfile in the fallback list", () => {
     const section = extractStep58Section(content);
     expect(
-      ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb"].some((f) =>
-        section.includes(f),
-      ),
+      [
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "bun.lockb",
+      ].some((f) => section.includes(f)),
     ).toBe(true);
   });
 
@@ -2192,9 +2329,7 @@ describe("review.md — Step 9's template includes a Dependency Risk Analysis se
 describe("review.md — Step 10's JSON-building prose references the dependency-analysis output (DBR-3.2)", () => {
   it("Step 10 mentions folding the dependency risk analysis into the review body when present", () => {
     const step10Idx = content.indexOf("## Step 10: Build Review JSON");
-    const step105Idx = content.indexOf(
-      "### Step 10.5: Hard-Gate Validation",
-    );
+    const step105Idx = content.indexOf("### Step 10.5: Hard-Gate Validation");
     expect(step10Idx).toBeGreaterThan(-1);
     expect(step105Idx).toBeGreaterThan(step10Idx);
     const step10Section = content.slice(step10Idx, step105Idx);
@@ -2214,25 +2349,34 @@ describe("review.md — /prs/claim threads authorLogin/headRef/title for server-
 
     // Widened, not a new call: still exactly one `gh pr view ... headRefOid` fetch
     // in this section, now also carrying title/headRefName/author.
-    const ghPrViewCalls = section.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
+    const ghPrViewCalls =
+      section.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
     expect(ghPrViewCalls).toHaveLength(1);
     expect(section).toContain(
       "gh pr view {pr} --repo {org}/{repo} --json headRefOid,title,headRefName,author",
     );
-    expect(section).toContain("PR_AUTHOR=$(jq -r '.author.login' <<< \"$CLAIM_META\")");
+    expect(section).toContain(
+      "PR_AUTHOR=$(jq -r '.author.login' <<< \"$CLAIM_META\")",
+    );
     expect(section).toContain("PR_TITLE=$(jq -r '.title' <<< \"$CLAIM_META\")");
-    expect(section).toContain("PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$CLAIM_META\")");
+    expect(section).toContain(
+      "PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$CLAIM_META\")",
+    );
 
     // The claim body itself carries all three fields, sourced from those captures.
     expect(section).toContain('--arg authorLogin "$PR_AUTHOR"');
     expect(section).toContain('--arg headRef "$PR_HEAD_REF"');
     expect(section).toContain('--arg title "$PR_TITLE"');
-    expect(section).toContain("authorLogin: $authorLogin, headRef: $headRef, title: $title");
+    expect(section).toContain(
+      "authorLogin: $authorLogin, headRef: $headRef, title: $title",
+    );
   });
 
   it("Step 14's staged-review-refresh claim call also threads authorLogin/headRef/title, reusing the Live-Review Pre-Check's own GraphQL fetch (no new gh call)", () => {
     const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
-    const preClaimFastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const preClaimFastPathIdx = content.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
     expect(preCheckIdx).toBeGreaterThan(-1);
     expect(preClaimFastPathIdx).toBeGreaterThan(preCheckIdx);
     const preCheckSection = content.slice(preCheckIdx, preClaimFastPathIdx);
@@ -2240,15 +2384,24 @@ describe("review.md — /prs/claim threads authorLogin/headRef/title for server-
     // The precheck's own GraphQL query already fetches author/headRefOid; this
     // change widens it with title/headRefName rather than issuing a new call.
     expect(preCheckSection).toContain("title\n      headRefName");
-    expect(preCheckSection).toContain("PR_AUTHOR=$(echo \"$precheck\" | jq -r '.authorLogin')");
-    expect(preCheckSection).toContain("PR_TITLE=$(echo \"$precheck\" | jq -r '.title')");
-    expect(preCheckSection).toContain("PR_HEAD_REF=$(echo \"$precheck\" | jq -r '.headRefName')");
+    expect(preCheckSection).toContain(
+      "PR_AUTHOR=$(echo \"$precheck\" | jq -r '.authorLogin')",
+    );
+    expect(preCheckSection).toContain(
+      "PR_TITLE=$(echo \"$precheck\" | jq -r '.title')",
+    );
+    expect(preCheckSection).toContain(
+      "PR_HEAD_REF=$(echo \"$precheck\" | jq -r '.headRefName')",
+    );
 
     const stagedRefreshIdx = content.indexOf(
       "Re-claim the record at the new head to",
     );
     expect(stagedRefreshIdx).toBeGreaterThan(-1);
-    const refreshClaimSnippet = content.slice(stagedRefreshIdx, stagedRefreshIdx + 700);
+    const refreshClaimSnippet = content.slice(
+      stagedRefreshIdx,
+      stagedRefreshIdx + 700,
+    );
     expect(refreshClaimSnippet).toContain('--arg authorLogin "$PR_AUTHOR"');
     expect(refreshClaimSnippet).toContain('--arg headRef "$PR_HEAD_REF"');
     expect(refreshClaimSnippet).toContain('--arg title "$PR_TITLE"');
@@ -2257,7 +2410,9 @@ describe("review.md — /prs/claim threads authorLogin/headRef/title for server-
 
 describe("review.md — Step 7 dispatches the phase-methodology-configured subagent (RVM-1.2)", () => {
   function extractConfigSection(md: string): string {
-    const sectionIdx = md.indexOf("### Resolve the configured review-phase subagent (RVM-1.2)");
+    const sectionIdx = md.indexOf(
+      "### Resolve the configured review-phase subagent (RVM-1.2)",
+    );
     const step5Idx = md.indexOf("## Step 5: Gather Context");
     expect(sectionIdx).toBeGreaterThan(-1);
     expect(step5Idx).toBeGreaterThan(sectionIdx);
@@ -2265,10 +2420,16 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   }
 
   it("resolves REVIEW_SUBAGENT_TYPE once, after the model-tier lookup, before Step 5", () => {
-    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const claimSectionIdx = content.indexOf(
+      "### Claim using pre-captured commit SHA",
+    );
     const step5Idx = content.indexOf("## Step 5: Gather Context");
-    const modelTierIdx = content.indexOf("### Resolve the linked task's model tier");
-    const configSectionIdx = content.indexOf("### Resolve the configured review-phase subagent (RVM-1.2)");
+    const modelTierIdx = content.indexOf(
+      "### Resolve the linked task's model tier",
+    );
+    const configSectionIdx = content.indexOf(
+      "### Resolve the configured review-phase subagent (RVM-1.2)",
+    );
     expect(claimSectionIdx).toBeGreaterThan(-1);
     expect(modelTierIdx).toBeGreaterThan(claimSectionIdx);
     expect(configSectionIdx).toBeGreaterThan(modelTierIdx);
@@ -2277,20 +2438,28 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
 
   it("fetches phaseMethodology.review from GET /agents/{id}/config, same endpoint/auth as patch.md's patchAuthorAllowlist fetch and Step 14's repos[0] fetch", () => {
     const section = extractConfigSection(content);
-    expect(section).toContain('curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"');
-    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain(
+      'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
+    );
+    expect(section).toContain(
+      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config",
+    );
     expect(section).toContain(".phaseMethodology.review");
   });
 
   it("REVIEW_SUBAGENT_TYPE defaults to the built-in shipwright:code-reviewer when phaseMethodology.review is absent or null", () => {
     const section = extractConfigSection(content);
-    expect(section).toContain('REVIEW_SUBAGENT_TYPE=$(curl');
-    expect(section).toContain('.phaseMethodology.review // "shipwright:code-reviewer"');
+    expect(section).toContain("REVIEW_SUBAGENT_TYPE=$(curl");
+    expect(section).toContain(
+      '.phaseMethodology.review // "shipwright:code-reviewer"',
+    );
   });
 
   it("REVIEW_SUBAGENT_TYPE is fail-closed on curl failure -- shell default also falls back to the built-in reviewer", () => {
     const section = extractConfigSection(content);
-    expect(section).toContain("${REVIEW_SUBAGENT_TYPE:-shipwright:code-reviewer}");
+    expect(section).toContain(
+      "${REVIEW_SUBAGENT_TYPE:-shipwright:code-reviewer}",
+    );
     expect(section).toContain("Fail-closed, not fail-open");
   });
 
@@ -2304,7 +2473,9 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   it("Step 7's Agent tool dispatch passes subagent_type: REVIEW_SUBAGENT_TYPE, not a hardcoded literal", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("subagent_type: REVIEW_SUBAGENT_TYPE");
-    expect(step7Section).not.toContain('subagent_type: "shipwright:code-reviewer"');
+    expect(step7Section).not.toContain(
+      'subagent_type: "shipwright:code-reviewer"',
+    );
   });
 
   it("Step 7's heading and prompt-block description of the dispatch survive unchanged in outcome -- the built-in reviewer is still named as the default", () => {
@@ -2312,14 +2483,18 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
     expect(content).toContain(
       "## Step 7: Deep Review (dispatch `shipwright:code-reviewer` subagent)",
     );
-    expect(step7Section).toContain("the bundled\n`shipwright:code-reviewer` subagent by default");
+    expect(step7Section).toContain(
+      "the bundled\n`shipwright:code-reviewer` subagent by default",
+    );
   });
 
   it("Step 7 still documents retrying once on malformed JSON, regardless of which subagent_type was dispatched", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("retry once with a reminder of the schema");
     expect(step7Section).toContain("malformed JSON");
-    expect(step7Section).toContain("The retry re-dispatches the exact same\n`REVIEW_SUBAGENT_TYPE`");
+    expect(step7Section).toContain(
+      "The retry re-dispatches the exact same\n`REVIEW_SUBAGENT_TYPE`",
+    );
   });
 
   it("documents that an outright Agent tool dispatch failure (e.g. an invalid subagent_type) is handled the same as malformed JSON", () => {
@@ -2332,7 +2507,9 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   it("built-in-default failure after retry falls back to the existing inline main-thread review (preserved, unchanged)", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("**Built-in default**");
-    expect(step7Section).toContain("fall back to an inline review\n  in the main thread using the same rules");
+    expect(step7Section).toContain(
+      "fall back to an inline review\n  in the main thread using the same rules",
+    );
     expect(step7Section).toContain("agents/code-reviewer.md");
     expect(step7Section).toContain("unchanged from before this task");
   });
@@ -2340,28 +2517,42 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   it("configured-override failure after retry falls back to dispatching the built-in shipwright:code-reviewer fresh, not an inline review", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("**Configured override**");
-    expect(step7Section.toLowerCase()).toContain("do not attempt an inline main-thread review");
-    expect(step7Section).toContain("dispatch the\n  built-in `shipwright:code-reviewer` subagent fresh");
+    expect(step7Section.toLowerCase()).toContain(
+      "do not attempt an inline main-thread review",
+    );
+    expect(step7Section).toContain(
+      "dispatch the\n  built-in `shipwright:code-reviewer` subagent fresh",
+    );
   });
 
   it("prints a one-line note when the configured-subagent fallback fires", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("Print a one-line note");
-    expect(step7Section).toContain("failed after retry and the built-in reviewer was used as\n  a fallback");
+    expect(step7Section).toContain(
+      "failed after retry and the built-in reviewer was used as\n  a fallback",
+    );
   });
 
   it("a failed fresh built-in dispatch reuses the built-in retry-then-inline procedure, terminating at the inline review", () => {
     const step7Section = extractStep7Section(content);
-    expect(step7Section).toContain("**If that fresh built-in dispatch also fails**");
-    expect(step7Section).toContain("governed by the **Built-in default** branch above");
+    expect(step7Section).toContain(
+      "**If that fresh built-in dispatch also fails**",
+    );
+    expect(step7Section).toContain(
+      "governed by the **Built-in default** branch above",
+    );
     expect(step7Section).toContain("its own single retry");
-    expect(step7Section).toContain("fall back to the inline main-thread review");
+    expect(step7Section).toContain(
+      "fall back to the inline main-thread review",
+    );
     expect(step7Section).toContain("terminal fallback");
   });
 
   it("bounds the fallback chain -- no re-dispatch of the failed override, no looping", () => {
     const step7Section = extractStep7Section(content);
-    expect(step7Section).toContain("Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again");
+    expect(step7Section).toContain(
+      "Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again",
+    );
     expect(step7Section).toContain(
       "override → override retry → built-in → built-in retry →\n  inline",
     );
@@ -2379,8 +2570,179 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
 
   it("Step 7 references the RVM-1.1 methodology contract doc as the wire shape any dispatched subagent must satisfy", () => {
     const step7Section = extractStep7Section(content);
-    expect(step7Section).toContain("references/methodology-contracts/review.md");
+    expect(step7Section).toContain(
+      "references/methodology-contracts/review.md",
+    );
     expect(step7Section).toContain("RVM-1.1");
+  });
+});
+
+describe("review.md — Step 7 fans out multiple reviewers in parallel (MPS-2.1)", () => {
+  function extractMultiSection(): string {
+    const step7Section = extractStep7Section(content);
+    const idx = step7Section.indexOf("#### Multiple reviewers (MPS-2.1)");
+    expect(idx).toBeGreaterThan(-1);
+    return step7Section.slice(idx).replace(/\s+/g, " ");
+  }
+
+  it("documents comma-split list parsing with trimming and empty-entry removal", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("comma-separated list");
+    expect(section).toContain("Split it on commas");
+    expect(section).toContain("trim whitespace around each entry");
+    expect(section).toContain("ignore empty entries");
+  });
+
+  it("a list resolving to one entry follows the unchanged single-reviewer path", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("exactly one entry");
+    expect(section).toContain(
+      "follow the single-reviewer path above unchanged",
+    );
+  });
+
+  it("dispatches all reviewers in ONE parallel Agent call, synchronously, with identical inputs", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("ONE parallel Agent call");
+    expect(section).toContain("one Agent tool use per entry");
+    expect(section).toContain("run_in_background: false");
+    expect(section).toContain("identical prompt block and contract inputs");
+    expect(section).toContain("synchronous and blocking");
+  });
+
+  it("per-reviewer failure retries once with the same subagent_type, then drops with a one-line note", () => {
+    const section = extractMultiSection();
+    expect(section).toContain(
+      "retried once by re-dispatching the same `subagent_type`",
+    );
+    expect(section).toContain("drop that reviewer and print a one-line note");
+  });
+
+  it("all-failed falls back to the built-in -> retry -> inline chain; survivors proceed otherwise", () => {
+    const section = extractMultiSection();
+    expect(section).toContain("every reviewer in `REVIEWERS` is dropped");
+    expect(section).toContain("built-in → retry → inline");
+    expect(section).toContain("proceeds with the surviving responses");
+  });
+
+  it("keeps the single-entry RVM-1.2 wording intact and the section inside Step 7", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain(
+      "override → override retry → built-in → built-in retry →\n  inline",
+    );
+    expect(step7Section).toContain("subagent_type: REVIEW_SUBAGENT_TYPE");
+  });
+});
+
+describe("review.md — Step 7 merges and dedupes parallel reviewer findings (MPS-2.2)", () => {
+  function extractMergeSection(): string {
+    const step7Section = extractStep7Section(content);
+    const idx = step7Section.indexOf("**Merge (MPS-2.2).**");
+    expect(idx).toBeGreaterThan(-1);
+    return step7Section.slice(idx).replace(/\s+/g, " ");
+  }
+
+  it("merges before any policy threshold and skips for a single response", () => {
+    const section = extractMergeSection();
+    expect(section).toContain("BEFORE applying any policy threshold");
+    expect(section).toContain("skips the merge");
+  });
+
+  it("specifies the duplicate rule: file, line window, title similarity", () => {
+    const section = extractMergeSection();
+    expect(section).toContain("identical `file`");
+    expect(section).toContain("abs(a.line - b.line) <= 3");
+    expect(section).toContain("Jaccard overlap >= 0.6");
+    expect(section).toContain("Group transitively");
+  });
+
+  it("keeps the highest severity (never averaging) and records distinct-reviewer agreement", () => {
+    const section = extractMergeSection();
+    expect(section).toContain("`critical` > `important` > `suggestion`");
+    expect(section).toContain("Conflicting severities never average");
+    expect(section).toContain("DISTINCT reviewers");
+    expect(section).toContain("review contract output shape is unchanged");
+  });
+
+  it("merges priorFindingsStatus conservatively: resolved only if every reviewer attests", () => {
+    const section = extractMergeSection();
+    expect(section).toContain(
+      "`resolved: true` only if EVERY surviving reviewer",
+    );
+    expect(section).toContain("does not count as attesting resolved");
+    expect(section).toContain("exactly one entry per input `ref`");
+  });
+
+  it("Step 8 applies thresholds to the merged findings, agreement as tie-break", () => {
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    const step9Idx = content.indexOf("## Step 9");
+    const step8 = content.slice(step8Idx, step9Idx).replace(/\s+/g, " ");
+    expect(step8).toContain("MERGED `findings[]` from Step 7's Merge");
+    expect(step8).toContain(
+      "thresholds apply after merging, never per reviewer",
+    );
+    expect(step8).toContain("lowest merged `agreement` first");
+  });
+});
+
+describe("review.md — Step 7 verifies merged findings with a built-in verifier (MPS-2.3)", () => {
+  function extractVerifySection(): string {
+    const step7Section = extractStep7Section(content);
+    const idx = step7Section.indexOf("**Verify (MPS-2.3).**");
+    expect(idx).toBeGreaterThan(-1);
+    return step7Section.slice(idx).replace(/\s+/g, " ");
+  }
+
+  it("dispatches only for multi-reviewer runs with more than one merged response", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("only when `REVIEWERS` had more than one entry");
+    expect(section).toContain("single-reviewer run");
+    expect(section).toContain("skips verification entirely");
+    expect(section).toContain("BEFORE any policy threshold");
+  });
+
+  it("dispatches the fixed built-in verifier synchronously, not from config", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("`shipwright:finding-verifier`");
+    expect(section).toContain("never read it from config");
+    expect(section).toContain("no `phaseMethodology` phase key");
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("drops unsubstantiated findings, keeps the agreement map in sync, never alters the contract", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("`substantiated: false`");
+    expect(section).toContain("`agreement` side map");
+    expect(section).toContain("never adds findings");
+    expect(section).toContain("review contract output shape is unchanged");
+  });
+
+  it("verifier failure is non-fatal and falls back to unverified merged findings with a note", () => {
+    const section = extractVerifySection();
+    expect(section).toContain("Non-fatal failure");
+    expect(section).toContain("keep the merged findings unverified");
+    expect(section).toContain("one-line note");
+    expect(section).toContain("never blocks Step 8");
+  });
+
+  it("Step 8 thresholds apply after Verify", () => {
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    const step9Idx = content.indexOf("## Step 9");
+    const step8 = content.slice(step8Idx, step9Idx).replace(/\s+/g, " ");
+    expect(step8).toContain("minus any dropped by Verify");
+  });
+
+  it("the finding-verifier agent is read-only, conservative, and add-nothing", () => {
+    const agent = readFileSync(
+      join(import.meta.dir, "..", "agents", "finding-verifier.md"),
+      "utf-8",
+    );
+    expect(agent).toContain("name: finding-verifier");
+    expect(agent).toContain("tools: Glob, Grep, LS, Read\n");
+    expect(agent).toContain("model: sonnet");
+    expect(agent).toContain("Be conservative");
+    expect(agent).toContain("Never add new findings");
+    expect(agent).toContain('"substantiated"');
   });
 });
 
@@ -2454,7 +2816,9 @@ describe("review.md — Step 9.5 passes the findings ledger so patch-source reje
 
   it("Step 5.5 fetches the PR's ledger as PR_FINDINGS_JSON and the thread query requests totalCount", () => {
     expect(content).toContain("PR_FINDINGS_JSON=$(curl");
-    expect(content).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}"');
+    expect(content).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}"',
+    );
     expect(content).toContain("isRejectedByPatchLedger");
     expect(content).toContain("threadRef");
     const threadsIdx = content.indexOf("reviewThreads(first: 100)");
@@ -2462,9 +2826,51 @@ describe("review.md — Step 9.5 passes the findings ledger so patch-source reje
   });
 
   it("Step 9.5's compute-unaddressed-findings.ts invocation threads findings through", () => {
-    const idx = content.indexOf("compute-unaddressed-findings.ts\" \\");
+    const idx = content.indexOf('compute-unaddressed-findings.ts" \\');
     const window = content.slice(idx, idx + 900);
     expect(window).toContain('--argjson findings "$PR_FINDINGS_JSON"');
     expect(window).toContain("findings: $findings");
+  });
+});
+
+describe("review.md — jq -Rs fix for headRefOid and body newline (JNL-1.1)", () => {
+  it("does not use jq -Rs . <<< for headRefOid anywhere", () => {
+    expect(content).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("uses --arg headRefOid for passing HEAD_REF_OID to jq in Step 9.5", () => {
+    const step9_5Idx = content.indexOf(
+      "## Step 9.5: Unaddressed-Findings Hard Gate",
+    );
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step9_5Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(-1);
+    const section = content.slice(step9_5Idx, step10Idx);
+
+    expect(section).toContain('--arg headRefOid "$HEAD_REF_OID"');
+    expect(section).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+  });
+
+  it("does not use jq -Rs . <<< for body in Step 10.5", () => {
+    expect(content).not.toContain('$(jq -Rs . <<< "$BODY")');
+  });
+
+  it("uses jq -n --arg body in Step 10.5 to construct the verdict validation JSON", () => {
+    const step10_5Idx = content.indexOf(
+      "### Step 10.5: Hard-Gate Validation (Before Posting)",
+    );
+    const step11Idx = content.indexOf("## Step 11: Post or Stage");
+    expect(step10_5Idx).toBeGreaterThan(-1);
+    expect(step11Idx).toBeGreaterThan(-1);
+    const section = content.slice(step10_5Idx, step11Idx);
+
+    expect(section).toContain('jq -n --arg body "$BODY"');
+    expect(section).toContain('--argjson selfReview "$SELF_REVIEW"');
+    expect(section).toContain(
+      '--argjson unaddressedFindings "$UNADDRESSED_FINDINGS"',
+    );
+    expect(section).toContain(
+      '--argjson currentPassHasBlockingFindings "$CURRENT_PASS_HAS_BLOCKING_FINDINGS"',
+    );
   });
 });

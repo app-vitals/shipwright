@@ -1,6 +1,6 @@
 ---
 title: Configuring Autonomy
-description: Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review, patch, and deploy.
+description: Configure the Shipwright delivery loop to match your workflow — from plan-and-build to fully autonomous review and patch.
 section: Agent
 order: 1
 prev: "/docs/the-agent"
@@ -28,7 +28,7 @@ You review and merge PRs yourself.
 | `shipwright-dev-task` | **on** |
 | `shipwright-review` | off |
 | `shipwright-patch` | off |
-| `shipwright-deploy` | off |
+| `shipwright-merge` | off |
 
 This is the entry point. The agent writes code; you stay in the loop on every PR.
 
@@ -48,7 +48,7 @@ You still control merging.
 | `shipwright-dev-task` | **on** |
 | `shipwright-review` | **on** |
 | `shipwright-patch` | **on** |
-| `shipwright-deploy` | off |
+| `shipwright-merge` | off |
 
 At this stage, the `autoPostReviews` policy setting determines whether the agent
 posts reviews to GitHub immediately (the default) or holds them for your approval. See
@@ -56,28 +56,28 @@ posts reviews to GitHub immediately (the default) or holds them for your approva
 
 ### Stage 3 — Full autonomous loop
 
-Enable `shipwright-deploy`. The agent now merges approved PRs and monitors post-merge CI.
-The full loop runs without manual intervention: plan → build → review → patch → deploy.
+Enable `shipwright-merge`. The agent now merges approved PRs and monitors post-merge CI.
+The full loop runs without manual intervention: plan → build → review → patch → merge.
 
 | Cron | Status |
 |------|--------|
 | `shipwright-dev-task` | **on** |
 | `shipwright-review` | **on** |
 | `shipwright-patch` | **on** |
-| `shipwright-deploy` | **on** |
+| `shipwright-merge` | **on** |
 
-Only enable deploy when you have the safeguards in place — CI gates, required reviewers, and
-a working `check-deploy` pre-check — so the agent can't merge something broken.
+Only enable merge when you have the safeguards in place — CI gates, required reviewers, and
+a working merge pre-check — so the agent can't merge something broken.
 
 ---
 
 ## Common workflow patterns
 
-| Pattern | dev-task | review | patch | deploy | Notes |
+| Pattern | dev-task | review | patch | merge | Notes |
 |---------|:--------:|:------:|:-----:|:------:|-------|
 | Hands-off | ✓ | ✗ | ✓ | ✗ | Build and patch CI, skip posting reviews — you review PRs yourself. |
 | Staged reviews | ✓ | ✓ | ✓ | ✗ | `autoPostReviews` off — findings held locally until you approve them. |
-| Bring your own PR | ✗ | ✓ | ✓ | ✓ | Skip the task queue; open PRs yourself and let review/patch/deploy take it from there. |
+| Bring your own PR | ✗ | ✓ | ✓ | ✓ | Skip the task queue; open PRs yourself and let review/patch/merge take it from there. |
 
 ### Hands-off: build and patch, skip review
 
@@ -101,12 +101,12 @@ post it manually, or turn `autoPostReviews` back on to go back to automatic post
 ### Bring your own PR
 
 You don't have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
-anything — and Shipwright picks it up from there. With `review`, `patch`, and `deploy` enabled,
+anything — and Shipwright picks it up from there. With `review`, `patch`, and `merge` enabled,
 the agent will review the PR, patch any CI failures, and merge it once it's clean.
 
 This works and is a reasonable way to get comfortable with the system. That said, bypassing
 `dev-task` means skipping the quality work it does before the PR exists: structured planning,
-tests-first implementation, and the pre-PR research pass. The review and deploy phases catch
+tests-first implementation, and the pre-PR research pass. The review and merge phases catch
 issues, but they work better when the PR was built with that discipline from the start. For
 anything beyond a quick fix, going through the task queue produces better outcomes.
 
@@ -152,10 +152,10 @@ curl -X PATCH "$SHIPWRIGHT_API_URL/agents/$AGENT_ID/crons/$CRON_ID" \
   -d '{"enabled": true}'
 ```
 
-Or via the `shipwright:agent-admin` skill from inside a Claude Code session:
+Or via the `agent-platform:agent-admin` skill from inside a Claude Code session:
 
 ```text
-Enable the shipwright-deploy cron for this agent.
+Enable the shipwright-merge cron for this agent.
 ```
 
 ---

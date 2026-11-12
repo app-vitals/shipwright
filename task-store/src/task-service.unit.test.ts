@@ -116,7 +116,7 @@ describe("TaskService state filter logic (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t2", "t3", "t4"]);
   });
 
-  it("state=closed includes all CLOSED_STATUSES: merged, done, deploying, deployed, cancelled", () => {
+  it("state=closed includes all CLOSED_STATUSES: merged, done, deployed, released, cancelled", () => {
     const tasks = CLOSED_STATUSES.map((s) =>
       makeMinimalTask({ id: `t-${s}`, status: s }),
     );
@@ -287,7 +287,7 @@ describe("listBlocked logic (unit)", () => {
       }),
       makeMinimalTask({
         id: "t3",
-        status: "deploying",
+        status: "released",
         hitl: true,
       }),
       makeMinimalTask({
@@ -409,7 +409,6 @@ describe("TaskService.listBlocked() sort (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -910,7 +909,6 @@ describe("TaskService.list() blockedBy dependency lookup scoping", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1077,7 +1075,6 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1368,7 +1365,6 @@ describe("TaskService.listReady() filters (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -1904,7 +1900,6 @@ describe("TaskService.listBlocked() filters (unit)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -2830,7 +2825,6 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
       priority: null,
       cancelledAt: null,
       completedAt: null,
-      deployingAt: null,
       ciFixAttempts: null,
       mergeCommit: null,
       prUrl: null,
@@ -2869,12 +2863,22 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
       findUnique(args: { where: { id: string } }): Promise<Task | null>;
     };
     taskEvent: {
-      create(): Promise<void>;
+      create(args: { data: Record<string, unknown> }): Promise<void>;
+    };
+    pullRequest: {
+      findFirst(args: {
+        where: { repo: string; prNumber: number; accountId: string };
+      }): Promise<{ state: string } | null>;
     };
     $transaction<T>(fn: (tx: UnblockPrismaDouble) => Promise<T>): Promise<T>;
   }
 
-  function makeUnblockPrismaDouble(initialTask: Task | null) {
+  function makeUnblockPrismaDouble(
+    initialTask: Task | null,
+    prState: "open" | "merged" | "closed" | null = null,
+  ) {
+    const executed: { strings: string; values: unknown[] }[] = [];
+    const events: Record<string, unknown>[] = [];
     let row: Task | null = initialTask ? { ...initialTask } : null;
 
     const prisma: UnblockPrismaDouble = {
@@ -2885,6 +2889,14 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
         const sql = strings.join("?");
         const requiresBlocked = /status\s*=\s*'blocked'/i.test(sql);
         const taskId = values[values.length - 1] as string;
+        executed.push({ strings: sql, values });
+        // values: [target, mergedStamp, deployedStamp, releasedStamp, id]
+        const [target, mergedStamp, deployedStamp, releasedStamp] = values as [
+          Task["status"],
+          string | null,
+          string | null,
+          string | null,
+        ];
 
         if (!row || row.id !== taskId) return 0;
         const matchesStatus = !requiresBlocked || row.status === "blocked";
@@ -2892,7 +2904,7 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
 
         row = {
           ...row,
-          status: "pending",
+          status: target,
           blockedReason: null,
           blockedAt: null,
           claimedBy: null,
@@ -2901,6 +2913,9 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
           skipCount: 0,
           lastSkippedAt: null,
           lastSkipReason: null,
+          mergedAt: row.mergedAt ?? mergedStamp,
+          deployedAt: row.deployedAt ?? deployedStamp,
+          releasedAt: row.releasedAt ?? releasedStamp,
           updatedAt: new Date(),
         } as Task;
         return 1;
@@ -2912,8 +2927,14 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
         },
       },
       taskEvent: {
-        create(): Promise<void> {
+        create(args: { data: Record<string, unknown> }): Promise<void> {
+          events.push(args.data);
           return Promise.resolve();
+        },
+      },
+      pullRequest: {
+        findFirst(): Promise<{ state: string } | null> {
+          return Promise.resolve(prState ? { state: prState } : null);
         },
       },
       $transaction<T>(fn: (tx: UnblockPrismaDouble) => Promise<T>): Promise<T> {
@@ -2921,7 +2942,10 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
       },
     };
 
-    return prisma as unknown as PrismaClient;
+    return Object.assign(prisma as unknown as PrismaClient, {
+      executed,
+      events,
+    });
   }
 
   const STATUSES_OTHER_THAN_BLOCKED = [
@@ -3007,6 +3031,187 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
     // very next matching skip instead of starting fresh.
     expect(result.lastSkipReason).toBeNull();
   });
+
+  // ── UBL-1.1: `to` target + PR-state inference ──────────────────────────────
+
+  const clock = () => FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+  const withPr = { pr: 42, repo: "org/repo" } as Partial<Task>;
+
+  const INFERENCE_TABLE: {
+    name: string;
+    task: Partial<Task>;
+    prState: "open" | "merged" | "closed" | null;
+    expected: Task["status"] | "409";
+  }[] = [
+    { name: "no pr -> pending", task: {}, prState: null, expected: "pending" },
+    {
+      name: "no pr ignores any PR row -> pending",
+      task: {},
+      prState: "merged",
+      expected: "pending",
+    },
+    {
+      name: "open PR -> pr_open",
+      task: withPr,
+      prState: "open",
+      expected: "pr_open",
+    },
+    {
+      name: "merged PR -> merged",
+      task: withPr,
+      prState: "merged",
+      expected: "merged",
+    },
+    {
+      name: "closed-unmerged PR -> 409",
+      task: withPr,
+      prState: "closed",
+      expected: "409",
+    },
+    {
+      name: "pr set but no PR row -> pr_open",
+      task: withPr,
+      prState: null,
+      expected: "pr_open",
+    },
+  ];
+
+  for (const row of INFERENCE_TABLE) {
+    it(`unblock() without \`to\` infers: ${row.name}`, async () => {
+      const prisma = makeUnblockPrismaDouble(
+        makeFullTask({ status: "blocked", ...row.task }),
+        row.prState,
+      );
+      const service = new TaskService(prisma, clock());
+      if (row.expected === "409") {
+        await expect(service.unblock("task-1")).rejects.toThrow(ConflictError);
+        expect(prisma.executed).toHaveLength(0);
+        return;
+      }
+      const result = await service.unblock("task-1");
+      expect(result.status).toBe(row.expected);
+      expect(result.claimedBy).toBeNull();
+      expect(result.skipCount).toBe(0);
+    });
+  }
+
+  it("unblock() inference never yields deployed or released", async () => {
+    for (const prState of ["open", "merged", "closed", null] as const) {
+      const prisma = makeUnblockPrismaDouble(
+        makeFullTask({ status: "blocked", ...withPr }),
+        prState,
+      );
+      const service = new TaskService(prisma, clock());
+      const result = await service
+        .unblock("task-1")
+        .catch(() => ({ status: "409" }));
+      expect(["deployed", "released"]).not.toContain(result.status);
+    }
+  });
+
+  it("unblock({to}) overrides inference, including for a closed-unmerged PR", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "blocked", ...withPr }),
+      "closed",
+    );
+    const service = new TaskService(prisma, clock());
+    const result = await service.unblock("task-1", { to: "pr_open" });
+    expect(result.status).toBe("pr_open");
+  });
+
+  for (const to of ["pr_open", "merged", "deployed", "released"] as const) {
+    it(`unblock({to:'${to}'}) throws BadRequestError (400) when the task has no pr`, async () => {
+      const prisma = makeUnblockPrismaDouble(
+        makeFullTask({ status: "blocked", pr: null }),
+      );
+      const service = new TaskService(prisma, clock());
+      await expect(service.unblock("task-1", { to })).rejects.toThrow(
+        BadRequestError,
+      );
+      expect(prisma.executed).toHaveLength(0);
+    });
+  }
+
+  it("unblock({to:'pending'}) is allowed on a task with a pr", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "blocked", ...withPr }),
+      "open",
+    );
+    const service = new TaskService(prisma, clock());
+    const result = await service.unblock("task-1", { to: "pending" });
+    expect(result.status).toBe("pending");
+  });
+
+  it("unblock() rejects an unknown `to` with BadRequestError", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "blocked", ...withPr }),
+    );
+    const service = new TaskService(prisma, clock());
+    await expect(
+      service.unblock("task-1", { to: "approved" as never }),
+    ).rejects.toThrow(BadRequestError);
+  });
+
+  it("unblock() on a non-blocked task is still 409 even with an invalid-for-task `to`", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "pending", pr: null }),
+    );
+    const service = new TaskService(prisma, clock());
+    await expect(service.unblock("task-1", { to: "merged" })).rejects.toThrow(
+      ConflictError,
+    );
+  });
+
+  it("unblock() stamps mergedAt/deployedAt/releasedAt cumulatively for terminal targets, only when empty", async () => {
+    const now = "2026-08-10T12:00:00.000Z";
+    const cases = [
+      { to: "merged", merged: now, deployed: null, released: null },
+      { to: "deployed", merged: now, deployed: now, released: null },
+      { to: "released", merged: now, deployed: now, released: now },
+    ] as const;
+    for (const c of cases) {
+      const prisma = makeUnblockPrismaDouble(
+        makeFullTask({ status: "blocked", ...withPr }),
+      );
+      const result = await new TaskService(prisma, clock()).unblock("task-1", {
+        to: c.to,
+      });
+      expect(result.mergedAt).toBe(c.merged);
+      expect(result.deployedAt ?? null).toBe(c.deployed);
+      expect(result.releasedAt ?? null).toBe(c.released);
+    }
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({
+        status: "blocked",
+        ...withPr,
+        mergedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const kept = await new TaskService(prisma, clock()).unblock("task-1", {
+      to: "merged",
+    });
+    expect(kept.mergedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("unblock() records the TaskEvent with the real resulting status", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "blocked", ...withPr }),
+      "merged",
+    );
+    await new TaskService(prisma, clock()).unblock("task-1");
+    const statusEvent = prisma.events.find((e) => e.field === "status");
+    expect(statusEvent?.oldValue).toBe("blocked");
+    expect(statusEvent?.newValue).toBe("merged");
+    expect(statusEvent?.method).toBe("unblock");
+  });
+
+  it("unblock() never touches hitl", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({ status: "blocked", hitl: true }),
+    );
+    await new TaskService(prisma, clock()).unblock("task-1");
+    expect(prisma.executed[0]?.strings).not.toMatch(/hitl/i);
+  });
 });
 
 // ─── TaskService.resetSkip() clears lastSkipReason too (SRB-1.1) ──────────────
@@ -3042,7 +3247,9 @@ describe("TaskService.resetSkip() (SRB-1.1)", () => {
           return Promise.resolve();
         },
       },
-      $transaction<T>(fn: (tx: ResetSkipPrismaDouble) => Promise<T>): Promise<T> {
+      $transaction<T>(
+        fn: (tx: ResetSkipPrismaDouble) => Promise<T>,
+      ): Promise<T> {
         return fn(prisma);
       },
     };
@@ -3210,7 +3417,10 @@ describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
 
   it("passes the atomic { increment: 1 } to Prisma when the reason matches the current streak", async () => {
     const { prisma, updateData } = makeUpdateRecordingDouble(
-      makeSkipSeedTask({ skipCount: 1, lastSkipReason: "reason-a" } as Partial<Task>),
+      makeSkipSeedTask({
+        skipCount: 1,
+        lastSkipReason: "reason-a",
+      } as Partial<Task>),
     );
     const service = new TaskService(prisma, clock);
 
@@ -3226,7 +3436,10 @@ describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
 
   it("passes the atomic { increment: 1 } even on the auto-blocking third consecutive skip", async () => {
     const { prisma, updateData } = makeUpdateRecordingDouble(
-      makeSkipSeedTask({ skipCount: 2, lastSkipReason: "reason-a" } as Partial<Task>),
+      makeSkipSeedTask({
+        skipCount: 2,
+        lastSkipReason: "reason-a",
+      } as Partial<Task>),
     );
     const service = new TaskService(prisma, clock);
 
@@ -3234,14 +3447,17 @@ describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
 
     expect(updateData[0]?.skipCount).toEqual({ increment: 1 });
     expect(updateData[0]?.status).toBe("blocked");
-    expect(updateData[0]?.hitl).toBe(true);
+    expect(updateData[0]?.hitl).toBeUndefined();
     expect(updateData[0]?.blockedReason).toContain("reason-a");
     expect(updated.skipCount).toBe(3);
   });
 
   it("passes a literal 1 when a different reason resets the streak", async () => {
     const { prisma, updateData } = makeUpdateRecordingDouble(
-      makeSkipSeedTask({ skipCount: 2, lastSkipReason: "reason-a" } as Partial<Task>),
+      makeSkipSeedTask({
+        skipCount: 2,
+        lastSkipReason: "reason-a",
+      } as Partial<Task>),
     );
     const service = new TaskService(prisma, clock);
 
@@ -3254,7 +3470,9 @@ describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
   });
 
   it("passes a literal 1 for a first-ever skip (lastSkipReason null)", async () => {
-    const { prisma, updateData } = makeUpdateRecordingDouble(makeSkipSeedTask());
+    const { prisma, updateData } = makeUpdateRecordingDouble(
+      makeSkipSeedTask(),
+    );
     const service = new TaskService(prisma, clock);
 
     const updated = await service.recordSkip("task-1", "reason-a");

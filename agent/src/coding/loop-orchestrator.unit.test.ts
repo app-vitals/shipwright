@@ -357,7 +357,7 @@ function makeDrainingRunner(
     devTask?: WorkTaskCandidate[];
     review?: WorkPrCandidate[];
     patch?: WorkPrCandidate[];
-    deploy?: WorkPrCandidate[];
+    merge?: WorkPrCandidate[];
   },
   consumed: Set<string>,
   results: (string | ClaudeRunResult)[] = [],
@@ -382,7 +382,7 @@ function makeDrainingRunner(
       id: p.id,
       age: p.age,
     })),
-    "/shipwright:deploy": (pools.deploy ?? []).map((p) => ({
+    "/shipwright:merge": (pools.merge ?? []).map((p) => ({
       id: p.id,
       age: p.age,
     })),
@@ -428,7 +428,7 @@ function task(
 function pr(
   id: string,
   age: string,
-  phase: "review" | "patch" | "deploy",
+  phase: "review" | "patch" | "merge",
   overrides: Partial<WorkPrCandidate> = {},
 ): WorkPrCandidate {
   return { id, age, phase, commitSha: `${id}-sha`, ...overrides };
@@ -466,7 +466,7 @@ interface MakeDepsOptions {
   planCandidates?: WorkTaskCandidate[] | (() => Promise<WorkTaskCandidate[]>);
   reviewCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   patchCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
-  deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
+  mergeCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   runner?: LoopOrchestratorDeps["runner"];
   reporter?: CronRunReporter;
   // DTW-1.3: live task-state probe used by the dev-task auto-resume loop.
@@ -586,9 +586,9 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
       consumed,
       calls,
     ),
-    getDeployCandidates: poolStub(
-      "deploy",
-      options.deployCandidates,
+    getMergeCandidates: poolStub(
+      "merge",
+      options.mergeCandidates,
       consumed,
       calls,
     ),
@@ -628,7 +628,6 @@ const ALL_PHASES_ON: CronJobLike[] = [
   job("shipwright-dev-task", true),
   job("shipwright-review", true),
   job("shipwright-patch", true),
-  job("shipwright-deploy", true),
 ];
 
 // ─── console.warn capture ──────────────────────────────────────────────────
@@ -1171,13 +1170,11 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-dev-task", true),
       job("shipwright-review", false),
       job("shipwright-patch", false),
-      job("shipwright-deploy", false),
     ]);
 
     expect(calls).toContain("devTask");
     expect(calls).not.toContain("review");
     expect(calls).not.toContain("patch");
-    expect(calls).not.toContain("deploy");
   });
 
   test("dispatches /shipwright:dev-task for a winning task", async () => {
@@ -1231,20 +1228,92 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
-  test("dispatches /shipwright:deploy for a winning deploy PR", async () => {
+  test("merge-only tick (merge enabled) dispatches /shipwright:merge with the pre-claim marker for the oldest eligible PR", async () => {
     const consumed = new Set<string>();
-    const deployCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "deploy")];
+    const mergeCandidates = [
+      pr("acme/x#8", "2026-01-02T00:00:00Z", "merge"),
+      pr("acme/x#7", "2026-01-01T00:00:00Z", "merge"),
+    ];
     const { runner, messages } = makeDrainingRunner(
-      { deploy: deployCandidates },
+      { merge: mergeCandidates },
       consumed,
     );
-    const deps = makeDeps({ deployCandidates, runner, consumed });
+    const deps = makeDeps({
+      mergeCandidates,
+      runner,
+      consumed,
+    });
     const loop = createLoopOrchestrator(deps);
 
-    await loop([job("shipwright-deploy", true)]);
+    await loop([job("shipwright-merge", true)]);
 
     expectDispatchedCommands(messages, [
-      "/shipwright:deploy acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
+      "/shipwright:merge acme/x#7 [preclaim:acme/x#7:acme/x#7-sha]",
+      "/shipwright:merge acme/x#8 [preclaim:acme/x#8:acme/x#8-sha]",
+    ]);
+  });
+
+  test("with merge disabled the merge provider is never called and behavior is unchanged", async () => {
+    const consumed = new Set<string>();
+    const mergeCandidates = [pr("acme/x#7", "2026-01-01T00:00:00Z", "merge")];
+    const reviewCandidates = [pr("acme/x#3", "2026-01-02T00:00:00Z", "review")];
+    const { runner, messages } = makeDrainingRunner(
+      { merge: mergeCandidates, review: reviewCandidates },
+      consumed,
+    );
+    const calls: string[] = [];
+    const deps = makeDeps({
+      mergeCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+      calls,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-merge", false),
+      job("shipwright-review", true),
+    ]);
+
+    expect(calls).not.toContain("merge");
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
+    ]);
+  });
+
+  test("merge and patch coexist: mixed phases drain in global age order", async () => {
+    const consumed = new Set<string>();
+    const mergeCandidates = [pr("acme/x#2", "2026-01-02T00:00:00Z", "merge")];
+    const patchCandidates = [pr("acme/x#1", "2026-01-01T00:00:00Z", "patch")];
+    const reviewCandidates = [pr("acme/x#3", "2026-01-03T00:00:00Z", "review")];
+    const { runner, messages } = makeDrainingRunner(
+      {
+        merge: mergeCandidates,
+        patch: patchCandidates,
+        review: reviewCandidates,
+      },
+      consumed,
+    );
+    const deps = makeDeps({
+      mergeCandidates,
+      patchCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-merge", true),
+      job("shipwright-patch", true),
+      job("shipwright-review", true),
+    ]);
+
+    expectDispatchedCommands(messages, [
+      "/shipwright:patch acme/x#1 [preclaim:acme/x#1:acme/x#1-sha]",
+      "/shipwright:merge acme/x#2 [preclaim:acme/x#2:acme/x#2-sha]",
+      "/shipwright:review acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
     ]);
   });
 
@@ -1327,33 +1396,33 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
-  test("reports itemType/itemId for each PR phase dispatch (review/patch/deploy)", async () => {
+  test("reports itemType/itemId for each PR phase dispatch (review/patch/merge)", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes } = makeRecordingReporter();
     const reviewCandidates = [pr("acme/x#9", "2026-01-03T00:00:00Z", "review")];
     const patchCandidates = [pr("acme/x#5", "2026-01-01T00:00:00Z", "patch")];
-    const deployCandidates = [pr("acme/x#3", "2026-01-02T00:00:00Z", "deploy")];
+    const mergeCandidates = [pr("acme/x#3", "2026-01-02T00:00:00Z", "merge")];
     const { runner } = makeDrainingRunner(
       {
         review: reviewCandidates,
         patch: patchCandidates,
-        deploy: deployCandidates,
+        merge: mergeCandidates,
       },
       consumed,
     );
     const deps = makeDeps({
       reviewCandidates,
       patchCandidates,
-      deployCandidates,
+      mergeCandidates,
       runner,
       reporter,
       consumed,
     });
     const loop = createLoopOrchestrator(deps);
 
-    await loop(ALL_PHASES_ON);
+    await loop([...ALL_PHASES_ON, job("shipwright-merge", true)]);
 
-    // Oldest-first drain order: patch (01-01), deploy (01-02), review (01-03).
+    // Oldest-first drain order: patch (01-01), merge (01-02), review (01-03).
     expect(
       creates.map((c) => ({ itemType: c.itemType, itemId: c.itemId })),
     ).toEqual([
@@ -1374,14 +1443,14 @@ describe("createLoopOrchestrator", () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-02T00:00:00Z")];
-    const deployCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "deploy")];
+    const mergeCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "merge")];
     const { runner } = makeDrainingRunner(
-      { devTask: devTaskCandidates, deploy: deployCandidates },
+      { devTask: devTaskCandidates, merge: mergeCandidates },
       consumed,
     );
     const deps = makeDeps({
       devTaskCandidates,
-      deployCandidates,
+      mergeCandidates,
       runner,
       reporter,
       consumed,
@@ -1390,16 +1459,16 @@ describe("createLoopOrchestrator", () => {
 
     await loop([
       job("shipwright-dev-task", true),
-      job("shipwright-deploy", true),
+      job("shipwright-merge", true),
     ]);
 
-    // Two dispatches → two create/complete pairs, deploy first (older).
+    // Two dispatches → two create/complete pairs, merge first (older).
     expect(creates.map((c) => c.phaseId)).toEqual([
-      "shipwright-deploy",
+      "shipwright-merge",
       "shipwright-dev-task",
     ]);
     expect(completes.map((c) => c.phaseId)).toEqual([
-      "shipwright-deploy",
+      "shipwright-merge",
       "shipwright-dev-task",
     ]);
     expect(completes.every((c) => c.outcome === "completed")).toBe(true);
@@ -2442,7 +2511,7 @@ describe("createLoopOrchestrator", () => {
       [
         {
           result:
-            "Bundle gate blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+            "Bundle gate blocked.\n[skip-reason:merge:bundle-incomplete:feat/x]\n[silent]",
         },
       ],
     );
@@ -2452,7 +2521,7 @@ describe("createLoopOrchestrator", () => {
     await loop([job("shipwright-dev-task", true)]);
 
     expect(skips).toHaveLength(1);
-    expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
+    expect(skips[0].skipReason).toBe("merge:bundle-incomplete:feat/x");
   });
 
   test("when only [silent] is present (no skip-reason marker), skipRun is called with 'command:no-work' as before", async () => {
@@ -2610,7 +2679,7 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
-  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch calls recordSkip with the parsed reason", async () => {
+  test("a [skip-reason:merge:bundle-incomplete:feat/x] dispatch calls recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2621,7 +2690,7 @@ describe("createLoopOrchestrator", () => {
       [
         {
           result:
-            "Bundle gate blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+            "Bundle gate blocked.\n[skip-reason:merge:bundle-incomplete:feat/x]\n[silent]",
         },
       ],
     );
@@ -2638,12 +2707,12 @@ describe("createLoopOrchestrator", () => {
     await loop([job("shipwright-dev-task", true)]);
 
     expect(skips).toHaveLength(1);
-    expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
+    expect(skips[0].skipReason).toBe("merge:bundle-incomplete:feat/x");
     expect(recordCalls).toEqual([
       {
         itemType: "task",
         recordId: "SWC-1.1",
-        reason: "deploy:bundle-incomplete:feat/x",
+        reason: "merge:bundle-incomplete:feat/x",
       },
     ]);
   });
@@ -3438,7 +3507,6 @@ describe("createLoopOrchestrator", () => {
         job("shipwright-dev-task", false),
         job("shipwright-review", false),
         job("shipwright-patch", false),
-        job("shipwright-deploy", false),
       ]);
     });
 
@@ -3480,12 +3548,12 @@ describe("createLoopOrchestrator", () => {
     expect(unreconciledWarnings).toHaveLength(0);
   });
 
-  test("unreconciled-agent warn fires on partial reconciliation — one of four phase names has a same-parent child row, the rest don't", async () => {
+  test("unreconciled-agent warn fires on partial reconciliation — one of three phase names has a same-parent child row, the rest don't", async () => {
     const deps = makeDeps();
     const loop = createLoopOrchestrator(deps);
 
     // shipwright-loop present; only shipwright-dev-task has been backfilled
-    // with parentCronId === loopCronId so far. review/patch/deploy are still
+    // with parentCronId === loopCronId so far. review/patch are still
     // top-level (unreconciled) rows, so they're ignored by
     // resolveLoopPhaseToggles and every toggle resolves false — but
     // `jobs.some((job) => job.parentCronId === loopCronId)` is true because
@@ -3509,12 +3577,6 @@ describe("createLoopOrchestrator", () => {
       {
         id: "shipwright-patch",
         name: "shipwright-patch",
-        enabled: true,
-        parentCronId: null,
-      },
-      {
-        id: "shipwright-deploy",
-        name: "shipwright-deploy",
         enabled: true,
         parentCronId: null,
       },
@@ -4091,7 +4153,7 @@ describe("createLoopOrchestrator", () => {
 
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
 
-  for (const phase of ["review", "patch", "deploy"] as const) {
+  for (const phase of ["review", "patch", "merge"] as const) {
     const optKey = `${phase}Candidates` as const;
     const command = `/shipwright:${phase}`;
 
@@ -4820,7 +4882,7 @@ describe("createLoopOrchestrator", () => {
   test("a review dispatch pushes recordSessionId too — CRT-1.3 gave the PR phases their own sessionKey, so early-session capture is wired for them as well", async () => {
     // Pre-CRT-1.3 this asserted the opposite (no sessionKey → no
     // onEarlySessionId → no recordSessionId push). CRT-1.3 mints a
-    // per-dispatch nonce sessionKey for review/patch/deploy, and
+    // per-dispatch nonce sessionKey for review/patch/merge, and
     // onEarlySessionId is gated purely on `sessionKey` being truthy — so the
     // cron-run row now carries the session id for a PR-phase dispatch too,
     // which is exactly the observability the resume loop needs.
@@ -4849,7 +4911,7 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("a plan dispatch still gets no sessionKey but now pushes recordSessionId — CES-1.2 decoupled the early-session-id push from sessionKey", async () => {
-    // CRT-1.3 widened the sessionKey gate to review/patch/deploy only; plan
+    // CRT-1.3 widened the sessionKey gate to review/patch/merge only; plan
     // deliberately keeps starting cold on every dispatch, so it must stay on
     // the undefined-sessionKey path. However, CES-1.2 decouples the
     // onEarlySessionId callback construction from sessionKey truthiness — the
@@ -5566,8 +5628,8 @@ describe("buildClaimPrRequest", () => {
     expect(request.title).toBeUndefined();
   });
 
-  test("passes through an explicit patch/deploy phase unchanged", () => {
-    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "deploy", {
+  test("passes through an explicit patch/merge phase unchanged", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "merge", {
       authorLogin: "bodhi-agent",
     });
 
@@ -5576,7 +5638,7 @@ describe("buildClaimPrRequest", () => {
       prNumber: 9,
     });
 
-    expect(request.phase).toBe("deploy");
+    expect(request.phase).toBe("merge");
     expect(request.authorLogin).toBe("bodhi-agent");
   });
 
@@ -6092,5 +6154,20 @@ describe("resolvePhaseCommand default existence check (DTA-1.3)", () => {
         });
       });
     }
+  });
+});
+
+// ─── merge phase mapping (MPD-1.3) ──────────────────────────────────────────
+
+describe("merge phase", () => {
+  test("a merge candidate id round-trips to /shipwright:merge and a merge claim", () => {
+    expect(resolvePhaseCommand("merge", () => 0.99).command).toBe(
+      "/shipwright:merge",
+    );
+    const request = buildClaimPrRequest(
+      { id: "acme/repo#7", age: "", phase: "merge", commitSha: "abc" },
+      { repo: "acme/repo", prNumber: 7 },
+    );
+    expect(request).toMatchObject({ phase: "merge", prNumber: 7 });
   });
 });

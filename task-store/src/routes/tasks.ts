@@ -41,6 +41,13 @@
  *                              whole call instead of populating it). Capped at
  *                              MAX_BULK_TASKS tasks per call (400 over that), which
  *                              bounds the batch-size-scaled transaction budget.
+ *   PATCH  /tasks/by-pr         (MPD-1.2) body { repo, prNumbers[], status: deployed|released, at? } —
+ *                              in ONE transaction moves every `merged` task of those PRs to
+ *                              the status and stamps deployedAt/releasedAt (= at or now),
+ *                              writing TaskEvent rows. Already-at-status tasks are
+ *                              `unchanged`, any other status is `skipped`. Returns
+ *                              { updated, unchanged, skipped }. Agent tokens: repo must be in
+ *                              scope (403); account-scoped. Max MAX_PATCH_BY_PR_NUMBERS prNumbers.
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete
@@ -57,12 +64,12 @@
  *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset)
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { readJson } from "@app-vitals/agent-lib/http";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { resolveAccountScope } from "../account-scope.ts";
 import { NO_ACCESS_ACCOUNT_ID, type TaskStoreAuthEnv } from "../auth.ts";
+import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
 import {
   BadRequestError,
   ConflictError,
@@ -78,6 +85,8 @@ import {
   DistinctResponseSchema,
   ErrorSchema,
   FailBodySchema,
+  PatchTasksByPrBodySchema,
+  PatchTasksByPrResponseSchema,
   SkipBodySchema,
   TaskEventsQuerySchema,
   TaskEventsResponseSchema,
@@ -85,10 +94,17 @@ import {
   TaskListQuerySchema,
   TaskListResponseSchema,
   TaskSchema,
+  UnblockBodySchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
-import { MAX_BULK_TASKS, type TaskServiceLike } from "../task-service.ts";
+import {
+  MAX_BULK_TASKS,
+  MAX_PATCH_BY_PR_NUMBERS,
+  type TaskServiceLike,
+  UNBLOCK_TARGETS,
+  type UnblockTarget,
+} from "../task-service.ts";
 import { isOrgRepo, normalizePr } from "../validate.ts";
 
 // Fields that gate task claim ownership. Agent tokens must go through the
@@ -142,14 +158,153 @@ function assertNoLifecycleFieldWrite(
 //   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
 //   requiresHumanApproval — dropped in RHA-1.4; the merge-approval gate that consulted
 //   it was removed from the deploy workflow in RHA-1.1.
+//   deployingAt — dropped in MPD-3.5 along with the `deploying` status.
 const REMOVED_TASK_FIELDS = [
   "hitlNotifiedAt",
   "requiresHumanApproval",
+  "deployingAt",
 ] as const;
 
 function stripRemovedFields(body: Record<string, unknown>): void {
   for (const key of REMOVED_TASK_FIELDS) {
     delete body[key];
+  }
+}
+
+// Every Task scalar column a PATCH body may carry. Any other key (e.g. `notes`
+// for the real `note` field) would reach prisma.task.update() and throw a
+// PrismaClientValidationError, which is not an ApiError and surfaces as a raw
+// 500 plus a Sentry exception (VITALS-OS-5W). Reject it with a 400 instead —
+// not aliased or silently stripped, so the caller learns the field is wrong.
+// Kept in lockstep with Prisma.TaskScalarFieldEnum by a parity unit test.
+export const TASK_PATCH_FIELDS: ReadonlySet<string> = new Set([
+  "id",
+  "accountId",
+  "title",
+  "status",
+  "source",
+  "session",
+  "repo",
+  "description",
+  "acceptanceCriteria",
+  "layer",
+  "branch",
+  "dependencies",
+  "pr",
+  "hours",
+  "startedAt",
+  "prCreatedAt",
+  "mergedAt",
+  "blockedAt",
+  "blockedReason",
+  "note",
+  "type",
+  "priority",
+  "cancelledAt",
+  "completedAt",
+  "deployedAt",
+  "releasedAt",
+  "ciFixAttempts",
+  "mergeCommit",
+  "prUrl",
+  "assignee",
+  "issue",
+  "model",
+  "complexity",
+  "hitl",
+  "kind",
+  "skipCount",
+  "lastSkippedAt",
+  "lastSkipReason",
+  "claimedBy",
+  "agentHint",
+  "claimedAt",
+  "heartbeatAt",
+  "simplifyTotal",
+  "simplifyDry",
+  "simplifyDeadCode",
+  "simplifyNaming",
+  "simplifyComplexity",
+  "simplifyConsistency",
+  "coverageDelta",
+  "effortLevel",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "costUsd",
+  "metadata",
+  "createdAt",
+  "updatedAt",
+]);
+
+function assertKnownTaskFields(body: Record<string, unknown>): void {
+  const unknown = Object.keys(body).filter((k) => !TASK_PATCH_FIELDS.has(k));
+  if (unknown.length > 0) {
+    throw new BadRequestError(
+      `unknown task field(s): ${unknown.map((k) => `'${k}'`).join(", ")}`,
+    );
+  }
+}
+
+// Non-string Task columns the passthrough body schemas don't type. A mistyped
+// value (e.g. `complexity: "S"` for an Int?) would reach prisma.task.create()
+// and throw a PrismaClientValidationError -> raw 500 (VITALS-OS-6K). Reject
+// with a 400 naming the field instead; no string->int coercion.
+const TASK_INT_FIELDS = [
+  "ciFixAttempts",
+  "complexity",
+  "skipCount",
+  "simplifyTotal",
+  "simplifyDry",
+  "simplifyDeadCode",
+  "simplifyNaming",
+  "simplifyComplexity",
+  "simplifyConsistency",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+] as const;
+const TASK_FLOAT_FIELDS = ["hours", "coverageDelta", "costUsd"] as const;
+const TASK_STRING_ARRAY_FIELDS = [
+  "acceptanceCriteria",
+  "dependencies",
+] as const;
+
+function assertTaskFieldTypes(body: Record<string, unknown>): void {
+  const bad = (field: string, expected: string): never => {
+    throw new BadRequestError(`'${field}' must be ${expected}`);
+  };
+  // TaskStatus is a Prisma enum — an unknown value (e.g. the `deploying` status
+  // dropped in MPD-3.5) would otherwise reach Prisma and surface as a raw 500.
+  if (
+    body.status !== undefined &&
+    (typeof body.status !== "string" || !VALID_STATUSES.has(body.status))
+  ) {
+    throw new BadRequestError(`invalid status: '${String(body.status)}'`);
+  }
+  for (const f of TASK_INT_FIELDS) {
+    const v = body[f];
+    if (v != null && !Number.isInteger(v)) bad(f, "an integer or null");
+  }
+  for (const f of TASK_FLOAT_FIELDS) {
+    const v = body[f];
+    if (v != null && !(typeof v === "number" && Number.isFinite(v))) {
+      bad(f, "a number or null");
+    }
+  }
+  if (body.hitl != null && typeof body.hitl !== "boolean") {
+    bad("hitl", "a boolean or null");
+  }
+  for (const f of TASK_STRING_ARRAY_FIELDS) {
+    const v = body[f];
+    if (
+      v !== undefined &&
+      !(Array.isArray(v) && v.every((x) => typeof x === "string"))
+    ) {
+      bad(f, "an array of strings");
+    }
   }
 }
 
@@ -340,6 +495,49 @@ const bulkRoute = createRoute({
     },
     502: {
       description: "Webhook delivery failed; the entire batch was rolled back",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const patchByPrRoute = createRoute({
+  method: "patch",
+  path: "/by-pr",
+  tags: ["tasks"],
+  summary: "Mark merged tasks deployed or released by PR number",
+  description: `For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of \`repo\` whose \`pr\` is in \`prNumbers\` and whose status is \`merged\` is moved to \`status\` (\`deployed\` | \`released\`) and its \`deployedAt\`/\`releasedAt\` is stamped with \`at\` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported \`unchanged\` (idempotent); tasks in any other status are \`skipped\` with their status and never modified. At most ${MAX_PATCH_BY_PR_NUMBERS} PR numbers per call. Equivalent manual flow: \`GET /tasks?pr=&repo=\` then \`PATCH /tasks/:id\`.`,
+  request: {
+    body: {
+      content: { "application/json": { schema: PatchTasksByPrBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Per-task outcome",
+      content: {
+        "application/json": { schema: PatchTasksByPrResponseSchema },
+      },
+    },
+    400: {
+      description: `Bad request — empty or more than ${MAX_PATCH_BY_PR_NUMBERS} prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at`,
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description:
+        "Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — a task changed status concurrently; the whole call was rolled back, retry",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; the whole call was rolled back",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -632,7 +830,7 @@ const skipRoute = createRoute({
   tags: ["tasks"],
   summary: "Record a skip — increments skipCount, auto-blocks at threshold",
   description:
-    'Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task\'s current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.',
+    'Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task\'s current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.',
   request: {
     params: TaskIdParamSchema,
     body: {
@@ -694,11 +892,16 @@ const unblockRoute = createRoute({
   method: "post",
   path: "/:id/unblock",
   tags: ["tasks"],
-  summary: "Atomically unblock a task back to pending",
+  summary:
+    "Atomically unblock a task to pending, pr_open, merged, deployed or released",
   description:
-    "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).",
+    "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.",
   request: {
     params: TaskIdParamSchema,
+    body: {
+      required: false,
+      content: { "application/json": { schema: UnblockBodySchema } },
+    },
   },
   responses: {
     200: {
@@ -717,8 +920,14 @@ const unblockRoute = createRoute({
       description: "Not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    400: {
+      description:
+        "Bad request — unknown `to`, or a non-pending `to` on a task with no `pr`",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     409: {
-      description: "Conflict — task is not currently blocked",
+      description:
+        "Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -916,6 +1125,7 @@ export function createTasksRoutes(
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
     normalizePrField(body);
+    assertTaskFieldTypes(body);
     body.accountId = accountIdForCreate(c);
     const created = await withGenericIdConflict(c, () =>
       taskService.create(body as Prisma.TaskCreateInput),
@@ -954,11 +1164,44 @@ export function createTasksRoutes(
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
       normalizePrField(task);
+      assertTaskFieldTypes(task);
       task.accountId = accountId;
     }
     const result = await withGenericIdConflict(c, () =>
       taskService.bulk(body as Prisma.TaskCreateInput[]),
     );
+    return c.json(result, 200);
+  });
+
+  // ─── PATCH by PR (MPD-1.2) ─────────────────────────────────────────────────
+  // Must be registered before /:id routes to avoid param capture.
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(patchByPrRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos");
+    const body = c.req.valid("json");
+    if (!isOrgRepo(body.repo)) {
+      throw new BadRequestError(
+        `repo '${body.repo}' must be in org/repo format`,
+      );
+    }
+    if (agentId !== null && !(repos ?? []).includes(body.repo)) {
+      throw new ForbiddenError(
+        `repo '${body.repo}' is not in this agent's scope`,
+      );
+    }
+    if (c.get("accountId") === NO_ACCESS_ACCOUNT_ID) {
+      throw new ForbiddenError(
+        "account scope unavailable — cannot update tasks",
+      );
+    }
+    const result = await taskService.markMergedByPr({
+      repo: body.repo,
+      prNumbers: body.prNumbers,
+      status: body.status,
+      at: body.at,
+      accountId: resolveAccountScope(c),
+    });
     return c.json(result, 200);
   });
 
@@ -1007,6 +1250,7 @@ export function createTasksRoutes(
     );
     const body = await readJson(c);
     stripRemovedFields(body);
+    assertKnownTaskFields(body);
     assertNoLifecycleFieldWrite(body, agentId);
     // Only admin tokens may move a task between accounts.
     if (agentId !== null && "accountId" in body) {
@@ -1014,6 +1258,7 @@ export function createTasksRoutes(
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
     normalizePrField(body);
+    assertTaskFieldTypes(body);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
     // Skip force-assign when access is purely via repo scope — the task may belong
@@ -1193,7 +1438,27 @@ export function createTasksRoutes(
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.unblock(c.req.param("id"));
+    // Body is optional: an absent/empty body is the legacy no-arg call.
+    // `required: false` skips zod validation when no JSON content-type is
+    // sent, so read defensively and let the service reject unknown targets.
+    let to: UnblockTarget | undefined;
+    const raw = await c.req.text();
+    if (raw.trim() !== "") {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new BadRequestError("body must be valid JSON");
+      }
+      const result = UnblockBodySchema.safeParse(parsed);
+      if (!result.success) {
+        throw new BadRequestError(
+          `invalid unblock body: \`to\` must be one of ${UNBLOCK_TARGETS.join(", ")}`,
+        );
+      }
+      to = result.data.to;
+    }
+    const task = await taskService.unblock(c.req.param("id"), { to });
     return c.json(task, 200);
   });
 

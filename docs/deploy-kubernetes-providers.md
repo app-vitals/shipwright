@@ -113,7 +113,7 @@ echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
 ### Sizing
 
 The agent pod dominates: **500m CPU / 2Gi memory requests, 8Gi memory limit,
-4Gi ephemeral-storage** (`admin/src/agent-manifest.ts`). Ephemeral-storage was
+4Gi ephemeral-storage** (`agent-manifest.ts` in the `@app-vitals/agent-admin` package). Ephemeral-storage was
 raised from a 1Gi default that left no room for a build step's scratch space
 and caused mid-run evictions; tool caches are pinned to the PVC, so this
 budget only covers genuinely transient writes. Everything else is small.

@@ -12,7 +12,7 @@
  *
  * Each tick, while not busy:
  *   1. Read the five independent phase toggles for this agent (dev-task /
- *      plan / review / patch / deploy) via resolveLoopPhaseToggles — never
+ *      plan / review / patch / merge) via resolveLoopPhaseToggles — never
  *      shipwright-review-patch's flag, and never invoking /shipwright:review-patch.
  *      The plan phase (PDR-4.1) additionally requires the
  *      SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch; with it
@@ -33,7 +33,8 @@
  *      and trust it instead of re-claiming and 409ing against itself. Then
  *      dispatch the correct one-shot command by the item's phase tag (task →
  *      /shipwright:dev-task | /shipwright:plan-session; pr →
- *      /shipwright:review | /shipwright:patch | /shipwright:deploy) via the
+ *      /shipwright:review | /shipwright:patch |
+ *      /shipwright:merge) via the
  *      injected claude runner, and report the run. Every phase's command is
  *      `{command} {itemId}` except plan's, which is
  *      `{command} {repo} {session} --autonomous {itemId}`.
@@ -93,10 +94,6 @@ import { parseMarkers } from "@app-vitals/agent-runtime/markers";
 import type { RunTelemetry } from "@app-vitals/agent-runtime/run-telemetry";
 import { buildSpawnEnv } from "@app-vitals/agent-runtime/spawn-env";
 import {
-  buildProductionDeps as buildDeployDeps,
-  getDeployCandidates,
-} from "./check-deploy.ts";
-import {
   buildProductionDeps as buildDevTaskDeps,
   getDevTaskCandidates,
 } from "./check-dev-task.ts";
@@ -107,6 +104,10 @@ import {
   ghJson,
   parseCandidateId,
 } from "./check-helpers.ts";
+import {
+  buildProductionDeps as buildMergeDeps,
+  getMergeCandidates,
+} from "./check-merge.ts";
 import {
   buildProductionDeps as buildPatchDeps,
   getPatchCandidates,
@@ -146,7 +147,7 @@ import {
  * four it is gated behind BOTH its manifest cron toggle and the
  * SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch.
  */
-type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy";
+type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "merge";
 
 export interface LoopOrchestratorDeps {
   /** WL-2.2 dev-task qualification, pre-wired over its own production deps. */
@@ -163,8 +164,12 @@ export interface LoopOrchestratorDeps {
   getReviewCandidates: () => Promise<WorkPrCandidate[]>;
   /** WL-2.2 patch qualification — candidates tagged phase: "patch". */
   getPatchCandidates: () => Promise<WorkPrCandidate[]>;
-  /** WL-2.2 deploy qualification — candidates tagged phase: "deploy". */
-  getDeployCandidates: () => Promise<WorkPrCandidate[]>;
+  /**
+   * MPD-1.3 merge qualification — candidates tagged phase: "merge". Optional:
+   * an orchestrator constructed without it behaves exactly as before, and it
+   * is only ever CALLED when the `shipwright-merge` toggle is on.
+   */
+  getMergeCandidates?: () => Promise<WorkPrCandidate[]>;
   /**
    * Pre-claim (CBD-1.2): claims a dev-task candidate directly against the
    * task store, POSTing /tasks/{id}/claim, BEFORE it is dispatched. Resolves
@@ -172,11 +177,11 @@ export interface LoopOrchestratorDeps {
    * on a 409 conflict (another agent replica already claimed it) — the item
    * is skipped entirely (no dispatch, no cron-run row) and the drain loop
    * re-collects candidates and continues. Only called for `item.type ===
-   * "task"` — PR items (review/patch/deploy) are never pre-claimed here.
+   * "task"` — PR items (review/patch/merge) are never pre-claimed here.
    */
   claimTask: (taskId: string) => Promise<boolean>;
   /**
-   * Pre-claim (CBD-1.3): claims a PR candidate (review/patch/deploy) directly
+   * Pre-claim (CBD-1.3): claims a PR candidate (review/patch/merge) directly
    * against the task store, POSTing /prs/claim, BEFORE it is dispatched.
    * Resolves the claimed record's {id, commitSha} on success (200/201) — used
    * to build the pre-claim marker appended to the dispatched command string
@@ -245,7 +250,7 @@ export interface LoopOrchestratorDeps {
    *         starting cold. Only cleared (via clearSessionKey) once a fresh
    *         getTaskState check confirms the task reached a terminal
    *         dev-task-work status — see dispatchItem's dev-task finally block.
-   *       · review/patch/deploy — `{phase}:{itemId}:{uuid}` (CRT-1.3): a
+   *       · review/patch/merge — `{phase}:{itemId}:{uuid}` (CRT-1.3): a
    *         per-dispatch nonce, so resuming works WITHIN one dispatch's own
    *         resume loop but never across dispatches; cleared unconditionally
    *         when that loop exits.
@@ -283,7 +288,7 @@ export interface LoopOrchestratorDeps {
    * This agent's own claim identity (SHIPWRIGHT_AGENT_ID) — the value the
    * task store pins `claimedBy` to when this agent's token claims a task.
    * Used by BOTH auto-resume gates in dispatchItem — the dev-task one
-   * (DTW-1.3) and the PR-phase review/patch/deploy one (CRT-1.3). A dispatch
+   * (DTW-1.3) and the PR-phase review/patch/merge one (CRT-1.3). A dispatch
    * can hold a task or PR across up to 1 + MAX_AUTO_RESUMES sequential
    * runner() calls, which is long enough for the claim TTL to lapse if an
    * attempt stalls past its heartbeat. If the StaleClaimReaper then releases
@@ -303,7 +308,7 @@ export interface LoopOrchestratorDeps {
    * DTW-1.3 — renews this dispatch's claim on a task (POST
    * /tasks/{id}/heartbeat) immediately before each auto-resume attempt.
    *
-   * `@app-vitals/agent-@app-vitals/agent-lib/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
+   * `agent/src/coding/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
    * is sized on the assumption that a claim spans exactly ONE Claude session,
    * so "a claim isn't reaped mid-session". The auto-resume loop breaks that
    * assumption: one dispatch can issue up to 1 + MAX_AUTO_RESUMES sequential
@@ -329,7 +334,7 @@ export interface LoopOrchestratorDeps {
   heartbeatTask?: (taskId: string) => Promise<void>;
   /**
    * CRT-1.2 — fetches a PR's live state from the task store; consumed by
-   * CRT-1.3's PR-phase (review/patch/deploy) auto-resume gate in dispatchItem
+   * CRT-1.3's PR-phase (review/patch/merge) auto-resume gate in dispatchItem
    * to decide whether to immediately resume the same session instead of
    * waiting for the next cron tick / the StaleClaimReaper. Returns null if the
    * PR can't be found (treated as "stop resuming"). The PR analog of
@@ -429,7 +434,7 @@ export interface LoopOrchestratorDeps {
    *     dispatch's exit and be resumed by a LATER, separate dispatch of the
    *     same still-in_progress task; clearing unconditionally (the
    *     pre-DTR-1.1 behavior) would defeat that cross-dispatch resume.
-   *   - review/patch/deploy (CRT-1.3) — unconditionally on every exit. Those
+   *   - review/patch/merge (CRT-1.3) — unconditionally on every exit. Those
    *     keys are per-dispatch nonces with nothing to preserve across
    *     dispatches, so there's no state to re-check first.
    *
@@ -506,7 +511,7 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
   plan: "/shipwright:plan-session",
   review: "/shipwright:review",
   patch: "/shipwright:patch",
-  deploy: "/shipwright:deploy",
+  merge: "/shipwright:merge",
 };
 
 /** Which slash-command variant a dispatch ran (DTA-1.3). */
@@ -681,7 +686,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  * The cooldown key is phase-scoped (`${pr.id}:${phase}`, see
  * isPrDispatchSuppressed) — each phase tracks its own redispatch history
  * independently. PH-1.3 previously assumed a bare-pr.id key shared across
- * review/patch/deploy was safe because review's cooldown was believed inert
+ * review/patch/merge was safe because review's cooldown was believed inert
  * in practice (see below); that assumption is disproven (confirmed live,
  * PRC-1.1): a real review dispatch on an unchanged commit was suppressing an
  * unrelated, independent patch need (e.g. resolving a live merge conflict)
@@ -698,10 +703,8 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  *   tick and keeps no "already attempted this commit" memory of its own — a
  *   non-blocking failed/no-op cycle would redispatch every tick without this
  *   cooldown.
- * - **deploy**: partially load-bearing. The 30-minute pipeline-timeout path
- *   sets `blocked` for its own designed failure mode and doesn't need this
- *   cooldown, but a transient/unhandled failure outside that path has the
- *   same unbounded-redispatch exposure as patch.
+ * - **merge**: load-bearing for the same reason as patch — a transient or
+ *   unhandled failure would otherwise redispatch every tick.
  */
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 
@@ -731,7 +734,7 @@ const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
  * claimed — exactly today's behavior — for the reaper + human triage.
  *
  * Shared by both resume loops in dispatchItem: dev-task's (DTW-1.3/DTR-1.1)
- * and, since CRT-1.3, review/patch/deploy's.
+ * and, since CRT-1.3, review/patch/merge's.
  */
 const MAX_AUTO_RESUMES = 3;
 
@@ -820,7 +823,7 @@ export function createLoopOrchestrator(
     getPlanCandidates,
     getReviewCandidates,
     getPatchCandidates,
-    getDeployCandidates,
+    getMergeCandidates,
     claimTask,
     claimPr,
     recordSkip,
@@ -1062,10 +1065,10 @@ export function createLoopOrchestrator(
     //     unrelated task reusing this exact `itemId` (unlikely, but not
     //     impossible after task-store id reuse) never inherits a dead session.
     //
-    //   review/patch/deploy (CRT-1.3) — `{phase}:{itemId}:{randomUUID()}`, a
+    //   review/patch/merge (CRT-1.3) — `{phase}:{itemId}:{randomUUID()}`, a
     //     PER-DISPATCH nonce: exactly the shape dev-task used before DTR-1.1
     //     dropped its own. These phases opt into the same-session resume loop
-    //     (an attempt that exits early mid-review/patch/deploy is just as
+    //     (an attempt that exits early mid-review/patch/merge is just as
     //     wasteful to redo cold) but deliberately NOT into cross-dispatch
     //     persistence — they re-validate live GitHub/task-store state at the
     //     top of every dispatch, so a reclaim, or simply this dispatch ending,
@@ -1082,7 +1085,7 @@ export function createLoopOrchestrator(
     const sessionKey =
       phase === "dev-task"
         ? `dev-task:${itemId}`
-        : phase === "review" || phase === "patch" || phase === "deploy"
+        : phase === "review" || phase === "patch" || phase === "merge"
           ? `${phase}:${itemId}:${randomUUID()}`
           : undefined;
 
@@ -1126,7 +1129,7 @@ export function createLoopOrchestrator(
       // it's known — before the run reaches any terminal state — so an operator
       // can find/resume the session manually even if this attempt never
       // completes. Wired for every phase (all five: dev-task, plan, review,
-      // patch, deploy), independent of sessionKey. The sessionKey itself remains
+      // patch, merge), independent of sessionKey. The sessionKey itself remains
       // undefined for plan by design (plan doesn't resume), but the session id
       // capture is decoupled from that — plan still pushes it for observability.
       // Fire-and-forget, same contract as recordProgress below.
@@ -1309,7 +1312,7 @@ export function createLoopOrchestrator(
 
       if (isSilent) {
         // DBV-1.1: a command can tag its own silent dispatch with a specific,
-        // machine-readable [skip-reason:text] marker (e.g. deploy's Step 2b
+        // machine-readable [skip-reason:text] marker (e.g. merge's bundle
         // bundle-completeness gate) so the AgentCronRun.skipReason field
         // records exactly why nothing happened, instead of the generic
         // "command:no-work" literal. Falls back to that literal when the
@@ -1539,14 +1542,14 @@ export function createLoopOrchestrator(
       }
     }
 
-    // CRT-1.3 auto-resume loop — the PR phases (review/patch/deploy). Same
+    // CRT-1.3 auto-resume loop — the PR phases (review/patch/merge). Same
     // shape and same MAX_AUTO_RESUMES cap as the dev-task block above, but a
     // deliberately SEPARATE block rather than a widened one, because the two
     // mechanisms differ in both halves that matter:
     //
     //   - Ownership: a PR item has no `in_progress`-equivalent status to gate
     //     on — every real PR completion path (review posted, patch pushed,
-    //     deploy merged/promoted, an explicit release) already nulls
+    //     merge, an explicit release) already nulls
     //     `claimedBy` — so `claimedBy` carries both halves of dev-task's
     //     status-then-owner check at once: "still claimed at all" is the
     //     always-on floor (dev-task's status check), and "claimed by ME" is
@@ -1572,7 +1575,7 @@ export function createLoopOrchestrator(
     // record's CUID that GET/POST /prs/{id} keys on — the same distinction the
     // recordSkip/resetSkip calls above already observe.
     if (
-      (phase === "review" || phase === "patch" || phase === "deploy") &&
+      (phase === "review" || phase === "patch" || phase === "merge") &&
       sessionKey
     ) {
       try {
@@ -1954,7 +1957,6 @@ export function createLoopOrchestrator(
           !toggles.devTask &&
           !toggles.review &&
           !toggles.patch &&
-          !toggles.deploy &&
           jobs.some((job) => job.name === "shipwright-loop") &&
           LOOP_PHASE_JOB_NAMES.some(
             (name) =>
@@ -2025,7 +2027,8 @@ export function createLoopOrchestrator(
         const allPrs: WorkPrCandidate[] = [];
         if (toggles.review) allPrs.push(...(await getReviewCandidates()));
         if (toggles.patch) allPrs.push(...(await getPatchCandidates()));
-        if (toggles.deploy) allPrs.push(...(await getDeployCandidates()));
+        if (toggles.merge && getMergeCandidates)
+          allPrs.push(...(await getMergeCandidates()));
         const nowMs = clock.now().getTime();
         const prs: WorkPrCandidate[] = allPrs.filter(
           (p) =>
@@ -2224,7 +2227,7 @@ export function createLoopOrchestrator(
           // exists so callers can react, but letting it propagate out of
           // the drain loop here would abort the ENTIRE tick, blocking every
           // other candidate that hasn't failed (the "one flaky/timeout
-          // dispatch stalls unrelated review/patch/deploy work" bug). Skip
+          // dispatch stalls unrelated review/patch/merge work" bug). Skip
           // this item for the rest of the tick and keep draining — the item
           // stays claimed in the task store (pre-claim above already
           // succeeded), so it naturally drops out of the next iteration's
@@ -2398,7 +2401,7 @@ export interface LoopOrchestratorProductionOptions {
  * The dev-task deps are built synchronously (and hard-exit on a missing
  * SHIPWRIGHT_AGENT_ID, matching the plugin precheck) — but the agent has
  * already validated its id at boot, so this only runs on a correctly
- * configured agent. Review/patch/deploy deps are async because they resolve
+ * configured agent. Review/patch/merge deps are async because they resolve
  * workspace state and the current GitHub user up front.
  */
 /**
@@ -2419,7 +2422,7 @@ export function buildClaimPrRequest(
   repo: string;
   prNumber: number;
   commitSha: string;
-  phase: "review" | "patch" | "deploy";
+  phase: "review" | "patch" | "merge";
   authorLogin?: string;
   headRefName?: string;
   title?: string;
@@ -2457,7 +2460,7 @@ async function createProductionLoopOrchestrator(
   const planDeps = buildPlanDeps();
   const reviewDeps = await buildReviewDeps({ ghJson, ghGraphql });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
-  const deployDeps = await buildDeployDeps({ ghJson });
+  const mergeDeps = await buildMergeDeps({ ghJson });
   const taskStoreClient = createTaskStoreClient();
 
   return createLoopOrchestrator({
@@ -2465,7 +2468,7 @@ async function createProductionLoopOrchestrator(
     getPlanCandidates: () => getPlanCandidates(planDeps),
     getReviewCandidates: () => getReviewCandidates(reviewDeps),
     getPatchCandidates: () => getPatchCandidates(patchDeps),
-    getDeployCandidates: () => getDeployCandidates(deployDeps),
+    getMergeCandidates: () => getMergeCandidates(mergeDeps),
     claimTask: (id) => taskStoreClient.claim(id),
     claimPr: (pr) => {
       const parsed = parseCandidateId(pr.id);

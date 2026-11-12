@@ -626,6 +626,16 @@ describe("admin UI — phase methodology panel", () => {
     expect(html).toContain(">default<");
   });
 
+  it("GET /admin/agents/:id Phase Methodology card help text mentions the comma-separated list for review", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).toContain("comma-separated list");
+    expect(html).toContain("up to 5");
+  });
+
   it("POST /admin/agents/:id/phase-methodology/:phase with a non-empty subagentType sets the override", async () => {
     const received: {
       agentId?: string;

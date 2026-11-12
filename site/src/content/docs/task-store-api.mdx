@@ -51,7 +51,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 Tasks move through a defined set of statuses from creation to completion:
 
 ```
-pending → in_progress → pr_open → approved → merged → deploying → deployed
+pending → in_progress → pr_open → approved → merged → deployed | released
 ```
 
 Branch statuses that can occur at any point:
@@ -63,7 +63,7 @@ done       — completed without a PR (direct task, no deploy path)
 ```
 
 Terminal statuses (dependency resolution treats these as satisfied):
-`merged`, `done`, `deploying`, `deployed`, `cancelled`
+`merged`, `done`, `deployed`, `released`, `cancelled`
 
 | Status | Meaning |
 |---|---|
@@ -72,8 +72,8 @@ Terminal statuses (dependency resolution treats these as satisfied):
 | `pr_open` | PR has been opened on GitHub; `pr` and `prCreatedAt` must be set |
 | `approved` | PR passed review; `ciFixAttempts` must be set |
 | `merged` | PR merged to main; `mergedAt` should be set |
-| `deploying` | Deploy pipeline is running; `deployingAt` should be set |
 | `deployed` | Successfully deployed to production; `deployedAt` should be set |
+| `released` | Shipped through a package/release flow (tag, chart or library publish); `releasedAt` should be set |
 | `blocked` | Explicitly paused — waiting on human action or unresolvable dependency |
 | `done` | Task complete without a PR (e.g. research or HITL tasks) |
 | `cancelled` | Permanently abandoned |
@@ -91,7 +91,7 @@ for all other queries.
 | `state=ready` | Alias for `?ready=true` |
 | `state=blocked` | Return pending tasks with unmet dependencies, HITL-gated tasks, and explicitly blocked tasks |
 | `state=open` | Filter to open tasks (pending, in_progress, pr_open, approved) |
-| `state=closed` | Filter to closed tasks (merged, done, deploying, deployed, cancelled) |
+| `state=closed` | Filter to closed tasks (merged, done, deployed, released, cancelled) |
 | `state=in_progress` | Filter to actively running tasks |
 | `status` | Filter by exact status value (e.g. `?status=pr_open`) |
 | `session` | Filter by planning session slug |
@@ -146,6 +146,32 @@ curl -sf -X POST \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
   -d '[{"id": "SHE-2.1", "title": "...", "status": "pending", "repo": "org/repo", "branch": "feat/she-2-1-..."}]' \
+  | jq .
+```
+
+### PATCH /tasks/by-pr
+
+Mark every `merged` task linked to a set of PRs as `deployed` or `released` in one request, for automation that knows PRs rather than task ids. Register order matters server-side: this literal path is matched before `PATCH /tasks/:id`.
+
+Request body: `{ "repo": "org/repo", "prNumbers": [101, 102], "status": "deployed" | "released", "at"?: "<ISO timestamp>" }`.
+
+- `prNumbers` must hold 1 to 100 positive integers; an empty list, an over-large batch, a non-integer entry, an unknown `status` (only `deployed` and `released` are accepted), a malformed `repo` or an unparseable `at` is a `400`.
+- Every task of `repo` whose `pr` is listed is considered. Only tasks currently `merged` transition: they get the requested `status` and `deployedAt` / `releasedAt` set to `at` (default: now), with TaskEvent audit rows.
+- Idempotent: a task already at the requested `status` is reported under `unchanged` and left untouched, so repeating a call is safe.
+- Tasks in any other status (`pr_open`, `approved`, `blocked`, `done`, ...) are never modified and are reported under `skipped` with their current status. Note that a task already `deployed` is `skipped` (not `unchanged`) when `released` is requested, and vice versa.
+- Everything runs in one transaction (including the single `task.write` webhook dispatch): a bundle of tasks on one PR is updated all-or-nothing. A task changing status concurrently aborts the call with `409`; retry.
+- Scope: agent tokens may only target a `repo` in their repo scope (`403` otherwise) and only see tasks of their own account; admin tokens are unrestricted or narrowed with `?accountId=`.
+
+Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<id>", "status": "pr_open" }] }`.
+
+The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/by-pr" \
+  -d '{"repo": "org/repo", "prNumbers": [101, 102], "status": "deployed"}' \
   | jq .
 ```
 
@@ -280,7 +306,7 @@ A task is **ready** when **all** of the following are true:
 
 | Rule | Condition | Result |
 |---|---|---|
-| 1 | Dependency status is `merged`, `done`, `deploying`, `deployed`, or `cancelled` | Satisfied |
+| 1 | Dependency status is `merged`, `done`, `deployed`, `released`, or `cancelled` | Satisfied |
 | 2 | Dependency is on the same branch and has status `pr_open` or `approved` | Satisfied (bundled PR) |
 | 3 | Dependency has status `pr_open` with a PR number, and GitHub reports the PR as merged | Satisfied |
 | 4 | None of the above match | **Not satisfied** — task excluded |
@@ -344,8 +370,8 @@ relevant status transition.
 | `ciFixAttempts` | int? | → `approved` or `merged` (required) |
 | `mergeCommit` | string? | → `merged` |
 | `mergedAt` | string? | → `merged` |
-| `deployingAt` | string? | → `deploying` |
 | `deployedAt` | string? | → `deployed` |
+| `releasedAt` | string? | → `released` |
 | `completedAt` | string? | → `done` |
 | `cancelledAt` | string? | → `cancelled` |
 | `blockedAt` | string? | → `blocked` |

@@ -50,7 +50,7 @@ const existingTableCommands = [
   "dev-task",
   "review",
   "patch",
-  "deploy",
+  "merge",
   "metrics",
   "research",
   "research-docs",

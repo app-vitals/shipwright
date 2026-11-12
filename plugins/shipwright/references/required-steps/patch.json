@@ -1,0 +1,116 @@
+{
+  "steps": [
+    {
+      "stepNumber": "3d",
+      "title": "Pre-Claim Release on No-Op Exit",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/{id}/release on no-op exit when all lists empty",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "4a.6",
+      "title": "Claim PR Record (pre-work lock)",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/claim with phase: 'patch' (or pre-claim marker validation)",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "4b",
+      "title": "Dispatch Conflict Resolution Subagent",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (subagent_type varies; default: general-purpose). Note: sed-style or inline conflict resolution counts as skipping the subagent — no size exemption",
+      "measurable": true,
+      "lane": "conflict"
+    },
+    {
+      "stepNumber": "4c.5",
+      "title": "Upsert PR Record",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/{id}/patch with commitSha and heartbeat renewal",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "5a.6",
+      "title": "Claim PR Record (pre-work lock)",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/claim with phase: 'patch' (or pre-claim marker validation)",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "5a.6b",
+      "title": "`.claude/**` Path Escalation Check",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "5a.7",
+      "title": "Second-Round Escalation Check",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "5b",
+      "title": "Dispatch Fix Subagent",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (subagent_type varies; default: general-purpose). Note: sed-style or inline fix counts as skipping the subagent — no size exemption",
+      "measurable": true,
+      "lane": "review"
+    },
+    {
+      "stepNumber": "5c.5",
+      "title": "Upsert PR Record",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/{id}/patch with commitSha and heartbeat renewal; POST /prs/{id}/findings for rejected findings ledger settlement",
+      "measurable": true,
+      "lane": "review"
+    },
+    {
+      "stepNumber": "6b.5",
+      "title": "Claim PR Record (pre-work lock)",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/claim with phase: 'patch' (or pre-claim marker validation)",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "6b.6",
+      "title": "Escalation Check",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "6c",
+      "title": "Dispatch Fix Subagent",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (subagent_type varies; default: general-purpose). Note: sed-style or inline CI fix counts as skipping the subagent — no size exemption",
+      "measurable": true,
+      "lane": "ci"
+    },
+    {
+      "stepNumber": "6d.5",
+      "title": "Upsert PR Record",
+      "mandatory": true,
+      "proofOfRunning": "POST /prs/{id}/patch with commitSha, ciFailureSignature, and heartbeat renewal",
+      "measurable": true,
+      "lane": "ci"
+    },
+    {
+      "stepNumber": "6.5",
+      "title": "Verify CI After Patch",
+      "mandatory": true,
+      "proofOfRunning": "is-ci-green.ts classifier run on polled CI results; optional bonus subagent dispatch if still-red",
+      "measurable": true,
+      "lane": "ci"
+    }
+  ]
+}

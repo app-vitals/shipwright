@@ -19,6 +19,10 @@ import {
 import type { ModelBreakdownEntry } from "@app-vitals/agent-admin/openapi-schemas";
 import { agentLink, taskLink } from "./admin-ui-work-item-pages.ts";
 import {
+  ADMIN_WIDE_PAGE_CLASS,
+  ADMIN_WIDE_PAGE_STYLES,
+} from "./admin-wide-page.ts";
+import {
   annotateEligibility,
   buildEligibilityIndex,
   mergeWorkQueueSnapshots,
@@ -159,7 +163,7 @@ export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
 }
 
 // Inline CSS for the work-queue "Phase" column badge, keyed by the raw
-// phase value (dev-task/plan/review/patch/deploy) — a single neutral palette
+// phase value (dev-task/plan/review/patch/merge) — a single neutral palette
 // distinct from the outcome-style badges elsewhere on the queue & activity
 // page, since phase here is informational, not a pass/fail signal.
 const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
@@ -167,7 +171,7 @@ const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
   plan: "background:#e0f2fe;color:#075985",
   review: "background:#fef3c7;color:#92400e",
   patch: "background:#fee2e2;color:#991b1b",
-  deploy: "background:#dcfce7;color:#166534",
+  merge: "background:#ede9fe;color:#5b21b6",
 };
 const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
 
@@ -201,7 +205,7 @@ export interface WorkQueueItem {
   type: "task" | "pr";
   id: string;
   title?: string;
-  phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
+  phase: "dev-task" | "plan" | "review" | "patch" | "merge";
   age: string;
 }
 
@@ -678,9 +682,9 @@ export function renderQueueActivityPage(opts: {
 
   return renderAdminPage({
     title: `Queue & Activity — ${agent.name} — Shipwright Admin`,
-    extraStyles: "\n  ",
+    extraStyles: `\n    ${ADMIN_WIDE_PAGE_STYLES}\n  `,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
@@ -921,9 +925,9 @@ export function renderMergedQueueActivityPage(opts: {
 
   return renderAdminPage({
     title: "Queue & Activity — All Agents — Shipwright Admin",
-    extraStyles: "\n  ",
+    extraStyles: `\n    ${ADMIN_WIDE_PAGE_STYLES}\n  `,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents" style="color:#6b7280;font-size:13px;text-decoration:none">← Agents</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — All Agents</h1>

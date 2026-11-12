@@ -62,7 +62,7 @@ Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt au
 
 ## The cron
 
-`prompt-audit-maintenance` (`0 7 * * 1`, weekly Monday 07:00, `silent: true`, **disabled by default**) is defined in `specialties/coding/manifest.yaml`. Its `check-prompt-audit.ts` precheck exits 0 when the ledger is missing or unreadable (so the first scan can bootstrap it), when `lastRun` is null or 7+ days old, or when a recent ledger holds `proposed` findings; otherwise it exits 1 and the run is skipped. See [`docs/agent-ops.md`](./agent-ops.md) for the cron table.
+`prompt-audit-maintenance` (`0 7 * * 1`, weekly Monday 07:00, `silent: true`, **disabled by default**) is defined in `admin/src/coding/coding-specialty-defaults.ts`. Its `check-prompt-audit.ts` precheck exits 0 when the ledger is missing or unreadable (so the first scan can bootstrap it), when `lastRun` is null or 7+ days old, or when a recent ledger holds `proposed` findings; otherwise it exits 1 and the run is skipped. See [`docs/agent-ops.md`](./agent-ops.md) for the cron table.
 
 ## Measurement
 
@@ -139,7 +139,7 @@ The exit gate for the feature: `prompt-scan --dry-run` on this repo (commit `17c
 | 5 | `e/frontmatter-missing-name` for commands | **Reproduced after a fix.** The rule only looked at skills and agents. Commands are listed too, so it now covers them (22 findings). |
 | 6 | `e/description-multiline` | Reproduced: 21 findings (the spec said 18; more files have since gained block scalars). |
 | 7 | `e/duplicate-listing-entry` | **Not reproduced, by design.** The command stubs no longer share a description with their skill, so there is nothing to flag. The rule now also compares commands, with a regression test. |
-| 8 | `e/skill-over-500-lines` | Reproduced for `investigate-cron`, `test-fix`, `security-scan` and `error-fix`. |
+| 8 | `e/skill-over-500-lines` | Reproduced for `investigate-cron` (since replaced by `investigate-stuck`), `test-fix`, `security-scan` and `error-fix`. |
 | 9 | `a/listing-budget-share` per model | Reproduced for `claude-sonnet-5-5` and `claude-sonnet-4-6`. |
 | 10 | At least one class-d row, `tracking` | Class d has no rule function. The judgment pass tracks it at `consecutiveRuns` 1, for example the emphasis-heavy "never `git add -A` blindly" rule in root `CLAUDE.md`'s "Before you commit". |
 

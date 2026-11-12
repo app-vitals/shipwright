@@ -386,7 +386,7 @@ async function waitForHealth(url: string, label: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace provisioning — mirrors agent/src/runtime/setup.ts ensureAgentHome()
+// Workspace provisioning — mirrors @app-vitals/agent-runtime setup.ts ensureAgentHome()
 // ---------------------------------------------------------------------------
 
 /**

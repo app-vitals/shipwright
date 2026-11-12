@@ -9,7 +9,12 @@
 import { z } from "@hono/zod-openapi";
 
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
-import { MAX_BULK_TASKS } from "./task-service.ts";
+import { UNBLOCK_TARGETS } from "./task-service.ts";
+import {
+  BY_PR_TARGET_STATUSES,
+  MAX_BULK_TASKS,
+  MAX_PATCH_BY_PR_NUMBERS,
+} from "./task-service.ts";
 
 /** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
  * the generated Prisma client so this file stays a pure Zod-schema module. */
@@ -51,8 +56,8 @@ export const TaskSchema = z
         "approved",
         "merged",
         "done",
-        "deploying",
         "deployed",
+        "released",
         "blocked",
         "cancelled",
       ])
@@ -115,12 +120,12 @@ export const TaskSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-05T00:00:00.000Z" }),
-    deployingAt: z.string().nullable().optional().openapi({ example: null }),
     deployedAt: z
       .string()
       .nullable()
       .optional()
       .openapi({ example: "2026-01-06T00:00:00.000Z" }),
+    releasedAt: z.string().nullable().optional().openapi({ example: null }),
     ciFixAttempts: z
       .number()
       .int()
@@ -164,7 +169,7 @@ export const TaskSchema = z
     lastSkipReason: z.string().nullable().optional().openapi({
       example: "dev-task:deferred:unmet-hidden-requirement",
       description:
-        "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.",
+        'The skip reason associated with the current skipCount streak. POST /tasks/:id/skip\'s optional `reason` field (default `"unspecified"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.',
     }),
     claimedBy: z
       .string()
@@ -363,7 +368,7 @@ export const PullRequestSchema = z
     reviewedCommitSha: z.string().nullable().optional().openapi({
       example: "abc123def456",
       description:
-        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
+        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping.",
     }),
     patchCycles: z.number().int().default(0).openapi({ example: 1 }),
     reviewCycles: z.number().int().default(0).openapi({ example: 0 }),
@@ -400,7 +405,7 @@ export const PullRequestSchema = z
       .optional()
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
     phase: z
-      .enum(["review", "patch", "deploy"])
+      .enum(["review", "patch", "merge"])
       .nullable()
       .optional()
       .openapi({ example: "review" }),
@@ -414,7 +419,7 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
-    readyForDeployAt: z
+    readyForMergeAt: z
       .string()
       .nullable()
       .optional()
@@ -452,7 +457,8 @@ export const PullRequestSchema = z
     }),
     commitsDocsRefresh: z.number().int().nullable().optional().openapi({
       example: 1,
-      description: "Commits attributed to the docs-refresher subagent (CPP-1.1).",
+      description:
+        "Commits attributed to the docs-refresher subagent (CPP-1.1).",
     }),
     commitsReviewPatch: z.number().int().nullable().optional().openapi({
       example: 3,
@@ -464,7 +470,8 @@ export const PullRequestSchema = z
     }),
     commitsImplementation: z.number().int().nullable().optional().openapi({
       example: 6,
-      description: "Commits attributed to the initial implementation (CPP-1.1).",
+      description:
+        "Commits attributed to the initial implementation (CPP-1.1).",
     }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
@@ -787,14 +794,11 @@ export const TaskListResponseSchema = z
   .openapi("TaskListResponse");
 
 /** Accepted forms for a client-supplied `pr` (normalized to the integer PR number server-side). */
-const PrInputSchema = z
-  .unknown()
-  .optional()
-  .openapi({
-    example: 42,
-    description:
-      'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
-  });
+const PrInputSchema = z.unknown().optional().openapi({
+  example: 42,
+  description:
+    'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
+});
 
 /** Request body for POST /tasks.
  * Required fields (title, status, repo) are validated by the handler rather
@@ -878,6 +882,47 @@ export const BulkInsertResponseSchema = z
   })
   .openapi("BulkInsertResponse");
 
+/**
+ * Request body for PATCH /tasks/by-pr (MPD-1.2). Shape violations (empty or
+ * over-cap prNumbers, non-positive-integer entries, unknown status) are
+ * rejected by the app's validation hook as 400.
+ */
+export const PatchTasksByPrBodySchema = z
+  .object({
+    repo: z.string().min(1).openapi({ example: "org/repo" }),
+    prNumbers: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(MAX_PATCH_BY_PR_NUMBERS)
+      .openapi({
+        example: [101, 102],
+        description: `PR numbers of \`repo\`, 1 to ${MAX_PATCH_BY_PR_NUMBERS} positive integers.`,
+      }),
+    status: z.enum(BY_PR_TARGET_STATUSES).openapi({ example: "deployed" }),
+    at: z.string().min(1).optional().openapi({
+      example: "2026-07-02T00:00:00.000Z",
+      description:
+        "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.",
+    }),
+  })
+  .openapi("PatchTasksByPrBody");
+
+/** Response for PATCH /tasks/by-pr */
+export const PatchTasksByPrResponseSchema = z
+  .object({
+    updated: z.array(z.string()).openapi({
+      description: "Ids of `merged` tasks moved to the requested status.",
+    }),
+    unchanged: z.array(z.string()).openapi({
+      description: "Ids of tasks already at the requested status (no-op).",
+    }),
+    skipped: z.array(z.object({ id: z.string(), status: z.string() })).openapi({
+      description:
+        "Matching tasks in any other status; never modified. Carries their current status.",
+    }),
+  })
+  .openapi("PatchTasksByPrResponse");
+
 /** Response for GET /tasks/distinct */
 export const DistinctResponseSchema = z
   .object({
@@ -914,6 +959,16 @@ export const SkipBodySchema = z
     }),
   })
   .openapi("SkipBody");
+
+/** UBL-1.1: optional body of POST /tasks/:id/unblock. */
+export const UnblockBodySchema = z
+  .object({
+    to: z.enum(UNBLOCK_TARGETS).optional().openapi({
+      description:
+        "Target status. Omit to infer from task.pr and the PR record (never deployed/released).",
+    }),
+  })
+  .openapi("UnblockBody");
 
 // ─── PR Route Schemas ─────────────────────────────────────────────────────────
 
@@ -1045,7 +1100,12 @@ const CensusEntrySchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-    commitCount: z.number().int().nullable().optional().openapi({ example: 12 }),
+    commitCount: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 12 }),
     commitsDocsRefresh: z
       .number()
       .int()
@@ -1058,7 +1118,12 @@ const CensusEntrySchema = z
       .nullable()
       .optional()
       .openapi({ example: 3 }),
-    commitsCiFix: z.number().int().nullable().optional().openapi({ example: 2 }),
+    commitsCiFix: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 2 }),
     commitsImplementation: z
       .number()
       .int()
@@ -1179,7 +1244,7 @@ export const ClaimPrBodySchema = z
       example: "agent-id-123",
       description: "Agent claiming this PR (admin tokens only)",
     }),
-    phase: z.enum(["review", "patch", "deploy"]).optional().openapi({
+    phase: z.enum(["review", "patch", "merge"]).optional().openapi({
       example: "patch",
       description:
         "Pipeline phase this claim is for (defaults to 'review' when omitted)",
@@ -1259,7 +1324,7 @@ export const PatchPrBodySchema = z
 export const ClaimNextResponseSchema = z
   .object({
     pr: PullRequestSchema,
-    phase: z.enum(["review", "patch", "deploy"]).openapi({ example: "review" }),
+    phase: z.enum(["review", "patch", "merge"]).openapi({ example: "review" }),
   })
   .openapi("ClaimNextResponse");
 

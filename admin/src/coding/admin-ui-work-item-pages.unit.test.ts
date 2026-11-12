@@ -1837,7 +1837,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   // `state=open` default query, and every returned task buckets to the
   // "done" column — which TASK_BOARD_COLUMNS no longer renders — so the
   // board would silently show "No tasks" in all 3 columns.
-  test("board Status dropdown omits closed statuses (merged/done/deploying/deployed/cancelled) but keeps the active ones", () => {
+  test("board Status dropdown omits closed statuses (merged/done/deployed/cancelled) but keeps the active ones", () => {
     const html = renderBoard([]);
     const statusSelect = html.match(
       /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
@@ -1848,8 +1848,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     for (const closed of [
       "merged",
       "done",
-      "deploying",
       "deployed",
+      "released",
       "cancelled",
     ]) {
       expect(statusHtml).not.toContain(`value="${closed}"`);
@@ -1894,8 +1894,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       "approved",
       "merged",
       "done",
-      "deploying",
       "deployed",
+      "released",
       "blocked",
       "cancelled",
     ]) {
@@ -4734,7 +4734,7 @@ describe("classifyTaskState", () => {
     },
   );
 
-  test.each(["merged", "done", "deploying", "deployed", "cancelled"] as const)(
+  test.each(["merged", "done", "deployed", "released", "cancelled"] as const)(
     "closed status %s takes precedence over a stale non-empty blockedBy",
     (status) => {
       const task: TaskItem = {
@@ -4780,7 +4780,7 @@ describe("bucketTaskColumn", () => {
     status: "pending",
   };
 
-  test.each(["merged", "deployed", "done", "deploying", "cancelled"] as const)(
+  test.each(["merged", "deployed", "released", "done", "cancelled"] as const)(
     "status %s buckets as done",
     (status) => {
       expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
@@ -6123,4 +6123,144 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       );
     });
   }
+});
+
+describe("released status rendering (MPD-1.6)", () => {
+  test("session detail renders a released task with the green badge", () => {
+    const html = renderSessionDetailPage(
+      "session-abc",
+      [{ id: "T-REL", title: "Released task", status: "released" }],
+      "user@example.com",
+    );
+    expect(html).toContain('class="badge badge-green"');
+    expect(html).toMatch(/badge-green[^>]*>released</);
+  });
+});
+
+describe("unknown legacy task status", () => {
+  const LEGACY = "legacy_unknown_status";
+  const task: TaskItem = { id: "TASK-L", title: "Legacy", status: LEGACY };
+
+  test("list, board and detail pages render without throwing, with gray badge", () => {
+    const pagination = { total: 1, limit: 50, page: 1 };
+    for (const view of ["table", "board"] as const) {
+      const html = renderTasksPage(
+        [task],
+        {},
+        false,
+        USER_NAME,
+        {},
+        pagination,
+        undefined,
+        undefined,
+        false,
+        "America/Los_Angeles",
+        {},
+        view,
+      );
+      expect(html).toContain("TASK-L");
+    }
+    const detail = renderTaskDetailPage(task, "user@example.com", {}, "UTC");
+    expect(detail).toContain(LEGACY);
+    expect(detail).toContain("badge-gray");
+  });
+
+  test("bucketTaskColumn and classifyTaskState do not throw", () => {
+    expect(() => bucketTaskColumn(task)).not.toThrow();
+    expect(() => classifyTaskState(task)).not.toThrow();
+  });
+});
+
+// ─── Admin wide pages (AWT-1.1) ──────────────────────────────────────────────
+
+describe("admin wide pages (AWT-1.1)", () => {
+  const WIDE_RULE = "max-width:none;width:100%";
+  const WRAPPER = /<div class="vos-page[^"]*">/;
+
+  function expectWide(html: string) {
+    const match = html.match(WRAPPER);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("admin-wide-page");
+    expect(html).toContain(`.admin-wide-page { ${WIDE_RULE} }`);
+  }
+
+  const tasksArgs = (
+    view: "board" | "table",
+  ): Parameters<typeof renderTasksPage> => [
+    [],
+    {},
+    false,
+    USER_NAME,
+    {},
+    { total: 0, limit: 50, page: 1 },
+    undefined,
+    undefined,
+    false,
+    "America/Los_Angeles",
+    {},
+    view,
+  ];
+
+  test("Tasks table view is wide", () => {
+    expectWide(renderTasksPage(...tasksArgs("table")));
+  });
+
+  test("Tasks board stays wide and keeps tasks-board-page", () => {
+    const html = renderTasksPage(...tasksArgs("board"));
+    expectWide(html);
+    expect(html.match(WRAPPER)?.[0]).toContain("tasks-board-page");
+  });
+
+  test("Task detail is wide and keeps its extra styles", () => {
+    const html = renderTaskDetailPage(
+      TASK_DETAIL,
+      "user@example.com",
+      {},
+      "UTC",
+    );
+    expectWide(html);
+    expect(html).toContain(".detail-table");
+  });
+
+  test("Session detail is wide and keeps its extra styles", () => {
+    const html = renderSessionDetailPage("session-abc", [], USER_NAME);
+    expectWide(html);
+    expect(html).toContain(".alert-warning");
+  });
+
+  test("PRs list is wide", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      "America/Los_Angeles",
+    );
+    expectWide(html);
+  });
+
+  test("PR detail is wide and keeps its extra styles", () => {
+    const html = renderPrDetailPage(
+      PR_DETAIL,
+      USER_NAME,
+      {},
+      "America/Los_Angeles",
+      [],
+    );
+    expectWide(html);
+    expect(html).toContain(".detail-table");
+  });
+
+  test("the wide rule is defined exactly once per page", () => {
+    const html = renderPrDetailPage(
+      PR_DETAIL,
+      USER_NAME,
+      {},
+      "America/Los_Angeles",
+      [],
+    );
+    expect(html.split(WIDE_RULE).length - 1).toBe(1);
+  });
 });

@@ -15,6 +15,7 @@
  * AgentTool's `pattern` field is unconstrained at the service/DB layer.
  */
 
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import type {
   AgentPhaseMethodology,
   PrismaClient,
@@ -22,6 +23,45 @@ import type {
 import type { PrismaTransactionClient } from "@app-vitals/agent-admin/prisma-tx";
 
 export type { AgentPhaseMethodology };
+
+/** Phase that accepts a comma-separated list of subagent types. */
+export const MULTI_SUBAGENT_PHASE = "review";
+/** Maximum entries in a comma-separated subagent list (after de-duplication). */
+export const MAX_SUBAGENTS = 5;
+
+/**
+ * Normalize a `subagentType` value for a phase. `null` and single values
+ * (no comma) pass through unchanged. A comma-separated list is accepted only
+ * for the `review` phase: entries are trimmed, duplicates dropped (first
+ * occurrence wins), empty entries rejected, and the result capped at
+ * MAX_SUBAGENTS. Throws BadRequestError on violation.
+ */
+export function normalizeSubagentList(
+  phase: string,
+  subagentType: string | null,
+): string | null {
+  if (subagentType === null || !subagentType.includes(",")) {
+    return subagentType;
+  }
+  if (phase !== MULTI_SUBAGENT_PHASE) {
+    throw new BadRequestError(
+      `subagentType may be a comma-separated list only for the ${MULTI_SUBAGENT_PHASE} phase`,
+    );
+  }
+  const entries = subagentType.split(",").map((e) => e.trim());
+  if (entries.some((e) => e === "")) {
+    throw new BadRequestError(
+      "subagentType list must not contain empty entries",
+    );
+  }
+  const unique = [...new Set(entries)];
+  if (unique.length > MAX_SUBAGENTS) {
+    throw new BadRequestError(
+      `subagentType list may contain at most ${MAX_SUBAGENTS} entries`,
+    );
+  }
+  return unique.join(",");
+}
 
 export class AgentPhaseMethodologyService {
   constructor(private prisma: PrismaClient) {}
@@ -38,7 +78,8 @@ export class AgentPhaseMethodologyService {
 
   /**
    * Upsert the subagentType override for one phase.
-   * Passing `subagentType: null` clears the override — the row is kept with
+   * `subagentType` may be a comma-separated list (max 5) for the `review`
+   * phase only — see normalizeSubagentList(). Passing `null` clears the override — the row is kept with
    * a null value (rather than deleted), mirroring AgentPluginService.add()'s
    * `version: null` "use the default" convention.
    *
@@ -52,10 +93,11 @@ export class AgentPhaseMethodologyService {
     subagentType: string | null,
     client: PrismaTransactionClient = this.prisma,
   ): Promise<AgentPhaseMethodology> {
+    const normalized = normalizeSubagentList(phase, subagentType);
     return client.agentPhaseMethodology.upsert({
       where: { agentId_phase: { agentId, phase } },
-      create: { agentId, phase, subagentType },
-      update: { subagentType },
+      create: { agentId, phase, subagentType: normalized },
+      update: { subagentType: normalized },
     });
   }
 }

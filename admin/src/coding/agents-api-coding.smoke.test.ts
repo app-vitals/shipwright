@@ -346,6 +346,64 @@ describe("admin API — phase methodology (PMC-1.1)", () => {
     expect(res.status).toBe(400);
   });
 
+  async function putSubagentType(phase: string, subagentType: unknown) {
+    const app = createCodingAdminApiApp(makeMockDeps());
+    return app.request(`/agents/${AGENT_ID}/phase-methodology/${phase}`, {
+      method: "PUT",
+      body: JSON.stringify({ subagentType }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+  }
+
+  it("PUT phase-methodology/review stores a normalized comma-separated list (200)", async () => {
+    const res = await putSubagentType("review", " a , b,a ");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology.subagentType).toBe("a,b");
+  });
+
+  it("PUT phase-methodology rejects a multi-value list on a non-review phase with a 400 {error} body", async () => {
+    for (const phase of [
+      "dev-task",
+      "patch",
+      "plan-session",
+      "prd",
+      "deploy",
+    ]) {
+      const res = await putSubagentType(phase, "a,b");
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(typeof body.error).toBe("string");
+      expect(body.error).toContain("review");
+    }
+  });
+
+  it("PUT phase-methodology/review rejects empty entries and >5 entries with a 400 {error} body", async () => {
+    for (const value of ["a,,b", "a,", ",a", "a, ,b", "a,b,c,d,e,f"]) {
+      const res = await putSubagentType("review", value);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(typeof body.error).toBe("string");
+    }
+  });
+
+  it("PUT phase-methodology/review accepts exactly 5 entries; duplicates collapse before the cap", async () => {
+    const five = await putSubagentType("review", "a,b,c,d,e");
+    expect(five.status).toBe(200);
+    const dup = await putSubagentType("review", "a,b,c,d,e,a");
+    expect(dup.status).toBe(200);
+    expect((await dup.json()).phaseMethodology.subagentType).toBe("a,b,c,d,e");
+  });
+
+  it("PUT phase-methodology single value on a non-review phase is unchanged (200)", async () => {
+    const res = await putSubagentType("patch", "solo");
+    expect(res.status).toBe(200);
+    expect((await res.json()).phaseMethodology.subagentType).toBe("solo");
+  });
+
   it("GET /agents/:id/phase-methodology returns 404 for an unknown agent", async () => {
     const app = createCodingAdminApiApp(makeMockDeps());
     const res = await app.request(
@@ -409,5 +467,141 @@ describe("admin API — bearer token auth", () => {
       },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── Followed sessions (SIT-1.1) ──────────────────────────────────────────────
+
+async function makeUserCookie(
+  email: string,
+  { isAdmin = false, secret = SESSION_SECRET } = {},
+): Promise<string> {
+  return sign(
+    {
+      isAdmin,
+      userId: `user-${email}`,
+      email,
+      name: email,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    },
+    secret,
+    "HS256",
+  );
+}
+
+describe("GET /session-follows", () => {
+  const FOLLOWS = [
+    { userEmail: "alice@example.com", sessionSlug: "alice-open", muted: false },
+    { userEmail: "alice@example.com", sessionSlug: "alice-muted", muted: true },
+    { userEmail: "bob@example.com", sessionSlug: "bob-open", muted: false },
+  ];
+
+  function makeDeps(): CodingAdminApiDeps {
+    const asked: string[] = [];
+    const deps = makeMockDeps();
+    deps.sessionFollowService = {
+      listByUser: async (email: string) => {
+        asked.push(email);
+        return FOLLOWS.filter((f) => f.userEmail === email).map((f, i) => ({
+          id: `f-${i}`,
+          ...f,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }));
+      },
+    };
+    (deps as unknown as { asked: string[] }).asked = asked;
+    return deps;
+  }
+
+  it("401 without a token", async () => {
+    const app = createCodingAdminApiApp(makeDeps());
+    const res = await app.request("/session-follows");
+    expect(res.status).toBe(401);
+  });
+
+  it("401 with an invalid cookie or wrong-secret cookie", async () => {
+    const app = createCodingAdminApiApp(makeDeps());
+    const bad = await app.request("/session-follows", {
+      headers: { Cookie: "admin_session=garbage" },
+    });
+    expect(bad.status).toBe(401);
+    const forged = await makeUserCookie("alice@example.com", {
+      secret: "some-other-secret-32-bytes-long!!!",
+    });
+    const res = await app.request("/session-follows", {
+      headers: { Cookie: `admin_session=${forged}` },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401 with an invalid bearer token", async () => {
+    const app = createCodingAdminApiApp(makeDeps());
+    const res = await app.request("/session-follows", {
+      headers: { Authorization: "Bearer nope" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("403 for a valid agent bearer token (no user identity)", async () => {
+    const deps = makeDeps();
+    deps.agentTokenService = {
+      validate: async () => ({ agentId: AGENT_ID }),
+    } as unknown as AgentTokenService;
+    const app = createCodingAdminApiApp(deps);
+    const res = await app.request("/session-follows", {
+      headers: { Authorization: "Bearer good" },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns only the caller's non-muted follows (non-admin user)", async () => {
+    const deps = makeDeps();
+    const app = createCodingAdminApiApp(deps);
+    const cookie = await makeUserCookie("Alice@Example.com");
+    const res = await app.request("/session-follows", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sessionSlugs: ["alice-open"] });
+    expect((deps as unknown as { asked: string[] }).asked).toEqual([
+      "alice@example.com",
+    ]);
+  });
+
+  it("ignores any client-supplied userEmail", async () => {
+    const deps = makeDeps();
+    const app = createCodingAdminApiApp(deps);
+    const cookie = await makeUserCookie("alice@example.com");
+    const res = await app.request(
+      "/session-follows?userEmail=bob@example.com",
+      {
+        headers: {
+          Cookie: `admin_session=${cookie}`,
+          "X-User-Email": "bob@example.com",
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sessionSlugs: ["alice-open"] });
+  });
+
+  it("an admin session also only sees its own follows", async () => {
+    const app = createCodingAdminApiApp(makeDeps());
+    const cookie = await makeUserCookie("bob@example.com", { isAdmin: true });
+    const res = await app.request("/session-follows", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(await res.json()).toEqual({ sessionSlugs: ["bob-open"] });
+  });
+
+  it("404 when the follow service is not configured", async () => {
+    const app = createCodingAdminApiApp(makeMockDeps());
+    const cookie = await makeUserCookie("alice@example.com");
+    const res = await app.request("/session-follows", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
   });
 });

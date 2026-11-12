@@ -20,6 +20,12 @@
 // always resides in Cognition's cloud (shared Outposts for automation
 // sessions, shipped 2026-09-25, move more workload but not the brain), and
 // nothing deploy-related shipped. Date bump only.
+//
+// 2026-11-02 re-verification: Outposts is now available to self-serve accounts
+// (dedicated tenants stay account-team enabled); Devin's model menu lists
+// Claude and GPT alongside Cognition's own models; the dedicated-deployment
+// sentence no longer prints a plan name. The brain-in-Cognition's-cloud claim
+// is unchanged.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
@@ -27,11 +33,12 @@ import TryItCta from "../../components/TryItCta.astro";
 import { LICENSE_URL } from "../../consts";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "October 2, 2026";
+const verifiedDate = "November 2, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
   deployment: "https://docs.devin.ai/enterprise/deployment/overview",
+  outposts: "https://docs.devin.ai/cloud/outposts/overview",
   releaseNotes: "https://docs.devin.ai/release-notes/2026",
   pricing: "https://devin.ai/pricing",
   trust: "https://trust.cognition.ai",
@@ -180,7 +187,7 @@ const dimensionRows = comparisonRows.map((row) => {
   <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
     <h2>The deployment contrast</h2>
     <p class="mt-3 max-w-2xl">
-      Per Devin's own documentation, both of its Enterprise deployment models
+      Per Devin's own documentation, both of its dedicated deployment models
       are Cognition-hosted. "Customer Dedicated Deployment" runs in a
       Cognition-managed single-tenant VPC connected via PrivateLink or IPSec
       — a private network path, not a private environment.{" "}
@@ -189,12 +196,13 @@ const dimensionRows = comparisonRows.map((row) => {
     <p class="mt-3 max-w-2xl">
       Devin Outposts, introduced in July 2026, moves part of that picture:
       it is "a new capability for running Devin workloads in your own
-      environment," disabled by default and enabled through a Cognition
-      representative. It relocates the execution sandbox — not the agent
+      environment," now available to self-serve accounts, and enabled by
+      the account team on dedicated tenants. It relocates the execution sandbox — not the agent
       loop. Devin's deployment overview still states that its workspace
       "operates under the control of its brain, which always resides within
       Cognition's Cloud."{" "}
-      <a href={src.releaseNotes}>Source: docs.devin.ai 2026 release notes</a>.
+      <a href={src.releaseNotes}>Source: docs.devin.ai 2026 release notes</a>
+      and <a href={src.outposts}>the Outposts overview</a>.
     </p>
     <div class="sw-callout mt-6 max-w-3xl">
       <p>
@@ -222,7 +230,7 @@ const dimensionRows = comparisonRows.map((row) => {
               text: ` You need off-the-shelf enterprise attestations — Cognition states SOC 2 Type II certification since September 2024 and lists ISO/IEC 27001:2022 on <a href="${src.trust}">trust.cognition.ai</a>. `,
               html: true,
             },
-            { text: "You are not committed to Claude Code and want a proprietary-model agent instead." },
+            { text: "You are not committed to Claude Code and want a managed agent that routes across Claude, GPT, and Cognition's own models." },
           ],
         },
         {

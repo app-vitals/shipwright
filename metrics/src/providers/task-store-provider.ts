@@ -47,7 +47,7 @@ import type {
 const DASHBOARD_TZ = "America/Los_Angeles";
 
 // Completed / terminal statuses (treated as "completed").
-const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "deploying"]);
+const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "released"]);
 const BLOCKED_STATUS = "blocked";
 
 // Task-store PR review-state that denotes an approved ("ship it") review. The

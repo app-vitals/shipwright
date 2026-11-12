@@ -1,38 +1,35 @@
 /**
  * agent-platform-image.content.test.ts
  *
- * AGR-4.3a: agent/Dockerfile.platform builds the Shipwright coding agent FROM the
- * published platform image as a candidate alongside agent/Dockerfile. Nothing
- * ships from it until AGR-4.3b, so build-agent.yml (the only path that tags
- * agent-v* and triggers the poller rollout) must not reference it.
+ * AGR-4.3b: agent/Dockerfile builds the Shipwright coding agent FROM the
+ * published platform image and is the only shipwright-agent build. build-agent.yml
+ * (the path that tags agent-v* and triggers the poller rollout) builds it, and
+ * the old standalone build and the candidate publish workflow are gone.
  */
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDefaultPlugins } from "@app-vitals/agent-lib/default-plugins";
+import { CODING_SPECIALTY_DEFAULTS } from "./admin/src/coding/coding-specialty-defaults.ts";
 
 const ROOT = import.meta.dir;
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 
-describe("platform-based agent candidate image (AGR-4.3a)", () => {
-  it("build-agent.yml does not reference Dockerfile.platform", () => {
+describe("platform-based shipwright-agent image (AGR-4.3b)", () => {
+  it("build-agent.yml builds agent/Dockerfile and the candidate machinery is gone", () => {
     const wf = read(".github/workflows/build-agent.yml");
-    expect(wf).not.toContain("Dockerfile.platform");
-    expect(wf).toContain("-f agent/Dockerfile");
-  });
-
-  it("the candidate publish workflow never creates a release tag", () => {
-    const wf = read(".github/workflows/publish-agent-platform-candidate.yml")
-      .split("\n")
-      .filter((line) => !line.trimStart().startsWith("#"))
-      .join("\n");
-    expect(wf).not.toContain("agent-v");
-    expect(wf).not.toContain("git/refs");
-    expect(wf).not.toContain("workflow_run");
-    expect(wf).toContain("platform-candidate-");
+    expect(wf).toContain("-f agent/Dockerfile \\");
+    expect(wf).toContain("ghcr.io/app-vitals/shipwright-agent:");
+    expect(existsSync(join(ROOT, "agent/Dockerfile.platform"))).toBe(false);
+    expect(
+      existsSync(
+        join(ROOT, ".github/workflows/publish-agent-platform-candidate.yml"),
+      ),
+    ).toBe(false);
   });
 
   it("builds FROM the platform image at the pinned agent-lib version", () => {
-    const df = read("agent/Dockerfile.platform");
+    const df = read("agent/Dockerfile");
     const pin = JSON.parse(read("agent/package.json")).dependencies[
       "@app-vitals/agent-lib"
     ];
@@ -41,39 +38,72 @@ describe("platform-based agent candidate image (AGR-4.3a)", () => {
   });
 
   it("installs js-yaml itself, since the platform image only overrides it", () => {
-    const df = read("agent/Dockerfile.platform");
+    const df = read("agent/Dockerfile");
     expect(df).toContain("bun add js-yaml@");
   });
 
-  it("layers the coding extension, plugins, marketplace and specialties", () => {
-    const df = read("agent/Dockerfile.platform");
+  it("layers the coding extension, plugins, marketplace and workspace templates", () => {
+    const df = read("agent/Dockerfile");
     for (const needle of [
       "agent/src/coding ./agent/src/coding",
       "/app/plugins ./plugins",
       "/app/.claude-plugin ./.claude-plugin",
-      "specialties ./specialties",
+      "agent/workspace ./agent/workspace",
       'import "./agent/src/index.ts";',
     ]) {
       expect(df).toContain(needle);
     }
   });
 
-  it("keeps the existing image build and runs all contract checks on the candidate in CI", () => {
+  it("copies only the coding-owned templates into the platform workspace and sets the repo root", () => {
+    const df = read("agent/Dockerfile");
+    const copies = df
+      .split("\n")
+      .filter((l) => l.startsWith("COPY") && l.includes("runtime/workspace"));
+    expect(copies).toHaveLength(2);
+    for (const name of ["CLAUDE.md.template", "CLAUDE-HITL.md.template"]) {
+      expect(copies).toContain(
+        `COPY --chown=1000:1000 agent/workspace/${name} ./runtime/workspace/${name}`,
+      );
+    }
+    expect(df).toContain("ENV SHIPWRIGHT_REPO_ROOT=/app\n");
+  });
+
+  it("uses the platform gh wrapper instead of overriding PATH (PLD-1.1)", () => {
+    const df = read("agent/Dockerfile");
+    expect(df).not.toMatch(/^ENV PATH=/m);
+    expect(df).not.toContain("agent/scripts/bin");
+  });
+
+  it("CI builds one agent image and runs every contract check on it", () => {
     const ci = read(".github/workflows/ci.yml");
     expect(ci).toContain(
       "docker build -f agent/Dockerfile -t shipwright-agent:ci .",
     );
-    expect(ci).toContain(
-      "docker build -f agent/Dockerfile.platform -t shipwright-agent:ci-platform .",
+    expect(ci).not.toContain("Dockerfile.platform");
+    expect(ci).not.toContain("ci-platform");
+    expect(ci).not.toContain("agent-platform-docker-build");
+    const job = ci.slice(
+      ci.indexOf("  agent-docker-build:"),
+      ci.indexOf("  metrics-docker-build:"),
     );
-    const job = ci.slice(ci.indexOf("  agent-platform-docker-build:"));
     for (const needle of [
       "verify-browser-launch.ts",
       "verify-cgroup-delegation.ts",
-      "SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci-platform",
+      "SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci",
       "base-image-contract.smoke.test.ts",
+      "platform-real-boot.smoke.test.ts",
+      "SHIPWRIGHT_GH_OWNER",
     ]) {
       expect(job).toContain(needle);
     }
+  });
+
+  it("seeds agent-platform@app-vitals-agent into the coding agents' default plugin set (APP-3.1)", () => {
+    // The pinned platform prepends its own plugin to the coding specialty's
+    // plugins at create time, so coding agents get it next to `shipwright`.
+    const plugins = resolveDefaultPlugins(CODING_SPECIALTY_DEFAULTS.plugins);
+    expect(plugins).toContain("agent-platform@app-vitals-agent");
+    expect(plugins).toContain("shipwright");
   });
 });

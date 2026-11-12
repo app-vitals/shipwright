@@ -19,8 +19,12 @@ datasource db {
 
 // ─── Task Status ──────────────────────────────────────────────────────────────
 // Full pipeline status set. Lifecycle:
-// pending → in_progress → pr_open → approved → merged → deploying → deployed
-// Terminal: merged | done | deployed | cancelled. Paused: blocked.
+// pending → in_progress → pr_open → approved → merged → deployed | released
+// `deployed` = the change is live in an environment; `released` (MPD-1.1) =
+// the change shipped through a package/release flow. Both are reachable from
+// `merged`, which itself stays terminal for repos that neither deploy nor
+// release. (`deploying` was removed in MPD-3.5.)
+// Terminal: merged | done | deployed | released | cancelled. Paused: blocked.
 
 enum TaskStatus {
   pending
@@ -29,8 +33,8 @@ enum TaskStatus {
   approved
   merged
   done
-  deploying
   deployed
+  released
   blocked
   cancelled
 }
@@ -89,8 +93,8 @@ model Task {
   priority           String?
   cancelledAt        String?
   completedAt        String?
-  deployingAt        String?
   deployedAt         String?
+  releasedAt         String? // MPD-1.1: set when status → released (mirrors deployedAt)
   ciFixAttempts      Int?
   mergeCommit        String?
   prUrl              String?
@@ -105,7 +109,7 @@ model Task {
   // skipCount increments each time the loop orchestrator dispatches this task
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
   // mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts)
-  // auto-sets hitl+blockedReason so the task stops being re-selected forever.
+  // auto-sets status=blocked + blockedReason so the task stops being re-selected forever.
   skipCount     Int     @default(0)
   lastSkippedAt String?
   // lastSkipReason records the skip-reason text ([skip-reason:...] marker, or
@@ -192,7 +196,7 @@ model TaskEvent {
 }
 
 // ─── Pull Request State ───────────────────────────────────────────────────────
-// Lifecycle of a PR through the review/patch/deploy pipeline.
+// Lifecycle of a PR through the review/patch/merge pipeline.
 
 enum PrState {
   open
@@ -213,7 +217,7 @@ enum PrReviewState {
 enum PrPhase {
   review
   patch
-  deploy
+  merge
 }
 
 // ─── PR Origin ────────────────────────────────────────────────────────────────
@@ -243,7 +247,7 @@ enum PrOrigin {
 }
 
 // ─── Pull Request ─────────────────────────────────────────────────────────────
-// Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
+// Tracks a GitHub PR through the Shipwright review → patch → merge pipeline.
 // repo is in org/repo format (e.g. "app-vitals/shipwright").
 // @@unique([accountId, repo, prNumber]) ensures one record per GitHub PR per account.
 //
@@ -251,7 +255,7 @@ enum PrOrigin {
 //   staged      — review content has been written but not yet posted to GitHub
 //   reviewState — workflow phase: pending → in_progress → posted (see enum PrReviewState)
 // Both fields encode review progress: staged=true means "ready to post"; reviewState
-// tracks which phase of the full review→patch→deploy cycle the PR is in.
+// tracks which phase of the full review→patch→merge cycle the PR is in.
 
 model PullRequest {
   id                String        @id @default(cuid())
@@ -262,7 +266,7 @@ model PullRequest {
   state             PrState       @default(open)
   reviewState       PrReviewState @default(pending) // workflow phase within the review cycle
   commitSha         String?
-  reviewedCommitSha String? // exclusive commit-tracking field for the review pipeline, separate from the shared commitSha written by claim()/patch()/deploy
+  reviewedCommitSha String? // exclusive commit-tracking field for the review pipeline, separate from the shared commitSha written by claim()/patch()/merge
   patchCycles       Int           @default(0)
   reviewCycles      Int           @default(0)
   agentId           String?
@@ -273,10 +277,10 @@ model PullRequest {
   claimedBy         String?
   claimedAt         String?
   heartbeatAt       String?
-  phase             PrPhase? // current pipeline phase: review | patch | deploy
+  phase             PrPhase? // current pipeline phase: review | patch | merge
   readyForReviewAt  String?
   readyForPatchAt   String?
-  readyForDeployAt  String?
+  readyForMergeAt   String? // MPD-1.1: stamped on first phase=merge claim
   blocked           Boolean       @default(false)
   blockedReason     String?
 

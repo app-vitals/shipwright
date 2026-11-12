@@ -11,9 +11,9 @@
  *   string = restrict to this account (NO_ACCESS_ACCOUNT_ID matches no rows)
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Context } from "hono";
 import type { TaskStoreAuthEnv } from "./auth.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 
 export function resolveAccountScope(
   c: Context<TaskStoreAuthEnv>,

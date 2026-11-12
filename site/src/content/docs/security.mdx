@@ -198,7 +198,7 @@ OAuth token), `SLACK_APP_TOKEN` (Socket Mode app-level token), and `SLACK_SIGNIN
 inbound request signatures) — plus optional vars (`SLACK_ADMIN_TOKEN` for privileged operations,
 `SLACK_ALERT_CHANNEL`, `SLACK_OWNER_USER`).
 
-Shipwright's Slack app manifest is **centrally codified** in the codebase at `admin/src/slack-provisioning-client.ts`.
+Shipwright's Slack app manifest is **centrally codified** in the `@app-vitals/agent-admin` platform package (`slack-provisioning-client.ts`).
 The `buildAgentManifest()` function constructs a Slack App Manifest object with configured
 display_information, bot_user, app_home, and assistant_view. Bot permissions are centrally defined
 in the exported `AGENT_BOT_SCOPES` array, which is embedded into the manifest's `oauth_config.scopes.bot`.
@@ -234,10 +234,10 @@ lifecycle management.
 
 Self-review is disabled by default: a freshly provisioned agent's `allowSelfReview` policy setting
 defaults to off, so an agent is excluded from
-reviewing its own open PRs. Automated merging is disabled by default too — the `shipwright-deploy`
+reviewing its own open PRs. Automated merging is disabled by default too — the `shipwright-merge`
 cron ships off, so nothing merges without a human clicking merge in the GitHub UI.
 
-If Shipwright itself performs a merge — because you've enabled `shipwright-deploy`, or a human
+If Shipwright itself performs a merge — because you've enabled `shipwright-merge`, or a human
 runs the merge command directly — it squash-merges the PR (`gh pr merge --squash`). Self-review
 (`allowSelfReview`, also off by default) only lets that merge go through in repos where GitHub
 doesn't require a review at all; if branch protection does require one, self-review doesn't
@@ -249,7 +249,7 @@ same agent," but a person you've designated (SOC 2-style segregation of duties) 
 reviewers as GitHub **CODEOWNERS** for the repository, or at minimum for `.github/workflows/**`,
 and require review from Code Owners in branch protection. Neither self-review nor another agent's
 review satisfies a Code Owners requirement; only a human on that list does. Keep
-`shipwright-deploy` disabled in this configuration (its default state) so every merge stays an
+`shipwright-merge` disabled in this configuration (its default state) so every merge stays an
 explicit human action.
 
 ## One agent per user

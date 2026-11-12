@@ -82,7 +82,7 @@ export async function getPlanCandidates(
   const candidates: WorkTaskCandidate[] = [];
   for (const task of tasks) {
     // Human-escalation gate, matching every other candidate provider:
-    // check-review/check-patch/check-deploy call isTaskBlockedForDispatch()
+    // check-review/check-patch/check-merge call isTaskBlockedForDispatch()
     // on the linked task, and check-dev-task gets the equivalent for free
     // from task-store's ?ready=true filter (ready.ts drops hitl === true).
     // buildPrdTaskQuery()'s query below (see its doc comment) has no

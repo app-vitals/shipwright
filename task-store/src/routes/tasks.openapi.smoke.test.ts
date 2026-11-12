@@ -40,7 +40,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     deployedAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
@@ -109,6 +108,9 @@ function fakeTaskService(
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters) {
       opts.onList?.(filters);
       return {

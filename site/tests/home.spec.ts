@@ -96,6 +96,29 @@ test("home embeds JSON-LD structured data (SoftwareApplication + Organization)",
   expect(types).toContain("Organization");
 });
 
+test("JSON-LD links Shipwright to App Vitals (brand disambiguation)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const ld = await page
+    .locator('head script[type="application/ld+json"]')
+    .textContent();
+  const graph = JSON.parse(ld ?? "{}")["@graph"] ?? [];
+  const appVitalsId = "https://app-vitals.com/#organization";
+  const appVitals = graph.find((n) => n["@id"] === appVitalsId);
+  expect(appVitals).toBeTruthy();
+  expect(appVitals["@type"]).toBe("Organization");
+  expect(appVitals.name).toBe("App Vitals");
+  const shipwrightOrg = graph.find(
+    (n) => n["@type"] === "Organization" && n.name === "Shipwright Harness",
+  );
+  expect(shipwrightOrg.parentOrganization).toEqual({ "@id": appVitalsId });
+  const app = graph.find((n) => n["@type"] === "SoftwareApplication");
+  expect(app.author).toEqual({ "@id": appVitalsId });
+  expect(app.publisher).toEqual({ "@id": appVitalsId });
+  expect(app.alternateName).toContain("Shipwright by App Vitals");
+});
+
 test("head wires og:image:alt and twitter:image:alt", async ({ page }) => {
   await page.goto("/");
   await expect(
@@ -304,7 +327,7 @@ test("crons section documents the default scheduled jobs", async ({
   await page.locator('label[for="sw-tab-crons"]').click();
   const section = page.locator("#crons");
   await expect(section).toBeVisible();
-  // The system crons shown on the homepage (specialties/coding/manifest.yaml) are named.
+  // The system crons shown on the homepage (admin/src/coding/coding-specialty-defaults.ts) are named.
   for (const name of [
     "dev-task",
     "review",

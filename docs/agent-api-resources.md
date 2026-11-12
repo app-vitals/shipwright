@@ -10,7 +10,7 @@ Base path: `/agents` (same resource as the core API — these are additional rou
 
 ## Phase Methodology
 
-Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
+Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, merge, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
 
 ### List phase-methodology overrides
 
@@ -26,9 +26,11 @@ Returns `{ phaseMethodology: AgentPhaseMethodology[] }` — an array of only the
 PUT /agents/:id/phase-methodology/{phase}
 ```
 
-Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `deploy`, or `dev-task`.
+Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `merge`, or `dev-task`.
 
 Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
+
+For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types (e.g. `"a,b"`). Entries are trimmed, duplicates are dropped (first occurrence wins), and empty entries are rejected. A multi-value list on any other phase, an empty entry, or more than 5 entries returns `400` with `{ error }`. Single values and `null` behave as before. `GET /agents/:id/config` still returns `phaseMethodology` values as strings (the normalized comma-joined list for `review`). Multi-reviewer behavior is owned by the `/shipwright:review` caller: reviewers run in parallel, findings are merged and de-duplicated (policy thresholds apply after the merge), and a fixed built-in `shipwright:finding-verifier` pass drops findings it cannot substantiate. The verifier is not configurable through `phaseMethodology`. See [review contract](../plugins/shipwright/references/methodology-contracts/review.md).
 
 Returns `200` with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
 
@@ -49,7 +51,7 @@ Body:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `computedAt` | yes | ISO timestamp when the agent computed this ranking |
-| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
+| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "merge", age: string }` (`age` is an ISO timestamp) |
 
 Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with:
 
@@ -59,7 +61,7 @@ Upserts the single row for this `agentId`, overwriting any prior snapshot. Retur
     "id": "string",
     "agentId": "string",
     "computedAt": "ISO timestamp",
-    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|deploy", "age": "ISO timestamp" }],
+    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|merge", "age": "ISO timestamp" }],
     "createdAt": "ISO timestamp"
   }
 }

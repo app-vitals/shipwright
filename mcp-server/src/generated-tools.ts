@@ -805,7 +805,7 @@ export const generatedTools: GeneratedTool[] = [
         },
         phase: {
           type: "string",
-          enum: ["review", "patch", "deploy"],
+          enum: ["review", "patch", "merge"],
           description:
             "Pipeline phase this claim is for (defaults to 'review' when omitted)",
           example: "patch",

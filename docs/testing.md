@@ -20,7 +20,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 
 ```bash
 task setup        # bun install across all workspaces
-task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (the merge-blocking gate)
+task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (local command; GitHub CI runs different checks)
 task test         # bun test (all packages)
 task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 90/89 lines/functions (scripts/check-coverage.ts)
 ```
@@ -76,11 +76,11 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 - **Time:** any production code path that calls `new Date()` / `Date.now()` non-trivially must accept a `Clock` interface; tests inject `FixedClock(t)`. Raw `Date.now()` in code under test is a bug.
 - **External HTTP:** service clients (`TaskStoreClient`, `GithubClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` recorded fixture doubles replaying fixture data from `src/fixtures/<service>/*.json` (versioned JSON committed to the repo).
 - **No global state:** **no `mock.module()`**, **no `global.fetch` / `global.*` overrides.** Bun runs test files in the same process, so module-level mocks and global mutation leak across sibling suites. Each test must be independently runnable, order-independent.
-- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests, and `DATABASE_URL_SHIPWRIGHT_CHAT` for chat DB integration tests (suites skip automatically when the respective var is absent).
+- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests. CI no longer provisions a chat database (CHX-3.3): the chat service is hosted and tested in `app-vitals/agent`, and its suites were removed from this repo (CHX-4.1). Suites skip automatically when the respective var is absent.
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
+GitHub CI gates run: **lint → check-strings → typecheck → check-config-docs → check-admin-spec-and-types → test:coverage → secret-scan**, with layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+. (Note: the local `task ci` command includes `check-version-sync` in place of `check-admin-spec-and-types`, so running `task ci` locally does not fully replicate the CI gate.)
 
 The coverage gate is an absolute threshold:
 

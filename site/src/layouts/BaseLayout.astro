@@ -31,6 +31,8 @@ const ogImageAlt =
 // Structured data (JSON-LD): describes the org, site, and product so search
 // engines can render richer results. Inert data block — not executable JS.
 const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "";
+const appVitalsOrgId = "https://app-vitals.com/#organization";
+const appVitalsRef = { "@id": appVitalsOrgId };
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
@@ -41,6 +43,14 @@ const structuredData = {
       url: `${siteUrl}/`,
       logo: `${siteUrl}/shipwright-icon.png`,
       sameAs: ["https://github.com/app-vitals/shipwright"],
+      parentOrganization: appVitalsRef,
+    },
+    {
+      "@type": "Organization",
+      "@id": appVitalsOrgId,
+      name: "App Vitals",
+      url: "https://app-vitals.com/",
+      sameAs: ["https://github.com/app-vitals"],
     },
     {
       "@type": "WebSite",
@@ -53,7 +63,11 @@ const structuredData = {
     },
     {
       "@type": "SoftwareApplication",
+      "@id": `${siteUrl}/#software`,
       name: "Shipwright Harness",
+      alternateName: ["Shipwright", "Shipwright by App Vitals"],
+      author: appVitalsRef,
+      publisher: appVitalsRef,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Cross-platform",
       url: `${siteUrl}/`,

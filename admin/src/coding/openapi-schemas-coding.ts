@@ -31,11 +31,11 @@ export type AgentPhaseMethodology = z.infer<typeof AgentPhaseMethodologySchema>;
 
 export const PutAgentPhaseMethodologyBodySchema = z
   .object({
-    subagentType: z
-      .string()
-      .min(1)
-      .nullable()
-      .openapi({ example: "shipwright:code-reviewer" }),
+    subagentType: z.string().min(1).nullable().openapi({
+      example: "shipwright:code-reviewer",
+      description:
+        "Subagent type for the phase, or null to clear. For the `review` phase only, a comma-separated list of up to 5 types (trimmed, de-duplicated, no empty entries); other phases accept a single value.",
+    }),
   })
   .openapi("PutAgentPhaseMethodologyBody");
 
@@ -66,7 +66,7 @@ const RankedWorkItemSchema = z
       .optional()
       .openapi({ example: "Add work queue snapshot endpoints" }),
     phase: z
-      .enum(["dev-task", "plan", "review", "patch", "deploy"])
+      .enum(["dev-task", "plan", "review", "patch", "merge"])
       .openapi({ example: "dev-task" }),
     age: z.string().openapi({
       example: "2026-01-01T00:00:00.000Z",

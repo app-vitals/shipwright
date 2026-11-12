@@ -7,13 +7,22 @@ name: Chart Drift Check
 # requiring manual git archaeology to discover it.
 #
 # For each service (admin, metrics, agent, task-store, chat) this workflow:
-#   1. Finds the highest-semver `{service}-v*` git tag.
+#   1. Finds the highest-semver `{service}-v*` git tag (chat: the platform
+#      version pinned in agent/Dockerfile, since its ghcr.io/app-vitals/agent-chat
+#      image is released by app-vitals/agent and delivered by the
+#      platform-release dispatch rather than a tag in this repo).
 #   2. Reads the tag currently pinned at that service's values.yaml path(s).
 #   3. Compares them. Any mismatch fails the job — the job failure IS the
 #      alert (visible in the Actions tab / a red X on the default branch).
 #      No new notification infra, no new secrets: only the default
 #      GITHUB_TOKEN read scope (contents: read) already used elsewhere in
 #      this repo's workflows.
+#
+# It also checks the agent-platform library chart pin (CHM-3.5): the version
+# in Chart.yaml and Chart.lock must not trail the latest version published in
+# the library's Helm repo index (https://app-vitals.github.io/agent). An
+# unreadable index fails the job too, so a broken check never reads as green.
+# A failed run just goes red; no issue is opened.
 #
 # Reuses the SAME service_for_tag / values_paths_for_service /
 # highest_semver_tag logic that auto-bump-chart.yml uses to pin tags in the
@@ -44,6 +53,8 @@ jobs:
     name: check chart pins against latest release tags
     timeout-minutes: 10
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,12 +80,11 @@ jobs:
           LATEST_BY_SERVICE=""
           MISSING_SERVICES=()
           for service in "${SERVICES[@]}"; do
-            TAGS=$(git tag -l "${service}-v*")
-            if [ -z "$TAGS" ]; then
+            LATEST=$(latest_tag_for_service "$service")
+            if [ -z "$LATEST" ]; then
               MISSING_SERVICES+=("$service")
               continue
             fi
-            LATEST=$(highest_semver_tag $TAGS)
             LATEST_BY_SERVICE="${LATEST_BY_SERVICE}${service}=${LATEST}
           "
           done
@@ -99,3 +109,29 @@ jobs:
 
           echo ""
           echo "No chart drift detected — all pinned tags match their latest release tags."
+
+      # The library pin (agent-platform) is bumped by library-chart-release.yml
+      # on the library's chart-release dispatch. A pin behind the published
+      # index means a dispatch was missed or its bump PR is stuck.
+      - name: Compare the library chart pin against the published index
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          source .github/workflows/lib/library-pin.sh
+
+          INDEX=$(mktemp)
+          if ! curl -fsS --retry 3 --retry-delay 5 -o "$INDEX" https://app-vitals.github.io/agent/index.yaml; then
+            echo "::error::could not fetch https://app-vitals.github.io/agent/index.yaml; the library chart pin was NOT checked."
+            exit 1
+          fi
+
+          MISMATCHES=$(compute_library_drift charts/shipwright/Chart.yaml charts/shipwright/Chart.lock "$INDEX") || exit 1
+          LATEST=$(latest_library_version "$INDEX")
+          echo "Latest published agent-platform: ${LATEST}; pinned in Chart.yaml: $(library_pin_from_chart charts/shipwright/Chart.yaml), Chart.lock: $(library_pin_from_lock charts/shipwright/Chart.lock)"
+
+          if [ -n "$MISMATCHES" ]; then
+            echo "$MISMATCHES"
+            echo "::error title=Library chart pin is stale::agent-platform is behind the latest published version ${LATEST}. A chart-release dispatch was missed or the bump PR (chore/library-chart-release) is stuck: re-run 'Library Chart Release Bump' with version ${LATEST}."
+            exit 1
+          fi
+          echo "Library chart pin is current."

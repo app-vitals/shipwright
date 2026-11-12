@@ -1,15 +1,13 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.437.0",
+  "version": "1.460.0",
   "private": true,
   "workspaces": [
     "plugins/shipwright",
     "metrics",
     "agent",
-    "agent/src/runtime",
     "admin",
     "task-store",
-    "chat",
     "mcp-server"
   ],
   "scripts": {
@@ -18,9 +16,8 @@
     "format": "bunx biome format --write .",
     "typecheck": "bun run --filter='*' --sequential typecheck",
     "generate:admin-spec": "bun run scripts/generate-admin-spec.ts",
-    "generate:admin-types": "bunx openapi-typescript ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
+    "generate:admin-types": "bunx openapi-typescript@7.13.0 ./admin/src/coding/openapi.coding.json --output ./admin/src/coding/admin-types.ts",
     "generate:task-store-spec": "bun run scripts/generate-task-store-spec.ts",
-    "generate:chat-spec": "bun run scripts/generate-chat-spec.ts",
     "generate:mcp-tools": "bun run scripts/generate-mcp-tools.ts",
     "generate:mcp-docs": "bun run scripts/generate-mcp-docs.ts"
   },
@@ -41,15 +38,15 @@
   },
   "dependencies": {
     "@shipwright/admin": "workspace:*",
-    "@app-vitals/agent-admin": "0.5.0",
-    "@app-vitals/agent-lib": "0.5.0",
-    "@app-vitals/agent-runtime": "workspace:*",
+    "@app-vitals/agent-admin": "1.36.2",
+    "@app-vitals/agent-lib": "1.36.2",
+    "@app-vitals/agent-runtime": "1.36.2",
     "@prisma/client": "^7.0.0"
   },
   "overrides": {
     "uuid": "14.0.3",
     "@hono/node-server": "^2.0.12",
-    "minimatch": "^10.2.5",
+    "minimatch": "^11.0.0",
     "brace-expansion": "^5.0.12",
     "fast-uri": "^4.1.5",
     "hono": "^4.13.7",
@@ -57,6 +54,9 @@
     "undici": "^8.0.0",
     "http-cache-semantics": "^4.3.0",
     "js-yaml": "^5.0.0",
+    "@redocly/openapi-core": {
+      "js-yaml": "4.3.2"
+    },
     "mysql2": "^3.23.1",
     "tar": "^7.5.21",
     "deepmerge-ts": "^8.0.2"

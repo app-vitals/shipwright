@@ -27,6 +27,7 @@
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0; also clears blocked/blockedReason
  *                                but only when blockedReason matches the skip-auto-block pattern
+ *   POST   /prs/:id/unblock   atomically clear any block + skip/CI-streak counters (409 unless blocked, 404 when missing)
  *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
  *                              — source:"patch" may only submit disposition:"rejected" (400
  *                              otherwise); source:"review" may submit any disposition
@@ -49,7 +50,7 @@ import type {
   PrState,
   PullRequest,
 } from "../index.ts";
-import { PrOrigin } from "../index.ts";
+import { PrOrigin, PrPhase } from "../index.ts";
 import {
   CensusBodySchema,
   CensusCursorQuerySchema,
@@ -105,6 +106,13 @@ function validateCensusRepoScope(repo: string, repos: string[] | null): void {
 // Derived from the runtime PrOrigin enum rather than hand-listed, so this
 // stays in sync with the Prisma schema without a second literal to update.
 const PR_ORIGIN_VALUES = new Set<string>(Object.values(PrOrigin));
+// Valid pipeline phases, derived from the Prisma PrPhase enum so a dropped
+// value (e.g. `deploy`, MPD-3.5) is rejected with a 400 rather than reaching
+// Prisma and surfacing as a raw 500.
+const PR_PHASE_VALUES = new Set<string>(Object.values(PrPhase));
+function isPrPhase(value: unknown): value is PrPhase {
+  return typeof value === "string" && PR_PHASE_VALUES.has(value);
+}
 
 /** Parse a raw census-entry value into a nullable-or-undefined string field:
  * a real string or explicit null are passed through; anything else
@@ -159,7 +167,7 @@ const claimRoute = createRoute({
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
   description:
-    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -248,7 +256,7 @@ const updateRoute = createRoute({
   tags: ["PRs"],
   summary: "Update pull request fields",
   description:
-    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -417,6 +425,34 @@ const skipResetRoute = createRoute({
   },
 });
 
+const unblockRoute = createRoute({
+  method: "post",
+  path: "/:id/unblock",
+  tags: ["PRs"],
+  summary:
+    "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+  description:
+    "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Unblocked PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Conflict — the PR is not currently blocked",
+    },
+  },
+});
+
 const findingsRoute = createRoute({
   method: "post",
   path: "/:id/findings",
@@ -480,7 +516,7 @@ const censusRoute = createRoute({
   path: "/census",
   tags: ["PRs"],
   summary: "Batch upsert PR origin/author/branch/title/state metadata",
-  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\`/\`commitCount\`/\`commitsDocsRefresh\`/\`commitsReviewPatch\`/\`commitsCiFix\`/\`commitsImplementation\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
+  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\`/\`commitCount\`/\`commitsDocsRefresh\`/\`commitsReviewPatch\`/\`commitsCiFix\`/\`commitsImplementation\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
   request: {
     body: {
       content: { "application/json": { schema: CensusBodySchema } },
@@ -665,10 +701,7 @@ export function createPrsRoutes(
     // matching callers (like review.md) that don't send phase at all.
     // readJson reads the raw body, not the Zod-validated payload — this guard
     // narrows phase to the allowed enum values before forwarding to the service.
-    const resolvedPhase =
-      phase === "review" || phase === "patch" || phase === "deploy"
-        ? phase
-        : undefined;
+    const resolvedPhase = isPrPhase(phase) ? phase : undefined;
 
     const resolvedPrCreatedAt =
       typeof prCreatedAt === "string" && prCreatedAt ? prCreatedAt : undefined;
@@ -834,12 +867,12 @@ export function createPrsRoutes(
   // dedicated lifecycle endpoints (claim, complete, patch, release) that enforce
   // valid state transitions atomically.
   //
-  // Extensions for deploy.md upsert flow:
+  // Extensions for merge.md upsert flow:
   //   state, mergedAt, reviewState — set when marking a PR as merged
   //
   // Pipeline phase tracking:
-  //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
-  //   the review/patch/deploy skills to record when a PR enters each phase
+  //   phase, readyForReviewAt, readyForPatchAt, readyForMergeAt — set by the
+  //   review/patch/merge skills to record when a PR enters each phase
   //
   // PR-level block (blocks automation on a PR with no linked Task):
   //   blocked, blockedReason, blockedHeadSha
@@ -861,7 +894,7 @@ export function createPrsRoutes(
     "phase",
     "readyForReviewAt",
     "readyForPatchAt",
-    "readyForDeployAt",
+    "readyForMergeAt",
     "blocked",
     "blockedReason",
     "blockedHeadSha",
@@ -885,6 +918,15 @@ export function createPrsRoutes(
       typeof filtered.blockedHeadSha !== "string"
     ) {
       throw new BadRequestError("blockedHeadSha must be a string or null");
+    }
+    if (
+      "phase" in filtered &&
+      filtered.phase !== null &&
+      !isPrPhase(filtered.phase)
+    ) {
+      throw new BadRequestError(
+        `invalid phase: '${String(filtered.phase)}' (expected one of ${[...PR_PHASE_VALUES].join(", ")} or null)`,
+      );
     }
     if (Object.keys(filtered).length === 0) {
       throw new BadRequestError("no updatable fields provided");
@@ -952,6 +994,14 @@ export function createPrsRoutes(
   app.openapi(skipResetRoute, async (c): Promise<any> => {
     await loadScopedPr(c);
     const pr = await prService.resetSkip(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Unblock ───────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(unblockRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
+    const pr = await prService.unblock(c.req.param("id"));
     return c.json(pr, 200);
   });
 

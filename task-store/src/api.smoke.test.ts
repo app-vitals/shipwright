@@ -18,6 +18,7 @@ import {
   ConflictError,
   NotFoundError,
   WebhookDeliveryError,
+  BadRequestError,
 } from "./errors.ts";
 import type { Task } from "./index.ts";
 import type { SessionServiceLike } from "./session-service.ts";
@@ -143,7 +144,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -173,12 +173,16 @@ function fakeTaskService(
     getResult?: Task | null;
     claimThrows?: Error;
     unblockThrows?: Error;
+    onUnblock?: (id: string, opts?: { to?: string }) => void;
     listResult?: Task[];
     listReadyResult?: Task[];
     listBlockedResult?: Task[];
   } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?) {
       const tasks = (opts.listResult ?? []).map(withBlockedBy);
       return {
@@ -230,11 +234,12 @@ function fakeTaskService(
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
     },
-    async unblock(id: string) {
+    async unblock(id: string, unblockOpts?: { to?: string }) {
+      opts.onUnblock?.(id, unblockOpts);
       if (opts.unblockThrows) throw opts.unblockThrows;
       return makeTask({
         id,
-        status: "pending",
+        status: (unblockOpts?.to ?? "pending") as Task["status"],
         blockedReason: null,
         blockedAt: null,
         claimedBy: null,
@@ -1289,6 +1294,77 @@ describe("task-store API (smoke)", () => {
     expect(body.claimedBy).toBeNull();
     expect(body.claimedAt).toBeNull();
     expect(body.heartbeatAt).toBeNull();
+  });
+
+  it("POST /tasks/:id/unblock with no body passes no target (UBL-1.1)", async () => {
+    let seen: { to?: string } | undefined = { to: "sentinel" };
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+        onUnblock: (_id, o) => {
+          seen = o;
+        },
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    expect(seen?.to).toBeUndefined();
+  });
+
+  it("POST /tasks/:id/unblock forwards a valid {to} body to the service (UBL-1.1)", async () => {
+    let seen: { to?: string } | undefined;
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked", pr: 7 }),
+        onUnblock: (_id, o) => {
+          seen = o;
+        },
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "merged" }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen?.to).toBe("merged");
+    expect(((await res.json()) as Task).status).toBe("merged");
+  });
+
+  it("POST /tasks/:id/unblock returns 400 for an unknown `to` (UBL-1.1)", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "approved" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/:id/unblock surfaces service 400 (no pr) and 409 (closed PR) (UBL-1.1)", async () => {
+    for (const [err, status] of [
+      [new BadRequestError("task has no pr"), 400],
+      [new ConflictError("PR is closed without merging"), 409],
+    ] as const) {
+      const app = makeApp({
+        taskService: fakeTaskService({
+          getResult: makeTask({ id: "task-1", status: "blocked" }),
+          unblockThrows: err,
+        }),
+      });
+      const res = await app.request("/tasks/task-1/unblock", {
+        method: "POST",
+        headers: auth(),
+      });
+      expect(res.status).toBe(status);
+    }
   });
 
   it("POST /tasks/:id/unblock returns 409 when the task is not currently blocked", async () => {

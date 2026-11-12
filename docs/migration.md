@@ -4,7 +4,28 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## Breaking: the admin is built on `@app-vitals/agent-admin` 0.5.0 _(AGR-4.2)_
+## Breaking: task-store drops `deploying`, `deployingAt`, the `deploy` PR phase and `readyForDeployAt` _(MPD-3.5)_
+
+**Version**: next (MPD-3.5)
+
+**Who this affects**: any task-store API client that still writes or filters on the removed values.
+Shipwright's own loop, commands and admin/metrics stopped using them in MPD-3.1–3.4.
+
+- `TaskStatus` no longer has `deploying` and `Task.deployingAt` is gone. `status=deploying` on
+  `GET /tasks`, `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` returns `400`. A
+  `deployingAt` key in a task write body is silently stripped, like other removed fields.
+- `PrPhase` no longer has `deploy` and `PullRequest.readyForDeployAt` is gone. `phase=deploy` on
+  `POST /prs/claim` or `PATCH /prs/:id` returns `400`. `POST /prs/claim-next` now claims an
+  approved PR in phase `merge`, and approval (`reviewState=approved`) stamps `readyForMergeAt`.
+  FIFO aging is `COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt)`.
+- Migration `20261108000000_drop_deploying_status_deploy_phase` runs on task-store boot. It moves
+  every `deploying` task to `merged`, clears `phase` and the claim fields on every `phase=deploy`
+  PR, and copies `readyForDeployAt` into `readyForMergeAt` where that is unset, before it recreates
+  both enums and drops the two columns. Nothing to do by hand.
+
+---
+
+## Breaking: the admin is built on `@app-vitals/agent-admin` 0.7.1 _(AGR-4.2)_
 
 **Version**: next (AGR-4.2)
 
@@ -54,11 +75,11 @@ unaffected — the new gate only runs when the cron ticks.
 and dispatched a bare prompt with no repo argument, leaving the agent to improvise which
 repo(s) under `repos/` to scan. Both now declare
 `preCheck: shipwright:check-patrol-scope.ts` in
-[`specialties/coding/manifest.yaml`](../specialties/coding/manifest.yaml), which resolves the
+[`admin/src/coding/coding-specialty-defaults.ts`](../admin/src/coding/coding-specialty-defaults.ts), which resolves the
 agent's configured repos and emits the in-scope repo list as the cron's actual prompt.
 
 **What changed on upgrade**: `reconcileSystemCrons()` runs on every agent boot and keeps system
-crons in sync with the manifest, including `preCheck`. It does not diff fields or preserve
+crons in sync with the specialty defaults, including `preCheck`. It does not diff fields or preserve
 operator state beyond `enabled` and the row id, so the first boot after upgrading past this
 version rewrites these two crons' `preCheck` from `null` to `check-patrol-scope.ts` with no
 prompt and no log line. There is nothing to run by hand — but there is also no signal that it
@@ -128,7 +149,7 @@ are two callers of a single creation function, not two separate implementations.
 - **For humans**: no change — the web form at `/admin/agents/new` still works exactly as before
   and remains the friendlier path with guided UI for Slack/GitHub provisioning and credentials.
 - **For scripted/API callers**: you can now use `POST /agents` with a JSON body instead of
-  `POST /admin/agents` with a form body. See the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md)
+  `POST /admin/agents` with a form body. See the `agent-platform:agent-admin`
   skill for practical curl examples. Both paths work and use the same implementation — pick
   whichever suits your caller better.
 
@@ -484,12 +505,12 @@ organization prefixes extracted from the `repos` it already returns.
 
 **Version**: next (WLS-6.1)
 
-`dev-task`, `review`, `patch`, and `deploy` no longer self-discover work. Each is now an
-explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`deploy`
+`dev-task`, `review`, `patch`, and `merge` no longer self-discover work. Each is now an
+explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`merge`
 require an `org/repo#number` PR. Candidate selection — deciding *what* to work on — now
 happens exclusively upstream, in the `shipwright-loop` cron's in-process candidate
 providers (`agent/src/coding/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
-`check-deploy.ts`), which merge candidates and dispatch the winning item's command with its
+`check-merge.ts`), which merge candidates and dispatch the winning item's command with its
 id/PR embedded directly in the prompt. No self-search fallback remains inside any of the
 four commands.
 
@@ -502,8 +523,8 @@ no Slack message, no work done.
 **What to update**: enable the `shipwright-loop` system cron (`PATCH
 /agents/:id/crons/:cronId` with `{"enabled": true}`, or via the admin UI). `dev-task`,
 `review`, and `patch` are enabled by default, so once the loop is on, they resume working
-automatically. `shipwright-deploy` remains an explicit opt-in — its per-phase cron ships
-`enabled: false`, so toggle it on separately if you also want deploys driven by the loop.
+automatically. `shipwright-merge` remains an explicit opt-in — its per-phase cron ships
+`enabled: false`, so toggle it on separately if you also want merges driven by the loop.
 
 ---
 
@@ -685,12 +706,12 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
 
 **Version**: next (RHA-1)
 
-The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the deploy command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
+The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the merge command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
 
 **What changed**:
-- The `deploy` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
+- The `merge` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
 - The `plan-session` command no longer classifies tasks as "Type B" (requiring merge approval) — it only recognizes Type A (human-executable tasks with `hitl: true`) and neither (standard tasks).
-- The deploy workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
+- The merge workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
 - In RHA-1.4, the column was dropped from the Prisma schema and the database via migration `20260811000000_drop_requires_human_approval`. The filter parameter was removed from the task-store API in RHA-1.3.
 
 **Migration**:

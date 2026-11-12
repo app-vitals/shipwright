@@ -9,11 +9,21 @@ name: Platform Release Bump
 #
 # This workflow re-pins every registry @app-vitals/agent-* dependency to that
 # exact version (scripts/platform-release-bump.ts, in every package.json that
-# declares one), refreshes bun.lock, and opens the bump PR, or updates the
+# declares one), refreshes bun.lock, regenerates the committed admin spec and
+# types, and opens the bump PR, or updates the
 # open one, on the fixed branch chore/platform-release. It then waits for the
 # PR's required checks (rerunning failed ones, up to 3 attempts) and admin-
 # merges its own PR (the bot cannot self-approve it). If a required check
-# keeps failing, the job fails and the PR is left open. Renovate's
+# keeps failing, the job fails and the PR is left open. If main moves while
+# the bump is being generated, the PR opens CONFLICTING and its required
+# checks never run; before waiting on checks the job polls the PR's
+# `mergeable` state (until it leaves UNKNOWN) and, on CONFLICTING, logs a
+# distinct ::error:: and re-dispatches this workflow once (workflow_dispatch,
+# `attempt` input: default 1, cap 2) so the branch is regenerated from fresh
+# main. The re-dispatching run exits 0 with a ::warning:: (the PR stays open
+# and is force-pushed by the new run, which queues behind this one in the
+# non-cancelling concurrency group); a second conflict fails the job loudly
+# and the job goes red. Renovate's
 # "app-vitals agent platform" group (renovate.json) is the fallback if a
 # dispatch is missed.
 #
@@ -23,9 +33,9 @@ name: Platform Release Bump
 # source header. platform-docs-guard.yml blocks hand edits to that directory
 # from any other PR.
 #
-# Failures are loud: the job fails (leaving the PR open), and a failure step
-# opens (or comments on) a "platform release bump failed" issue, because a
-# stalled release chain otherwise goes unnoticed for days.
+# Failures are loud: the job fails (leaving the PR open) and the failed run is
+# the signal; no issue is opened. platform-release-retry.yml retries a stalled
+# bump PR and leaves a marker comment on it once retries run out.
 #
 # The version comes from an external event, so it is never interpolated into
 # a script: it reaches every step through env and is validated as strict
@@ -34,7 +44,15 @@ name: Platform Release Bump
 # Manual / rehearsal run: Actions -> Platform Release Bump -> Run workflow,
 # with the version to pin.
 #
-# Logic tests: scripts/platform-release-bump.unit.test.ts. Content test:
+# XPF-1.4: the force-push replaces an older unmerged bump only when the branch
+# holds bump-bot commits alone (scripts/platform-bump-branch-guard.ts). Any
+# other commit (a patch pass's or a human's fix) fails the run before the push,
+# naming the commits and the PR; the branch and PR stay as they are.
+# PBF-1.1: that protection applies only while a PR is open on the branch (the
+# open PR's url is passed to the guard; empty means stale branch, push proceeds).
+#
+# Logic tests: scripts/platform-release-bump.unit.test.ts; merge gate:
+# scripts/platform-bump-gate.unit.test.ts. Content test:
 # platform-release.content.test.ts (repo root).
 
 on:
@@ -45,6 +63,11 @@ on:
       version:
         description: "Platform version to pin (strict X.Y.Z)"
         required: true
+        type: string
+      attempt:
+        description: "Rebuild attempt (1 = first run, 2 = regenerated after a main conflict; capped at 2)"
+        required: false
+        default: "1"
         type: string
 
 permissions:
@@ -62,7 +85,6 @@ jobs:
     permissions:
       contents: write # push the bump branch
       pull-requests: write # open / update the PR
-      issues: write # open the failure issue
     env:
       VERSION: ${{ github.event.client_payload.version || inputs.version }}
       BRANCH: chore/platform-release
@@ -103,8 +125,71 @@ jobs:
       - name: Refresh the platform docs snapshot
         run: bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src
 
+      # npm lists a new version a few minutes after the platform publishes it,
+      # so `bun install` right after the dispatch failed with "No version
+      # matching X found" (0.6.0, 0.6.1, 0.7.0). Poll the registry for every
+      # pinned package first; the list comes from the bump script so it cannot
+      # drift from what was pinned. VERSION arrives via env only.
+      - name: Wait for @app-vitals/agent-* on npm
+        run: |
+          PACKAGES=$(bun scripts/platform-release-bump.ts --list-packages)
+          for pkg in $PACKAGES; do
+            found=false
+            for _ in $(seq 1 40); do
+              if [ "$(npm view "${pkg}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+                # npm can list the version before the tarball is served, so
+                # also require the tarball URL to answer a HEAD.
+                tarball=$(npm view "${pkg}@${VERSION}" dist.tarball 2>/dev/null)
+                if [ -n "$tarball" ] && curl -fsI "$tarball" >/dev/null 2>&1; then
+                  found=true
+                  break
+                fi
+              fi
+              echo "Waiting for ${pkg}@${VERSION} on npm..."
+              sleep 15
+            done
+            if [ "$found" != "true" ]; then
+              echo "ERROR: ${pkg}@${VERSION} not available on npm after ~10 minutes" >&2
+              exit 1
+            fi
+            echo "Found ${pkg}@${VERSION}"
+          done
+
+      # Even after the wait, a registry edge can still 404 a tarball. Retry
+      # only on registry 404 / resolve failures; any other error fails fast.
       - name: Refresh bun.lock
-        run: bun install
+        run: |
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            if out=$(bun install 2>&1); then
+              echo "$out"
+              exit 0
+            fi
+            echo "$out" >&2
+            if ! echo "$out" | grep -Eqi '404|failed to resolve'; then
+              echo "ERROR: bun install failed with a non-registry error" >&2
+              exit 1
+            fi
+            last_error=$(echo "$out" | grep -Ei '404|failed to resolve' | tail -n 1)
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Registry 404 on attempt ${attempt}/${max_attempts}; retrying in 20s..."
+              sleep 20
+            fi
+          done
+          echo "ERROR: bun install for ${VERSION} still failing after ${max_attempts} attempts: ${last_error}" >&2
+          exit 1
+
+      # A platform bump that changes the admin surface drifts the committed
+      # admin spec and types mechanically (the byte-identity tests fail for a
+      # reason no human needs to review), so regenerate them inside the bump.
+      # generate:admin-spec writes admin/openapi.json and the standalone
+      # admin/src/coding/openapi.coding.json that feeds the types. Only the
+      # hand-reviewed pins (migrations, composed-surface baseline) can fail a
+      # bump.
+      - name: Regenerate the committed admin spec and types
+        run: |
+          bun run generate:admin-spec
+          bun run generate:admin-types
 
       - name: Detect changes
         id: diff
@@ -120,24 +205,33 @@ jobs:
 
       - name: Commit and push
         if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           git checkout -B "$BRANCH"
           git add -A -- docs/platform
-          git add -u -- bun.lock '*package.json'
+          git add -u -- bun.lock '*package.json' agent/Dockerfile \
+            admin/openapi.json admin/src/coding/openapi.coding.json \
+            admin/src/coding/admin-types.ts
           # Anything else changing means the bump did more than re-pin and
           # re-snapshot: stop.
           if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
-            echo "ERROR: unexpected changes outside package.json/bun.lock/docs/platform:" >&2
+            echo "ERROR: unexpected changes outside package.json/bun.lock/agent/Dockerfile/docs/platform/admin openapi.json/openapi.coding.json/admin-types.ts:" >&2
             git status --porcelain >&2
             exit 1
           fi
           git commit -m "chore(deps): bump @app-vitals/agent-* to ${VERSION}"
+          # XPF-1.4: a newer release replaces an unmerged older bump only when
+          # the branch holds bot commits alone. Fix commits from a patch pass
+          # or a human would be discarded by the force-push: fail instead and
+          # leave the branch and PR as they are. PBF-1.1: with no open PR
+          # ($PR_URL empty) the branch is a stale leftover and is replaced.
+          git fetch origin "$BRANCH" 2>/dev/null || true
+          PR_URL=$(gh pr list --head "$BRANCH" --state open --json url -q '.[0].url')
+          bun scripts/platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"
           # One bump branch: a newer release replaces an unmerged older bump.
           git push --force origin "$BRANCH"
 
-      # The PR changes admin/package.json, a platform-frozen path, so it
-      # carries the `platform-cutover` label for platform-freeze-guard.yml
-      # (removed with the guard in AGR-4.4). It only re-pins versions.
       - name: Open or update the bump PR
         id: pr
         if: steps.diff.outputs.changed == 'true'
@@ -148,7 +242,7 @@ jobs:
           BODY=$(cat <<EOF
           ## Platform release ${VERSION}
 
-          Re-pins every registry \`@app-vitals/agent-*\` dependency to \`${VERSION}\`, refreshes \`bun.lock\` and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
+          Re-pins every registry \`@app-vitals/agent-*\` dependency and the \`agent/Dockerfile\` platform image (\`PLATFORM_VERSION\`) to \`${VERSION}\`, refreshes \`bun.lock\`, regenerates the committed admin spec and types (\`admin/openapi.json\`, \`admin/src/coding/openapi.coding.json\`, \`admin/src/coding/admin-types.ts\`) and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
 
           Triggered by the \`platform-release\` dispatch from app-vitals/agent (or a manual run).
 
@@ -167,142 +261,59 @@ jobs:
               --head "$BRANCH" \
               --title "$TITLE" \
               --label automated \
-              --label platform-cutover \
               --body "$BODY")
             echo "Opened PR: ${PR_URL}"
             echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
           fi
 
       # Required checks must pass before the bump lands, and the bump PR cannot
-      # be self-approved (it sits BLOCKED), so the workflow waits for the
-      # required checks (rerunning failed ones up to 3 attempts) and
-      # admin-merges its own PR. Logic mirrors the "Wait for checks and merge"
-      # step in auto-bump-chart.yml and the helpers in
-      # .github/workflows/test-auto-bump-chart.sh — keep both copies in sync.
-      # A failing required check exits 1: the job goes red, the failure() step
-      # below opens an issue, and the PR is left open for a human.
-      # Stale-base retry: "Base branch was modified" is a transient GraphQL
-      # error when main moves between the checks passing and the merge; retry a
-      # few times, never retry any other merge failure.
+      # be self-approved (it sits BLOCKED), so scripts/platform-bump-gate.sh
+      # waits for the CI workflow run on the PR head commit (the fast title
+      # check cannot stand in for lint / test), then for the required checks
+      # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
+      # A failing or missing check exits 1: the job goes red, the job
+      # goes red, and the PR is left open for a human. The
+      # gate re-reads the full required set after the watch (and awaits every
+# rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
+# merged red when a rerun dropped the CI checks from the rollup). The
+# gate is behavior-tested against recorded check timelines in
+      # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
+      # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
+      # copies in sync.
       - name: Wait for checks and merge
+        id: merge
         if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
+          ATTEMPT: ${{ inputs.attempt || '1' }}
         run: |
-          # `gh pr checks --watch --required` fails fast with "no required
-          # checks reported" if it runs before GitHub has registered any
-          # *required* check run on the new commit. A non-required check
-          # (e.g. "Detect changed paths") commonly registers first — polling
-          # for ANY check (no --required filter) let this loop exit early on
-          # that non-required check, before a required check had appeared,
-          # handing off to --watch --required prematurely and failing
-          # instantly. Poll specifically for a required check to register
-          # before handing off to --watch --required below.
-          echo "Waiting for required checks to register on ${PR_URL}..."
+          # GitHub computes `mergeable` lazily: UNKNOWN right after the PR is
+          # opened or the branch is pushed. Poll until it settles.
+          MAX_REBUILD_ATTEMPTS=2
+          MERGEABLE=UNKNOWN
           for _ in $(seq 1 30); do
-            CHECK_COUNT=$(gh pr checks "$PR_URL" --required --json name -q 'length' 2>/dev/null || echo 0)
-            [ "$CHECK_COUNT" -gt 0 ] && break
-            sleep 2
+            MERGEABLE=$(gh pr view "$PR_URL" --json mergeable -q .mergeable 2>/dev/null || echo UNKNOWN)
+            [ "$MERGEABLE" != "UNKNOWN" ] && break
+            sleep 5
           done
 
-          # Extracts the numeric run id from a `gh pr checks --json link`
-          # URL, e.g. ".../actions/runs/31518876841/job/93871505296" →
-          # "31518876841". Mirrors
-          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
-          # sync.
-          extract_run_id_from_link() {
-            local link="$1"
-            echo "$link" | sed -n 's#.*/actions/runs/\([0-9]\+\).*#\1#p'
-          }
-
-          # Prints the unique set of run ids (one per line) behind every
-          # required check whose state is not SUCCESS, from the JSON array
-          # produced by `gh pr checks --required --json name,state,link`.
-          # `state` values from `gh pr checks --json` are uppercase
-          # (SUCCESS, FAILURE, ...). Mirrors
-          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
-          # sync.
-          failed_required_check_run_ids() {
-            local checks_json="$1"
-            echo "$checks_json" \
-              | python3 -c 'import json, sys; data = json.load(sys.stdin); [print(c["link"]) for c in data if c.get("state") != "SUCCESS"]' \
-              | while IFS= read -r link; do
-                  extract_run_id_from_link "$link"
-                done \
-              | sort -u
-          }
-
-          echo "Waiting for required checks on ${PR_URL}..."
-          CHECKS_MAX_ATTEMPTS=3
-          for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
-            gh pr checks "$PR_URL" --watch --interval 15 --required && break
-
-            echo "Required check(s) failed on attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS}." >&2
-
-            if [ "$checks_attempt" -ge "$CHECKS_MAX_ATTEMPTS" ]; then
-              echo "ERROR: exhausted ${CHECKS_MAX_ATTEMPTS} attempts waiting for required checks to pass on ${PR_URL}." >&2
-              exit 1
-            fi
-
-            CHECKS_JSON=$(gh pr checks "$PR_URL" --required --json name,state,link)
-            RUN_IDS=$(failed_required_check_run_ids "$CHECKS_JSON")
-
-            if [ -z "$RUN_IDS" ]; then
-              echo "No failed required check run ids found to rerun — not retrying." >&2
-              exit 1
-            fi
-
-            echo "Rerunning failed job(s) behind: $(echo "$RUN_IDS" | paste -sd, -)"
-            while IFS= read -r run_id; do
-              [ -z "$run_id" ] && continue
-              gh run rerun "$run_id" --failed
-            done <<< "$RUN_IDS"
-          done
-          echo "Checks passed — merging ${PR_URL}."
-
-          # Detects the transient stale-base GraphQL error (see comment
-          # above). Mirrors .github/workflows/test-auto-bump-chart.sh — keep
-          # both copies in sync.
-          is_stale_base_error() {
-            local output="$1"
-            if echo "$output" | grep -qi "Base branch was modified"; then
-              return 0
-            fi
-            return 1
-          }
-
-          MAX_ATTEMPTS=3
-          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-            MERGE_OUTPUT=$(gh pr merge "$PR_URL" --squash --admin 2>&1) && {
-              echo "$MERGE_OUTPUT"
-              echo "Merged ${PR_URL}."
+          # main moved while the bump was generated: required checks never
+          # run on a CONFLICTING PR, so waiting would end in a generic
+          # failure. Regenerate the branch from fresh main once (a new run
+          # re-pins, re-snapshots and force-pushes), then stop this run.
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            echo "::error::${PR_URL} conflicts with main (mergeable=CONFLICTING); required checks cannot run (attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS})."
+            if [ "$ATTEMPT" -lt "$MAX_REBUILD_ATTEMPTS" ]; then
+              NEXT_ATTEMPT=$((ATTEMPT + 1))
+              gh workflow run platform-release.yml --ref main \
+                -f version="$VERSION" \
+                -f attempt="$NEXT_ATTEMPT"
+              echo "::warning::Re-dispatched platform-release.yml (attempt ${NEXT_ATTEMPT}/${MAX_REBUILD_ATTEMPTS}) to regenerate the bump branch from fresh main; ${PR_URL} stays open and the new run force-pushes it. This run stops here."
               exit 0
-            }
-
-            echo "$MERGE_OUTPUT" >&2
-
-            if is_stale_base_error "$MERGE_OUTPUT" && [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-              echo "Stale-base race detected (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in 5s..."
-              sleep 5
-              continue
             fi
-
-            echo "Merge failed on attempt ${attempt}/${MAX_ATTEMPTS} — not retrying (either not a stale-base error, or retries exhausted)."
+            echo "::error::${PR_URL} still conflicts with main after the attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS} rebuild; giving up, resolve by hand."
             exit 1
-          done
-
-      - name: Open an issue on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="platform release bump failed"
-          BODY="The platform release bump for version \`${VERSION}\` failed: ${RUN_URL}"
-          ISSUE=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number -q '.[0].number')
-          if [ -n "$ISSUE" ]; then
-            gh issue comment "$ISSUE" --body "$BODY"
-          else
-            gh issue create --title "$TITLE" --body "$BODY"
           fi
+
+          bash scripts/platform-bump-gate.sh "$PR_URL"

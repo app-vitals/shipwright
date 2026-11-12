@@ -50,10 +50,9 @@ test("cross-links to the commands reference page are present", async ({
   expect(await link.count()).toBeGreaterThan(0);
 });
 
-// Every one of the 25 skills under plugins/shipwright/skills/ must be
+// Every one of the 24 skills under plugins/shipwright/skills/ must be
 // catalogued on this page.
 const allSkillNames = [
-  "agent-admin",
   "canary-execution",
   "consolidation-fix",
   "consolidation-scan",
@@ -62,7 +61,7 @@ const allSkillNames = [
   "error-fix",
   "error-resolve",
   "error-scan",
-  "investigate-cron",
+  "investigate-stuck",
   "learning-capture",
   "pull-requests",
   "repo-config",
@@ -80,7 +79,7 @@ const allSkillNames = [
   "test-roadmap",
 ];
 
-test("all 25 skill names appear on the agent-skills page", async ({
+test("all 24 skill names appear on the agent-skills page", async ({
   page,
 }) => {
   await page.goto("/docs/agent-skills");

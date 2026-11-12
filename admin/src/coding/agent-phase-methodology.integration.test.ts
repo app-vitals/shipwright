@@ -7,9 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.ts";
 import { createAdminPrismaClient } from "@app-vitals/agent-admin/prisma-client";
-import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import {
+  AgentPhaseMethodologyService,
+  normalizeSubagentList,
+} from "./agent-phase-methodology.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
@@ -110,5 +114,59 @@ describeOrSkip("AgentPhaseMethodologyService (integration)", () => {
     expect(rows1[0]?.subagentType).toBe("patcher-a");
     expect(rows2).toHaveLength(1);
     expect(rows2[0]?.subagentType).toBe("patcher-b");
+  });
+
+  it("upsert() stores a trimmed, de-duplicated comma-separated list for review", async () => {
+    const agentId = await createAgent(prisma);
+    const row = await service.upsert(agentId, "review", " a , b,a ");
+    expect(row.subagentType).toBe("a,b");
+  });
+
+  it("upsert() rejects a multi-value list for every non-review phase and persists nothing", async () => {
+    const agentId = await createAgent(prisma);
+    for (const phase of [
+      "dev-task",
+      "patch",
+      "plan-session",
+      "prd",
+      "deploy",
+    ]) {
+      await expect(
+        service.upsert(agentId, phase, "a,b"),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    }
+    expect(await service.list(agentId)).toEqual([]);
+  });
+
+  it("upsert() rejects empty entries and more than 5 entries for review", async () => {
+    const agentId = await createAgent(prisma);
+    for (const value of ["a,,b", "a,", "a,b,c,d,e,f"]) {
+      await expect(
+        service.upsert(agentId, "review", value),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    }
+    const ok = await service.upsert(agentId, "review", "a,b,c,d,e");
+    expect(ok.subagentType).toBe("a,b,c,d,e");
+  });
+});
+
+describe("normalizeSubagentList", () => {
+  it("passes null through and keeps single values", () => {
+    expect(normalizeSubagentList("deploy", null)).toBeNull();
+    expect(normalizeSubagentList("deploy", "solo")).toBe("solo");
+    expect(normalizeSubagentList("review", "solo")).toBe("solo");
+  });
+
+  it("normalizes lists for review and rejects them elsewhere", () => {
+    expect(normalizeSubagentList("review", "b, a ,b")).toBe("b,a");
+    expect(() => normalizeSubagentList("patch", "a,b")).toThrow(
+      BadRequestError,
+    );
+    expect(() => normalizeSubagentList("review", "a,,b")).toThrow(
+      BadRequestError,
+    );
+    expect(() => normalizeSubagentList("review", "a,b,c,d,e,f")).toThrow(
+      BadRequestError,
+    );
   });
 });

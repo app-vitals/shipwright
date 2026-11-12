@@ -289,10 +289,10 @@ describe("plan-session.md — Step 4 `--autonomous` mode (PDR-3.1)", () => {
     expect(lower).not.toContain("patch");
   });
 
-  it("hard contradiction escapes via PATCH to blocked with hitl:true and blockedReason, then stops before Step 5", () => {
+  it("hard contradiction escapes via PATCH to blocked without hitl, with blockedReason, then stops before Step 5", () => {
     const autoSection = extractAutonomousSubsection(extractStep4Section(content));
     expect(autoSection).toContain('"status": "blocked"');
-    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).not.toContain('"hitl": true');
     expect(autoSection).toContain("blockedReason");
     expect(autoSection).toContain("plan_session_autonomous_hard_contradiction");
     expect(autoSection.toLowerCase()).toContain("do not proceed to step 5");
@@ -334,7 +334,7 @@ describe("plan-session.md — Step 5 `--autonomous` mode (PDR-3.1)", () => {
   it("hard contradiction escapes via the same PATCH-to-blocked pattern, stopping before Step 5.5", () => {
     const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
     expect(autoSection).toContain('"status": "blocked"');
-    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).not.toContain('"hitl": true');
     expect(autoSection).toContain("blockedReason");
     expect(autoSection.toLowerCase()).toContain("do not proceed to step 5.5");
   });
@@ -412,11 +412,11 @@ describe("plan-session.md — Step 1 `--autonomous` spec materialization from th
     expect(sub.toLowerCase()).toMatch(/strip|remove|drop/);
   });
 
-  it("blocks the task with hitl:true and a plan_session_autonomous_no_spec reason when no spec can be found", () => {
+  it("blocks the task with a plan_session_autonomous_no_spec reason when no spec can be found", () => {
     const sub = extractAutonomousSubsection(content);
     expect(sub).toContain("plan_session_autonomous_no_spec");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
   });
 
@@ -857,12 +857,12 @@ describe("plan-session.md — Configured Methodology Dispatch: malformed or fail
     expect(lower).not.toMatch(/fall back to an inline/);
   });
 
-  it("under --autonomous, PATCHes the task to blocked/hitl with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
+  it("under --autonomous, PATCHes the task to blocked with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("--autonomous");
     expect(sub).toContain("plan_session_methodology_dispatch_failed");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
     expect(sub.toLowerCase()).toContain("stop before step 6");
   });
@@ -883,7 +883,7 @@ describe("plan-session.md — Configured Methodology Dispatch: hard contradictio
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("plan_session_autonomous_hard_contradiction");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     expect(sub).toContain("blockedReason");
     expect(sub.toLowerCase()).toContain("stop before step 6");
   });
@@ -963,7 +963,7 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     const sub = extractDispatchSubsection(content, HEADING);
     expect(sub).toContain("plan_session_methodology_schema_invalid");
     expect(sub).toContain('"status": "blocked"');
-    expect(sub).toContain('"hitl": true');
+    expect(sub).not.toContain('"hitl": true');
     const lower = sub.toLowerCase();
     expect(lower).toContain("interactive");
     expect(lower).toMatch(/never proceed to step 6/);
@@ -1256,6 +1256,136 @@ describe("plan-session.md — Step 6 is path-agnostic (PSM-1.2)", () => {
   });
 });
 
+describe("plan-session.md — Breaking Change Scan documents published package contracts (XPF-4.1)", () => {
+  function extractBreakingChangeScanSection(md: string): string {
+    const idx = md.indexOf("**Breaking Change Scan**");
+    const step3Idx = md.indexOf("\n## Step 3: Research (if needed)");
+    expect(idx).toBeGreaterThan(-1);
+    expect(step3Idx).toBeGreaterThan(idx);
+    return md.slice(idx, step3Idx);
+  }
+
+  it("includes a bullet for **Published package contract** in the Breaking Change Scan", () => {
+    const section = extractBreakingChangeScanSection(content);
+    expect(section).toContain("**Published package contract**");
+  });
+
+  it("describes published package contracts as rename/removal/constraint changes to exports of @app-vitals/agent-*", () => {
+    const section = extractBreakingChangeScanSection(content);
+    expect(section).toContain("@app-vitals/agent-");
+    expect(section.toLowerCase()).toContain("rename");
+    expect(section.toLowerCase()).toContain("removal");
+    expect(section.toLowerCase()).toContain("constraint");
+  });
+
+  it("notes that published package consumers are invisible to grep", () => {
+    const section = extractBreakingChangeScanSection(content);
+    expect(section.toLowerCase()).toContain("invisible to grep");
+  });
+});
+
+describe("plan-session.md — Cross-repo producer → consumer work (XPF-4.1)", () => {
+  function extractBreakingChangeSafetySection(md: string): string {
+    const idx = md.indexOf("### Breaking Change Safety");
+    const autonomousIdx = md.indexOf("### `--autonomous` Mode", idx);
+    expect(idx).toBeGreaterThan(-1);
+    expect(autonomousIdx).toBeGreaterThan(idx);
+    return md.slice(idx, autonomousIdx);
+  }
+
+  it("documents the expand → migrate → contract decomposition pattern", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    expect(section).toContain("**Expand**");
+    expect(section).toContain("**Migrate**");
+    expect(section).toContain("**Contract**");
+  });
+
+  it("describes Expand as additive changes to the package contract", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(section).toContain("Expand");
+    expect(lower).toContain("additive");
+  });
+
+  it("states that Expand tasks must be additive so the bump PR stays green on its own", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/expand.*additive|additive.*expand/);
+    expect(lower).toMatch(/pr.*green|stays green/);
+  });
+
+  it("describes Migrate as updating consumers and depending on a RELEASE GATE", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(section).toContain("**Migrate**");
+    expect(lower).toContain("release gate");
+  });
+
+  it("describes Contract as removal depending on the consumer's migrate task being deployed", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(section).toContain("**Contract**");
+    expect(lower).toContain("deployed");
+    expect(lower).toMatch(/depends on.*migrate.*deployed/);
+  });
+
+  it("shows the RELEASE GATE task title template starting with 'chore: wait for @app-vitals/agent'", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    expect(section).toContain("chore: wait for @app-vitals/agent");
+  });
+
+  it("includes the gate title template with {minVersion} placeholder", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    expect(section).toContain("{minVersion}");
+    expect(section).toContain("chore: wait for @app-vitals/agent");
+  });
+
+  it("documents the completion check using scripts/check-platform-pin.sh", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    expect(section).toContain("scripts/check-platform-pin.sh");
+    expect(section).toContain("@app-vitals/agent-");
+  });
+
+  it("describes check-platform-pin.sh behavior: exit 0 → done, exit non-zero → pending, stuck > 2h → hitl", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/exit 0.*done/);
+    expect(lower).toMatch(/exit non-zero|exit non.zero.*pending/);
+    expect(lower).toMatch(/stuck.*2h/);
+    expect(lower).toMatch(/stuck.*hitl|hitl.*stage/);
+  });
+
+  it("links docs/release-gate.md for the chain, what to watch, and how to re-dispatch", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    expect(section).toContain("docs/release-gate.md");
+    expect(section).toContain("chain");
+    expect(section).toContain("what to watch");
+    expect(section).toContain("re-dispatch");
+  });
+
+  it("documents that the gate's dependencies include the producer task", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("gate");
+    expect(lower).toMatch(/gate.*dependencies|dependencies.*gate/);
+    expect(lower).toContain("producer task");
+  });
+
+  it("documents that the consumer task's dependencies include the gate", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("consumer task");
+    expect(lower).toMatch(/consumer.*dependencies|dependencies.*consumer/);
+    expect(lower).toContain("gate");
+  });
+
+  it("presents the gate template as a fenced code block", () => {
+    const section = extractBreakingChangeSafetySection(content);
+    const codeMatch = section.match(/```[\s\S]*?chore: wait for @app-vitals\/agent[\s\S]*?```/);
+    expect(codeMatch).not.toBeNull();
+  });
+});
+
 /**
  * No-target guard (PDR-4.1).
  *
@@ -1287,7 +1417,7 @@ const SIBLING_PIPELINE_COMMANDS = [
   "dev-task",
   "review",
   "patch",
-  "deploy",
+  "merge",
 ] as const;
 
 describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
@@ -1326,4 +1456,54 @@ describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
       expect(siblingContent).toMatch(NO_ARGUMENT_SILENT_CASE);
     });
   }
+});
+
+function extractCarryThroughSection(md: string): string {
+  const match = md.match(
+    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list and dependency map as a first pass)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+describe("plan-session.md — Step 5 carries spec-level statements into the task list", () => {
+  it("sits inside Step 5, after Breaking Change Safety and before the first-pass presentation", () => {
+    const safetyIdx = content.indexOf("### Breaking Change Safety");
+    const carryIdx = content.indexOf("### Spec-Level Carry-Through");
+    const step55Idx = content.indexOf("## Step 5.5: HITL Detection");
+    expect(safetyIdx).toBeGreaterThan(-1);
+    expect(carryIdx).toBeGreaterThan(safetyIdx);
+    expect(step55Idx).toBeGreaterThan(carryIdx);
+  });
+
+  it("is skipped when the spec has neither section, so non-/prd specs still plan", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain(
+      "Skip this check when the spec has neither a `Success Criteria` nor a `Priorities & Sequence` section",
+    );
+  });
+
+  it("requires each Success Criteria statement to be forced by a task's acceptance criteria", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toMatch(
+      /\*\*Success Criteria\*\* — each statement must be forced by at least one task's acceptance criteria/,
+    );
+  });
+
+  it("requires each ordering or gating statement to be enforced by a dependencies edge or carried by a task", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain("`dependencies` edge");
+    expect(section).toContain("If it is an action no task performs, add it to a task.");
+  });
+
+  it("records deliberately-not-carried statements, in the Decision Log under --autonomous", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain("`Not carried:`");
+    expect(section).toMatch(/Under `--autonomous`, record these in the `## Decision Log`/);
+  });
+
+  it("stays short — it is paid for on every loop-dispatched plan", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section.split("\n").length).toBeLessThanOrEqual(10);
+  });
 });

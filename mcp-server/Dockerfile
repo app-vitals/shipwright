@@ -21,12 +21,9 @@ COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
-COPY chat/package.json ./chat/
-COPY chat/prisma ./chat/prisma/
 COPY agent/package.json ./agent/
 COPY metrics/package.json ./metrics/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
-COPY agent/src/runtime/package.json ./agent/src/runtime/
 COPY mcp-server/package.json ./mcp-server/
 COPY patches/ ./patches/
 

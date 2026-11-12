@@ -8,9 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
@@ -75,7 +75,7 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.phase).toBeNull();
     expect(read.readyForReviewAt).toBeNull();
     expect(read.readyForPatchAt).toBeNull();
-    expect(read.readyForDeployAt).toBeNull();
+    expect(read.readyForMergeAt).toBeNull();
     expect(read.prCreatedAt).toBeNull();
     expect(read.createdAt).toBeInstanceOf(Date);
     expect(read.updatedAt).toBeInstanceOf(Date);
@@ -90,11 +90,11 @@ describeOrSkip("PullRequest model (integration)", () => {
     });
     expect(created.readyForReviewAt).toBeNull();
     expect(created.readyForPatchAt).toBeNull();
-    expect(created.readyForDeployAt).toBeNull();
+    expect(created.readyForMergeAt).toBeNull();
     expect(created.phase).toBeNull();
   });
 
-  it("COALESCE(readyForReviewAt, readyForPatchAt, readyForDeployAt) ordering returns oldest item first across mixed phases", async () => {
+  it("COALESCE(readyForReviewAt, readyForPatchAt, readyForMergeAt) ordering returns oldest item first across mixed phases", async () => {
     // Insert PRs with different phase timestamps — oldest ready timestamp wins
     await prisma.pullRequest.create({
       data: {
@@ -116,23 +116,23 @@ describeOrSkip("PullRequest model (integration)", () => {
       data: {
         repo: "app-vitals/shipwright",
         prNumber: 603,
-        phase: "deploy",
-        readyForDeployAt: "2026-07-01T03:00:00.000Z",
+        phase: "merge",
+        readyForMergeAt: "2026-07-01T03:00:00.000Z",
       },
     });
 
     const rows = await prisma.$queryRaw<{ prNumber: number; ready: string }[]>`
       SELECT "prNumber",
-             COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") AS ready
+             COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt") AS ready
         FROM "PullRequest"
        WHERE "prNumber" IN (601, 602, 603)
-       ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC
+       ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForMergeAt") ASC
     `;
 
     expect(rows).toHaveLength(3);
     expect(rows[0].prNumber).toBe(602); // earliest: readyForReviewAt 01:00
     expect(rows[1].prNumber).toBe(601); // middle:   readyForPatchAt  02:00
-    expect(rows[2].prNumber).toBe(603); // latest:   readyForDeployAt 03:00
+    expect(rows[2].prNumber).toBe(603); // latest:   readyForMergeAt 03:00
   });
 
   it("round-trips prCreatedAt", async () => {
@@ -400,10 +400,10 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     },
   );
 
-  it("claim(phase=deploy) sets phase=deploy, readyForDeployAt if null, does not clear reviewState", async () => {
+  it("claim(phase=merge) sets phase=merge, readyForMergeAt if null, does not clear reviewState", async () => {
     const repo = "app-vitals/shipwright";
     const prNumber = 701;
-    const commitSha = "sha-deploy";
+    const commitSha = "sha-merge";
 
     await prisma.pullRequest.create({
       data: {
@@ -413,7 +413,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
         reviewState: "approved",
         phase: "patch",
         claimedBy: null,
-        readyForDeployAt: null,
       },
     });
 
@@ -422,11 +421,11 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-c",
-      "deploy",
+      "merge",
     );
-    expect(result.record.phase).toBe("deploy");
+    expect(result.record.phase).toBe("merge");
     expect(result.record.reviewState).toBe("approved");
-    expect(result.record.readyForDeployAt).not.toBeNull();
+    expect(result.record.readyForMergeAt).not.toBeNull();
   });
 
   it("claim(phase=review) sets phase=review and reviewState=in_progress", async () => {
@@ -683,7 +682,7 @@ describeOrSkip(
       expect(completed.readyForPatchAt).toBe(now.toISOString());
     });
 
-    it("update() sets readyForDeployAt=now when reviewState transitions to approved and it is unset", async () => {
+    it("update() sets readyForMergeAt=now when reviewState transitions to approved and it is unset", async () => {
       const now = new Date("2026-07-01T11:00:00.000Z");
       const clock = FixedClock(now);
       const svc = new PullRequestService(prisma, clock);
@@ -694,14 +693,14 @@ describeOrSkip(
         "sha-approve",
         "agent-a",
       );
-      expect(created.readyForDeployAt).toBeNull();
+      expect(created.readyForMergeAt).toBeNull();
 
       const updated = await svc.update(created.id, { reviewState: "approved" });
       expect(updated.reviewState).toBe("approved");
-      expect(updated.readyForDeployAt).toBe(now.toISOString());
+      expect(updated.readyForMergeAt).toBe(now.toISOString());
     });
 
-    it("update() does not overwrite readyForDeployAt if already set when approving", async () => {
+    it("update() does not overwrite readyForMergeAt if already set when approving", async () => {
       const now = new Date("2026-07-01T12:00:00.000Z");
       const clock = FixedClock(now);
       const svc = new PullRequestService(prisma, clock);
@@ -711,9 +710,9 @@ describeOrSkip(
         802,
         "sha-approve-2",
         "agent-a",
-        "deploy",
+        "merge",
       );
-      expect(created.readyForDeployAt).toBe(now.toISOString());
+      expect(created.readyForMergeAt).toBe(now.toISOString());
 
       const later = new Date("2026-07-01T13:00:00.000Z");
       const laterClock = FixedClock(later);
@@ -721,10 +720,10 @@ describeOrSkip(
       const updated = await svcLater.update(created.id, {
         reviewState: "approved",
       });
-      expect(updated.readyForDeployAt).toBe(now.toISOString());
+      expect(updated.readyForMergeAt).toBe(now.toISOString());
     });
 
-    it("update() respects an explicitly provided readyForDeployAt when approving", async () => {
+    it("update() respects an explicitly provided readyForMergeAt when approving", async () => {
       const now = new Date("2026-07-01T14:00:00.000Z");
       const clock = FixedClock(now);
       const svc = new PullRequestService(prisma, clock);
@@ -735,14 +734,14 @@ describeOrSkip(
         "sha-approve-3",
         "agent-a",
       );
-      expect(created.readyForDeployAt).toBeNull();
+      expect(created.readyForMergeAt).toBeNull();
 
       const explicit = "2026-06-30T00:00:00.000Z";
       const updated = await svc.update(created.id, {
         reviewState: "approved",
-        readyForDeployAt: explicit,
+        readyForMergeAt: explicit,
       });
-      expect(updated.readyForDeployAt).toBe(explicit);
+      expect(updated.readyForMergeAt).toBe(explicit);
     });
   },
 );
@@ -837,16 +836,16 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
       },
     });
 
-    // PR 3: approved (ready for deploy), readyForDeployAt=T+3
+    // PR 3: approved (ready for merge), readyForMergeAt=T+3
     await prisma.pullRequest.create({
       data: {
         repo: "app-vitals/shipwright",
         prNumber: 912,
-        commitSha: "sha-deploy",
+        commitSha: "sha-merge",
         reviewState: "approved",
         state: "open",
         claimedBy: null,
-        readyForDeployAt: "2026-07-01T03:00:00.000Z",
+        readyForMergeAt: "2026-07-01T03:00:00.000Z",
       },
     });
 
@@ -857,7 +856,7 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
     expect(result?.phase).toBe("review");
   });
 
-  it("claimNext() determines phase from reviewState: pending→review, posted→patch, approved→deploy", async () => {
+  it("claimNext() determines phase from reviewState: pending→review, posted→patch, approved→merge", async () => {
     // Only one PR, posted
     await prisma.pullRequest.create({
       data: {
@@ -875,6 +874,29 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
     expect(result).not.toBeNull();
     expect(result?.phase).toBe("patch");
     expect(result?.pr.phase).toBe("patch");
+  });
+
+  it("claimNext() claims an approved PR in phase=merge and stamps readyForMergeAt when null (MPD-3.5)", async () => {
+    const now = new Date("2026-07-01T10:00:00.000Z");
+    const svc = new PullRequestService(prisma, FixedClock(now));
+
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 925,
+        commitSha: "sha-approved",
+        reviewState: "approved",
+        state: "open",
+        claimedBy: null,
+        readyForMergeAt: null,
+      },
+    });
+
+    const result = await svc.claimNext("agent-z", 5);
+    expect(result).not.toBeNull();
+    expect(result?.phase).toBe("merge");
+    expect(result?.pr.phase).toBe("merge");
+    expect(result?.pr.readyForMergeAt).toBe(now.toISOString());
   });
 
   it("claimNext() sets readyForReviewAt=now on first claim (when null)", async () => {
@@ -1994,7 +2016,7 @@ describeOrSkip(
       expect(row.phase).toBeNull();
     });
 
-    it("PATCH /prs/:id to approved releases the claim and stamps readyForDeployAt", async () => {
+    it("PATCH /prs/:id to approved releases the claim and stamps readyForMergeAt", async () => {
       const id = await seedClaimedReviewPr(3101);
 
       const res = await app.request(`/prs/${id}`, {
@@ -2008,7 +2030,7 @@ describeOrSkip(
       expect(row).not.toBeNull();
       if (!row) return;
       expect(row.reviewState).toBe("approved");
-      expect(row.readyForDeployAt).not.toBeNull();
+      expect(row.readyForMergeAt).not.toBeNull();
       expect(row.claimedBy).toBeNull();
       expect(row.claimedAt).toBeNull();
       expect(row.heartbeatAt).toBeNull();

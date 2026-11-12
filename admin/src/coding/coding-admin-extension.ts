@@ -18,6 +18,12 @@
  *   openApi             — the coding API routes' fragment of admin/openapi.json,
  *                         placed where they sat before the split
  *   backgroundPasses    — the session alert sweeper
+ *   specialtyDefaults   — the coding specialty's default crons, tools and
+ *                         plugin (coding/coding-specialty-defaults.ts)
+ *   agentTypes          — the `coding` type in the new-agent picker
+ *   openWork            — the GitHub reconcile's open-work port: lists and
+ *                         blocks the agent's open tasks/PRs on removed repos
+ *                         (coding/reconcile-open-work.ts)
  *
  * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
  * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
@@ -34,10 +40,7 @@ import type {
   AdminExtension,
   AdminExtensionContext,
 } from "@app-vitals/agent-admin/admin-extension";
-import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
+import type { OpenWorkPort } from "@app-vitals/agent-admin/reconcile-open-work";
 import type { ServiceIntegration } from "@app-vitals/agent-admin/service-integration";
 import { codingAgentDetailCards } from "./admin-ui-agent-cards.ts";
 import {
@@ -50,11 +53,21 @@ import {
   codingAdminOpenApi,
   createCodingAdminApiApp,
 } from "./agents-api-coding.ts";
+import { codingSpecialtyDefaults } from "./coding-specialty-defaults.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "./coding-task-store-provisioning-client.ts";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
+import { createTaskStoreOpenWorkPort } from "./reconcile-open-work.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
 } from "./session-alert-sweeper.ts";
+import {
+  type SessionFollowPrismaLike,
+  SessionFollowService,
+} from "./session-follow-service.ts";
 import { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
 import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 
@@ -159,6 +172,20 @@ export function taskStoreFetchers(
   return url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {};
 }
 
+/**
+ * The GitHub reconcile's open-work port (GHE-3.6), backed by the task-store.
+ * Unconfigured → nothing supplied, so the reconcile lists and blocks nothing.
+ */
+export function openWorkService(env: NodeJS.ProcessEnv): {
+  openWork?: OpenWorkPort;
+} {
+  const url = env.SHIPWRIGHT_TASK_STORE_URL;
+  const adminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  return url && adminToken
+    ? { openWork: createTaskStoreOpenWorkPort({ url, adminToken }) }
+    : {};
+}
+
 // One AgentPhaseMethodologyService per Prisma client, shared by every hook.
 const phaseMethodologyServices = new WeakMap<
   object,
@@ -184,6 +211,7 @@ export const codingAdminExtension: AdminExtension = {
       queueActivityLinks: true,
     },
     agentPhaseMethodologyService: phaseMethodologyService(ctx),
+    ...openWorkService(ctx.env),
   }),
   apiRoutes: (ctx) => [
     {
@@ -196,6 +224,9 @@ export const codingAdminExtension: AdminExtension = {
           ctx.prisma,
           undefined,
           taskStoreFetchers(ctx.env),
+        ),
+        sessionFollowService: new SessionFollowService(
+          ctx.prisma as unknown as SessionFollowPrismaLike,
         ),
         agentTokenService: ctx.services.agentTokenService,
         agentMemberService: ctx.services.agentMemberService,
@@ -251,6 +282,8 @@ export const codingAdminExtension: AdminExtension = {
     });
   },
   openApi: codingAdminOpenApi,
+  specialtyDefaults: codingSpecialtyDefaults,
+  agentTypes: () => [{ name: "coding", displayName: "Coding Agent" }],
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);
     return pass ? [pass] : [];

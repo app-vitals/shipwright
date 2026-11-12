@@ -1,7 +1,7 @@
 /**
  * scripts/platform-docs-guard.ts
  *
- * Snapshot guard (PLD-2.1, same shape as the AGR-2.4 freeze guard).
+ * Snapshot guard (PLD-2.1, same shape as the retired AGR-2.4 freeze guard).
  * docs/platform/ is a generated, read-only snapshot of the platform docs. This
  * fails any PR that touches it unless the PR comes from the platform release
  * bump branch, the only writer.

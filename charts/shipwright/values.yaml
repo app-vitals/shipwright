@@ -222,7 +222,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.304.0
+    tag: admin-v1.327.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -298,6 +298,10 @@ admin:
   doc:
     # -- Enable the doc feature (sets SHIPWRIGHT_ADMIN_DOC_ENABLED).
     enabled: false
+  # -- Pod ServiceAccount configuration.
+  podServiceAccount:
+    # -- Enable the pod ServiceAccount flag (sets SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED).
+    enabled: false
   # -- Cron run-now configuration.
   cronRunNow:
     # -- Enable the cron run-now route (sets SHIPWRIGHT_CRON_RUN_NOW_ENABLED).
@@ -355,7 +359,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.163.0
+    tag: metrics-v1.178.7
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -483,7 +487,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.437.0
+    tag: agent-v1.460.0
     pullPolicy: ""
   service:
     port: 3000
@@ -506,7 +510,14 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.437.0
+      tag: agent-v1.460.0
+    # -- Per-specialty agent images, keyed by specialty name (e.g. `coding`). Each
+    # entry takes `repository` (required) and `tag`, same shape as `image`. The
+    # admin Deployment receives the map as JSON in SHIPWRIGHT_AGENT_IMAGES; agents of
+    # a listed specialty are provisioned with that image instead of `image`.
+    # Empty (default) → env var omitted and every agent uses `image`.
+    # Example: { coding: { repository: ghcr.io/acme/agent-coding, tag: v1 } }
+    images: {}
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -959,7 +970,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.211.0
+    tag: task-store-v1.228.8
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -1134,14 +1145,14 @@ mcpServer:
     # -- Name of the mcp-server ServiceAccount. Generated if empty and create=true.
     name: ""
 
-# -- Chat service (@shipwright/chat) — Thread/Message store + scoped tokens. Port 3000.
+# -- Chat service (ghcr.io/app-vitals/agent-chat, published by app-vitals/agent) — Thread/Message store + scoped tokens. Port 3000.
 # Disabled by default — purely additive, safe to deploy without this.
 chat:
   # -- Whether to render the chat Deployment and Service.
   enabled: false
   image:
-    repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.161.0
+    repository: ghcr.io/app-vitals/agent-chat
+    tag: 1.36.2
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.

@@ -64,7 +64,7 @@ export interface paths {
         get?: never;
         /**
          * Set a phase's subagent-type override
-         * @description Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.
+         * @description Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). For the `review` phase only, `subagentType` may be a comma-separated list of up to 5 subagent types; entries are trimmed, duplicates dropped, and empty entries rejected. Any other phase rejects a multi-value list with a 400. `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.
          */
         put: {
             parameters: {
@@ -91,7 +91,7 @@ export interface paths {
                         "application/json": components["schemas"]["PhaseMethodologyWrapper"];
                     };
                 };
-                /** @description Bad request — invalid phase */
+                /** @description Bad request — invalid phase, or an invalid/disallowed subagentType list */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -127,13 +127,15 @@ export interface paths {
         };
         /**
          * Get dev-task adherence report
-         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.
+         * @description Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Each series also carries `outcomes` (DTA-8.2): PRs, mean patch/review cycles, share of tasks with 0 and 2+ patch cycles, CI first-pass rate and mean ciFixAttempts, computed over tasks whose runs all used one arm; tasks that ran in more than one commandVariant are excluded and reported as `counts.mixedTasks`. Each series also carries `cost` (DTA-9.3): mean cost per run and token totals summed from the run's model breakdown (arm series exclude mixed-arm tasks; overall keeps every run). With `command=patch`, each series also carries `patchGuardrails` — repeat-patch rate (patched again after a push), CI-green-after-patch rate (a proxy: patched PRs with no CI failure recorded) and mean patch cycles over single-arm PRs — and `counts.mixedPrs` reports PRs that ran in both arms. Optional `from`/`to` ISO datetime params bound startedAt. Optional `command` (`dev-task` default, or `patch`) selects which phase to score: patch runs are scored against the patch required-steps table (lane-agnostic first cut; fix dispatch and PR-record push proof measured, other steps unmeasured) and grouped by commandVariant, with `command` echoed in the response.
          */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
+                    /** @description Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table. */
+                    command?: "dev-task" | "patch";
                 };
                 header?: never;
                 path?: never;
@@ -198,13 +200,15 @@ export interface paths {
         };
         /**
          * Get this agent's dev-task adherence report
-         * @description Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.
+         * @description Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to`/`command` params as GET /agents/all/cron-runs/dev-task-adherence.
          */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
+                    /** @description Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table. */
+                    command?: "dev-task" | "patch";
                 };
                 header?: never;
                 path: {
@@ -350,6 +354,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/session-follows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's followed sessions
+         * @description Returns the session slugs of the non-muted SessionFollow rows belonging to the signed-in user. The user is taken from the verified session token (`admin_session` cookie) — never from the request — so a caller can only read their own follows. Bearer credentials (agent tokens, admin API keys) carry no user identity and are rejected with 403.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Non-muted followed session slugs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionFollowsResponse"];
+                    };
+                };
+                /** @description Missing or invalid token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Credential is not bound to a user (bearer token) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Session follows not configured */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -383,7 +453,10 @@ export interface components {
             phaseMethodology: components["schemas"]["AgentPhaseMethodology"];
         };
         PutAgentPhaseMethodologyBody: {
-            /** @example shipwright:code-reviewer */
+            /**
+             * @description Subagent type for the phase, or null to clear. For the `review` phase only, a comma-separated list of up to 5 types (trimmed, de-duplicated, no empty entries); other phases accept a single value.
+             * @example shipwright:code-reviewer
+             */
             subagentType: string | null;
         };
         WorkQueueSnapshotWrapper: {
@@ -420,7 +493,7 @@ export interface components {
              * @example dev-task
              * @enum {string}
              */
-            phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
+            phase: "dev-task" | "plan" | "review" | "patch" | "merge";
             /**
              * @description ISO timestamp
              * @example 2026-01-01T00:00:00.000Z
@@ -434,6 +507,10 @@ export interface components {
              */
             computedAt: string;
             items: components["schemas"]["RankedWorkItem"][];
+        };
+        SessionFollowsResponse: {
+            /** @description Slugs of the sessions the caller follows and has not muted */
+            sessionSlugs: string[];
         };
     };
     responses: never;

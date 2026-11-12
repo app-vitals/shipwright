@@ -143,7 +143,7 @@ otherwise `APPROVE`. The body's `Verdict: ...` label reflects the actual quality
 
 APPROVE means the PR is clean enough to merge: no unresolved prior findings and no
 important/critical finding surfaced in this pass. If there is anything blocking or
-important, COMMENT so it gets addressed before the deploy pipeline runs.
+important, COMMENT so it gets addressed before the merge phase runs.
 
 **Never use REQUEST_CHANGES** -- it blocks the PR and requires the reviewer to
 dismiss. COMMENT achieves the same signal without the hard block.

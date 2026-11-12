@@ -71,7 +71,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -99,6 +98,9 @@ function fakeTaskService(
   } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?: TaskListFilters) {
       if (opts.capturedListFilters && filters) {
         opts.capturedListFilters.push({ ...filters });

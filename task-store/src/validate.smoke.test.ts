@@ -106,7 +106,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -134,6 +133,9 @@ function fakeTaskService(
   opts: { getResult?: Task | null } = {},
 ): TaskServiceLike {
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(_filters?: TaskListFilters): Promise<TaskListResult> {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
     },

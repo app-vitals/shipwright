@@ -6,14 +6,14 @@ import {
   resolveAdminExtensions,
 } from "@app-vitals/agent-admin/admin-extension";
 import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "@app-vitals/agent-admin/coding-task-store-provisioning-client";
-import {
   codingAdminExtension,
   taskStoreFetchers,
   taskStoreServiceIntegration,
 } from "./coding-admin-extension.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "./coding-task-store-provisioning-client.ts";
 
 const ctx = {
   env: {},
@@ -35,6 +35,12 @@ describe("codingAdminExtension", () => {
     expect(
       resolveAdminExtensions([], ctx).agentPhaseMethodologyService,
     ).toBeUndefined();
+  });
+
+  it("contributes the coding agent type", () => {
+    expect(codingAdminExtension.agentTypes?.()).toEqual([
+      { name: "coding", displayName: "Coding Agent" },
+    ]);
   });
 
   it("is named coding", () => {
@@ -67,6 +73,7 @@ describe("codingAdminExtension", () => {
       "/agents/{id}/phase-methodology",
       "/agents/{id}/phase-methodology/{phase}",
       "/agents/{id}/work-queue",
+      "/session-follows",
     ]);
     // Every contributed path has a placement, so the composed document keeps
     // the pre-split path order.
@@ -188,5 +195,30 @@ describe("taskStoreServiceIntegration", () => {
       HttpTaskStoreProvisioningClient.prototype.listTokensForAgent = orig;
     }
     expect(NoopTaskStoreProvisioningClient).toBeDefined();
+  });
+});
+
+describe("codingAdminExtension open-work port (GHE-3.6)", () => {
+  it("supplies the open-work seam when the task-store is configured", () => {
+    const configured = {
+      ...ctx,
+      env: {
+        SHIPWRIGHT_TASK_STORE_URL: "http://task-store.test",
+        SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin-token",
+      },
+    } as unknown as AdminExtensionContext;
+    const { openWork } = resolveAdminExtensions(
+      [codingAdminExtension],
+      configured,
+    );
+    expect(typeof openWork?.listOpenWork).toBe("function");
+    expect(typeof openWork?.blockOpenWork).toBe("function");
+  });
+
+  it("supplies no open-work port without a task-store configuration, or without the extension", () => {
+    expect(
+      resolveAdminExtensions([codingAdminExtension], ctx).openWork,
+    ).toBeUndefined();
+    expect(resolveAdminExtensions([], ctx).openWork).toBeUndefined();
   });
 });

@@ -40,7 +40,7 @@ PR can independently qualify for List A (findings), List C (conflicts), and/or L
 failures) in the same cycle, and the built-in caller dispatches the classification/fix-strategy
 step once per qualifying list (List C first, then List A, then List D), so a given invocation's
 input reflects only the list(s) that triggered it, not the PR's full state across all three. This
-is a distinct shape nuance from the deploy-phase contract, which always carries a single, uniform
+is a distinct shape nuance from the merge-phase contract, which always carries a single, uniform
 input shape per dispatch.
 
 - **PR metadata** — always present, on every dispatch regardless of which list(s) qualified:
@@ -109,7 +109,7 @@ BLOCKER: (if BLOCKED)
   BLOCKED with a `blocker` explanation of what could not be completed and why. The caller (
   `/shipwright:patch`) is the one that runs `references/escalation-pattern.md`'s shared
   PATCH/comment/release sequence in response to a BLOCKED report — the same "caller performs the
-  actual side effect, subagent only reports a verdict" pattern the deploy-phase contract uses for
+  actual side effect, subagent only reports a verdict" pattern the merge-phase contract uses for
   its own task-store status transitions.
 
 ## Scope

@@ -730,9 +730,20 @@ describe("admin UI — PRs page", () => {
 
   it("GET /admin/prs unauthenticated redirects to /admin/login", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request("/admin/prs");
+    const res = await app.request("/admin/prs", {
+      headers: { "Sec-Fetch-Mode": "navigate" },
+    });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/admin/login");
+    expect(res.headers.get("Location")).toBe(
+      `/admin/login?returnTo=${encodeURIComponent("/admin/prs")}`,
+    );
+  });
+
+  it("unauthenticated non-navigation request to /admin/prs returns 401 signed_out", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps());
+    const res = await app.request("/admin/prs");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "signed_out" });
   });
 
   it("GET /admin/prs returns 403 for non-admin authenticated user", async () => {

@@ -408,6 +408,86 @@
         }
       }
     },
+    "/tasks/by-pr": {
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Mark merged tasks deployed or released by PR number",
+        "description": "For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of `repo` whose `pr` is in `prNumbers` and whose status is `merged` is moved to `status` (`deployed` | `released`) and its `deployedAt`/`releasedAt` is stamped with `at` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported `unchanged` (idempotent); tasks in any other status are `skipped` with their status and never modified. At most 100 PR numbers per call. Equivalent manual flow: `GET /tasks?pr=&repo=` then `PATCH /tasks/:id`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchTasksByPrBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-task outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchTasksByPrResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — empty or more than 100 prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — a task changed status concurrently; the whole call was rolled back, retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Webhook delivery failed; the whole call was rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tasks/distinct": {
       "get": {
         "tags": [
@@ -989,7 +1069,7 @@
           "tasks"
         ],
         "summary": "Record a skip — increments skipCount, auto-blocks at threshold",
-        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `\"unspecified\"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.",
+        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `\"unspecified\"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.",
         "parameters": [
           {
             "schema": {
@@ -1122,8 +1202,8 @@
         "tags": [
           "tasks"
         ],
-        "summary": "Atomically unblock a task back to pending",
-        "description": "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).",
+        "summary": "Atomically unblock a task to pending, pr_open, merged, deployed or released",
+        "description": "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.",
         "parameters": [
           {
             "schema": {
@@ -1135,6 +1215,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnblockBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Unblocked task",
@@ -1142,6 +1232,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — unknown `to`, or a non-pending `to` on a task with no `pr`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1177,7 +1277,7 @@
             }
           },
           "409": {
-            "description": "Conflict — task is not currently blocked",
+            "description": "Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given",
             "content": {
               "application/json": {
                 "schema": {
@@ -1703,7 +1803,7 @@
           "PRs"
         ],
         "summary": "Claim a pull request (atomic)",
-        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
+        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1808,7 +1908,7 @@
           "PRs"
         ],
         "summary": "Batch upsert PR origin/author/branch/title/state metadata",
-        "description": "Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.",
+        "description": "Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1953,7 +2053,7 @@
           "PRs"
         ],
         "summary": "Update pull request fields",
-        "description": "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+        "description": "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
         "parameters": [
           {
             "schema": {
@@ -2260,6 +2360,58 @@
           },
           "404": {
             "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/{id}/unblock": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
+        "description": "Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unblocked PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the PR is not currently blocked",
             "content": {
               "application/json": {
                 "schema": {
@@ -2914,8 +3066,8 @@
               "approved",
               "merged",
               "done",
-              "deploying",
               "deployed",
+              "released",
               "blocked",
               "cancelled"
             ],
@@ -3067,19 +3219,19 @@
             ],
             "example": "2026-01-05T00:00:00.000Z"
           },
-          "deployingAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
           "deployedAt": {
             "type": [
               "string",
               "null"
             ],
             "example": "2026-01-06T00:00:00.000Z"
+          },
+          "releasedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
           },
           "ciFixAttempts": {
             "type": [
@@ -3468,6 +3620,92 @@
         "maxItems": 500,
         "description": "Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it."
       },
+      "PatchTasksByPrResponse": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of `merged` tasks moved to the requested status."
+          },
+          "unchanged": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of tasks already at the requested status (no-op)."
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ]
+            },
+            "description": "Matching tasks in any other status; never modified. Carries their current status."
+          }
+        },
+        "required": [
+          "updated",
+          "unchanged",
+          "skipped"
+        ]
+      },
+      "PatchTasksByPrBody": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1,
+            "example": "org/repo"
+          },
+          "prNumbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "example": [
+              101,
+              102
+            ],
+            "description": "PR numbers of `repo`, 1 to 100 positive integers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "deployed",
+              "released"
+            ],
+            "example": "deployed"
+          },
+          "at": {
+            "type": "string",
+            "minLength": 1,
+            "example": "2026-07-02T00:00:00.000Z",
+            "description": "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now."
+          }
+        },
+        "required": [
+          "repo",
+          "prNumbers",
+          "status"
+        ]
+      },
       "DistinctResponse": {
         "type": "object",
         "properties": {
@@ -3539,6 +3777,22 @@
           "reason": {
             "type": "string",
             "example": "dev-task:deferred:unmet-hidden-requirement"
+          }
+        }
+      },
+      "UnblockBody": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pr_open",
+              "merged",
+              "deployed",
+              "released"
+            ],
+            "description": "Target status. Omit to infer from task.pr and the PR record (never deployed/released)."
           }
         }
       },
@@ -3790,7 +4044,7 @@
               "null"
             ],
             "example": "abc123def456",
-            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping."
+            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping."
           },
           "patchCycles": {
             "type": "integer",
@@ -3867,7 +4121,7 @@
             "enum": [
               "review",
               "patch",
-              "deploy",
+              "merge",
               null
             ],
             "example": "review"
@@ -3886,7 +4140,7 @@
             ],
             "example": null
           },
-          "readyForDeployAt": {
+          "readyForMergeAt": {
             "type": [
               "string",
               "null"
@@ -4233,7 +4487,7 @@
             "enum": [
               "review",
               "patch",
-              "deploy"
+              "merge"
             ],
             "example": "patch",
             "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)"
@@ -4300,7 +4554,7 @@
             "enum": [
               "review",
               "patch",
-              "deploy"
+              "merge"
             ],
             "example": "review"
           }

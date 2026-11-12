@@ -16,27 +16,29 @@ import { describe, expect, test } from "bun:test";
 import {
   ADMIN_DEV_LOGIN_URL,
   ADMIN_PORT,
-  CHAT_SERVICE_PORT,
-  DASHBOARD_URL,
-  DEV_CHAT_ADMIN_TOKEN,
-  DEV_CHAT_AGENT_TOKEN,
-  METRICS_PORT,
-  type Pane,
-  SESSION_NAME,
-  STACK_PANES,
-  TASK_STORE_PORT,
   brewFormulaInstalled,
   buildLogsBanner,
   buildStackCommands,
   buildTeardownCommands,
+  CHAT_SERVICE_PORT,
+  DASHBOARD_URL,
+  DEFAULT_PLATFORM_DIR,
+  DEV_CHAT_ADMIN_TOKEN,
+  DEV_CHAT_AGENT_TOKEN,
   dbReachable,
   devAgentEnvPreflight,
+  METRICS_PORT,
   missingWorkspaceDeps,
+  type Pane,
+  PLATFORM_DIR_VAR,
   planPostgresSetup,
   runStack,
   runTeardown,
+  SESSION_NAME,
+  STACK_PANES,
   sessionExists,
   sessionExistsMessage,
+  TASK_STORE_PORT,
 } from "./dev-tmux.ts";
 
 // ---------------------------------------------------------------------------
@@ -72,19 +74,23 @@ describe("buildTeardownCommands (stack:down)", () => {
     expect(cmds).toEqual([
       ["tmux", "kill-session", "-t", SESSION_NAME],
       ["docker", "rm", "-f", "shipwright-agent-dev"],
+      ["docker", "rm", "-f", "shipwright-chat-dev"],
     ]);
   });
 
   test("removes the container (not just the session) — the orphan tmux leaves", () => {
     const cmds = buildTeardownCommands();
-    const dockerRm = cmds.find((c) => c[0] === "docker");
+    const dockerRm = cmds.find(
+      (c) => c[0] === "docker" && c[3] === "shipwright-agent-dev",
+    );
     expect(dockerRm).toEqual(["docker", "rm", "-f", "shipwright-agent-dev"]);
   });
 
   test("honors injected session/container names", () => {
-    expect(buildTeardownCommands("sess", "cont")).toEqual([
+    expect(buildTeardownCommands("sess", "cont", "chat")).toEqual([
       ["tmux", "kill-session", "-t", "sess"],
       ["docker", "rm", "-f", "cont"],
+      ["docker", "rm", "-f", "chat"],
     ]);
   });
 });
@@ -299,11 +305,13 @@ describe("runStack — per-pane commands via injected exec", () => {
     expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_TASK_STORE=");
   });
 
-  test("chat-svc pane (pane 3) runs chat/src/main.ts with PORT=3003 and DATABASE_URL_SHIPWRIGHT_CHAT", () => {
+  test("chat-svc pane (pane 3) runs the platform checkout's chat/src/main.ts with PORT=3003 and DATABASE_URL_SHIPWRIGHT_CHAT", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
-    expect(sk).toContain("chat/src/main.ts");
+    expect(sk).toContain(`\${${PLATFORM_DIR_VAR}:-${DEFAULT_PLATFORM_DIR}}`);
+    expect(sk).toContain("/chat/src/main.ts");
+    expect(sk).not.toContain(" chat/src/main.ts");
     expect(sk).toContain(`PORT=${CHAT_SERVICE_PORT}`);
     expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_CHAT=");
   });
@@ -894,35 +902,70 @@ describe("task-store pane", () => {
 });
 
 describe("chat-svc pane", () => {
-  test("a chat-svc pane exists and runs chat/src/main.ts on :3003 with its own DB", () => {
+  // CHX-3.3: chat moved to app-vitals/agent. The pane runs the platform
+  // checkout (same cross-repo dev mechanism as docs/local-platform-development.md)
+  // or, when SHIPWRIGHT_CHAT_IMAGE is set, the published agent-chat image.
+  test("a chat-svc pane exists and runs the platform chat/src/main.ts on :3003 with its own DB", () => {
     const chatSvc = STACK_PANES.find((p) => p.label === "chat-svc") as Pane;
     expect(chatSvc).toBeDefined();
-    expect(chatSvc.cmd.join(" ")).toContain("chat/src/main.ts");
+    expect(chatSvc.cmd.join(" ")).toContain("/chat/src/main.ts");
+    expect(chatSvc.cmd.join(" ")).toContain(PLATFORM_DIR_VAR);
     expect(chatSvc.env?.PORT).toBe(String(CHAT_SERVICE_PORT));
     expect(chatSvc.env?.DATABASE_URL_SHIPWRIGHT_CHAT).toContain("postgresql:");
   });
 
-  test("chat prisma preflight (generate → migrate) fires BEFORE the chat-svc pane command", () => {
+  test("no chat/ workspace path is referenced by any preflight or pane (chat/ is no longer started from this repo)", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    for (const c of cmds) {
+      const line = c.argv.join(" ");
+      expect(line).not.toContain("cd chat");
+      expect(line).not.toMatch(/(^|\s)chat\/src\/main\.ts/);
+    }
+  });
+
+  test("platform-checkout preflight verifies the checkout exists BEFORE the chat-svc pane command", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const preflightIdx = cmds.findIndex(
       (c) =>
         c.kind === "preflight" &&
-        c.argv.join(" ").includes("cd chat") &&
-        c.argv.join(" ").includes("prisma generate"),
+        c.argv.join(" ").includes(PLATFORM_DIR_VAR) &&
+        c.argv.join(" ").includes("chat/src/main.ts"),
     );
     const chatSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes("chat/src/main.ts")),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     expect(preflightIdx).toBeGreaterThanOrEqual(0);
-    expect(chatSendKeysIdx).toBeGreaterThanOrEqual(0);
     expect(preflightIdx).toBeLessThan(chatSendKeysIdx);
-    const cmd = cmds[preflightIdx]?.argv.join(" ") ?? "";
-    expect(cmd).toContain("DATABASE_URL_SHIPWRIGHT_CHAT=");
-    expect(cmd.indexOf("prisma generate")).toBeLessThan(
-      cmd.indexOf("migrate deploy"),
+    expect(cmds[preflightIdx]?.argv.join(" ")).toContain(
+      "docs/local-platform-development.md",
     );
+  });
+
+  test("image mode runs the published agent-chat image on :3003 against the dev DB", () => {
+    const image = "ghcr.io/app-vitals/agent-chat:0.7.1";
+    const { calls, exec } = makeRecorder();
+    runStack(STACK_PANES, exec, { chatImage: image });
+    const sk = sendKeysForPane(calls, 3)?.join(" ") ?? "";
+    expect(sk).toContain("docker run");
+    expect(sk).toContain(image);
+    expect(sk).toContain(`-p ${CHAT_SERVICE_PORT}:3000`);
+    expect(sk).toContain("DATABASE_URL_SHIPWRIGHT_CHAT=");
+    expect(sk).toContain("host.docker.internal:5432/shipwright_chat_dev");
+    expect(sk).not.toContain("chat/src/main.ts");
+    // No platform-checkout preflight in image mode, but stale containers are cleared.
+    const cmds = buildStackCommands(STACK_PANES, { chatImage: image });
+    expect(
+      cmds.some((c) => c.argv.join(" ").includes("chat/src/main.ts")),
+    ).toBe(false);
+    expect(
+      cmds.some(
+        (c) =>
+          c.kind === "preflight" &&
+          c.argv.join(" ").includes("docker rm -f shipwright-chat-dev"),
+      ),
+    ).toBe(true);
   });
 
   // Retired (ATS-6.1): the chat-token seed call used to run as its own
@@ -934,10 +977,15 @@ describe("chat-svc pane", () => {
   // assertions). The chat-svc migrate-deploy preflight itself is unchanged —
   // it still must run before the agent pane's later seed call, so the
   // ChatToken table exists in time.
-  test("chat-svc migrate deploy preflight fires before the agent pane's send-keys (which seeds chat tokens later)", () => {
+  // Migrations now run in the platform chat service's own boot preflight
+  // (chat/src/main.ts), so the chat-svc send-keys is what must precede the
+  // agent pane's later seed call.
+  test("chat-svc pane starts before the agent pane's send-keys (which seeds chat tokens later)", () => {
     const cmds = buildStackCommands(STACK_PANES);
-    const chatMigrateIdx = cmds.findIndex((c) =>
-      c.argv.join(" ").includes("DATABASE_URL_SHIPWRIGHT_CHAT="),
+    const chatMigrateIdx = cmds.findIndex(
+      (c) =>
+        c.kind === "send-keys" &&
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.3`)),
     );
     const agentSendKeysIdx = cmds.findIndex(
       (c) =>

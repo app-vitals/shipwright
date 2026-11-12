@@ -4,28 +4,66 @@
 // architecture split is the sorting criterion. Every competitor claim below
 // is sourced from goals/drafts/devin-alternative-positioning-research.md's
 // safe-to-print register (2026-07-14), re-verified against vendor primary
-// sources on 2026-10-02 (Cursor and Factory rows updated), and cited inline.
+// sources on 2026-10-02 (Cursor and Factory rows updated) and again on 2026-11-02
+// (Factory, OpenHands and Cursor rows updated), and cited inline.
 // Re-verify before any future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under. OpenCode is
 // deliberately not named (unverified — never-print list).
+// The compliance FAQ (SAUL-SHF-1.1) is sourced from
+// site/src/content/docs/security.mdx and must stay consistent with it.
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
 import { escapeHtml } from "../lib/html-escape";
 
-const verifiedDate = "October 2, 2026";
+const verifiedDate = "November 2, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
   cursor: "https://cursor.com/changelog/self-hosted-machines",
+  cursorSelfHosted: "https://cursor.com/docs/cloud-agent/self-hosted",
+  cursorAgentSdk: "https://cursor.com/docs/agent-sdk/deployment",
   openhandsPricing: "https://www.openhands.dev/pricing",
   openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
+  openhandsEnterprise: "https://github.com/OpenHands/enterprise",
   coder: "https://coder.com/docs",
   devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
   devinReleaseNotes: "https://docs.devin.ai/release-notes/2026",
   factoryDeployment: "https://docs.factory.com/enterprise/network-and-deployment",
   factoryPrivate: "https://factory.com/news/factory-private",
+  factoryAirgap: "https://docs.factory.com/enterprise/airgapped-deployment",
   factoryPricing: "https://factory.com/pricing",
+};
+
+// Compliance FAQ — rendered as HTML and as FAQPage JSON-LD from this one
+// array so the two can't drift. No certification claims beyond "SOC 2: no".
+const faqs = [
+  {
+    q: "Can Shipwright run inside our private VPC?",
+    a: "Yes. The admin service, task store, metrics and agent runtime deploy to infrastructure you own, with Docker or the Helm chart on your own Kubernetes cluster. Your repository and the agent's working copy stay there. By default every service is reachable only inside the cluster.",
+  },
+  {
+    q: "Does any data leave our infrastructure?",
+    a: "Yes, the model calls. Shipwright runs Claude Code, which sends prompts and the code context it needs to Anthropic's API on your own API key or Claude account. Agents also reach the services you connect, such as GitHub and Slack. Nothing goes to Shipwright or App Vitals, because there is no Shipwright-hosted service in the path.",
+  },
+  {
+    q: "Can several agents run at once, isolated from each other?",
+    a: "Yes. On Kubernetes each agent gets its own Deployment, persistent volume, Secret and scoped token. Self-serve tenant agent pods can be isolated with an opt-in NetworkPolicy (off by default, and enforced only if your CNI supports NetworkPolicy) that allows DNS, the Shipwright services and the public internet. For other agents, egress restriction is your own NetworkPolicy or firewall rules.",
+  },
+  {
+    q: "Is Shipwright SOC 2 certified?",
+    a: "No, not currently. Shipwright is MIT-licensed software you run, not a hosted service, so it runs under your own controls. A fully egress-locked or air-gapped deployment isn't supported out of the box, because agents need to reach the model API.",
+  },
+];
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
 };
 
 const architectureRows = [
@@ -43,17 +81,17 @@ const architectureRows = [
     license: "Proprietary",
     architecture: "Hybrid — no documented customer-controlled control plane.",
     detail:
-      "Self-hosted machines keep your codebase, build outputs and secrets on your own infrastructure, across eight supported compute providers, and the agent runs tool calls there. Cursor documents no option to run the orchestration layer yourself. No spec phase, no deploy stage.",
-    citation: src.cursor,
+      "Self-hosted machines keep your codebase, build outputs and secrets on your own infrastructure, and the agent runs tool calls there, but Cursor runs the agent loop, inference and planning. Its Agent SDK can be self-hosted, yet still signs in to Cursor's API. No spec phase, no deploy stage.",
+    citation: [src.cursor, src.cursorSelfHosted, src.cursorAgentSdk],
     self: false,
   },
   {
     tool: "OpenHands",
-    license: "MIT root, time-limited PolyForm carve-out on enterprise/",
-    architecture: "Productized VPC self-host is sales-gated.",
+    license: "MIT (Agent Canvas); commercial server in a separate repo under a PolyForm free-trial licence",
+    architecture: "Multi-user self-host is a paid commercial offering.",
     detail:
-      "The MIT license applies to the local tier; VPC self-hosting for the delivery-pipeline features is sold, not shipped free — the vendor's own site states \"Talk to sales\" for it.",
-    citation: src.openhandsPricing,
+      "The open-source Agent Canvas is MIT and free to self-host on a laptop or shared VM, automations and isolated Docker runtimes included. Multi-user identity, role-based access control and SSO for a self-hosted install are part of the vendor's paid commercial offering.",
+    citation: [src.openhandsPricing, src.openhandsLicense, src.openhandsEnterprise],
     self: false,
   },
   {
@@ -79,8 +117,8 @@ const architectureRows = [
     license: "Proprietary",
     architecture: "Cloud-orchestrated by default — running it yourself is sales-gated.",
     detail:
-      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). Factory Private, launched September 2026, does put the control plane in your own VPC or on-premises environment, with air-gapped configurations available — so it genuinely removes Factory's servers from the loop at runtime. It is in private preview and reachable only by contacting their team, with no self-serve path.",
-    citation: [src.factoryDeployment, src.factoryPrivate, src.factoryPricing],
+      "Factory Managed keeps the control plane in Factory's cloud. Factory Private, launched September 2026 and in private preview by request, runs Droid sandboxes in your VPC, but Factory still hosts the control plane by default. Only a Custom Deployment, airgapped builds included, puts all of Factory inside your network, and both go through Factory's sales team with no self-serve path.",
+    citation: [src.factoryDeployment, src.factoryPrivate, src.factoryAirgap, src.factoryPricing],
     self: false,
   },
 ];
@@ -136,7 +174,7 @@ const architectureTableRows = architectureRows.map((row) => {
 
 <BaseLayout
   title="Self-hosted AI coding agent — Shipwright Harness"
-  description="Shipwright is a self-hosted AI coding agent that runs entirely in your own cloud, control plane included — not a hybrid architecture with inference in someone else's cloud."
+  description="Shipwright is a self-hosted AI coding agent: the control plane, agent runtime and your code all run in your own cloud. Model calls go to Anthropic on your own key."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -185,6 +223,22 @@ const architectureTableRows = architectureRows.map((row) => {
       gated tier of it. Everyone else in the table above: see each vendor's
       own site for current terms, which change over time.
     </p>
+  </section>
+
+  <!-- Compliance FAQ (SAUL-SHF-1.1) — consistent with /docs/security. -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Questions security and compliance teams ask</h2>
+    {faqs.map(({ q, a }) => (
+      <>
+        <h3 class="mt-8">{q}</h3>
+        <p class="mt-3 max-w-2xl">{a}</p>
+      </>
+    ))}
+    <p class="mt-6 max-w-2xl">
+      Deployment model, egress, RBAC, secrets and logging, claim by claim:
+      <a href="/docs/security">Security architecture →</a>
+    </p>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
   </section>
 
   <!-- CTA -->

@@ -150,6 +150,7 @@ describe("createTaskStoreFetchers — adherence lookups (DTA-6.1)", () => {
       prCreatedAt: "t1",
       mergedAt: null,
       deployedAt: null,
+      ciFixAttempts: 2,
     };
     const { calls, fetchers } = make(() => new Response(JSON.stringify(task)));
     expect(await fetchers.getTask("DTA-6.1", "acct-a")).toEqual(task);

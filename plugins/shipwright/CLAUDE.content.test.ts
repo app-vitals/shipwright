@@ -5,7 +5,7 @@ import { join } from "node:path";
 const CLAUDE_MD_PATH = join(import.meta.dir, "CLAUDE.md");
 
 /** The five loop-dispatched pipeline phases after PDR-4.1 added `plan`. */
-const LOOP_PHASES = ["dev-task", "plan", "review", "patch", "deploy"] as const;
+const LOOP_PHASES = ["dev-task", "plan", "review", "patch", "merge"] as const;
 
 let fullContent: string;
 let independenceSection: string;
@@ -47,7 +47,7 @@ describe("CLAUDE.md — System Cron Changes is consistent with Candidate Selecti
     expect(systemCronSection).toContain("shipwright-loop");
   });
 
-  it("System Cron Changes reflects that dev-task, plan, review, patch, and deploy are dispatched phases, not independent crons", () => {
+  it("System Cron Changes reflects that dev-task, plan, review, patch, and merge are dispatched phases, not independent crons", () => {
     for (const phase of LOOP_PHASES) {
       expect(systemCronSection).toContain(phase);
     }
@@ -156,7 +156,7 @@ describe("CLAUDE.md — five-phase pipeline (PDR-4.1)", () => {
     expect(systemCronSection).toContain('parentCron: "shipwright-loop"');
     expect(systemCronSection).toContain(PLAN_KILL_SWITCH);
     expect(systemCronSection).toMatch(
-      /`deploy` and `plan` ship `enabled: false`/,
+      /`merge` and `plan` ship `enabled: false`/,
     );
   });
 });

@@ -281,14 +281,10 @@ shipwright/
 │   ├── research-docs.md         # Generate/update project documentation
 │   └── review.md                # Multi-agent code review
 ├── skills/
-│   ├── agent-admin/
-│   │   └── SKILL.md             # Manage Shipwright agents — crons, env vars, tools, tokens, plugins
 │   ├── pull-requests/
 │   │   └── SKILL.md             # Query PR records — filter by repo, state, reviewState, staged
 │   ├── review-staged/
 │   │   └── SKILL.md             # Conversational walkthrough of staged reviews
-│   ├── slack-say/
-│   │   └── SKILL.md             # Post a one-line progress ping to Slack at stage boundaries
 │   └── task-store/
 │       └── SKILL.md             # Query and update the task store — lifecycle invocations, env var config
 ├── references/
@@ -297,7 +293,7 @@ shipwright/
 │   ├── product-spec-template.md # PRODUCT-SPEC.md template for /prd
 │   └── toolchain-patterns.md    # Config file → command mapping
 ├── scripts/
-│   └── check-*.ts               # Cron precheck guards (dev-task, review, deploy, patch)
+│   └── check-*.ts               # Cron precheck guards (dev-task, review, merge, patch)
 ├── README.md
 └── TESTING.md
 ```

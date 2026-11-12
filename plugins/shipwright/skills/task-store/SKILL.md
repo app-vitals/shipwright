@@ -195,7 +195,7 @@ A task is ready when **all** of the following are true:
 - every dependency is satisfied per the dependency rules below (terminal status, same-branch PR, or merged cross-branch PR)
 
 **Dependency-satisfied rules** (first match wins):
-1. `dep.status ∈ { merged, done, deploying, deployed, cancelled }` → satisfied
+1. `dep.status ∈ { merged, done, deployed, released, cancelled }` → satisfied
 2. Same-branch dep with `status ∈ { pr_open, approved }` → satisfied (bundled PR)
 3. `pr_open` dep with a PR number, GitHub reports the PR as merged → satisfied
 4. Anything else → **not satisfied** (task is excluded from `?ready=true`)
@@ -219,7 +219,7 @@ When `?ready=true` returns `{ tasks: [], total: 0 }`:
 
 `pending` → `in_progress` → `pr_open` → `approved` → `merged`
 
-Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
+Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 
 ---
 
@@ -234,7 +234,7 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `DELETE` | `/tasks/:id` | Delete a task |
 | `POST` | `/tasks/:id/claim` | Atomic claim → `in_progress` (409 if already claimed) |
 | `POST` | `/tasks/:id/release` | Unclaim (`in_progress` → `pending`) |
-| `POST` | `/tasks/:id/unblock` | Unblock: `blocked` → `pending` (409 if not blocked) |
+| `POST` | `/tasks/:id/unblock` | Unblock a `blocked` task and reset skip counters. Optional body `{to}` (`pending`, `pr_open`, `merged`, `deployed`, `released`); omitted → inferred from `pr` and the PR record (no `pr` → `pending`, open → `pr_open`, merged → `merged`). Non-`pending` targets need a non-null `pr` (400). 409 if not blocked, or PR closed unmerged with no `to` |
 | `POST` | `/tasks/:id/complete` | Mark `done` |
 | `POST` | `/tasks/:id/fail` | Mark `blocked` |
 
@@ -250,6 +250,7 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `POST` | `/prs/:id/complete` | Mark review complete |
 | `POST` | `/prs/:id/patch` | Record a patch cycle on this PR |
 | `POST` | `/prs/:id/release` | Release claim → `pending` |
+| `POST` | `/prs/:id/unblock` | Human unblock: clears `blocked`, `blockedReason`, skip counters and CI-failure streak in one update (409 if not blocked) |
 
 > **Scoping:** Tasks are scoped by repo access — all agents with access to a repo can see its tasks. Always filter with `?assignee=$SHIPWRIGHT_AGENT_ID` when you only want your own tasks.
 

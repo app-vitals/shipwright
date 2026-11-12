@@ -55,7 +55,7 @@ const pillars = [
 ];
 
 // Default cron jobs the cloud agent seeds onto every new agent.
-// Source of truth: specialties/coding/manifest.yaml crons[] (keep this list in sync).
+// Source of truth: admin/src/coding/coding-specialty-defaults.ts crons (keep this list in sync).
 const crons = [
   {
     name: "dev-task",
@@ -233,7 +233,7 @@ const metricBars = trendRows.map((r) =>
 );
 
 // "Inside a task" tab — the ordered steps /shipwright:dev-task runs.
-// Faithful to plugins/shipwright/commands/dev-task.md (its phase headings).
+// Condensed from plugins/shipwright/commands/dev-task.md; the on-site list is an illustrative walkthrough, not a 1:1 mirror.
 const devTaskSteps = [
   {
     n: "01",

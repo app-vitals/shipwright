@@ -62,13 +62,14 @@ describe("dev-task.md — references principles.md", () => {
     expect(readDevTask()).toContain("references/principles.md");
   });
 
-  it("references principles.md near execution guidance (PROJECT CONVENTIONS / implementation steps)", () => {
+  it("references principles.md in the Step 6 simplify guidance", () => {
     const content = readDevTask();
-    const briefIndex = content.indexOf("PROJECT CONVENTIONS (from CLAUDE.md):");
-    const ciGateIndex = content.indexOf("## Step 9b: CI Gate");
-    expect(briefIndex).toBeGreaterThan(-1);
-    expect(ciGateIndex).toBeGreaterThan(briefIndex);
-    const executionSection = content.slice(briefIndex, ciGateIndex);
-    expect(executionSection).toContain("references/principles.md");
+    const stepIndex = content.indexOf("## Step 6: Simplify");
+    const nextIndex = content.indexOf("## Step 6.5");
+    expect(stepIndex).toBeGreaterThan(-1);
+    expect(nextIndex).toBeGreaterThan(stepIndex);
+    expect(content.slice(stepIndex, nextIndex)).toContain(
+      "references/principles.md",
+    );
   });
 });

@@ -17,7 +17,7 @@ flow.
 
 ## Inputs
 
-The prd phase does not have a single bounded input payload the way review, patch, deploy, and
+The prd phase does not have a single bounded input payload the way review, patch, merge, and
 plan-session do. Instead, it is a continuous interactive multi-turn session:
 
 - **Session folder name** (`{session}`) — passed to `/shipwright:prd {session}` by the human
@@ -71,10 +71,11 @@ directly via its `specContent` parameter.
 - Every feature has **at least one testable acceptance criterion** written as a checkbox
   (`- [ ] {specific, observable, testable outcome}`). Acceptance criteria must be verifiable
   by a developer without additional clarification — avoid subjective language ("good UX",
-  "fast", "clean").
+  "fast", "clean"). At least one criterion per feature must map to automated verification
+  (a test, type check, or lint).
 - **No unresolved "TBD" markers.** Every uncertainty encountered during the PRD session must
   be driven to either a Resolved Decision (with rationale) or a named external blocker (with
-  owner). The rule is explicit in the reference implementation's Phase 8 (Q8): unresolved
+  owner). The rule is explicit in the reference implementation's Phase 1 (Q8): unresolved
   questions must not be written to the spec. Plan-session cannot generate tasks from
   unresolved questions.
 - All decisions in the Resolved Decisions section carry a rationale explaining why that
@@ -102,7 +103,7 @@ structure and quality bar. It says nothing about:
 **Why this is the lightest contract of the six:**
 
 1. **No task-store writes.** Unlike plan-session (`POST /tasks/bulk`), review, patch, and
-   deploy (which all write/update task-store PR records), prd never touches the task store
+   merge (which all write/update task-store PR records), prd never touches the task store
    at all. Its only durable output is the PRODUCT-SPEC.md file on disk. There is no queue
    state, no PR tracking record, no completion marker in an external service.
 
@@ -110,7 +111,7 @@ structure and quality bar. It says nothing about:
    (`plugins/shipwright/CLAUDE.md`, "Candidate Selection Contract" section), the
    `shipwright-loop` cron's `loop-orchestrator.ts` dispatches exactly five pipeline phases
    via candidate providers: `check-dev-task.ts`, `check-plan.ts` (for plan-session),
-   `check-review.ts`, `check-patch.ts`, and `check-deploy.ts`. There is no `check-prd.ts` —
+   `check-review.ts`, `check-patch.ts`, and `check-merge.ts`. There is no `check-prd.ts` —
    prd is invoked only directly by a human running `/shipwright:prd {folder-name}`. By
    contrast, plan-session IS both human-invocable and loop-dispatched under `--autonomous`;
    prd has no such dual mode.

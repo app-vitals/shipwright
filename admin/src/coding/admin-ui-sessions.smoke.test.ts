@@ -156,6 +156,15 @@ describe("GET /admin/settings/notifications — auth", () => {
 
 // ─── GET — push toggle gating ───────────────────────────────────────────────
 
+describe("GET /admin/settings/notifications — page width (AWT-1.1)", () => {
+  it("stays capped: no admin-wide-page class on the form-only page", async () => {
+    const app = buildApp();
+    const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
+    expect(text).toContain('<div class="vos-page">');
+    expect(text).not.toContain("admin-wide-page");
+  });
+});
+
 describe("GET /admin/settings/notifications — push toggle gating", () => {
   it("renders the push toggle when VAPID is configured", async () => {
     const app = buildApp({ pushEnabled: true, vapidPublicKey: "BPUBLICKEY" });

@@ -38,9 +38,9 @@
  *   scope: agentId}.
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { MiddlewareHandler } from "hono";
+import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 /** What a scope resolver returns for an agent. */

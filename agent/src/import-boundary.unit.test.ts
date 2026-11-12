@@ -1,22 +1,18 @@
 /**
  * agent/src/import-boundary.unit.test.ts
  *
- * Enforces the one-way dependency between the two agent layers: files under
- * agent/src/coding/ may import agent/src/runtime/, never the reverse.
- * agent/src/index.ts is the composition root and the single file exempt from
- * the check (it wires the coding extension into the runtime); it lives
- * outside both directories, so scanning only runtime/ already exempts it.
- *
- * The allowed direction goes through the package specifier only: runtime is
- * the `@app-vitals/agent-runtime` workspace package (AGR-1.3), so no file
- * outside agent/src/runtime/ — coding/, the composition root, agent/scripts,
- * root scripts, plugins — may reach it with a relative path.
+ * The agent runtime lives in app-vitals/agent and is consumed only through the
+ * published `@app-vitals/agent-runtime` package (AGR-4.4). The runtime's own
+ * coding-free import boundary is enforced there. This guard keeps Shipwright
+ * honest in the other direction: no file in the repo (coding/, the composition
+ * root, agent/scripts, root scripts, plugins) may reach a runtime file with a
+ * relative path, and the local agent/src/runtime directory must not come back.
  *
  * Runs under `bun test`, so CI (task ci -> test:coverage) enforces it.
  */
 
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
 const SRC = resolve(import.meta.dir);
@@ -73,39 +69,11 @@ export function findImportsInto(
   return hits;
 }
 
-describe("agent import boundary (coding -> runtime only)", () => {
-  it("no runtime file imports a coding file", () => {
-    const violations = listTsFiles(RUNTIME_DIR).flatMap((file) =>
-      findImportsInto(file, readFileSync(file, "utf8"), CODING_DIR).map(
-        (spec) => `${file.slice(SRC.length + 1)} -> ${spec}`,
-      ),
-    );
-    expect(violations).toEqual([]);
-  });
-
-  it("detects a runtime -> coding import (checker self-test)", () => {
-    const file = join(RUNTIME_DIR, "example.ts");
-    expect(
-      findImportsInto(
-        file,
-        `import { x } from "../coding/check-helpers.ts";`,
-        CODING_DIR,
-      ),
-    ).toEqual(["../coding/check-helpers.ts"]);
-    expect(
-      findImportsInto(
-        file,
-        `const m = await import("../coding/extension.ts");`,
-        CODING_DIR,
-      ),
-    ).toEqual(["../coding/extension.ts"]);
-    expect(
-      findImportsInto(file, `import { x } from "./clock.ts";`, CODING_DIR),
-    ).toEqual([]);
-  });
-});
-
 describe("runtime package boundary (@app-vitals/agent-runtime only)", () => {
+  it("has no local copy of the runtime", () => {
+    expect(existsSync(RUNTIME_DIR)).toBe(false);
+  });
+
   it("no coding file (tests included) relatively imports a runtime file", () => {
     const violations = listTsFiles(CODING_DIR).flatMap((file) =>
       findImportsInto(file, readFileSync(file, "utf8"), RUNTIME_DIR).map(

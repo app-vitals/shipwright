@@ -120,3 +120,48 @@ test("CTA repeats the install command and links GitHub + a rollout conversation"
     page.locator("#cta").getByRole("link", { name: /talk through a rollout/i }),
   ).toHaveAttribute("href", BOOKING_URL);
 });
+
+// SAUL-SHF-1.1: the meta description must not claim inference stays out of
+// someone else's cloud. The Anthropic API is a required egress (docs/security).
+test("meta description is honest about where model calls go", async ({
+  page,
+}) => {
+  await page.goto("/self-hosted");
+  const description =
+    (await page.locator('meta[name="description"]').getAttribute("content")) ?? "";
+  expect(description).not.toMatch(/inference in someone else's cloud/i);
+  expect(description).toMatch(/Model calls go to Anthropic/);
+});
+
+test("compliance FAQ renders, links /docs/security, and matches its FAQPage JSON-LD", async ({
+  page,
+}) => {
+  await page.goto("/self-hosted");
+  const section = page.locator("section", {
+    has: page.getByRole("heading", {
+      name: "Questions security and compliance teams ask",
+    }),
+  });
+  const questions = (await section.locator("h3").allTextContents()).map((q) =>
+    q.trim(),
+  );
+  expect(questions).toHaveLength(4);
+  await expect(
+    section.getByRole("link", { name: /security architecture/i }),
+  ).toHaveAttribute("href", "/docs/security");
+
+  const blocks = await page
+    .locator('script[type="application/ld+json"]')
+    .allTextContents();
+  const faq = blocks
+    .map((b) => JSON.parse(b))
+    .find((d) => d["@type"] === "FAQPage");
+  expect(faq, "FAQPage JSON-LD block").toBeTruthy();
+  expect(faq.mainEntity.map((q: { name: string }) => q.name)).toEqual(questions);
+});
+
+// Strategy rule: never claim PCI, HIPAA or other certifications on this page.
+test("page makes no PCI or HIPAA claim", async ({ page }) => {
+  await page.goto("/self-hosted");
+  await expectBannedPhrasesAbsent(page, ["hipaa", "pci"]);
+});

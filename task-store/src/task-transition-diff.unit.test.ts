@@ -36,8 +36,8 @@ function task(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     deployedAt: null,
+    releasedAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -138,6 +138,25 @@ describe("computeTaskTransitionDiff()", () => {
     expect(changes).toEqual([
       { field: "status", oldValue: "pending", newValue: "in_progress" },
     ]);
+  });
+
+  test("merged → released records both status and releasedAt (MPD-1.1)", () => {
+    const changes = computeTaskTransitionDiff(
+      task({ status: "merged" }),
+      task({ status: "released", releasedAt: "2026-01-07T00:00:00.000Z" }),
+    );
+    const byField = Object.fromEntries(changes.map((c) => [c.field, c]));
+    expect(changes).toHaveLength(2);
+    expect(byField.status).toEqual({
+      field: "status",
+      oldValue: "merged",
+      newValue: "released",
+    });
+    expect(byField.releasedAt).toEqual({
+      field: "releasedAt",
+      oldValue: null,
+      newValue: "2026-01-07T00:00:00.000Z",
+    });
   });
 
   test("null → value transition records oldValue null", () => {

@@ -18,9 +18,9 @@
  *   For rows with no parent, the shipwright-loop job (if present and
  *   enabled) is always included with dispatch: "loop". Every other enabled
  *   job is included with dispatch: "generic" UNLESS shipwright-loop is
- *   present and enabled AND the job's name is one of the six pipeline
+ *   present and enabled AND the job's name is one of the pipeline
  *   phase jobs (shipwright-dev-task, shipwright-review, shipwright-patch,
- *   shipwright-review-patch, shipwright-deploy, shipwright-plan) — those
+ *   shipwright-review-patch, shipwright-plan, shipwright-merge) — those
  *   are excluded
  *   entirely (loop-config-only: readable by the loop handler, not
  *   independently scheduled). This name-based fallback stays load-bearing
@@ -34,7 +34,7 @@
  * resolveLoopPhaseToggles(jobs, loopCronId) → LoopPhaseToggles
  *   The loop's own toggle-reading logic (consumed by the WL-3.3
  *   drain-until-dry orchestrator in loop-orchestrator.ts). Resolves
- *   dev-task/review/patch/deploy/plan as five independent, non-mutually-
+ *   dev-task/review/patch/plan/merge as five independent, non-mutually-
  *   exclusive phase booleans, each read exclusively from a CHILD row — one whose
  *   parentCronId equals the given loopCronId — matched by name (LPC-2.1).
  *   A same-named row that is top-level (parentCronId: null) or a child of a
@@ -88,7 +88,6 @@ interface LoopPhaseToggles {
   devTask: boolean;
   review: boolean;
   patch: boolean;
-  deploy: boolean;
   /**
    * PDR-4.1 autonomous plan-session phase. Read from the `shipwright-plan`
    * child row exactly like the other four. This toggle alone is NOT
@@ -98,6 +97,11 @@ interface LoopPhaseToggles {
    * without the env var still behaves exactly as it does today.
    */
   plan: boolean;
+  /**
+   * MPD-1.4 merge phase. Read from the `shipwright-merge` child row exactly
+   * like the other phases; ships disabled.
+   */
+  merge: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -109,12 +113,12 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
   "shipwright-review",
   "shipwright-patch",
   "shipwright-review-patch",
-  "shipwright-deploy",
   "shipwright-plan",
+  "shipwright-merge",
 ]);
 
 /**
- * The four LEGACY phase job names resolveLoopPhaseToggles() reads —
+ * The three LEGACY phase job names resolveLoopPhaseToggles() reads —
  * deliberately excludes shipwright-review-patch (see the module docstring
  * above). Exported so callers that need to reason about "does this agent
  * have any of the four loop-phase child rows reconciled yet" (e.g.
@@ -129,13 +133,13 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
  * would turn that probe permanently true and fire a false "run
  * reconcileSystemCrons()" warn on every fully-reconciled, all-phases-disabled
  * tick. The plan phase's own absence is not a reconciliation gap — it's the
- * expected state for any agent that hasn't opted in.
+ * expected state for any agent that hasn't opted in. MPD-1.4's
+ * "shipwright-merge" is omitted for the same reason.
  */
 export const LOOP_PHASE_JOB_NAMES = [
   "shipwright-dev-task",
   "shipwright-review",
   "shipwright-patch",
-  "shipwright-deploy",
 ] as const;
 
 // ─── classifyCronJobsForScheduling ─────────────────────────────────────────────
@@ -193,8 +197,8 @@ export function resolveLoopPhaseToggles<T extends CronJobLike>(
     devTask: enabledByName("shipwright-dev-task"),
     review: enabledByName("shipwright-review"),
     patch: enabledByName("shipwright-patch"),
-    deploy: enabledByName("shipwright-deploy"),
     plan: enabledByName("shipwright-plan"),
+    merge: enabledByName("shipwright-merge"),
   };
 }
 

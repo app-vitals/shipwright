@@ -12,7 +12,8 @@
  *     dependency-satisfied rules below
  *
  * Dependency-satisfied rules:
- *   1. dep.status ∈ { merged, done, deploying, deployed, cancelled } → satisfied
+ *   1. dep.status ∈ CLOSED_STATUSES (statuses.ts: merged, done, deployed,
+ *      released, cancelled) → satisfied
  *   2. same-branch dep with status ∈ { pr_open, approved } → satisfied (bundled)
  *   3. cross-branch dep with status === pr_open AND dep.pr set AND isPrMerged(pr)
  *   4. anything else → not satisfied
@@ -32,7 +33,10 @@
  * interface — the dependency semantics are identical.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
+import { CLOSED_STATUSES } from "./statuses.ts";
+
+const TERMINAL_STATUSES = new Set<string>(CLOSED_STATUSES);
 
 /** The minimal Task shape resolveReadyTasks needs. */
 export interface ReadyTaskLike {
@@ -110,14 +114,8 @@ export async function resolveReadyTasks<T extends ReadyTaskLike>(
         break;
       }
 
-      // Terminal / fully-satisfied statuses.
-      if (
-        dep.status === "merged" ||
-        dep.status === "done" ||
-        dep.status === "deploying" ||
-        dep.status === "deployed" ||
-        dep.status === "cancelled"
-      ) {
+      // Terminal / fully-satisfied statuses (single source: statuses.ts).
+      if (TERMINAL_STATUSES.has(dep.status)) {
         continue;
       }
 

@@ -143,11 +143,11 @@ When the human confirms the task is complete (e.g. says "done", "finished", "all
 "mark it done", or similar):
 
 **First, check if a PR resulted from this HITL session.** If `TASK_PR` is set (a non-empty
-PR number/URL), a PR was created during this session and needs the normal review/patch/deploy
+PR number/URL), a PR was created during this session and needs the normal review/patch/merge
 lifecycle — do not mark the task `done`. Instead, warn the human:
 
 ```
-⚠ A PR resulted from this HITL task (pr: {TASK_PR}) — it needs the normal review/patch/deploy
+⚠ A PR resulted from this HITL task (pr: {TASK_PR}) — it needs the normal review/patch/merge
   lifecycle, not a direct "done" mark. We'll clear the hitl flag so the PR can flow through
   candidacy, but we'll leave the task status as-is so it re-enters the queue.
 ```

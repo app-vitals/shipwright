@@ -11,8 +11,8 @@
       "stepNumber": "6",
       "title": "Simplify",
       "mandatory": true,
-      "proofOfRunning": "marker needed; unmeasured at first",
-      "measurable": false
+      "proofOfRunning": "task-store: task.simplifyTotal recorded at Step 10 (null = skipped)",
+      "measurable": true
     },
     {
       "stepNumber": "6.5",

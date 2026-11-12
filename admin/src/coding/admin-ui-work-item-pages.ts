@@ -16,11 +16,15 @@ import {
   escapeHtml,
   renderAdminToolbar,
 } from "@app-vitals/agent-admin/admin-ui-styles";
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import {
   renderVerificationChecksCard,
   type VerificationCheckItem,
 } from "./admin-ui-verification-cards.ts";
+import {
+  ADMIN_WIDE_PAGE_CLASS,
+  ADMIN_WIDE_PAGE_STYLES,
+} from "./admin-wide-page.ts";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -134,7 +138,8 @@ export interface TaskItem {
 function statusBadgeClass(s: string): string {
   if (s === "in_progress" || s === "pr_open" || s === "approved")
     return "badge-blue";
-  if (s === "done" || s === "deployed" || s === "merged") return "badge-green";
+  if (s === "done" || s === "deployed" || s === "released" || s === "merged")
+    return "badge-green";
   if (s === "blocked" || s === "cancelled") return "badge-red";
   return "badge-gray";
 }
@@ -266,14 +271,7 @@ export async function resolveAgentNameFilterAndPaginate<T>(options: {
 
 // Shared by both the board (default) and table (?view=table) layouts.
 const TASKS_PAGE_EXTRA_STYLES = `
-    /* Same precedent as .chat-thread-page: .tasks-board-page has equal
-       specificity to .vos-page's own max-width:960px rule, but wins the
-       cascade tie because extraStyles renders after baseStyles() — so only
-       the board (AXR-1.3's 5-column Kanban) stretches full width; table
-       view and every other admin page stay capped. The
-       @media (max-width:640px) padding rule for .vos-page (@app-vitals/agent-lib/web/toolbar)
-       is untouched and still applies here. */
-    .tasks-board-page { max-width:none;width:100% }
+    ${ADMIN_WIDE_PAGE_STYLES}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
@@ -560,8 +558,8 @@ export function renderTasksPage(
     "approved",
     "merged",
     "done",
-    "deploying",
     "deployed",
+    "released",
     "blocked",
     "cancelled",
   ]
@@ -602,7 +600,7 @@ export function renderTasksPage(
     title: "Tasks — Shipwright",
     extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">Tasks</h1>
       ${readOnly ? "" : stateToggle}
@@ -764,7 +762,7 @@ function renderTasksBoard(args: {
   } = args;
 
   // The board's Status dropdown deliberately omits the closed statuses
-  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/cancelled).
+  // (SESSION_CLOSED_STATUSES: merged/done/deployed/released/cancelled).
   // Selecting one here would set `?status=…`, which bypasses admin-ui.ts's
   // `state=open` board default and returns tasks that bucketTaskColumn maps
   // to the "done" column — a column TASK_BOARD_COLUMNS no longer renders
@@ -779,8 +777,8 @@ function renderTasksBoard(args: {
     "approved",
     "merged",
     "done",
-    "deploying",
     "deployed",
+    "released",
     "blocked",
     "cancelled",
   ]
@@ -1000,7 +998,7 @@ function renderTasksBoard(args: {
     title: "Tasks — Shipwright",
     extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page tasks-board-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS} tasks-board-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between">
       <h1 class="page-title" style="margin:0">Tasks</h1>
       ${readOnly ? "" : `<a href="${tableViewHref}" class="btn btn-secondary" style="font-size:12px">Table view</a>`}
@@ -1294,6 +1292,7 @@ export function renderTaskDetailPage(
   return renderAdminPage({
     title: `${task.title} — Tasks — Shipwright Admin`,
     extraStyles: `
+    ${ADMIN_WIDE_PAGE_STYLES}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
@@ -1304,7 +1303,7 @@ export function renderTaskDetailPage(
     .markdown-body li { margin-bottom:4px; }
   `,
     body: `${renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(task.title)}</h1>
@@ -1348,8 +1347,8 @@ export function renderTaskDetailPage(
 const SESSION_CLOSED_STATUSES = new Set([
   "merged",
   "done",
-  "deploying",
   "deployed",
+  "released",
   "cancelled",
 ]);
 
@@ -1581,7 +1580,7 @@ const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
 // Every task resolves to exactly one column. Precedence is checked top to
 // bottom below, first match wins:
 //
-//   1. done         — status is one of merged/deployed/done/deploying/
+//   1. done         — status is one of merged/deployed/released/done/
 //                      cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
 //                      every other signal, including hitl:true or a blocked
 //                      joined PR, so a completed task never shows as needing
@@ -2029,13 +2028,14 @@ export function renderSessionDetailPage(
   return renderAdminPage({
     title: `Session ${sessionId} — Shipwright Admin`,
     extraStyles: `
+    ${ADMIN_WIDE_PAGE_STYLES}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   `,
     body: `${renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
@@ -2118,7 +2118,7 @@ export function renderSessionDetailPage(
  * set (the PR was never claimed) so the caller can render no dot at all.
  *
  * Thresholds are a display nicety, not exact stale-claim-reaper semantics:
- * "stale" mirrors @app-vitals/agent-lib/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
+ * "stale" mirrors task-store/src/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
  * own TTL), and "aging" is half that.
  *
  * `now` is always caller-injected (never read internally) so render output
@@ -2337,8 +2337,11 @@ export function renderPrsPage(
 
   return renderAdminPage({
     title: "PRs — Shipwright Admin",
+    extraStyles: `
+    ${ADMIN_WIDE_PAGE_STYLES}
+  `,
     body: `${renderAdminToolbar(userName, "/admin/prs")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">PRs</h1>
       ${stateToggle}
@@ -2529,6 +2532,7 @@ export function renderPrDetailPage(
   return renderAdminPage({
     title: `PR #${pr.prNumber} — ${pr.repo} — Shipwright Admin`,
     extraStyles: `
+    ${ADMIN_WIDE_PAGE_STYLES}
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
@@ -2537,7 +2541,7 @@ export function renderPrDetailPage(
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
   `,
     body: `${renderAdminToolbar(userName, "/admin/prs")}
-  <div class="vos-page">
+  <div class="vos-page ${ADMIN_WIDE_PAGE_CLASS}">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/prs" style="color:#6b7280;font-size:13px;text-decoration:none">← PRs</a>
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(pr.repo)} #${escapeHtml(String(pr.prNumber))}</h1>

@@ -78,7 +78,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     priority: null,
     cancelledAt: null,
     completedAt: null,
-    deployingAt: null,
     ciFixAttempts: null,
     mergeCommit: null,
     prUrl: null,
@@ -115,6 +114,9 @@ function fakeTaskService(
 ): TaskServiceLike {
   const allTasks = opts.allTasks ?? [];
   return {
+    async markMergedByPr() {
+      return { updated: [], unchanged: [], skipped: [] };
+    },
     async list(filters?: TaskListFilters) {
       const tasks = opts.listResult ?? allTasks;
       const tasksWithBlockedBy = tasks.map((t) => withBlockedBy(t, allTasks));

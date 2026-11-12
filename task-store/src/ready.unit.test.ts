@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import { type ReadyTaskLike, resolveReadyTasks } from "./ready.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -49,6 +49,17 @@ describe("resolveReadyTasks", () => {
 
   it("excludes a task with hitl === true even if otherwise ready", async () => {
     const task = makeTask({ id: "t1", hitl: true });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([]);
+  });
+
+  it("excludes a skip-blocked task (status blocked, hitl false) even if otherwise ready", async () => {
+    const task = makeTask({
+      id: "t1",
+      status: "blocked",
+      hitl: false,
+      blockedReason: "3 consecutive skips: reason-a",
+    });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
     expect(result).toEqual([]);
   });
@@ -103,8 +114,8 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([task]);
   });
 
-  it("includes a task when dependency status is deploying (terminal)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "deploying" });
+  it("includes a task when dependency status is deployed (terminal)", async () => {
+    const dep = makeTask({ id: "dep-1", status: "deployed" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
     const result = await resolveReadyTasks(
       [task, dep],
@@ -113,8 +124,8 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([task]);
   });
 
-  it("includes a task when dependency status is deployed (terminal)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "deployed" });
+  it("includes a task when dependency status is released (terminal, MPD-1.1)", async () => {
+    const dep = makeTask({ id: "dep-1", status: "released" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
     const result = await resolveReadyTasks(
       [task, dep],

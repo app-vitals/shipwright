@@ -30,8 +30,46 @@ service_for_tag() {
     metrics-v*) echo "metrics" ;;
     agent-v*) echo "agent" ;;
     task-store-v*) echo "task-store" ;;
-    chat-v*) echo "chat" ;;
+    agent-chat-v*) echo "chat" ;;
     *) echo "" ;;
+  esac
+}
+
+# The chat service is the exception to the git-tag model: its image is
+# ghcr.io/app-vitals/agent-chat, published by app-vitals/agent at the same
+# X.Y.Z as the platform release that this repo pins in agent/Dockerfile
+# (PLATFORM_VERSION, rewritten by platform-release.yml on the platform-release
+# dispatch). So its "release tag" is synthesized as agent-chat-vX.Y.Z from
+# that pin, and the value written to chat.image.tag is the bare X.Y.Z (the
+# image tag, with no prefix). Run from the repo root.
+platform_chat_tag() {
+  local version
+  version=$(sed -n 's/^ARG PLATFORM_VERSION=//p' agent/Dockerfile 2>/dev/null | head -n1)
+  [ -n "$version" ] && printf 'agent-chat-v%s\n' "$version"
+  return 0
+}
+
+# Prints the latest release tag for a service: the highest-semver
+# "{service}-v*" git tag, except chat (see platform_chat_tag). Prints nothing
+# when the service has no release tag yet.
+latest_tag_for_service() {
+  local service="$1" tags
+  if [ "$service" = "chat" ]; then
+    platform_chat_tag
+    return 0
+  fi
+  tags=$(git tag -l "${service}-v*")
+  [ -z "$tags" ] && return 0
+  highest_semver_tag $tags
+}
+
+# Maps a release tag to the value written into values.yaml: the tag itself,
+# except agent-chat-vX.Y.Z whose image tag is the bare X.Y.Z.
+pin_value_for_tag() {
+  local tag="$1"
+  case "$tag" in
+    agent-chat-v*) echo "${tag#agent-chat-v}" ;;
+    *) echo "$tag" ;;
   esac
 }
 
@@ -130,7 +168,7 @@ read_pinned_tag() {
 #
 # For each of the five Shipwright services this repo's release workflows tag
 # (agent, admin, metrics, task-store, chat): finds the highest-semver
-# "{service}-v*" git tag and compares it against read_pinned_tag()'s current
+# "{service}-v*" git tag (chat: the platform pin, see platform_chat_tag) and compares it against read_pinned_tag()'s current
 # value at that service's PRIMARY values.yaml path (the first path returned
 # by values_paths_for_service() — for a service with more than one path,
 # e.g. agent's top-level + provisioning-nested paths, both are always pinned
@@ -151,18 +189,17 @@ read_pinned_tag() {
 compute_batch_from_drift() {
   local values_yaml="$1"
   local services=("agent" "admin" "metrics" "task-store" "chat")
-  local service tags latest_tag primary_path pinned_tag
+  local service latest_tag primary_path pinned_tag
   local batch=()
 
   for service in "${services[@]}"; do
-    tags=$(git tag -l "${service}-v*")
-    [ -z "$tags" ] && continue
-    latest_tag=$(highest_semver_tag $tags)
+    latest_tag=$(latest_tag_for_service "$service")
+    [ -z "$latest_tag" ] && continue
 
     primary_path=$(values_paths_for_service "$service" | head -n1)
     pinned_tag=$(read_pinned_tag "$values_yaml" "$primary_path")
 
-    if [ "$latest_tag" != "$pinned_tag" ]; then
+    if [ "$(pin_value_for_tag "$latest_tag")" != "$pinned_tag" ]; then
       batch+=("$latest_tag")
     fi
   done

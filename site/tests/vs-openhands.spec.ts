@@ -110,7 +110,7 @@ test("every OpenHands claim carries a citation link, and the page shows a verifi
   page,
 }) => {
   await page.goto("/vs/openhands");
-  await expect(page.getByText(/facts verified as of October 2, 2026/i)).toBeVisible();
+  await expect(page.getByText(/facts verified as of November 2, 2026/i)).toBeVisible();
   await expect(
     page.locator('a[href*="openhands.dev"]').first(),
   ).toBeVisible();
@@ -129,7 +129,7 @@ const CITED_ROWS: Record<string, number> = {
   Models: 2,
   "Task queue": 1,
   "Team visibility": 1,
-  "Policy controls": 1,
+  "Policy controls": 2,
   "Tests-first": 1,
   "Slack workflow": 1,
   "Open source": 1,

@@ -4,7 +4,7 @@ This file is the design constitution for the Shipwright plugin. Before modifying
 file, evaluate the change against the principles below. Any change that violates a principle
 needs an explicit justification and a corresponding update to the principle itself.
 
-**Terminology note:** `dev-task`, `plan-session`, `review`, `patch`, and `deploy` are
+**Terminology note:** `dev-task`, `plan-session`, `review`, `patch`, and `merge` are
 implemented as commands (`commands/`), not skills (`skills/`). This document uses "skill" as a
 conceptual label for any invocable workflow unit.
 
@@ -13,9 +13,9 @@ conceptual label for any invocable workflow unit.
 ## Independence Principles
 
 Shipwright skills are designed to operate without requiring preconditions set by other
-skills. `dev-task`, `review`, `patch`, and `deploy` are explicit-target-only executors —
+skills. `dev-task`, `review`, `patch`, and `merge` are explicit-target-only executors —
 each requires an explicit argument (a task id for `dev-task`; an `org/repo#number` PR for
-`review`/`patch`/`deploy`) and responds `[silent]` and stops immediately if invoked with no
+`review`/`patch`/`merge`) and responds `[silent]` and stops immediately if invoked with no
 argument. `plan-session` (PDR-4.1) is the fifth loop-dispatched phase and carries the same
 no-argument `[silent]` guard, but it is not *purely* explicit-target-only: invoked by a human
 with a single `session` argument it auto-detects `repo` via `git remote get-url origin` and
@@ -34,7 +34,7 @@ Skills query GitHub directly for PR state, CI status, authorship, and review dec
 Local state files are a cache — a convenient shortcut when available, but never
 load-bearing.
 
-Applies to: **review**, **deploy**, **patch**, **dev-task**
+Applies to: **review**, **merge**, **patch**, **dev-task**
 
 ### 2. Task Store PR Record Is the Dedup Source
 
@@ -42,7 +42,7 @@ The task store `PullRequest` record (accessible via `GET /prs?repo=X`) is the so
 truth for review deduplication. `reviewedCommitSha` on the record is compared to the current
 `headRefOid` from GitHub to detect "new commits since last review" without re-fetching
 history. `commitSha` is a separate claim-lock field — it is overwritten on every claim
-(including by later `patch`/`deploy` claims on the same PR) and is not safe to use for
+(including by later `patch`/`merge` claims on the same PR) and is not safe to use for
 review dedup. Skills must not fail or behave incorrectly when no PR record exists — a
 missing record means the PR has not been reviewed yet and should be treated as eligible.
 
@@ -52,13 +52,13 @@ written by `/shipwright:review` and consumed by `/shipwright:review-staged`. The
 dedup state — the task store record owns that.
 
 Applies to: **review** (dedup by `reviewedCommitSha`), **review-staged** (stale check via
-`reviewedCommitSha` vs current `headRefOid`), **deploy** (falls back to
+`reviewedCommitSha` vs current `headRefOid`), **merge** (falls back to
 `gh pr view --json reviewDecision` when no task store APPROVE record exists)
 
 ### 3. A PR Created Outside Shipwright Is Fully Serviceable
 
 A PR opened by hand — directly via `gh pr create`, the GitHub UI, or any other tool — is
-fully serviceable by Shipwright. It can be reviewed, patched, and deployed without any
+fully serviceable by Shipwright. It can be reviewed, patched, and merged without any
 prior setup. The skills discover the PR from GitHub and treat it identically to a PR they
 created. No skill requires the PR to have been opened by `dev-task` or any other Shipwright
 command.
@@ -66,13 +66,13 @@ command.
 **Scope note:** `review` is explicit-target-only — the caller (loop orchestrator or a human)
 always names a specific PR (`org/repo#number`); there is no self-scan/queue-building mode.
 Any PR is serviceable when named this way, regardless of author — it is not limited to PRs
-authored by the authenticated user. `patch` and `deploy` are scoped to the authenticated
+authored by the authenticated user. `patch` and `merge` are scoped to the authenticated
 user's own open PRs (matching by PR author), because they take write actions (pushing fixes,
 merging) that should only be performed on PRs the agent owns. `patch`'s scope is additionally
 config-driven: a PR authored by an entry in the agent's configured `patchAuthorAllowlist` is
 also in scope, on top of (not instead of) the agent's own PRs.
 
-Applies to: **review**, **patch**, **deploy**
+Applies to: **review**, **patch**, **merge**
 
 ### 4. Manual Human Actions Do Not Break Automation
 
@@ -80,49 +80,49 @@ Manual actions taken outside of Shipwright — a human approving a PR on GitHub,
 branch, pushing a fix, or resolving review comments directly — must not break automation.
 Each skill checks current state at runtime rather than trusting the state it last recorded.
 
-Applies to: **review** (re-checks headRefOid before re-posting), **deploy** (checks live
+Applies to: **review** (re-checks headRefOid before re-posting), **merge** (checks live
 reviewDecision and CI before merging), **patch** (re-queries review threads and CI before
 applying fixes)
 
 ### 5. No Skill Depends on Another Having Run First
 
-Skills do not require preconditions set by other skills. `deploy` does not require `review`
+Skills do not require preconditions set by other skills. `merge` does not require `review`
 to have run first. `patch` does not require `dev-task` to have run first. `review` does not
 require `plan-session` to have produced a task first. This is no longer about skills
 self-discovering inputs in any order, though — `dev-task`, `plan-session`, `review`, `patch`,
-and `deploy` are dispatched with an explicit, already-selected target (a task id, a
+and `merge` are dispatched with an explicit, already-selected target (a task id, a
 repo/session pair, or a PR), chosen either by a human invoking the command directly or by the
 `shipwright-loop` cron's `loop-orchestrator.ts`, which merges candidates from `agent/src`'s
 per-phase qualification functions (`check-dev-task.ts`, `check-plan.ts`, `check-review.ts`,
-`check-patch.ts`, `check-deploy.ts`) and picks exactly one winning item via
+`check-patch.ts`, `check-merge.ts`) and picks exactly one winning item via
 `work-selector.ts`'s `selectNextWorkItem` (strict age-based FIFO). What "no dependency between
 skills" means in practice: none of the five
 commands' *qualification logic* depends on another command's prior run — a PR can be
-`deploy`ed without `review` having produced task-store state first, as long as it is
+`merge`d without `review` having produced task-store state first, as long as it is
 independently approved and green on GitHub.
 
-Applies to: **all skills** — review, deploy, patch, dev-task, plan-session, research,
+Applies to: **all skills** — review, merge, patch, dev-task, plan-session, research,
 prd, refresh-plan
 
 ### 6. Skills Are Idempotent
 
 Running the same skill twice against the same PR is idempotent — it produces the same
 observable outcome. A second `review` run on an unchanged PR posts nothing (same
-headRefOid already recorded). A second `deploy` run on an already-merged PR detects the
+headRefOid already recorded). A second `merge` run on an already-merged PR detects the
 merged state and exits cleanly. A second `dev-task` run on a `pr_open` task does not open
 a duplicate PR.
 
-Applies to: **all skills** — review, deploy, patch, dev-task
+Applies to: **all skills** — review, merge, patch, dev-task
 
 ---
 
 ## Candidate Selection Contract
 
 Selection of *what* to work on no longer happens inside `dev-task`, `plan-session`, `review`,
-`patch`, or `deploy` themselves. It happens once, upstream, in `agent/src`'s native TypeScript
+`patch`, or `merge` themselves. It happens once, upstream, in `agent/src`'s native TypeScript
 candidate providers — `check-dev-task.ts` (`getDevTaskCandidates`), `check-plan.ts`
 (`getPlanCandidates`), `check-review.ts` (`getReviewCandidates`), `check-patch.ts`
-(`getPatchCandidates`), and `check-deploy.ts` (`getDeployCandidates`). The `shipwright-loop`
+(`getPatchCandidates`), and `check-merge.ts` (`getMergeCandidates`). The `shipwright-loop`
 cron's `loop-orchestrator.ts` calls the providers for every enabled phase each tick, merges
 their results, and picks exactly one winning item via `work-selector.ts`'s
 `selectNextWorkItem` (strict age-based FIFO across task and PR candidates, no phase-priority
@@ -161,14 +161,14 @@ selected. The command does not re-run candidate qualification logic.
 requalification.** Time passes between selection and dispatch (the Claude session has to
 spin up), so live state can change. `dev-task`'s Step 2 performs an atomic claim
 (`POST /tasks/{id}/claim`, which 409s if another agent claimed the task since selection).
-`review`, `patch`, and `deploy` re-check live GitHub state — mergeability, CI status, review
+`review`, `patch`, and `merge` re-check live GitHub state — mergeability, CI status, review
 decision — before taking a write action. This check is narrow: it confirms the target is
 still safe/current to act on, it does not re-decide whether the target qualifies in the
 first place.
 
 **When a provider's qualification logic changes, the corresponding command's Arguments/Step
-0-2 assumptions should be reviewed.** If `check-deploy.ts` adds a new qualification
-requirement, `deploy.md`'s current-state re-validation should be checked to make sure it
+0-2 assumptions should be reviewed.** If `check-merge.ts` adds a new qualification
+requirement, `merge.md`'s current-state re-validation should be checked to make sure it
 still makes sense against the new qualification bar.
 
 **Selection and dispatch are both driven by explicit targets, human or automated.** A human
@@ -180,15 +180,15 @@ only thing that no longer exists is a mode where the command scans for its own c
 
 ## System Cron Changes
 
-System crons are the crons declared in a specialty manifest's `crons` array (`specialties/{typeName}/manifest.yaml` — the `coding` type is the default) — they cover both the core shipwright loop (dev-task, plan, review, patch, deploy) and maintenance tasks (entropy patrol, docs freshness, etc.). The manifest is the source of truth: `AgentCronJobService.reconcileSystemCrons()` resolves an agent's `typeName` to its manifest via the `SpecialtyRegistry` and seeds/updates each agent's system crons from it. When a shipwright change adds, removes, or restructures any system cron, flag two questions during planning:
+System crons are the crons declared by a specialty's defaults — for the `coding` type, the `crons` array in `admin/src/coding/coding-specialty-defaults.ts`, supplied through the coding admin extension's `specialtyDefaults()` hook — they cover both the core shipwright loop (dev-task, plan, review, patch, merge) and maintenance tasks (entropy patrol, docs freshness, etc.). Those defaults are the source of truth: `AgentCronJobService.reconcileSystemCrons()` resolves an agent's `specialty` to them through the extension hook and seeds/updates each agent's system crons from it. When a shipwright change adds, removes, or restructures any system cron, flag two questions during planning:
 
 1. **Backward compatibility.** Will existing agents break when the new code ships but before their crons are updated? If yes, the PR needs a migration path baked in (flag, fallback, graceful no-op) so agents degrade cleanly rather than silently error.
 
 2. **Agent migration.** Which agents are running the old cron pattern and need to be updated? There is no automated migration tooling yet — plan how the rollout will happen before committing to the change.
 
-**New system crons always ship disabled.** Any cron added to a manifest's `crons` array must have `enabled: false`. Enable it per-agent when ready. This avoids new crons firing unexpectedly on agents that haven't opted in. The exception is crons explicitly replacing a prior cron — but even then, add disabled, verify, then enable and disable the old one.
+**New system crons always ship disabled.** Any cron added to the coding defaults' `crons` array must have `enabled: false`. Enable it per-agent when ready. This avoids new crons firing unexpectedly on agents that haven't opted in. The exception is crons explicitly replacing a prior cron — but even then, add disabled, verify, then enable and disable the old one.
 
-**dev-task, plan, review, patch, and deploy are phases dispatched by `shipwright-loop`, not independent self-discovering crons.** `shipwright-dev-task`, `shipwright-plan`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy` are declared in the specialty manifest's `crons` array with `parentCron: "shipwright-loop"` (see `specialties/coding/manifest.yaml`). `shipwright-loop`'s `loop-orchestrator.ts` is the sole dispatcher — see the Candidate Selection Contract above: it calls each phase's candidate provider every tick, merges the results, picks exactly one winning item via `selectNextWorkItem`, and runs the one matching command with the target embedded. `dev-task`, `review`, and `patch` ship `enabled: true` by default; `deploy` and `plan` ship `enabled: false` (explicit opt-in), and `plan` additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var. None of the five scans for its own candidates.
+**dev-task, plan, review, patch, and merge are phases dispatched by `shipwright-loop`, not independent self-discovering crons.** `shipwright-dev-task`, `shipwright-plan`, `shipwright-review`, `shipwright-patch`, and `shipwright-merge` are declared in the coding specialty defaults' `crons` array with `parentCron: "shipwright-loop"` (see `admin/src/coding/coding-specialty-defaults.ts`). `shipwright-loop`'s `loop-orchestrator.ts` is the sole dispatcher — see the Candidate Selection Contract above: it calls each phase's candidate provider every tick, merges the results, picks exactly one winning item via `selectNextWorkItem`, and runs the one matching command with the target embedded. `dev-task`, `review`, and `patch` ship `enabled: true` by default; `merge` and `plan` ship `enabled: false` (explicit opt-in), and `plan` additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var. None of the five scans for its own candidates.
 
 ---
 

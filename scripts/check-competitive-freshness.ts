@@ -22,7 +22,7 @@
  *
  * Exit 0 + summary → at least one page/row is stale (or unparseable/missing).
  *   The summary IS the entire prompt a dispatching cron hands to Claude next
- *   (see agent/src/runtime/cron-handler.ts's preCheck contract), so it names every
+ *   (see @app-vitals/agent-runtime cron-handler.ts's preCheck contract), so it names every
  *   qualifying page/row with its days-since-verified and explicitly points at
  *   scripts/competitive-refresh-runbook.md (CF-2.1) to act on it.
  * Exit 1 + no output → nothing to do.

@@ -30,9 +30,7 @@ const EXCLUDE_PREFIXES = [
   // Shipwright's admin composition root; the platform admin it boots
   // (server, startAdmin) ships in @app-vitals/agent-admin (node_modules/).
   "admin/src/main.ts",
-  "agent/src/entrypoint-main.ts",
   "task-store/src/main.ts",
-  "chat/src/main.ts",
   "mcp-server/src/serve.ts",
   "metrics/src/server.ts",
 
