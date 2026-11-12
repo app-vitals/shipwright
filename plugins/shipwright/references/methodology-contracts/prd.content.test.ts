@@ -93,3 +93,16 @@ describe("prd.md — scope section", () => {
     expect(content.toLowerCase()).toMatch(/(?:output|artifact|shape)|(?:discovery|process)/);
   });
 });
+
+describe("prd.md — quality bar details", () => {
+  it("requires at least one automated-verification criterion per feature", () => {
+    expect(content).toContain(
+      "At least one criterion per feature must map to automated verification",
+    );
+  });
+
+  it("cites the reference implementation's no-TBD rule by its real location (Phase 1, Q8)", () => {
+    expect(content).toContain("Phase 1 (Q8)");
+    expect(content).not.toContain("Phase 8");
+  });
+});

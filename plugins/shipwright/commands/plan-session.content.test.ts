@@ -1457,3 +1457,53 @@ describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
     });
   }
 });
+
+function extractCarryThroughSection(md: string): string {
+  const match = md.match(
+    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list and dependency map as a first pass)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+describe("plan-session.md — Step 5 carries spec-level statements into the task list", () => {
+  it("sits inside Step 5, after Breaking Change Safety and before the first-pass presentation", () => {
+    const safetyIdx = content.indexOf("### Breaking Change Safety");
+    const carryIdx = content.indexOf("### Spec-Level Carry-Through");
+    const step55Idx = content.indexOf("## Step 5.5: HITL Detection");
+    expect(safetyIdx).toBeGreaterThan(-1);
+    expect(carryIdx).toBeGreaterThan(safetyIdx);
+    expect(step55Idx).toBeGreaterThan(carryIdx);
+  });
+
+  it("is skipped when the spec has neither section, so non-/prd specs still plan", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain(
+      "Skip this check when the spec has neither a `Success Criteria` nor a `Priorities & Sequence` section",
+    );
+  });
+
+  it("requires each Success Criteria statement to be forced by a task's acceptance criteria", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toMatch(
+      /\*\*Success Criteria\*\* — each statement must be forced by at least one task's acceptance criteria/,
+    );
+  });
+
+  it("requires each ordering or gating statement to be enforced by a dependencies edge or carried by a task", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain("`dependencies` edge");
+    expect(section).toContain("If it is an action no task performs, add it to a task.");
+  });
+
+  it("records deliberately-not-carried statements, in the Decision Log under --autonomous", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section).toContain("`Not carried:`");
+    expect(section).toMatch(/Under `--autonomous`, record these in the `## Decision Log`/);
+  });
+
+  it("stays short — it is paid for on every loop-dispatched plan", () => {
+    const section = extractCarryThroughSection(content);
+    expect(section.split("\n").length).toBeLessThanOrEqual(10);
+  });
+});

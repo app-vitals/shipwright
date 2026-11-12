@@ -369,6 +369,14 @@ Stuck > 2h after {PRODUCER-TASK-ID} merged → set hitl naming the stuck stage.
 
 The gate's `dependencies` field includes the producer task; the consumer task's `dependencies` include the gate.
 
+### Spec-Level Carry-Through
+
+Skip this check when the spec has neither a `Success Criteria` nor a `Priorities & Sequence` section. Otherwise, before presenting the task list, check each statement in those two sections against it:
+
+- **Success Criteria** — each statement must be forced by at least one task's acceptance criteria. If none does, add it to the task that owns that outcome.
+- **Priorities & Sequence** — each ordering or gating statement (including "enable X only after Y") must be enforced by a `dependencies` edge. If it is an action no task performs, add it to a task.
+- **Not carried** — a statement deliberately left out (the repo's merge gate already enforces it, e.g. "`task ci` passes", or the approved design overrides it) is listed under a `Not carried:` heading after the Dependency Map, one line each with the reason. Under `--autonomous`, record these in the `## Decision Log` instead.
+
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
 
 ### `--autonomous` Mode

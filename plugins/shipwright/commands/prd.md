@@ -230,6 +230,8 @@ Fill in each section from your gathered information:
 - Good: `- [ ] User can switch workspaces without losing unsaved work`
 - Bad: `- [ ] Feature works correctly`
 
+At least one criterion per feature must map to automated verification (a test, type check, or lint) — a criterion only a human can confirm does not count toward this.
+
 **Resolved Decisions vs. requirements:** If something was uncertain, it must have been driven to a decision in Q8 and recorded in Resolved Decisions. Do not write "TBD" or leave decisions deferred — plan-session cannot generate tasks from unresolved questions. The only acceptable entry in Resolved Decisions that is not yet resolved is a named external blocker with an explicit owner.
 
 Present the complete draft to the user section by section. After presenting each section, ask: "Does this look right, or would you like to adjust anything here?"
@@ -326,6 +328,9 @@ per the contract's Scope section):
 3. It contains no unresolved `TBD` marker (case-insensitive) — the contract's quality bar
    requires every uncertainty be driven to a decision or a named blocker before the file is
    written.
+4. Every `### Feature` section contains at least one checkbox acceptance criterion (a line
+   starting `- [ ]`) — the contract's quality bar requires one per feature. This counts
+   checkboxes only; whether each criterion is well written stays out of scope here.
 
 ### Malformed or Failed Response (PRM-1.2)
 

@@ -71,10 +71,11 @@ directly via its `specContent` parameter.
 - Every feature has **at least one testable acceptance criterion** written as a checkbox
   (`- [ ] {specific, observable, testable outcome}`). Acceptance criteria must be verifiable
   by a developer without additional clarification — avoid subjective language ("good UX",
-  "fast", "clean").
+  "fast", "clean"). At least one criterion per feature must map to automated verification
+  (a test, type check, or lint).
 - **No unresolved "TBD" markers.** Every uncertainty encountered during the PRD session must
   be driven to either a Resolved Decision (with rationale) or a named external blocker (with
-  owner). The rule is explicit in the reference implementation's Phase 8 (Q8): unresolved
+  owner). The rule is explicit in the reference implementation's Phase 1 (Q8): unresolved
   questions must not be written to the spec. Plan-session cannot generate tasks from
   unresolved questions.
 - All decisions in the Resolved Decisions section carry a rationale explaining why that

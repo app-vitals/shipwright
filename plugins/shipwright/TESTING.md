@@ -69,6 +69,7 @@ Manual test scenarios for each command across different project types.
 | 56 | `/prompt-eval --finding <fp> --kind ab` | `docs/prompt-audit-calibration.md` with a signed **FAIL** record, no `--max-cost-usd` | Calibration and cost gates | Prints the cost-only consequence, the estimated cost, and the no-cap refusal; no model arm runs and the ledger is unchanged |
 | 57 | `/prompt-eval --finding <fp> --kind trigger --max-cost-usd 2` | Calibration file missing or unsigned | No calibration record | Refuses any quality result and says why; nothing runs, nothing written |
 | 49 | `prompt-audit-maintenance` cron preCheck | Any | `check-prompt-audit.ts` gating | Missing ledger or `lastRun` 7+ days old exits 0; fresh ledger with no `proposed` findings exits 1 |
+| 58 | `/plan-session` Step 5 | Any (spec with `Success Criteria` and `Priorities & Sequence`) | Spec-level carry-through | Every Success Criteria statement appears in a task's acceptance criteria and every ordering/gating statement in a `dependencies` edge or a task; anything left out is listed under `Not carried:` with a reason (in the `## Decision Log` under `--autonomous`); a spec with neither section plans as before |
 
 ---
 
