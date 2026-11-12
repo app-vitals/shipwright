@@ -5,7 +5,7 @@ Manual test scenarios for each command across different project types.
 ## Prerequisites
 
 - Claude Code installed
-- Shipwright plugin installed (`/plugin install shipwright@app-vitals/shipwright`)
+- Shipwright plugin installed (`/plugin marketplace add app-vitals/shipwright`, then `/plugin install shipwright@shipwright`)
 - GitHub CLI (`gh`) authenticated
 - A test repository (or use the scenarios below)
 
