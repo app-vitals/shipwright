@@ -29,7 +29,7 @@ test("homepage Install card links to the quickstart with UTM tagging", async ({
   const link = page
     .locator(".sw-card")
     .filter({ hasText: "Install" })
-    .getByRole("link", { name: /follow the quickstart/i });
+    .getByRole("link", { name: /first-PR path/i });
   await expect(link).toBeVisible();
   expectQuickstartHref(await link.getAttribute("href"), "install_card");
 });
@@ -40,7 +40,7 @@ test("Try it CTA links to the quickstart with UTM tagging", async ({
   await page.goto("/compare");
   const link = page
     .locator("#cta")
-    .getByRole("link", { name: /follow the quickstart/i });
+    .getByRole("link", { name: /first-PR path/i });
   await expect(link).toBeVisible();
   expectQuickstartHref(await link.getAttribute("href"), "try_it_cta");
 });
