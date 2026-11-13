@@ -35,6 +35,11 @@ fallback. Store validate/test/tests/lint/`lintScoped`/typecheck/build; omit `lin
 
 ## Claim
 ```bash
-CLAIM_CODE=$(curl -s -o /tmp/task_claim.json -w '%{http_code}' -X POST -H "$AUTH" "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim")
+CLAIMED_BY="${SHIPWRIGHT_AGENT_ID:-local}"   # see references/claimed-by.md
+CLAIM_CODE=$(curl -s -o /tmp/task_claim.json -w '%{http_code}' -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg claimedBy "$CLAIMED_BY" '{claimedBy: $claimedBy}')" "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim")
 ```
-No body (the agent token pins `claimedBy`). Claim sets `claimedAt`/`heartbeatAt`/`startedAt` atomically.
+Always send the `claimedBy` body: an agent token pins `claimedBy` server-side and ignores it, while a
+non-agent token (e.g. from `scripts/local-store.sh`, `SHIPWRIGHT_AGENT_ID` unset) gets `400 claimedBy is
+required` without it. Heartbeat/release/complete take no `claimedBy` — the server matches by task id.
+Claim sets `claimedAt`/`heartbeatAt`/`startedAt` atomically.

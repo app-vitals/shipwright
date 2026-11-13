@@ -26,7 +26,7 @@ Mechanics: [task-lifecycle.md](../references/dev-task/task-lifecycle.md).
 
 ## Step 2: Claim
 
-`POST /tasks/{id}/claim` (skip if already `in_progress`). 200 → continue; 409/404 → `[silent]`, stop.
+`POST /tasks/{id}/claim` with body `{claimedBy}` = `${SHIPWRIGHT_AGENT_ID:-local}` (skip if already `in_progress`). 200 → continue; 409/404 → `[silent]`, stop.
 
 ## Step 4: Worktree
 

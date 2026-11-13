@@ -268,7 +268,8 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim_merge.json -w '%{http_code}' -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
   -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_MERGE" \
         --arg authorLogin "$PR_AUTHOR" --arg headRef "$HEAD_BRANCH" \
-        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "merge", authorLogin: $authorLogin, headRef: $headRef}')")
+        --arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}" \
+        '{claimedBy: $claimedBy, repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "merge", authorLogin: $authorLogin, headRef: $headRef}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_merge.json)
 ```
 

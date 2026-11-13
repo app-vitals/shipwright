@@ -30,7 +30,7 @@ curl -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d '{"repo": "{org}/{repo}", "prNumber": {number}, "commitSha": "{sha}"}'
+  -d "$(jq -n --arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}" '{claimedBy: $claimedBy, repo: "{org}/{repo}", prNumber: {number}, commitSha: "{sha}"}')"
 ```
 
 ## Record Schema

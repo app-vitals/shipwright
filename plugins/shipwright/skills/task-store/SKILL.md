@@ -142,11 +142,15 @@ concurrent runner that read the same `ready=true` list. The claim is a single co
 ```bash
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}" '{claimedBy: $claimedBy}')" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim" | jq .
 ```
 
-No request body is sent — with an agent token, the task-store pins `claimedBy` to the
-calling agent's own ID server-side and ignores the body. A `409` means another agent
+Always send `claimedBy` (see [claimed-by.md](../../references/claimed-by.md)). With an agent token
+the task-store pins `claimedBy` to the calling agent's own ID server-side and ignores the body; with a
+non-agent token (e.g. minted by `scripts/local-store.sh`, `SHIPWRIGHT_AGENT_ID` unset) the body is
+required and the call returns `400 claimedBy is required` without it — the fallback identity is `local`. A `409` means another agent
 already claimed the task since it was read as `ready` — skip it and pick the next one.
 
 This isn't just a race-avoidance convention — a generic `PATCH /tasks/:id` actively rejects
@@ -279,7 +283,7 @@ Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/prs` | List PR records (`?repo`, `?prNumber`, `?state`, `?reviewState`, `?staged`, `?limit`, `?offset`) |
-| `POST` | `/prs/claim` | Upsert + claim a PR record → `in_progress` (body: `repo`, `prNumber`, `commitSha`; optional: `claimedBy`) |
+| `POST` | `/prs/claim` | Upsert + claim a PR record → `in_progress` (body: `repo`, `prNumber`, `commitSha`; `claimedBy` — required for non-agent tokens, ignored for agent tokens) |
 | `GET` | `/prs/:id` | Fetch one PR record (404 if missing) |
 | `PATCH` | `/prs/:id` | Update PR fields (partial update) |
 | `POST` | `/prs/:id/heartbeat` | Extend review TTL (prevents StaleClaimReaper from auto-releasing) |

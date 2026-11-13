@@ -666,6 +666,13 @@ describe("dev-task references — preserved behavior", () => {
     expect(command).toMatch(/409\/404 → `\[silent\]`/);
   });
 
+  it("claim sends claimedBy with the SHIPWRIGHT_AGENT_ID:-local fallback (CRQ-6.2)", () => {
+    // Previously pinned a no-body claim; non-agent tokens get 400 `claimedBy is required` without it.
+    expect(command).toContain("${SHIPWRIGHT_AGENT_ID:-local}");
+    expect(corpus).toContain('jq -n --arg claimedBy "$CLAIMED_BY" \'{claimedBy: $claimedBy}\'');
+    expect(corpus).not.toContain("No body (the agent token pins `claimedBy`)");
+  });
+
   it("defers with namespaced skip-reason markers", () => {
     expect(corpus).toContain("[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]");
     expect(corpus).toContain("[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]");

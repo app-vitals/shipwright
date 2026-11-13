@@ -166,7 +166,8 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
   -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$headRefOid" \
         --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
-        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
+        --arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}" \
+        '{claimedBy: $claimedBy, repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 ```
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
@@ -1784,7 +1785,8 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
     "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
     -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$headRefOid" \
           --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
-          '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')" >/dev/null
+          --arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}" \
+          '{claimedBy: $claimedBy, repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')" >/dev/null
   ```
   Print:
   ```
