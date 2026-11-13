@@ -3942,6 +3942,11 @@
             "type": "boolean",
             "description": "Reserved for the repo-access check (COS-44.1).",
             "example": false
+          },
+          "loopTranscriptUpload": {
+            "type": "boolean",
+            "description": "True when SHIPWRIGHT_TRANSCRIPT_API_ENABLED is on and this agent is listed in SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS: coding-loop runs may upload a redacted transcript through the extension capability.",
+            "example": false
           }
         },
         "required": [
