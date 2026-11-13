@@ -54,6 +54,14 @@ when a human runs `/shipwright:review` with no argument.
 
 ## Step 1: Load Policy
 
+**Preflight — bun.** This command runs plugin scripts with `bun` (Step 3 onward). Before anything
+else, check it is on PATH:
+```bash
+command -v bun >/dev/null 2>&1 || { echo "bun is required but not installed. Install it from https://bun.sh and re-run /shipwright:review."; exit 1; }
+```
+If `bun` is missing, print that single message and stop. Do not substitute `node` or skip the
+helper scripts.
+
 Capture the workspace root before Step 4's worktree checkout moves cwd:
 ```bash
 WORKSPACE_ROOT=$(pwd)
