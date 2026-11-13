@@ -5,7 +5,7 @@
 // (see brand/MESSAGING.md D10) — only the H1/meta phrase and one linked
 // sentence may name a competitor here.
 import InstallCmd from "../components/InstallCmd.astro";
-import { BOOKING_URL, REPO_URL, withUtm } from "../consts";
+import { BOOKING_URL, QUICKSTART_URL, REPO_URL, withUtm } from "../consts";
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 // Devin-alternative repositioning (D1): the new canonical H1/tagline
@@ -1097,6 +1097,9 @@ const differentiators = [
         <span class="sw-label">Install</span>
         <p>Drop it into Claude Code and point it at any repository.</p>
         <InstallCmd class="text-sm" />
+        <a class="w-fit" href={withUtm(QUICKSTART_URL, "install_card", "quickstart")}>
+          Follow the quickstart
+        </a>
       </div>
     </div>
 

@@ -81,3 +81,49 @@ describe("docs/quickstart.md first-PR path", () => {
     expect(content).toMatch(/## What CI does not cover/);
   });
 });
+
+describe("README.md Quickstart section (CRQ-3.2)", () => {
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const start = readme.indexOf("## Quickstart");
+  const end = readme.indexOf("\n## ", start + 1);
+  const quickstart = readme.slice(start, end);
+
+  it("has a Quickstart section", () => {
+    expect(start).toBeGreaterThan(-1);
+  });
+
+  it("uses the working two-step plugin install form", () => {
+    expect(quickstart).toContain("/plugin marketplace add app-vitals/shipwright");
+    expect(quickstart).toContain("/plugin install shipwright@shipwright");
+  });
+
+  it("never uses the failing marketplace-qualified install form", () => {
+    expect(readme).not.toContain("shipwright@app-vitals/shipwright");
+  });
+
+  it("starts the local task store and walks plan-session, dev-task and review", () => {
+    expect(quickstart).toContain("./scripts/local-store.sh");
+    expect(quickstart).toContain("/shipwright:plan-session");
+    expect(quickstart).toContain("/shipwright:dev-task");
+    expect(quickstart).toContain("/shipwright:review");
+  });
+
+  it("lists the Docker, gh and git prerequisites", () => {
+    expect(quickstart).toMatch(/Docker/);
+    expect(quickstart).toMatch(/\bgh\b/);
+    expect(quickstart).toMatch(/\bgit\b/);
+  });
+
+  it("links to docs/quickstart.md", () => {
+    expect(quickstart).toContain("(./docs/quickstart.md)");
+  });
+
+  it("contains no stale not-yet-built phrases", () => {
+    expect(quickstart).not.toMatch(/still being built|coming soon|🚧|not yet ready/i);
+  });
+
+  it("keeps the metrics dashboard and full dev stack as optional content", () => {
+    expect(quickstart).toMatch(/Optional/);
+    expect(quickstart).toContain("task stack");
+  });
+});
