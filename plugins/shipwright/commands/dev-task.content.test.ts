@@ -714,3 +714,15 @@ describe("dev-task references — preserved behavior", () => {
     expect(corpus).toMatch(/Non-2xx → print/);
   });
 });
+
+describe("dev-task references — missing-branch block reason (DBH-1.1)", () => {
+  it("records blockedReason missing_branch and still prints the branch PATCH hint", () => {
+    const lifecycle = readFileSync(
+      join(REFERENCES_DIR, "task-lifecycle.md"),
+      "utf-8",
+    );
+    const section = lifecycle.split("## Missing branch")[1]?.split("\n## ")[0];
+    expect(section).toContain('"blockedReason":"missing_branch"');
+    expect(section).toContain("`branch`");
+  });
+});

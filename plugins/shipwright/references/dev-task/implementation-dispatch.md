@@ -30,4 +30,7 @@ must fail); [D] GREEN: minimal code, all tests pass; [E] refactor green; [F] run
 
 ## Heartbeat
 `POST /tasks/{id}/heartbeat` before dispatch and after completion; implementation is the longest step and can
-threaten the 65-minute claim TTL.
+threaten the 65-minute claim TTL. Run it without `-f`/silencing so a failure is visible, e.g.
+`curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" -H 'Content-Type: application/json' -d '{}' "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/heartbeat"`;
+print a warning on a non-2xx code and continue. The runtime also renews the claim every 5 minutes during the
+dispatch (`claim-heartbeat.ts`), so this step is belt-and-braces, not the only renewal.

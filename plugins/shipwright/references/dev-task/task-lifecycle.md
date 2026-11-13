@@ -17,7 +17,7 @@ Satisfied when dep status ∈ {merged, done, deployed, released, cancelled}; or 
 The tagged reason keeps the loop orchestrator from counting the defer toward `SKIP_BLOCK_THRESHOLD`.
 
 ## Missing branch
-PATCH `{"status":"blocked"}` and print the PATCH command to set `branch` (`feat/{id-lowercase}`); stop.
+PATCH `{"status":"blocked","blockedReason":"missing_branch"}` and print the PATCH command to set `branch` (`feat/{id-lowercase}`); stop.
 
 ## Same-branch sibling check
 `GET /tasks?branch={branch}&status=in_progress&repo={repo}` (the `repo` filter is required: agent-scoped
