@@ -48,7 +48,7 @@ unfilterable by design. Revisit with an "other" bucket if one shows up.
 
 Producer -> release gate -> consumer, because the list queries ship in a published package.
 COF-1.1 is additive (new optional `outcomes`, old `outcome` untouched), so it is safe to
-deploy alone. Minimum version 1.38.0 assumes the next minor release after 1.37.0.
+deploy alone. The gate resolves the minimum version at run time: the first release containing the COF-1.1 merge commit.
 
 ## Decision Log
 
