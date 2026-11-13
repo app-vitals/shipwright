@@ -42,3 +42,25 @@ test("generated CSS ships the on-brand utility classes", () => {
 test("generated CSS does NOT contain the retired electric blue", () => {
   expect(css.toUpperCase()).not.toContain("#3B82F6");
 });
+
+// Install command: the old single-step form fails (the plugin is not in a registered marketplace);
+// the working form is `marketplace add` then `install shipwright@shipwright`.
+const WORKING_ADD = "/plugin marketplace add app-vitals/shipwright";
+const WORKING_INSTALL = "/plugin install shipwright@shipwright";
+const FAILING_INSTALL = "/plugin install shipwright@app-vitals/shipwright";
+
+test("brand tokens, docs, templates and demo slide use the working two-step install", async () => {
+  expect(tokens.brand.install).toEqual([WORKING_ADD, WORKING_INSTALL]);
+  for (const rel of [
+    "BRAND.md",
+    "templates/deck.html",
+    "templates/one-pager.html",
+    "../demo/slides/close.html",
+  ]) {
+    const text = await Bun.file(new URL(rel, import.meta.url)).text();
+    expect(text).toContain(WORKING_ADD);
+    expect(text).toContain(WORKING_INSTALL);
+    expect(text).not.toContain(FAILING_INSTALL);
+  }
+  expect(JSON.stringify(tokens)).not.toContain(FAILING_INSTALL);
+});
