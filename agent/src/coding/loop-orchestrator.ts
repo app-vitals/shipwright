@@ -120,6 +120,7 @@ import {
   buildProductionDeps as buildReviewDeps,
   getReviewCandidates,
 } from "./check-review.ts";
+import { startClaimHeartbeat } from "./claim-heartbeat.ts";
 import {
   type CronJobLike,
   LOOP_PHASE_JOB_NAMES,
@@ -332,6 +333,12 @@ export interface LoopOrchestratorDeps {
    * resumes without renewing, identical to pre-fix behavior.
    */
   heartbeatTask?: (taskId: string) => Promise<void>;
+  /**
+   * DBH-1.1 — interval for the runtime's periodic `heartbeatTask` renewal
+   * while a dev-task attempt is running. Defaults to
+   * CLAIM_HEARTBEAT_INTERVAL_MS; overridable so tests can use a short one.
+   */
+  claimHeartbeatIntervalMs?: number;
   /**
    * CRT-1.2 — fetches a PR's live state from the task store; consumed by
    * CRT-1.3's PR-phase (review/patch/merge) auto-resume gate in dispatchItem
@@ -831,6 +838,7 @@ export function createLoopOrchestrator(
     getTaskState,
     agentId,
     heartbeatTask,
+    claimHeartbeatIntervalMs,
     getPrState,
     getPrProgress,
     patchOutcome,
@@ -1212,6 +1220,14 @@ export function createLoopOrchestrator(
       }
       const spawnEnv = buildSpawnEnv({ kind: "loop", id: itemId, owner });
 
+      // DBH-1.1: renew the task claim from the runtime while a dev-task
+      // attempt runs; the in-session prompt step alone was observed not to
+      // advance heartbeatAt (TSP-1.1).
+      const stopClaimHeartbeat =
+        phase === "dev-task" && heartbeatTask
+          ? startClaimHeartbeat(heartbeatTask, itemId, claimHeartbeatIntervalMs)
+          : undefined;
+
       let runResult: ClaudeRunResult;
       try {
         runResult = await runner(
@@ -1221,6 +1237,7 @@ export function createLoopOrchestrator(
           onEarlySessionId,
           spawnEnv,
         );
+        stopClaimHeartbeat?.();
         if (runResult.streamIncomplete) {
           // Clean process exit, but the stream never emitted a terminal
           // `result` event — treat this the same as a genuine failure rather
@@ -1236,6 +1253,7 @@ export function createLoopOrchestrator(
           );
         }
       } catch (err) {
+        stopClaimHeartbeat?.();
         // Partial-usage-on-failure (CSU-3.1): a ClaudeTimeoutError carries
         // whatever per-model usage was accumulated before the process was
         // killed — attach it as modelBreakdown so a timed-out run's tokens

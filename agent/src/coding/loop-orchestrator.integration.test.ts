@@ -1401,6 +1401,48 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     expect(creates).toHaveLength(4);
   });
 
+  test("DBH-1.1: renews the claimed task's heartbeat on the interval while a dev-task attempt runs", async () => {
+    const beats: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      await new Promise((r) => setTimeout(r, 60));
+      return { result: "done" };
+    };
+    const { reporter } = makeAttemptRecordingReporter();
+    const { getTaskState } = makeStateStub(["done"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DBH-9.1", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async (id) => {
+        beats.push(id);
+      },
+      claimHeartbeatIntervalMs: 10,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(beats.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(beats)).toEqual(new Set(["DBH-9.1"]));
+  });
+
   test("a claim renewal failure stops the resume loop but leaves the dispatch itself successful", async () => {
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter, creates, completes } = makeAttemptRecordingReporter();
