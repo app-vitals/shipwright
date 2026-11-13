@@ -28,7 +28,7 @@ Paste this into Claude Code and it will handle the rest:
 ```text
 Set up Shipwright Harness locally and open the metrics dashboard.
 1. In a terminal, run: git clone https://github.com/app-vitals/shipwright.git && cd shipwright && ./scripts/quickstart.sh
-2. Inside this Claude Code session, install the plugin: /plugin install shipwright@app-vitals/shipwright
+2. Inside this Claude Code session, install the plugin: /plugin marketplace add app-vitals/shipwright then /plugin install shipwright@shipwright
 3. Open the dashboard in your browser: http://localhost:3460/dashboard
 ```
 
@@ -44,7 +44,7 @@ When you run the one-prompt setup, three things happen in sequence:
    dashboard launches at `http://localhost:3460/dashboard` in offline fixtures mode — no secrets
    required.
 
-2. **Plugin install** — `/plugin install shipwright@app-vitals/shipwright` loads the Shipwright
+2. **Plugin install** — `/plugin marketplace add app-vitals/shipwright` then `/plugin install shipwright@shipwright` load the Shipwright
    plugin into your Claude Code session. The plugin provides the full delivery-loop commands:
    `/shipwright:plan-session`, `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`,
    and `/shipwright:merge`.

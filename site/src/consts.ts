@@ -15,12 +15,19 @@ export const BOOKING_URL = "https://vitals-os.com/cal/book/discovery";
 export const REPO_URL = "https://github.com/app-vitals/shipwright";
 
 /**
- * Canonical plugin install command shown in CTAs across the site.
+ * Canonical plugin install commands (two steps: add the marketplace, then
+ * install from it), one per line.
  *
  * Single source of truth — was redeclared as a local const across multiple
- * pages; centralized here so the command cannot drift between pages.
+ * pages; centralized here so the commands cannot drift between pages.
  */
-export const INSTALL_CMD = "/plugin install shipwright@app-vitals/shipwright";
+export const INSTALL_CMD_LINES = [
+  "/plugin marketplace add app-vitals/shipwright",
+  "/plugin install shipwright@shipwright",
+] as const;
+
+/** The install commands joined with a newline (paste/copy-ready). */
+export const INSTALL_CMD = INSTALL_CMD_LINES.join("\n");
 
 /**
  * Canonical URL to the repo's LICENSE file.

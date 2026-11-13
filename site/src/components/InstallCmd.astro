@@ -1,0 +1,11 @@
+---
+// Shared multi-line install command block. Each line is its own block-level
+// <span> so it is individually addressable (and selectable/copyable as
+// separate lines), while `.sw-code` scrolls horizontally instead of
+// overflowing on narrow viewports.
+import { INSTALL_CMD_LINES } from "../consts";
+
+const { class: className = "" } = Astro.props;
+---
+
+<pre class={`sw-code w-fit max-w-full ${className}`.trim()}><code>{INSTALL_CMD_LINES.map((line) => <span class="block whitespace-pre">{line}</span>)}</code></pre>
