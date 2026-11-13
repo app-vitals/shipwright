@@ -10,6 +10,7 @@ This path takes you from nothing to a **reviewed pull request on your own repo**
 | **Docker** (with the compose plugin) | `scripts/local-store.sh` runs the local task store (Postgres + task-store image) in containers. | <https://docs.docker.com/get-docker/> |
 | **gh** (authenticated: `gh auth login`) | `/shipwright:dev-task` opens the PR and `/shipwright:review` reads it. | <https://cli.github.com> |
 | **git** | Clone the Shipwright repo for `scripts/local-store.sh`, and work in your repo. | <https://git-scm.com/downloads> |
+| **Bun** | `/shipwright:review` runs its helper scripts with `bun`; the command stops with an install pointer if it is missing. | <https://bun.sh> |
 | **A small repo you can push to** | Where the first PR lands. A scratch repo is ideal. | — |
 
 If you authenticate `gh` with a fine-grained token instead of `gh auth login`, give it read/write on **Contents** and **Pull requests** for your repo, plus read on **Actions** if the repo has CI. Without Actions read, the CI check on the PR returns a 403 and Shipwright cannot tell whether CI passed.

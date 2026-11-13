@@ -82,7 +82,7 @@ The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifica
 
 ## Quickstart
 
-From nothing to a **reviewed pull request on your own repo**. Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/), [gh](https://cli.github.com) (authenticated), and [git](https://git-scm.com/downloads).
+From nothing to a **reviewed pull request on your own repo**. Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/), [gh](https://cli.github.com) (authenticated), [git](https://git-scm.com/downloads), and [Bun](https://bun.sh) (runs the `/shipwright:review` helper scripts).
 
 1. **Install the plugin** (inside a Claude Code session):
 
