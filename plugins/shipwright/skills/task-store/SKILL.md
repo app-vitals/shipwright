@@ -27,7 +27,7 @@ echo "Token: ${SHIPWRIGHT_TASK_STORE_TOKEN:+(set)}"
 
 ### Local / HITL Setup
 
-For local development or HITL execution, run the setup script (requires only Docker + curl; idempotent):
+For local development or HITL execution, run the setup script from a clone of [app-vitals/shipwright](https://github.com/app-vitals/shipwright) (requires only Docker + curl; idempotent):
 
 ```bash
 ./scripts/local-store.sh

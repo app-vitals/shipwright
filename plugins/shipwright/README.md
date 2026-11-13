@@ -260,7 +260,7 @@ Shipwright uses an HTTP task store service for task persistence. The service exp
 
 ### Quickstart (Local)
 
-For local development or HITL execution:
+For local development or HITL execution, from a clone of [app-vitals/shipwright](https://github.com/app-vitals/shipwright):
 
 ```bash
 eval "$(./scripts/local-store.sh)"
