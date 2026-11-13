@@ -58,7 +58,14 @@ import {
 export function createCodingExtension(
   ctx: AgentExtensionContext,
 ): AgentExtension<AgentConfigResponse> {
-  const { config, runner, sessions, cronRunReporter, contextStamp } = ctx;
+  const {
+    config,
+    runner,
+    sessions,
+    cronRunReporter,
+    contextStamp,
+    transcriptUploader,
+  } = ctx;
 
   const workQueueReporter =
     config.shipwright.apiUrl &&
@@ -172,6 +179,9 @@ export function createCodingExtension(
     // accumulating a permanent entry per finished dispatch.
     clearSessionKey: (key: string) => sessions.clear(key),
     contextStamp,
+    // LTU-1.3: optional; the runtime gates it on features.loopTranscriptUpload.
+    transcriptUploader,
+    transcriptCwd: config.paths.workspace,
     sentryClient: ctx.sentryClient,
   });
 

@@ -22,6 +22,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { AgentExtensionContext } from "@app-vitals/agent-runtime/agent-extension";
 import {
   type ClaudeRunResult,
   ClaudeTimeoutError,
@@ -2314,5 +2315,215 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
       },
     });
     expect(patches).toHaveLength(0);
+  });
+});
+
+// ─── LTU-1.3: opt-in loop-run transcript upload ──────────────────────────────
+
+describe("loop-orchestrator + loop transcript upload (LTU-1.3)", () => {
+  const noopWorkQueueReporter: WorkQueueReporter = {
+    async reportSnapshot() {},
+  };
+
+  type Uploader = NonNullable<AgentExtensionContext["transcriptUploader"]>;
+  type Features = { loopTranscriptUpload?: boolean } | undefined;
+
+  /**
+   * Recording stand-in for the runtime's uploader capability. Like the real
+   * one (createTranscriptUploader with featureFlag "loopTranscriptUpload") it
+   * is a no-op unless the synced flag is true or when there is no sessionId.
+   * `puts` records what would have been PUT to the admin transcript route.
+   */
+  function makeHarness(features: Features) {
+    const puts: Array<{
+      cronId: string;
+      runId: string;
+      sessionId: string;
+      cwd: string;
+    }> = [];
+    const created: string[] = [];
+    const reporter: CronRunReporter = {
+      async createRun() {
+        const id = `run-${created.length + 1}`;
+        created.push(id);
+        return id;
+      },
+      async completeRun() {},
+      async skipRun() {},
+      async recordProgress() {},
+      async recordSessionId() {},
+    };
+    const uploader: Uploader = {
+      async upload(args) {
+        if (features?.loopTranscriptUpload !== true) return;
+        if (!args.sessionId) return;
+        puts.push({ ...args, sessionId: args.sessionId });
+      },
+    };
+    return { puts, created, reporter, uploader };
+  }
+
+  // The orchestrator fires the upload without awaiting it; let it settle.
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  function run(
+    h: ReturnType<typeof makeHarness>,
+    opts: {
+      candidates?: WorkTaskCandidate[];
+      claim?: boolean;
+      result?: string;
+      sessionId?: string | undefined;
+      uploader?: Uploader;
+      throws?: boolean;
+    },
+  ) {
+    let calls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () =>
+        calls === 0 ? (opts.candidates ?? []) : [],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      claimTask: async () => opts.claim ?? true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      runner: async () => {
+        calls += 1;
+        if (opts.throws) throw new Error("boom");
+        return { result: opts.result ?? "done", sessionId: opts.sessionId };
+      },
+      cronRunReporter: h.reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+      transcriptUploader: opts.uploader ?? h.uploader,
+      transcriptCwd: "/h/workspace",
+    });
+    return loop([job("shipwright-dev-task", true)]).then(flush);
+  }
+
+  const cand = [task("LTU-T.1", "2026-01-01T00:00:00Z")];
+
+  test("uploads the transcript of a session run when the feature is on", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    await run(h, { candidates: cand, sessionId: "sess-1" });
+    expect(h.puts).toHaveLength(1);
+    expect(h.puts[0]).toEqual({
+      cronId: "shipwright-loop",
+      runId: "run-1",
+      sessionId: "sess-1",
+      cwd: "/h/workspace",
+    });
+  });
+
+  test("uploads for a failed run that started a session", async () => {
+    const { ClaudeRunError } = await import("@app-vitals/agent-runtime/claude");
+    const h = makeHarness({ loopTranscriptUpload: true });
+    let calls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => (calls === 0 ? cand : []),
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      runner: async () => {
+        calls += 1;
+        throw new ClaudeRunError("x", 1, "stderr", "sess-fail");
+      },
+      cronRunReporter: h.reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+      transcriptUploader: h.uploader,
+      transcriptCwd: "/h/workspace",
+    });
+    await loop([job("shipwright-dev-task", true)]);
+    await flush();
+    expect(h.puts.map((p) => p.sessionId)).toEqual(["sess-fail"]);
+  });
+
+  test("uploads nothing when the feature is off, absent, or unsynced", async () => {
+    for (const features of [{ loopTranscriptUpload: false }, {}, undefined]) {
+      const h = makeHarness(features);
+      await run(h, { candidates: cand, sessionId: "sess-1" });
+      expect(h.puts).toHaveLength(0);
+    }
+  });
+
+  test("uploads nothing when no uploader capability is wired (agent not on the list)", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    let calls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => (calls === 0 ? cand : []),
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      runner: async () => {
+        calls += 1;
+        return { result: "done", sessionId: "sess-1" };
+      },
+      cronRunReporter: h.reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+    await loop([job("shipwright-dev-task", true)]);
+    await flush();
+    expect(h.created).toHaveLength(1);
+    expect(h.puts).toHaveLength(0);
+  });
+
+  test("a run with no sessionId never uploads", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    await run(h, { candidates: cand, sessionId: undefined });
+    expect(h.puts).toHaveLength(0);
+  });
+
+  test("an idle tick creates no run row and uploads nothing", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    await run(h, { candidates: [] });
+    expect(h.created).toHaveLength(0);
+    expect(h.puts).toHaveLength(0);
+  });
+
+  test("a [silent] skipped run never uploads", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    await run(h, {
+      candidates: cand,
+      result: "nothing\n[silent]",
+      sessionId: "sess-skip",
+    });
+    expect(h.puts).toHaveLength(0);
+  });
+
+  test("a pre-claim 409 iteration creates no run row and uploads nothing", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    await run(h, { candidates: cand, claim: false, sessionId: "sess-1" });
+    expect(h.created).toHaveLength(0);
+    expect(h.puts).toHaveLength(0);
+  });
+
+  test("an uploader that throws or hangs never fails or delays the dispatch", async () => {
+    const h = makeHarness({ loopTranscriptUpload: true });
+    const throwing = {
+      upload: async () => {
+        throw new Error("upload down");
+      },
+    };
+    await expect(
+      run(h, { candidates: cand, sessionId: "s", uploader: throwing }),
+    ).resolves.toBeUndefined();
+    const hanging = { upload: () => new Promise<void>(() => {}) };
+    await expect(
+      run(h, { candidates: cand, sessionId: "s", uploader: hanging }),
+    ).resolves.toBeUndefined();
   });
 });
