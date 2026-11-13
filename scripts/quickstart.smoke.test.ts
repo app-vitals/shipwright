@@ -11,9 +11,10 @@
  *      (prereq checks + `task setup`) WITHOUT blocking on the long-running
  *      `task dev` server. We assert it exits 0 and does not start a server.
  *
- * NOT COVERED in CI (see the skipped test below): the real `git clone` and the
- * live `/plugin install shipwright@app-vitals/shipwright` step — neither can run
- * deterministically in CI (network + an interactive Claude Code session).
+ * NOT COVERED by this file (see the skipped test below): the real `git clone`
+ * and the plugin install. The install path is covered by the clean-box job,
+ * .github/workflows/quickstart-clean-box.yml, which runs the working form
+ * `claude plugin marketplace add` + `claude plugin install shipwright@shipwright`.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -103,23 +104,25 @@ describe("scripts/quickstart.sh — execution (QUICKSTART_SKIP_SERVE=1)", () => 
 });
 
 /**
- * NOT COVERED IN CI — documented explicitly per the acceptance criteria.
- *
- * The full copy-paste onboarding prompt has two steps this smoke test cannot
- * exercise deterministically:
+ * NOT COVERED HERE — documented explicitly per the acceptance criteria.
  *
  *   1. `git clone https://github.com/app-vitals/shipwright.git` — requires
- *      network access and produces a fresh checkout; CI already runs *inside*
- *      a checkout, so re-cloning is both impossible-in-sandbox and redundant.
- *   2. `/plugin install shipwright@app-vitals/shipwright` — runs inside an
- *      interactive Claude Code session, not a shell; there is no headless,
- *      deterministic way to invoke it from `bun test`.
+ *      network access; CI already runs *inside* a checkout, so re-cloning is
+ *      redundant.
+ *   2. The plugin install. The working form is
+ *        claude plugin marketplace add app-vitals/shipwright
+ *        claude plugin install shipwright@shipwright
+ *      (the `/plugin ...` slash forms only work inside an interactive session).
+ *      It is exercised by the clean-box job, .github/workflows/quickstart-clean-box.yml,
+ *      which also boots scripts/local-store.sh and round-trips a task over HTTP.
+ *      That job cannot run `/shipwright:plan-session` or `dev-task`: they need
+ *      an authenticated model session and a GitHub target.
  *
  * The deterministic shell portion (prereq checks + `task setup`) IS covered by
  * the execution test above via QUICKSTART_SKIP_SERVE=1.
  */
 describe("scripts/quickstart.sh — explicitly out of CI scope", () => {
-  test.skip("NOT COVERED: real git clone + live /plugin install cannot run in CI", () => {
+  test.skip("NOT COVERED HERE: git clone + plugin install (see quickstart-clean-box.yml)", () => {
     // Intentionally skipped — see the block comment above for why.
   });
 });

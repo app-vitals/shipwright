@@ -1,0 +1,91 @@
+name: Quickstart Clean Box
+
+# Smoke layer for the install path in docs/quickstart.md. On a clean runner
+# with an empty CLAUDE_CONFIG_DIR and no Shipwright config, it:
+#   1. installs the Claude Code CLI,
+#   2. adds the marketplace and installs the plugin
+#      (`claude plugin marketplace add` + `claude plugin install shipwright@shipwright`)
+#      and asserts the plugin is listed,
+#   3. boots the local task store (scripts/local-store.sh),
+#   4. creates and lists a task over HTTP, then tears everything down.
+#
+# NOT COVERED: this job cannot run `/shipwright:plan-session` or
+# `/shipwright:dev-task`. Those need an authenticated model session and a
+# GitHub target repo, and this job deliberately uses no secrets. Those steps
+# remain manually verified (see docs/quickstart.md).
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - docs/quickstart.md
+      - README.md
+      - .claude-plugin/marketplace.json
+      - plugins/shipwright/.claude-plugin/**
+      - scripts/local-store.sh
+      - .github/workflows/quickstart-clean-box.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-box:
+    name: Clean-box install + local store
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: Install plugin into an empty config dir
+        env:
+          # Fresh, empty config dir: nothing preinstalled, no auth.
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-clean-box
+        run: |
+          set -euo pipefail
+          rm -rf "$CLAUDE_CONFIG_DIR"
+          mkdir -p "$CLAUDE_CONFIG_DIR"
+          # Marketplace source: this checkout, so a PR validates its own manifest.
+          # Any failure here (add or install) fails the job.
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install shipwright@shipwright
+          claude plugin list | tee "$RUNNER_TEMP/plugin-list.txt"
+          grep -q 'shipwright@shipwright' "$RUNNER_TEMP/plugin-list.txt"
+
+      - name: Boot local task store
+        run: |
+          set -euo pipefail
+          ./scripts/local-store.sh > "$RUNNER_TEMP/store.env"
+          cat "$RUNNER_TEMP/store.env" | sed 's/TOKEN=.*/TOKEN=***/'
+
+      - name: Create and list a task over HTTP
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/store.env"
+          AUTH="Authorization: Bearer ${SHIPWRIGHT_TASK_STORE_TOKEN}"
+          curl -fsS -X POST "$SHIPWRIGHT_TASK_STORE_URL/tasks" \
+            -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"id":"QS-1","title":"clean-box smoke","status":"pending","repo":null}'
+          curl -fsS "$SHIPWRIGHT_TASK_STORE_URL/tasks" -H "$AUTH" | tee "$RUNNER_TEMP/tasks.json"
+          grep -q '"QS-1"' "$RUNNER_TEMP/tasks.json"
+
+      - name: Tear down local store
+        if: always()
+        run: ./scripts/local-store.sh --down
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Quickstart clean-box"
+            echo
+            echo "Covered: marketplace add, plugin install, plugin listed, local store boot, task create + list over HTTP."
+            echo
+            echo "**Not covered:** \`/shipwright:plan-session\` and \`/shipwright:dev-task\`. They need an authenticated model session and a GitHub target repo, and this job uses no secrets."
+          } >> "$GITHUB_STEP_SUMMARY"
