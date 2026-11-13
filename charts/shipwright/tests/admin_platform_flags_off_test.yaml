@@ -46,3 +46,11 @@ tests:
           any: true
           content:
             name: SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED
+
+  - it: sets no loop-transcript env with default values (allowlist defaults to empty)
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS

@@ -12,6 +12,19 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
+  - it: accepts admin.loopTranscriptUpload.agentIds as a list of ids
+    set:
+      admin.loopTranscriptUpload.agentIds: [agent-1]
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects a non-array admin.loopTranscriptUpload.agentIds
+    set:
+      admin.loopTranscriptUpload.agentIds: agent-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "admin/loopTranscriptUpload/agentIds"
+
   - it: rejects an admin service whose required `service` block is removed
     set:
       admin.service: null

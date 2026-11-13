@@ -45,7 +45,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.462.2",
+      "version": "1.462.4",
       "dependencies": {
         "@app-vitals/agent-admin": "1.37.0",
         "@app-vitals/agent-lib": "1.37.0",
@@ -84,7 +84,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.462.2",
+      "version": "1.462.4",
       "dependencies": {
         "@app-vitals/agent-lib": "1.37.0",
         "@hono/zod-openapi": "^1.0.0",
@@ -102,7 +102,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.462.2",
+      "version": "1.462.4",
       "dependencies": {
         "@app-vitals/agent-runtime": "1.37.0",
         "js-yaml": "^5.0.0",

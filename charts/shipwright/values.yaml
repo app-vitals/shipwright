@@ -310,6 +310,13 @@ admin:
   transcriptApi:
     # -- Enable the transcript API routes (sets SHIPWRIGHT_TRANSCRIPT_API_ENABLED).
     enabled: false
+  # -- Opt-in coding-loop transcript upload configuration.
+  loopTranscriptUpload:
+    # -- Agent ids whose coding-loop runs may upload a redacted transcript
+    # (intended to be comma-joined into SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS;
+    # also needs `admin.transcriptApi.enabled`). Empty means no agent uploads.
+    # Not yet rendered by the bundled agent-platform library chart.
+    agentIds: []
   # -- Agent repo-access check configuration.
   repoAccessCheck:
     # -- Enable the agent repo-access check (sets SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED).

@@ -72,6 +72,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
+import type { AgentExtensionContext } from "@app-vitals/agent-runtime/agent-extension";
 import {
   ClaudeRunError,
   type ClaudeRunResult,
@@ -141,6 +142,11 @@ import {
 } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** The runtime's optional redacted-transcript upload capability (LTU-1.1). */
+type TranscriptUploader = NonNullable<
+  AgentExtensionContext["transcriptUploader"]
+>;
 
 /**
  * The phase a dispatched run serves — used to tag the AgentCronRun row.
@@ -469,6 +475,16 @@ export interface LoopOrchestratorDeps {
    * Optional: absent → runs are reported without a fingerprint.
    */
   contextStamp?: () => RunContextStamp | null;
+  /**
+   * LTU-1.3 — optional redacted-transcript upload capability from the
+   * extension context. Called (fire-and-forget, never awaited, failures
+   * swallowed) after a dispatch's completeRun, only when the run actually
+   * started a Claude session. The runtime's uploader is itself a no-op unless
+   * the synced `features.loopTranscriptUpload` is true. Absent → no upload.
+   */
+  transcriptUploader?: TranscriptUploader;
+  /** cwd the loop's Claude sessions run in (locates the transcript file). */
+  transcriptCwd?: string;
   /**
    * LO-1.1 — optional injected Sentry client, mirroring cron-failure-
    * reporter.ts's sentryClient?.captureException pattern (undefined when
@@ -851,6 +867,8 @@ export function createLoopOrchestrator(
     loopCronId,
     clock = SystemClock(),
     contextStamp,
+    transcriptUploader,
+    transcriptCwd,
     sentryClient,
     random = Math.random,
     commandExists = pluginCommandExists,
@@ -1203,6 +1221,30 @@ export function createLoopOrchestrator(
           `[loop-orchestrator] context stamp failed for run ${runId}: ${String(err)} — running unstamped`,
         );
       }
+      // LTU-1.3: best-effort, fire-and-forget transcript upload for a run that
+      // started a Claude session. Never awaited and never throws, so it can
+      // neither fail nor delay the dispatch.
+      const uploadTranscript = (sessionId: string | undefined): void => {
+        if (!transcriptUploader || !sessionId || !runId) return;
+        try {
+          transcriptUploader
+            .upload({
+              cronId: loopCronId,
+              runId,
+              sessionId,
+              cwd: transcriptCwd ?? process.cwd(),
+            })
+            .catch((err) => {
+              console.warn(
+                `[loop-orchestrator] transcript upload failed for run ${runId}: ${String(err)} — swallowing`,
+              );
+            });
+        } catch (err) {
+          console.warn(
+            `[loop-orchestrator] transcript upload failed for run ${runId}: ${String(err)} — swallowing`,
+          );
+        }
+      };
       const extras = (t: RunTelemetry | undefined): TokenPayloadExtras => ({
         telemetry: t,
         contextStamp: stamp,
@@ -1303,6 +1345,7 @@ export function createLoopOrchestrator(
           itemType,
           itemId,
         );
+        uploadTranscript(errSessionId);
         markCronRunFailureReported(err);
         // LO-1.1: captured while the sentryClient.withScope fork set up by the
         // dispatch() wrapper below is still active — item_type/item_id tags
@@ -1456,6 +1499,7 @@ export function createLoopOrchestrator(
         itemType,
         itemId,
       );
+      uploadTranscript(runResult.sessionId);
       // SKT-2.1: real progress clears any prior skip streak.
       await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
       return "completed";
@@ -2333,6 +2377,10 @@ interface LoopOrchestratorGetterDeps {
   clearSessionKey?: (key: string) => Promise<void>;
   /** See LoopOrchestratorDeps's contextStamp doc comment. */
   contextStamp?: () => RunContextStamp | null;
+  /** LTU-1.3 — see LoopOrchestratorDeps's transcriptUploader doc comment. */
+  transcriptUploader?: TranscriptUploader;
+  /** LTU-1.3 — see LoopOrchestratorDeps's transcriptCwd doc comment. */
+  transcriptCwd?: string;
 }
 
 /**
@@ -2370,6 +2418,8 @@ export function createLoopOrchestratorGetter(
         sentryClient: deps.sentryClient,
         clearSessionKey: deps.clearSessionKey,
         contextStamp: deps.contextStamp,
+        transcriptUploader: deps.transcriptUploader,
+        transcriptCwd: deps.transcriptCwd,
       })
         .then((orch) => {
           orchestrator = orch;
@@ -2407,6 +2457,10 @@ export interface LoopOrchestratorProductionOptions {
   clearSessionKey?: (key: string) => Promise<void>;
   /** See LoopOrchestratorDeps's contextStamp doc comment. */
   contextStamp?: () => RunContextStamp | null;
+  /** LTU-1.3 — see LoopOrchestratorDeps's transcriptUploader doc comment. */
+  transcriptUploader?: TranscriptUploader;
+  /** LTU-1.3 — see LoopOrchestratorDeps's transcriptCwd doc comment. */
+  transcriptCwd?: string;
 }
 
 /**
@@ -2559,6 +2613,8 @@ async function createProductionLoopOrchestrator(
     releasePr: (id) => taskStoreClient.releasePr(id),
     clearSessionKey: opts.clearSessionKey,
     contextStamp: opts.contextStamp,
+    transcriptUploader: opts.transcriptUploader,
+    transcriptCwd: opts.transcriptCwd,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,
