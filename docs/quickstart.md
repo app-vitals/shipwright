@@ -12,6 +12,8 @@ This path takes you from nothing to a **reviewed pull request on your own repo**
 | **git** | Clone the Shipwright repo for `scripts/local-store.sh`, and work in your repo. | <https://git-scm.com/downloads> |
 | **A small repo you can push to** | Where the first PR lands. A scratch repo is ideal. | — |
 
+If you authenticate `gh` with a fine-grained token instead of `gh auth login`, give it read/write on **Contents** and **Pull requests** for your repo, plus read on **Actions** if the repo has CI. Without Actions read, the CI check on the PR returns a 403 and Shipwright cannot tell whether CI passed.
+
 ## Step 1 — Install the plugin
 
 Inside an interactive Claude Code session (these are slash commands, not terminal commands), add the marketplace first, then install:
@@ -21,17 +23,19 @@ Inside an interactive Claude Code session (these are slash commands, not termina
 /plugin install shipwright@shipwright
 ```
 
+On a first launch, Claude Code asks a few things before you reach a prompt: a theme choice, a security notice, and a "trust this folder" prompt whose default answer is **No, exit**. Choose "Yes, I trust this folder"; pressing Enter on the default closes Claude Code. `/plugin install` also opens a scope chooser (user, project, local); pick **user** scope so the plugin is available in every repo.
+
 ## Step 2 — Start the local task store
 
 Shipwright tracks tasks in a task store. In a terminal, clone this repo and run the one-command local store:
 
 ```bash
-git clone https://github.com/app-vitals/shipwright.git
+git clone --depth 1 https://github.com/app-vitals/shipwright.git
 cd shipwright
 ./scripts/local-store.sh
 ```
 
-It needs only Docker and curl, starts Postgres and the task-store image, waits for it to be healthy, mints a token, and prints two `export` lines. Run them in the shell you launch Claude Code from:
+`--depth 1` skips the git history; the script needs nothing from it. It needs only Docker and curl, starts Postgres and the task-store image, waits for it to be healthy, mints a token, and prints two `export` lines. Run them in the shell you launch Claude Code from:
 
 ```bash
 export SHIPWRIGHT_TASK_STORE_URL=http://localhost:3002
@@ -48,7 +52,14 @@ Re-running the script is safe; `./scripts/local-store.sh --down` removes the con
 /shipwright:plan-session first-pr
 ```
 
-Plan-session reads the spec, explores your repo, and writes a task breakdown into the task store. Note the task id it prints (for example `FP-1.1`).
+Plan-session reads the spec, explores your repo, and writes a task breakdown into the task store. It stops twice to ask for input:
+
+1. **Confirm the detected repo.** It prints the repo it found from your git remote; confirm it is the right one.
+2. **Approve the design and task breakdown.** Review the proposed design and tasks, then approve them (or ask for changes).
+
+It also opens a docs-only **plan PR** on your repo with the plan files, before the build PR in step 4. That plan PR stays open until you merge or close it.
+
+Note the task id it prints (for example `FP-1.1`). Plan-session may end by saying an execution cron will pick up ready tasks; with no agent configured, as in this path, nothing does, so you run `/shipwright:dev-task` yourself in the next step.
 
 ## Step 4 — Build it
 
@@ -64,20 +75,31 @@ Plan-session reads the spec, explores your repo, and writes a task breakdown int
 /shipwright:review <PR number>
 ```
 
-Shipwright reviews the diff and reports its findings; depending on policy it posts them to the PR as a GitHub review. You now have a planned, built, and reviewed PR on your own repo.
+Shipwright reviews the diff and reports its findings; depending on policy it posts them to the PR as a GitHub review. GitHub does not let you approve your own pull request, so on a solo repo the review is posted as a comment with a verdict line (for example `Verdict: APPROVE`) rather than as an approving review. You now have a planned, built, and reviewed PR on your own repo.
 
 ## Expected time
 
-| Step | What happens | Typical time |
-|---|---|---|
-| Prerequisites | Install Claude Code, Docker, gh | 10–20 min (once) |
-| 1. Install plugin | Marketplace add + install | 1 min |
-| 2. Local task store | Image pull + Postgres boot on first run | 2–5 min |
-| 3. Plan-session | Plan a tiny spec | 3–10 min |
-| 4. Dev-task | Implement, test, open PR | 10–30 min |
-| 5. Review | Review the PR | 3–10 min |
+One agent-driven rehearsal of this path, on a fresh Ubuntu VM with Docker already available and a tiny dependency-free Node repo (a five-line `/health` endpoint change), took **14 min 15 s** of wall time for steps 1 to 5. Treat it as one data point, not a guarantee: a real codebase makes dev-task and review slower, and the figures include fixed waits between keystrokes.
 
-These are rough guides; they vary with your machine, network, and repo size.
+| Step | What happens | Measured (one run, tiny repo) | Expect more when |
+|---|---|---|---|
+| Prerequisites | Install Claude Code, Docker, gh | 1 min 32 s (checking tools already present) | You install them from scratch (plan for 10–20 min, once) |
+| 1. Install plugin | Marketplace add + install | 1 min 37 s | — |
+| 2. Local task store | Image pull + Postgres boot on first run | 1 min 39 s (with a full clone; a shallow clone is faster) | Your network is slow |
+| 3. Plan-session | Plan a tiny spec | 4 min 34 s | The spec or repo is larger |
+| 4. Dev-task | Implement, test, open PR | about 3 min 15 s | The change is larger or the test suite is slow |
+| 5. Review | Review the PR | 2 min 48 s | The diff is larger |
+
+The earlier planning estimate for steps 1 to 5 was 19 to 56 minutes; that range is still the safer one to plan around for a real repo.
+
+## Clean-up
+
+The path leaves a few things behind:
+
+- **A worktree** from dev-task at `~/worktrees/<repo>-<branch>` (or under `$SHIPWRIGHT_WORKTREE_DIR`). Remove it with `git worktree remove <path>` once the PR is merged.
+- **Untracked files in your checkout:** `planning/first-pr/` and `state/reviews/`. Delete them or add them to `.gitignore`.
+- **The open plan PR** from step 3. Merge or close it.
+- **The local task store**, when you are finished: `./scripts/local-store.sh --down` from the Shipwright clone.
 
 ## What CI does not cover
 

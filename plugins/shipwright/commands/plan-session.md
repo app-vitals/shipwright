@@ -39,8 +39,10 @@ supplied.
 Then print:
 ```
 ⚠ Auto-detected repo: {repo}
-This will be written to every task in the task store and used by /dev-task to
-locate the source tree (${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}). Confirm it is correct before proceeding.
+This will be written to every task in the task store. /dev-task uses it to name
+the worktree and to open the PR. When your current checkout is that repo,
+/dev-task works from it; otherwise it looks for the source tree under
+${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}. Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
 
@@ -752,15 +754,14 @@ when the admin app base URL is not configured.
 
 ```bash
 if [ -z "$SHIPWRIGHT_ADMIN_APP_BASE_URL" ]; then
-  echo "⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset."
+  PLAN_VIZ_URL=""  # no admin app configured: nothing to link, print nothing
 else
   PLAN_VIZ_URL="${SHIPWRIGHT_ADMIN_APP_BASE_URL%/}/admin/sessions/{session}"
 fi
 ```
 
 When `SHIPWRIGHT_ADMIN_APP_BASE_URL` is set, surface the constructed URL in the
-Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If the step printed a skip
-notice instead, omit that line and proceed — the plan and its tasks are already
+Step 6 `QUEUED` confirmation as `Plan viz: {url}`. If no URL was produced, omit that line and proceed — the plan and its tasks are already
 written and the command must never block on visualization.
 
 When (and only when) a URL was produced, also emit `[plan:{url}]` on its own
@@ -898,6 +899,9 @@ READY TO START (no dependencies):
 BLOCKED (waiting on deps):
 {list tasks with deps → what they're waiting on}
 
+{if SHIPWRIGHT_AGENT_ID is set:}
 The execution cron will pick up ready tasks automatically.
+{if SHIPWRIGHT_AGENT_ID is unset (no agent configured):}
+Run /shipwright:dev-task {first ready task id} to build the first task.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
