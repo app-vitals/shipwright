@@ -19,8 +19,8 @@
     "db:migrate": "prisma migrate deploy"
   },
   "dependencies": {
-    "@app-vitals/agent-admin": "1.37.0",
-    "@app-vitals/agent-lib": "1.37.0",
+    "@app-vitals/agent-admin": "1.38.0",
+    "@app-vitals/agent-lib": "1.38.0",
     "@hono/zod-openapi": "^1.0.0",
     "hono": "^4.13.1"
   },
