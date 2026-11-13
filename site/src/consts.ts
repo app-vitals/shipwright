@@ -38,21 +38,30 @@ export const INSTALL_CMD = INSTALL_CMD_LINES.join("\n");
 export const LICENSE_URL =
   "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
 
+/** The first-PR quickstart guide (CRQ-3.2); link with campaign "quickstart". */
+export const QUICKSTART_URL =
+  "https://github.com/app-vitals/shipwright/blob/main/docs/quickstart.md";
+
 /**
  * Appends the STAR-1.1 UTM tracking params to a URL (REPO_URL in practice)
  * for a specific site placement, so a click on any star-ask CTA is
  * attributable in GitHub's referrer traffic. `content` differentiates by
- * placement (e.g. "hero", "social_proof", "docs", "try_it_cta").
+ * placement (e.g. "hero", "social_proof", "docs", "try_it_cta"). `campaign`
+ * defaults to "star_cta"; the quickstart links pass "quickstart".
  *
  * Centralized so the UTM scheme is one edit, not N call sites, and so it
  * cannot drift between the hero CTA, the social-proof CTA, the docs CTA,
  * and TryItCta.
  */
-export function withUtm(url: string, content: string): string {
+export function withUtm(
+  url: string,
+  content: string,
+  campaign = "star_cta",
+): string {
   const tagged = new URL(url);
   tagged.searchParams.set("utm_source", "shipwrightharness.com");
   tagged.searchParams.set("utm_medium", "site");
-  tagged.searchParams.set("utm_campaign", "star_cta");
+  tagged.searchParams.set("utm_campaign", campaign);
   tagged.searchParams.set("utm_content", content);
   return tagged.toString();
 }

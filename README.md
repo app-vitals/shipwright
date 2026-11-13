@@ -82,29 +82,35 @@ The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifica
 
 ## Quickstart
 
-Run the **metrics dashboard locally today** — **offline by default**: fixtures-backed, no accounts, no database. One copy-paste prompt covers both steps (terminal + an in-session slash command) and opens the dashboard.
+From nothing to a **reviewed pull request on your own repo**. Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/), [gh](https://cli.github.com) (authenticated), and [git](https://git-scm.com/downloads).
 
-Paste this into a **Claude Code** session:
+1. **Install the plugin** (inside a Claude Code session):
 
-```text
-Set up Shipwright Harness locally and open the metrics dashboard.
+   ```text
+   /plugin marketplace add app-vitals/shipwright
+   /plugin install shipwright@shipwright
+   ```
 
-1. In a terminal, run:
-     git clone https://github.com/app-vitals/shipwright.git && cd shipwright && ./scripts/quickstart.sh
-   Checks prerequisites, installs dependencies (task setup), and starts the
-   metrics dashboard offline (no accounts or secrets needed). Leave it running.
+2. **Start the local task store** (in a terminal), then run the `export` lines it prints in the shell you launch Claude Code from (`SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN`):
 
-2. Inside this Claude Code session, install the plugin:
-     /plugin marketplace add app-vitals/shipwright
-     /plugin install shipwright@shipwright
+   ```bash
+   git clone https://github.com/app-vitals/shipwright.git && cd shipwright
+   ./scripts/local-store.sh
+   ```
 
-3. Open the dashboard in your browser:
-     http://localhost:3460/dashboard
-```
+3. **Plan, build, review** (in Claude Code, inside your own small repo):
 
-Step 1 runs in your **terminal**; step 2 runs **inside the Claude Code session**.
+   ```text
+   /shipwright:plan-session first-pr
+   /shipwright:dev-task <task id>
+   /shipwright:review <PR number>
+   ```
 
-Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [git](https://git-scm.com/downloads), [Bun](https://bun.sh), and [go-task](https://taskfile.dev/installation/). Full details, the `QUICKSTART_SKIP_SERVE` CI guard, and the offline-default explanation live in [`docs/quickstart.md`](./docs/quickstart.md).
+That is a planned, built, and reviewed PR. The full walkthrough, timings, and what CI does not cover are in [`docs/quickstart.md`](./docs/quickstart.md).
+
+### Optional: metrics dashboard and full dev stack
+
+Want to see the **metrics dashboard** locally? It runs **offline by default** (fixtures-backed, no accounts, no database): `./scripts/quickstart.sh` from a clone, then open `http://localhost:3460/dashboard`. Needs [Bun](https://bun.sh) and [go-task](https://taskfile.dev/installation/).
 
 **Full dev stack**
 
@@ -174,7 +180,7 @@ Tasks are tracked in the Shipwright task store (see [`docs/task-store.md`](./doc
 
 Shipwright Harness is live — plugin, metrics dashboard, and the Shipwright agent all ship together (see the release badge above for the current version). See the [issues](https://github.com/app-vitals/shipwright/issues) for the live roadmap and upcoming improvements.
 
-The metrics dashboard is runnable locally today — the [Quickstart](#quickstart) wraps this in one copy-paste prompt (`./scripts/quickstart.sh`). The underlying tasks:
+The metrics dashboard is runnable locally today — the [Quickstart](#quickstart) covers the first-PR path, and its optional section wraps the dashboard in `./scripts/quickstart.sh`. The underlying tasks:
 
 ```bash
 task setup      # bun install
@@ -185,7 +191,7 @@ task stack      # full dev stack in a tmux session (6 panes) — requires tmux
 
 `task stack` brings up a single tmux session (`shipwright`) with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the platform-hosted chat service from `app-vitals/agent`, :3003 — see [local platform development](docs/local-platform-development.md#running-chat-task-stack)), the **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`), not a REPL or an endpoint on the agent itself. It runs a Prisma `migrate deploy` preflight first so the admin service's Postgres schema is up to date; on macOS the preflight checks Postgres is reachable and offers to run the needed `brew`/`createdb` commands if it isn't. `task stack` requires `tmux`; if it isn't installed, use `task dev` (the no-tmux fallback that starts the metrics dashboard).
 
-See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt and offline-default behavior.
+See [`docs/quickstart.md`](./docs/quickstart.md) for the full first-PR walkthrough and the optional dashboard section.
 
 ## Built on Claude Code
 

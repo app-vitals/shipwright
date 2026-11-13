@@ -11,7 +11,7 @@
 // The secondary button and the rollout line below it (MKT-AUTONOMY-PAGE-1)
 // label what the discovery call is actually for and point at /autonomy for
 // readers who want the staged-rollout detail before booking anything.
-import { BOOKING_URL, REPO_URL, withUtm } from "../consts";
+import { BOOKING_URL, QUICKSTART_URL, REPO_URL, withUtm } from "../consts";
 import InstallCmd from "./InstallCmd.astro";
 ---
 
@@ -22,6 +22,9 @@ import InstallCmd from "./InstallCmd.astro";
     runs on your own infra.
   </p>
   <InstallCmd class="mt-4" />
+  <p class="mt-3 text-sm">
+    <a href={withUtm(QUICKSTART_URL, "try_it_cta", "quickstart")}>Take the first-PR path</a>
+  </p>
   <div class="mt-6 flex flex-wrap items-center gap-4">
     <a href={withUtm(REPO_URL, "try_it_cta")} class="sw-btn">Star on GitHub ↗</a>
     <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Talk through a rollout</a>
