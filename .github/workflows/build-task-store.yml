@@ -90,6 +90,7 @@ jobs:
             -f task-store/Dockerfile \
             --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
             -t ghcr.io/app-vitals/shipwright-task-store:"$NEW_TAG" \
+            -t ghcr.io/app-vitals/shipwright-task-store:latest \
             .
 
       - name: Push Docker image
@@ -97,6 +98,8 @@ jobs:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
         run: |
           docker push ghcr.io/app-vitals/shipwright-task-store:"$NEW_TAG"
+          # :latest is the default image for scripts/local-store.sh
+          docker push ghcr.io/app-vitals/shipwright-task-store:latest
 
       - name: Tag release
         # Only create the git tag once the image has actually pushed. A tag with
