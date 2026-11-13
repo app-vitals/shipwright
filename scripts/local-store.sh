@@ -148,7 +148,8 @@ YAML
 chmod 600 "$COMPOSE_FILE"
 
 echo "Starting local task store ($IMAGE)..." >&2
-compose up -d >&2 || die "docker compose up failed (image pull or container start). See output above."
+compose up -d >&2 \
+  || die "docker compose up failed (image pull or container start). If the image pull failed, set SHIPWRIGHT_LOCAL_STORE_IMAGE to a published tag (e.g. ghcr.io/app-vitals/shipwright-task-store:task-store-vX.Y.Z). See output above."
 
 echo "Waiting for $URL/health/ready (up to ${READY_TIMEOUT}s)..." >&2
 waited=0
