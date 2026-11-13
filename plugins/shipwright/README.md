@@ -251,12 +251,30 @@ All commands look for planning docs at `planning/**/*_Task_Breakdown.md`. Create
 
 Shipwright uses an HTTP task store service for task persistence. The service exposes a REST API; agents call it directly via curl.
 
-**Required env vars** (provisioned automatically by the agent harness):
+**Required env vars:**
 
 | Var | Description |
 |-----|-------------|
 | `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
 | `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
+
+### Quickstart (Local)
+
+For local development or HITL execution:
+
+```bash
+eval "$(./scripts/local-store.sh)"
+```
+
+This boots a local task-store container stack and exports the required env vars. The setup is idempotent — re-running the script reuses an existing stack. To tear down:
+
+```bash
+./scripts/local-store.sh --down
+```
+
+### Managed / Deployed
+
+On managed Shipwright agents, both env vars are provisioned automatically by the agent harness at deployment time and set via the Shipwright admin UI.
 
 See the `task-store` skill for the full API reference and lifecycle commands.
 

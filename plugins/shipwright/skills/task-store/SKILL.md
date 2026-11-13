@@ -25,9 +25,43 @@ echo "URL:   ${SHIPWRIGHT_TASK_STORE_URL:-(missing)}"
 echo "Token: ${SHIPWRIGHT_TASK_STORE_TOKEN:+(set)}"
 ```
 
-**`SHIPWRIGHT_TASK_STORE_URL` missing?** Contact your administrator — this URL is provisioned at deployment time and is not something you generate yourself.
+### Local / HITL Setup
 
-**`SHIPWRIGHT_TASK_STORE_TOKEN` missing?** Mint a scoped token directly against the task store, using the admin token (`SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`):
+For local development or HITL execution, run the setup script (requires only Docker + curl; idempotent):
+
+```bash
+./scripts/local-store.sh
+```
+
+This script:
+1. Boots a local Postgres + task-store container stack
+2. Mints an unscoped token (reused on re-run)
+3. Prints the env var exports to stdout
+
+Use the exports directly:
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL=http://localhost:3002
+export SHIPWRIGHT_TASK_STORE_TOKEN=<token>
+```
+
+Or in one command:
+
+```bash
+eval "$(./scripts/local-store.sh)"
+```
+
+To tear down:
+
+```bash
+./scripts/local-store.sh --down
+```
+
+### Managed / Deployed Setups
+
+On managed Shipwright agents, `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` are provisioned automatically by the agent harness via deployment-time configuration and set as agent env vars in the Shipwright admin UI.
+
+If you need to mint additional scoped tokens on a managed setup, use the admin token (`SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`):
 
 ```bash
 # Local / HITL use — omit agentId so the token is unscoped.
@@ -60,7 +94,9 @@ All requests require a Bearer token:
 Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
 ```
 
-Both env vars are provisioned automatically by the agent harness:
+Both env vars are set either:
+- **Locally:** via `scripts/local-store.sh` (see Setup section above)
+- **On managed agents:** provisioned automatically by the agent harness via the Shipwright admin UI
 
 | Env var | Description |
 |---|---|
