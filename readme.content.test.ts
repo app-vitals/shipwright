@@ -51,3 +51,33 @@ describe("README.md competitor-naming policy (brand/MESSAGING.md D10)", () => {
     expect(content).toMatch(/\*\*Compare it\*\*/);
   });
 });
+
+describe("docs/quickstart.md first-PR path", () => {
+  const content = readFileSync(join(repoRoot, "docs/quickstart.md"), "utf8");
+
+  it("uses the working two-step plugin install form", () => {
+    expect(content).toContain("/plugin marketplace add app-vitals/shipwright");
+    expect(content).toContain("/plugin install shipwright@shipwright");
+  });
+
+  it("does not use the failing marketplace-qualified install form", () => {
+    expect(content).not.toContain("shipwright@app-vitals/shipwright");
+  });
+
+  it("does not contain stale not-yet-built phrases", () => {
+    expect(content).not.toMatch(/still being built|coming soon|🚧|not yet ready/i);
+  });
+
+  it("walks plan-session, dev-task and review via the local store", () => {
+    expect(content).toContain("./scripts/local-store.sh");
+    expect(content).toContain("/shipwright:plan-session");
+    expect(content).toContain("/shipwright:dev-task");
+    expect(content).toContain("/shipwright:review");
+  });
+
+  it("states the Docker prerequisite, expected time and CI coverage limits", () => {
+    expect(content).toMatch(/\*\*Docker\*\*/);
+    expect(content).toMatch(/## Expected time/);
+    expect(content).toMatch(/## What CI does not cover/);
+  });
+});

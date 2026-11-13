@@ -8,7 +8,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 
 ## Contents
 
-- **[Quickstart](./quickstart.md)** — prerequisites, step-by-step setup (clone → quickstart.sh → plugin install → task dev), and the copy-paste session prompt.
+- **[Quickstart](./quickstart.md)** — prerequisites, plugin install, local task store, and a first plan → build → review PR on your own repo; the metrics dashboard and full dev stack are optional extras.
 - **[Architecture](./architecture.md)** — the four-artifact design (plugin → metrics → agent → task-store), supporting surfaces, and workspace layout.
 - **[Testing](./testing.md)** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract.
 - **[Metrics dashboard](./metrics.md)** — the provider-agnostic metrics service (fixtures / task-store): JSON endpoints, dashboard, auth, and environment.

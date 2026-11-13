@@ -1,14 +1,97 @@
 # Quickstart
 
-## Option A — Metrics dashboard only (no secrets needed)
+This path takes you from nothing to a **reviewed pull request on your own repo**, driven by Shipwright: plan a tiny spec, let `/shipwright:dev-task` build it, then `/shipwright:review` the PR. The metrics dashboard and the full dev stack are optional extras, covered [below](#optional-metrics-dashboard-no-secrets-needed).
+
+## Prerequisites
+
+| Tool | Why | Install |
+|---|---|---|
+| **Claude Code** | Runs the plugin and every `/shipwright:*` command. | <https://www.anthropic.com/claude-code> |
+| **Docker** (with the compose plugin) | `scripts/local-store.sh` runs the local task store (Postgres + task-store image) in containers. | <https://docs.docker.com/get-docker/> |
+| **gh** (authenticated: `gh auth login`) | `/shipwright:dev-task` opens the PR and `/shipwright:review` reads it. | <https://cli.github.com> |
+| **git** | Clone the Shipwright repo for `scripts/local-store.sh`, and work in your repo. | <https://git-scm.com/downloads> |
+| **A small repo you can push to** | Where the first PR lands. A scratch repo is ideal. | — |
+
+## Step 1 — Install the plugin
+
+Inside an interactive Claude Code session (these are slash commands, not terminal commands), add the marketplace first, then install:
+
+```text
+/plugin marketplace add app-vitals/shipwright
+/plugin install shipwright@shipwright
+```
+
+## Step 2 — Start the local task store
+
+Shipwright tracks tasks in a task store. In a terminal, clone this repo and run the one-command local store:
+
+```bash
+git clone https://github.com/app-vitals/shipwright.git
+cd shipwright
+./scripts/local-store.sh
+```
+
+It needs only Docker and curl, starts Postgres and the task-store image, waits for it to be healthy, mints a token, and prints two `export` lines. Run them in the shell you launch Claude Code from:
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL=http://localhost:3002
+export SHIPWRIGHT_TASK_STORE_TOKEN=<printed token>
+```
+
+Re-running the script is safe; `./scripts/local-store.sh --down` removes the containers, volume, and token.
+
+## Step 3 — Plan a tiny spec
+
+`cd` into your small repo, start Claude Code there (with the two variables above exported), and write a spec small enough for one or two tasks, for example "add a `/health` endpoint that returns `ok`" into `planning/first-pr/PRODUCT-SPEC.md`. Then run:
+
+```text
+/shipwright:plan-session first-pr
+```
+
+Plan-session reads the spec, explores your repo, and writes a task breakdown into the task store. Note the task id it prints (for example `FP-1.1`).
+
+## Step 4 — Build it
+
+```text
+/shipwright:dev-task FP-1.1
+```
+
+`dev-task` claims the task, works in a branch worktree, implements and tests it, and opens a pull request on your repo. It prints the PR number and URL when it finishes.
+
+## Step 5 — Review the PR
+
+```text
+/shipwright:review <PR number>
+```
+
+Shipwright reviews the diff and reports its findings; depending on policy it posts them to the PR as a GitHub review. You now have a planned, built, and reviewed PR on your own repo.
+
+## Expected time
+
+| Step | What happens | Typical time |
+|---|---|---|
+| Prerequisites | Install Claude Code, Docker, gh | 10–20 min (once) |
+| 1. Install plugin | Marketplace add + install | 1 min |
+| 2. Local task store | Image pull + Postgres boot on first run | 2–5 min |
+| 3. Plan-session | Plan a tiny spec | 3–10 min |
+| 4. Dev-task | Implement, test, open PR | 10–30 min |
+| 5. Review | Review the PR | 3–10 min |
+
+These are rough guides; they vary with your machine, network, and repo size.
+
+## What CI does not cover
+
+The checks that run on Shipwright's pull requests exercise the deterministic shell scripts. They do **not** run the interactive parts of this path: installing the plugin inside Claude Code, running the `/shipwright:*` slash commands against a live model, or pushing a PR to your repo and reviewing it. Treat those steps as manually verified, and expect behavior to depend on your Claude Code version, your `gh` authentication, and your repo.
+
+---
+
+## Optional: metrics dashboard (no secrets needed)
 
 > Get the Shipwright Harness metrics dashboard running locally in one prompt — offline by default, no external accounts or secrets.
 
-### What you can run today
+### What this runs
 
-The **metrics dashboard** runs locally right now in **offline mode**: it serves from fixtures with **no external services needed**. That is the core promise of this quickstart — a running dashboard at `http://localhost:3460/dashboard` from a single copy-paste prompt.
-
-The plugin (Phase A) and the Shipwright agent (Phase C) are still being built; see the [README](../README.md) and the [`shipwright-oss` milestone](https://github.com/app-vitals/shipwright/milestones) for live status.
+The **metrics dashboard** runs locally in **offline mode**: it serves from fixtures with **no external services needed**, giving you a dashboard at `http://localhost:3460/dashboard` from a single copy-paste prompt. You do not need it to complete the first-PR path above.
 
 ### Prerequisites
 
@@ -82,7 +165,7 @@ Both are documented in the prompt above; only the deterministic shell portion is
 
 ---
 
-## Option B — Full dev stack (agent chat turn from clone)
+## Optional: full dev stack (agent chat turn from clone)
 
 Run the complete local stack — metrics dashboard, admin UI, and the Shipwright agent in Docker — so you can send a real chat turn and see it round-trip.
 
@@ -144,14 +227,7 @@ The agent pane's wait-loop polls the database and detects the new agent automati
 
 Relaunching the stack later with an agent already created proceeds immediately — the wait-loop resolves on its first check, so you never need to delete and recreate an agent just to restart `task stack`.
 
-### Step 4 — Send a chat turn (plugin install coming soon)
-
-> 🚧 The `/plugin install` step (Phase A) is not yet ready for general use. Once it ships, you'll run this inside a Claude Code session pointed at this repo:
->
-> ```
-> /plugin marketplace add app-vitals/shipwright
-> /plugin install shipwright@shipwright
-> ```
+### Step 4 — Send a chat turn
 
 Open the **Chat** tab in the admin console (<http://localhost:3001/admin/chat>), select the agent you created, create a thread, and send a message. The turn should round-trip through the Docker agent: the agent's chat poll loop claims the message from the chat service, runs it through Claude, and posts the reply back into the thread.
 
