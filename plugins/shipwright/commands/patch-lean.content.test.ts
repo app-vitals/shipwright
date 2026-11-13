@@ -514,7 +514,7 @@ describe("patch-lean references — mechanics moved faithfully from patch.md", (
     "filter-bot-comments.ts",
     "resolve-dependency-watched-paths.ts",
     "is-ci-green.ts",
-    '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}',
+    '{claimedBy: $claimedBy, repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}',
     "Judgment: SAME_FINDING | DIFFERENT_FINDING",
     "Deferring CI-fix dispatch until bundle-mates reach pr_open.",
     "cancelled run {CANCELLED_RUN_ID} rerun succeeded, no fix needed — skipping CI-fix dispatch.",

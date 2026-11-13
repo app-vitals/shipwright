@@ -10,6 +10,18 @@ beforeAll(() => {
   content = readFileSync(REVIEW_MD_PATH, "utf-8");
 });
 
+describe("review.md — claimedBy fallback (CRQ-6.2)", () => {
+  it("every /prs/claim body sends claimedBy with the SHIPWRIGHT_AGENT_ID:-local fallback", () => {
+    const calls = content.split('/prs/claim" \\').slice(1);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of calls) {
+      const window = call.slice(0, 700);
+      expect(window).toContain('--arg claimedBy "${SHIPWRIGHT_AGENT_ID:-local}"');
+      expect(window).toContain("claimedBy: $claimedBy");
+    }
+  });
+});
+
 describe("review.md — TRR-1.2 test-readiness context", () => {
   it("Step 5.7 references test-system.md as the source for test-readiness context (AC1)", () => {
     // The gather step must name the file it reads for test-readiness context
@@ -111,7 +123,7 @@ describe("review.md — WLS-3.2 explicit-target-only", () => {
     expect(claimIdx).toBeGreaterThan(-1);
     // Window widened for POM-1.2's extra CLAIM_META capture + jq -n claim-body
     // construction, which pushed the 409/[silent] bullets further from the anchor.
-    const claimSection = content.slice(claimIdx, claimIdx + 2400);
+    const claimSection = content.slice(claimIdx, claimIdx + 2700);
     expect(claimSection.includes("409")).toBe(true);
     expect(claimSection.includes("[silent]")).toBe(true);
     expect(claimSection.includes("return to Step 3")).toBe(false);
