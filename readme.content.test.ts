@@ -80,6 +80,12 @@ describe("docs/quickstart.md first-PR path", () => {
     expect(content).toMatch(/## Expected time/);
     expect(content).toMatch(/## What CI does not cover/);
   });
+
+  it("tells the reader about the plan PR and plan-session's two confirmations", () => {
+    expect(content).toMatch(/plan PR/i);
+    expect(content).toMatch(/Confirm the detected repo/);
+    expect(content).toMatch(/Approve the design and task breakdown/);
+  });
 });
 
 describe("README.md Quickstart section (CRQ-3.2)", () => {
