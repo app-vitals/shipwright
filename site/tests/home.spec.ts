@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { BOOKING_URL } from "../src/consts";
+import { BOOKING_URL, INSTALL_CMD_LINES } from "../src/consts";
 import {
   expectBannedPhrasesAbsent,
   expectNoDollarFigures,
@@ -503,7 +503,12 @@ test("social proof links to GitHub and repeats the install command", async ({
     section.getByRole("link", { name: /github/i }).first(),
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
   await expect(
-    section.getByText("/plugin install shipwright@app-vitals/shipwright", {
+    section.getByText(INSTALL_CMD_LINES[0], {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    section.getByText(INSTALL_CMD_LINES[1], {
       exact: true,
     }),
   ).toBeVisible();

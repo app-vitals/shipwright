@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { BOOKING_URL } from "../src/consts";
+import { BOOKING_URL, INSTALL_CMD_LINES } from "../src/consts";
 import {
   expectBannedPhrasesAbsent,
   expectNoDollarFigures,
@@ -109,7 +109,12 @@ test("CTA repeats the install command and links GitHub + a rollout conversation"
 }) => {
   await page.goto("/self-hosted");
   await expect(
-    page.getByText("/plugin install shipwright@app-vitals/shipwright", {
+    page.getByText(INSTALL_CMD_LINES[0], {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(INSTALL_CMD_LINES[1], {
       exact: true,
     }),
   ).toBeVisible();

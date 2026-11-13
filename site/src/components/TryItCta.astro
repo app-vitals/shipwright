@@ -11,7 +11,8 @@
 // The secondary button and the rollout line below it (MKT-AUTONOMY-PAGE-1)
 // label what the discovery call is actually for and point at /autonomy for
 // readers who want the staged-rollout detail before booking anything.
-import { BOOKING_URL, INSTALL_CMD, REPO_URL, withUtm } from "../consts";
+import { BOOKING_URL, REPO_URL, withUtm } from "../consts";
+import InstallCmd from "./InstallCmd.astro";
 ---
 
 <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
@@ -20,7 +21,7 @@ import { BOOKING_URL, INSTALL_CMD, REPO_URL, withUtm } from "../consts";
     Install the plugin into Claude Code and run a task end to end. Free, MIT,
     runs on your own infra.
   </p>
-  <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
+  <InstallCmd class="mt-4" />
   <div class="mt-6 flex flex-wrap items-center gap-4">
     <a href={withUtm(REPO_URL, "try_it_cta")} class="sw-btn">Star on GitHub ↗</a>
     <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Talk through a rollout</a>
