@@ -85,3 +85,21 @@ being deployed.
 Decision Log (addendum):
 - Archived repos are skipped by the scheduler: no value in docs/test-readiness tasks for them.
 - Unconfigured lookup App returns `configured:false`; errors reject rather than return an empty list, so a GitHub failure never records a trigger with no tasks.
+
+## Revision 2 (2026-11-14): recent runs visibility
+Dan wants the last few runs of each cron visible, with timestamp and number of tasks created.
+`SystemCronTrigger` already stores `scheduledFor`, `createdAt` and `taskCount`; only a read and a
+UI were missing. SCR-1.6 had already merged as the `last-trigger` read, so the list is a new
+endpoint rather than a widening of it.
+
+| Task | Title | Depends on | Model | Branch |
+|---|---|---|---|---|
+| SCR-1.9 | feat: add a recent-triggers list endpoint to the task-store system-cron API | — | sonnet | feat/scr-recent-runs |
+| SCR-1.10 | feat: show recent runs on the system-crons settings page | 1.9 | sonnet | feat/scr-recent-runs |
+
+Bundled on one branch (one PR). Both additive; safe to deploy standalone. SCR-1.3 is unaffected.
+
+Decision Log (addendum):
+- Skipped ticks are not recorded or shown (Dan); the SCR-1.4 lookup-App banner covers the unconfigured case.
+- Default 5 runs per cron, max 50 on the endpoint.
+- No link from a run to its tasks: no prefix filter on the tasks page today, and it was not asked for.
