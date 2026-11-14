@@ -20,6 +20,7 @@
  *   PATCH /system-crons/:id          update name/schedule/timezone/templates
  *   POST  /system-crons/:id/enable   set enabled=true
  *   POST  /system-crons/:id/disable  set enabled=false
+ *   GET   /system-crons/:id/last-trigger → { scheduledFor: ISO | null }
  *   POST  /system-crons/:id/fire     {scheduledFor, repos} → 201 claimed:true
  *                                    (tasks created) | 200 claimed:false
  *                                    (slot already claimed, nothing created)
@@ -39,6 +40,7 @@ import {
   ErrorSchema,
   FireSystemCronBodySchema,
   FireSystemCronResponseSchema,
+  LastTriggerResponseSchema,
   PatchSystemCronBodySchema,
   SystemCronAccountQuerySchema,
   SystemCronDefinitionSchema,
@@ -207,6 +209,29 @@ const fireRoute = createRoute({
   },
 });
 
+const lastTriggerRoute = createRoute({
+  method: "get",
+  path: "/{id}/last-trigger",
+  tags: TAGS,
+  summary: "Most recent claimed slot of a system cron — admin-only",
+  description:
+    "Returns `{ scheduledFor }`: the max claimed `scheduledFor` (whole-second UTC ISO) across the definition's triggers, or `null` when it has never fired. Read-only; used by the scheduler's catch-up.",
+  request: {
+    params: SystemCronIdParamSchema,
+    query: SystemCronAccountQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: LastTriggerResponseSchema },
+      },
+      description: "Last claimed slot (or null)",
+    },
+    403: forbidden,
+    404: notFound,
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 function requireAdmin(c: Context<TaskStoreAuthEnv>): void {
@@ -317,6 +342,15 @@ export function createSystemCronsRoutes(
       resolveAccountScope(c),
     );
     return c.json(result, result.claimed ? 201 : 200);
+  });
+
+  // biome-ignore lint/suspicious/noExplicitAny: see above
+  app.openapi(lastTriggerRoute, async (c): Promise<any> => {
+    const result = await service.lastTrigger(
+      c.req.param("id"),
+      resolveAccountScope(c),
+    );
+    return c.json(result, 200);
   });
 
   return app;
