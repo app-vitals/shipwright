@@ -1675,3 +1675,14 @@ export const FireSystemCronResponseSchema = z
     }),
   })
   .openapi("FireSystemCronResponse");
+
+/** Response for GET /system-crons/:id/last-trigger */
+export const LastTriggerResponseSchema = z
+  .object({
+    scheduledFor: z.string().nullable().openapi({
+      example: "2026-11-14T09:00:00.000Z",
+      description:
+        "Max claimed scheduledFor (whole-second UTC ISO) for the definition; null when it has never fired.",
+    }),
+  })
+  .openapi("LastTriggerResponse");

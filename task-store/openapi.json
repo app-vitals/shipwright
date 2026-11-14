@@ -3462,6 +3462,69 @@
           }
         }
       }
+    },
+    "/system-crons/{id}/last-trigger": {
+      "get": {
+        "tags": [
+          "System Crons"
+        ],
+        "summary": "Most recent claimed slot of a system cron — admin-only",
+        "description": "Returns `{ scheduledFor }`: the max claimed `scheduledFor` (whole-second UTC ISO) across the definition's triggers, or `null` when it has never fired. Read-only; used by the scheduler's catch-up.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "dep-audit"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Optional: require the definition to belong to this account (404 otherwise)."
+            },
+            "required": false,
+            "description": "Optional: require the definition to belong to this account (404 otherwise).",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last claimed slot (or null)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LastTriggerResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — system-cron routes are admin-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — no such definition, or it is outside the ?accountId= scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5912,6 +5975,22 @@
         "required": [
           "scheduledFor",
           "repos"
+        ]
+      },
+      "LastTriggerResponse": {
+        "type": "object",
+        "properties": {
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-11-14T09:00:00.000Z",
+            "description": "Max claimed scheduledFor (whole-second UTC ISO) for the definition; null when it has never fired."
+          }
+        },
+        "required": [
+          "scheduledFor"
         ]
       }
     }

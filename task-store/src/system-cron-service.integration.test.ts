@@ -306,6 +306,50 @@ describeOrSkip("SystemCronService definitions (integration)", () => {
     await prisma.$disconnect();
   });
 
+  it("lastTrigger is null when never fired, else the max claimed slot", async () => {
+    await service.create(
+      {
+        id: CRON_ID,
+        name: "Audit",
+        schedule: "0 9 * * *",
+        titleTemplate: "Audit {repo}",
+        descriptionTemplate: "Audit {repo}",
+      },
+      "acct-scr",
+    );
+    expect(await service.lastTrigger(CRON_ID, null)).toEqual({
+      scheduledFor: null,
+    });
+
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-14T09:00:00Z",
+      repos: ["org/repo-a"],
+    });
+    expect(await service.lastTrigger(CRON_ID, null)).toEqual({
+      scheduledFor: "2026-11-14T09:00:00.000Z",
+    });
+
+    // Fire out of order: the max wins, not the latest insert.
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-16T09:00:00Z",
+      repos: ["org/repo-a"],
+    });
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-15T09:00:00Z",
+      repos: ["org/repo-a"],
+    });
+    expect(await service.lastTrigger(CRON_ID, "acct-scr")).toEqual({
+      scheduledFor: "2026-11-16T09:00:00.000Z",
+    });
+
+    await expect(service.lastTrigger(CRON_ID, "other")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(service.lastTrigger("nope", null)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+
   it("creates, lists, patches and enables/disables definitions", async () => {
     const created = await service.create(
       {

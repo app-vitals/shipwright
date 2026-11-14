@@ -114,6 +114,10 @@ export interface SystemCronServiceLike {
     input: FireSystemCronInput,
     accountId?: string | null,
   ): Promise<FireSystemCronResult>;
+  lastTrigger(
+    id: string,
+    accountId: string | null,
+  ): Promise<{ scheduledFor: string | null }>;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -375,6 +379,19 @@ export class SystemCronService implements SystemCronServiceLike {
       if (isUniqueViolation(err)) return notClaimed;
       throw err;
     }
+  }
+
+  /** Most recent claimed slot for the definition, or null if it never fired. */
+  async lastTrigger(
+    id: string,
+    accountId: string | null,
+  ): Promise<{ scheduledFor: string | null }> {
+    await this.findScoped(id, accountId);
+    const latest = await this.prisma.systemCronTrigger.aggregate({
+      where: { cronId: id },
+      _max: { scheduledFor: true },
+    });
+    return { scheduledFor: latest._max.scheduledFor?.toISOString() ?? null };
   }
 
   private async findScoped(

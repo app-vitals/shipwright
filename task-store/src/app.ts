@@ -145,6 +145,9 @@ const unwiredSystemCronService: SystemCronServiceLike = {
   async fire() {
     throw new Error("system crons are not configured");
   },
+  async lastTrigger() {
+    throw new Error("system crons are not configured");
+  },
 };
 
 export interface TaskStoreDeps {

@@ -3017,6 +3017,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-crons/{id}/last-trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Most recent claimed slot of a system cron — admin-only
+         * @description Returns `{ scheduledFor }`: the max claimed `scheduledFor` (whole-second UTC ISO) across the definition's triggers, or `null` when it has never fired. Read-only; used by the scheduler's catch-up.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Last claimed slot (or null) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LastTriggerResponse"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4116,6 +4178,13 @@ export interface components {
              *     ]
              */
             repos: string[];
+        };
+        LastTriggerResponse: {
+            /**
+             * @description Max claimed scheduledFor (whole-second UTC ISO) for the definition; null when it has never fired.
+             * @example 2026-11-14T09:00:00.000Z
+             */
+            scheduledFor: string | null;
         };
     };
     responses: never;

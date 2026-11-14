@@ -97,6 +97,11 @@ function fakeService(
         }
       );
     },
+    async lastTrigger(id, accountId) {
+      calls.push({ method: "lastTrigger", args: [id, accountId] });
+      if (id !== DEF.id) throw new NotFoundError("system cron not found");
+      return { scheduledFor: "2026-11-14T09:00:00.000Z" };
+    },
   };
 }
 
@@ -147,6 +152,7 @@ describe("/system-crons auth", () => {
       ["POST", "/system-crons/dep-audit/enable", undefined],
       ["POST", "/system-crons/dep-audit/disable", undefined],
       ["POST", "/system-crons/dep-audit/fire", FIRE_BODY],
+      ["GET", "/system-crons/dep-audit/last-trigger", undefined],
     ];
     for (const [method, path, body] of cases) {
       const res = await app.request(
@@ -245,6 +251,29 @@ describe("POST /system-crons/:id/enable|disable", () => {
     expect(off.status).toBe(200);
     expect(((await on.json()) as { enabled: boolean }).enabled).toBe(true);
     expect(((await off.json()) as { enabled: boolean }).enabled).toBe(false);
+  });
+});
+
+describe("GET /system-crons/:id/last-trigger", () => {
+  it("200s with the service's scheduledFor, passing the account scope", async () => {
+    const service = fakeService();
+    const res = await makeApp(service).request(
+      req("/system-crons/dep-audit/last-trigger"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      scheduledFor: "2026-11-14T09:00:00.000Z",
+    });
+    expect(service.calls).toEqual([
+      { method: "lastTrigger", args: ["dep-audit", null] },
+    ]);
+  });
+
+  it("404s an unknown id", async () => {
+    const res = await makeApp(fakeService()).request(
+      req("/system-crons/nope/last-trigger"),
+    );
+    expect(res.status).toBe(404);
   });
 });
 
