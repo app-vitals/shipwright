@@ -5,5 +5,7 @@
 -- AlterTable
 ALTER TABLE "SystemCronDefinition" ADD COLUMN "enabledAt" TIMESTAMP(3);
 
--- Backfill: an already-enabled definition counts as enabled at its last update.
-UPDATE "SystemCronDefinition" SET "enabledAt" = "updatedAt" WHERE "enabled" = true;
+-- Backfill: an already-enabled definition counts as enabled now, so the first
+-- tick after deploy starts fresh instead of replaying every slot since its last
+-- edit (nothing scheduled system crons before this, so no trigger rows exist).
+UPDATE "SystemCronDefinition" SET "enabledAt" = NOW() WHERE "enabled" = true;
