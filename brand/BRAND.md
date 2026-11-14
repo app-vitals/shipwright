@@ -28,7 +28,7 @@
 |---|---|
 | Marketing brand, website, headlines, decks, social | **Shipwright Harness** |
 | Repo, plugin, install string, npm/package, CLI, code | **`shipwright`** |
-| Install commands (verbatim, in order) | `/plugin marketplace add app-vitals/shipwright` then `/plugin install shipwright@shipwright` |
+| Install commands (verbatim, in order) | `/plugin marketplace add app-vitals/shipwright`, run alone, then `/plugin install shipwright@shipwright` as a separate command |
 | Domains | `shipwrightharness.com` (canonical), `shipwright-harness.com` → 301 redirect |
 
 This is the Astro/Bun pattern: the marketed name and the install string differ on purpose. Never write "install Shipwright Harness" as a command, and never headline a marketing page with "shipwright" lowercase.

@@ -54,8 +54,13 @@ Shipwright turns a feature idea into shipped, reviewed code through a sequence o
 
 ## Install
 
+Run these one at a time inside Claude Code (pasting both together fails silently):
+
 ```text
 /plugin marketplace add app-vitals/shipwright
+```
+
+```text
 /plugin install shipwright@shipwright
 ```
 
@@ -84,25 +89,40 @@ The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifica
 
 From nothing to a **reviewed pull request on your own repo**. Prerequisites: [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/), [gh](https://cli.github.com) (authenticated), [git](https://git-scm.com/downloads), and [Bun](https://bun.sh) (runs the `/shipwright:review` helper scripts).
 
-1. **Install the plugin** (inside a Claude Code session):
+1. **Start the local task store** (in your terminal), then run the `source` line it prints in the shell you will launch Claude Code from:
+
+   ```bash
+   git clone https://github.com/app-vitals/shipwright.git ~/shipwright
+   ~/shipwright/scripts/local-store.sh
+   ```
+
+2. **Launch Claude Code** (in your terminal, from inside your own small repo):
+
+   ```bash
+   claude
+   ```
+
+3. **Install the plugin** (inside Claude Code). Run the two commands one at a time, the first, then the second:
 
    ```text
    /plugin marketplace add app-vitals/shipwright
+   ```
+
+   ```text
    /plugin install shipwright@shipwright
    ```
 
-2. **Start the local task store** (in a terminal), then run the `export` lines it prints in the shell you launch Claude Code from (`SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN`):
-
-   ```bash
-   git clone https://github.com/app-vitals/shipwright.git && cd shipwright
-   ./scripts/local-store.sh
-   ```
-
-3. **Plan, build, review** (in Claude Code, inside your own small repo):
+4. **Plan, build, review** (inside Claude Code), one command at a time. Use the task id and PR number each step prints:
 
    ```text
    /shipwright:plan-session first-pr
+   ```
+
+   ```text
    /shipwright:dev-task <task id>
+   ```
+
+   ```text
    /shipwright:review <PR number>
    ```
 
@@ -138,8 +158,9 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 3. Open the dashboard in your browser:
      http://localhost:3460/dashboard
 
-4. Inside a Claude Code session:
+4. Inside a Claude Code session, run these one at a time (not pasted together):
      /plugin marketplace add app-vitals/shipwright
+   then, once that finishes:
      /plugin install shipwright@shipwright
 
 To stop: tmux kill-session -t shipwright

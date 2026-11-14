@@ -2892,7 +2892,7 @@ describe("bun prerequisite preflight (CRQ-6.1)", () => {
       "utf-8",
     );
     const prereqs =
-      quickstart.split("## Prerequisites")[1]?.split("\n## ")[0] ?? "";
+      quickstart.split("## Before you start")[1]?.split("\n## ")[0] ?? "";
     expect(prereqs).toContain("**Bun**");
     expect(prereqs).toContain("https://bun.sh");
     const readme = readFileSync(join(repoRoot, "README.md"), "utf-8");

@@ -76,8 +76,13 @@ This file does not exist yet — it will be created in MKT-1.2. When it does, th
 
 ## Installation
 
+Run these one at a time (pasting both together fails silently):
+
 ```
 /plugin marketplace add app-vitals/shipwright
+```
+
+```
 /plugin install shipwright@shipwright
 ```
 
