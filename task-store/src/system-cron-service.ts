@@ -23,9 +23,10 @@
  *      for the batch, mirroring TaskService.bulk().
  * Any failure after step 1 rolls back the trigger row together with the
  * tasks, so a retry after failure can claim the slot afresh and never
- * produces duplicate tasks. A P2002 escaping the transaction (defensive — the
- * skipDuplicates path should make it unreachable) is likewise reported as a
- * lost race, i.e. claimed:false.
+ * produces duplicate tasks. A task-id collision rolls the claim back and
+ * surfaces as a 409 (distinct repos that collide are rejected up front with a
+ * 400); any other P2002 escaping the transaction is reported as a lost race,
+ * i.e. claimed:false.
  *
  * Account scope: generated tasks and the trigger row inherit the definition's
  * accountId. Methods taking `accountId` treat null as unrestricted (admin
@@ -173,12 +174,24 @@ function validateRepos(value: unknown): string[] {
       `repos accepts at most ${MAX_FIRE_REPOS} entries (received ${repos.length})`,
     );
   }
+  const seen = new Map<string, string>();
   for (const repo of repos) {
     if (typeof repo !== "string" || !isValidSystemCronRepo(repo)) {
       throw new BadRequestError(
         `repo '${String(repo)}' must be in org/repo format`,
       );
     }
+    // Task ids join owner and repo with '-' (and repos compare case-folded),
+    // so distinct repos can collide on one id; reject rather than let the
+    // second row be silently dropped while the slot stays claimed.
+    const key = systemCronTaskId("", "", repo).toLowerCase();
+    const prior = seen.get(key);
+    if (prior !== undefined) {
+      throw new BadRequestError(
+        `repos '${prior}' and '${repo}' map to the same task id`,
+      );
+    }
+    seen.set(key, repo);
   }
   return repos as string[];
 }
@@ -339,13 +352,20 @@ export class SystemCronService implements SystemCronServiceLike {
           });
           if (claim.count === 0) return notClaimed;
 
-          // skipDuplicates: a pre-existing row with the same deterministic id
-          // (only possible if one was created out-of-band) is left untouched
-          // rather than failing the whole claim.
-          const rows: Task[] = await tx.task.createManyAndReturn({
-            data: tasks,
-            skipDuplicates: true,
-          });
+          // No skipDuplicates: an id collision (e.g. a row created
+          // out-of-band) must fail loudly and roll the claim back, matching
+          // TaskService.bulk(), instead of silently dropping a repo's task.
+          let rows: Task[];
+          try {
+            rows = await tx.task.createManyAndReturn({ data: tasks });
+          } catch (err: unknown) {
+            if (isUniqueViolation(err)) {
+              throw new ConflictError(
+                "a task with a deterministic system-cron id already exists",
+              );
+            }
+            throw err;
+          }
           await this.webhookDispatcher("task.write", rows);
           return { claimed: true, ...base, taskIds: rows.map((r) => r.id) };
         },

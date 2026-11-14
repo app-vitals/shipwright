@@ -238,6 +238,34 @@ describeOrSkip("SystemCronService.fire (integration)", () => {
     expect(b.claimed).toBe(false);
   });
 
+  it("rejects repos that collide on one task id (hyphen / case) with 400 and claims nothing", async () => {
+    for (const repos of [
+      ["app-vitals/x", "app/vitals-x"],
+      ["Acme/Widgets", "acme/widgets"],
+    ]) {
+      await expect(
+        service.fire(CRON_ID, { scheduledFor: SCHEDULED_FOR, repos }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(await prisma.systemCronTrigger.count()).toBe(0);
+  });
+
+  it("an out-of-band task with a colliding id rolls the claim back with 409", async () => {
+    await prisma.task.create({
+      data: {
+        id: `SC-${CRON_ID}-${SLOT}-acme-widgets`,
+        title: "preexisting",
+        status: "pending",
+        kind: "dev",
+        repo: "acme/widgets",
+      },
+    });
+    await expect(
+      service.fire(CRON_ID, { scheduledFor: SCHEDULED_FOR, repos: REPOS }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(await prisma.systemCronTrigger.count()).toBe(0);
+  });
+
   it("rejects a disabled definition with 409 and creates nothing", async () => {
     await prisma.systemCronDefinition.update({
       where: { id: CRON_ID },
