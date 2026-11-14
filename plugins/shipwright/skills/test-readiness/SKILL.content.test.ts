@@ -160,48 +160,40 @@ describe("test-readiness — Step 3.5 shipwright label on PR creation", () => {
   });
 });
 
-describe("test-readiness — Step 1 fallback uses the config-driven resolver", () => {
+describe("test-readiness — Step 1 requires --repo", () => {
   function getStep1Section(): string {
     const content = readSkill();
     const step1Idx = content.indexOf("### Step 1:");
     const step2Idx = content.indexOf("### Step 2:");
     expect(step1Idx).toBeGreaterThan(-1);
     expect(step2Idx).toBeGreaterThan(-1);
-    return content.slice(step1Idx, step2Idx);
+    return content.slice(step1Idx, step2Idx).replace(/\s+/g, " ");
   }
 
-  it("does not instruct raw repos/* directory iteration as a repo-list source", () => {
-    const section = getStep1Section();
-    expect(section).not.toContain("for dir in repos/*/");
-  });
-
-  it("references resolveScopedRepos as the fallback repo-list source", () => {
-    const section = getStep1Section();
-    expect(section).toContain("resolveScopedRepos");
-    expect(section).toContain("check-helpers.ts");
-  });
-
-  it("documents the fail-closed behavior of the config-driven resolver", () => {
-    const section = getStep1Section();
-    expect(section.toLowerCase()).toContain("fail");
-    expect(section.toLowerCase()).toContain("closed");
-  });
-});
-
-describe("test-readiness — explicit --repo input", () => {
-  it("documents --repo in the argument hint and flag table", () => {
+  it("documents --repo as required in the argument hint and flag table", () => {
     const content = readSkill();
     expect(content).toMatch(/argument-hint:.*--repo org\/repo/);
+    expect(content).not.toMatch(/argument-hint:.*\[--repo/);
     expect(content).toContain("| `--repo org/repo` |");
   });
 
-  it("Step 1 explicit-repo path skips the scan and the docs/test-readiness opt-in check", () => {
+  it("fails with a usage message when --repo is missing", () => {
+    const step1 = getStep1Section();
+    expect(step1).toContain("`--repo org/repo` is required");
+    expect(step1).toContain("Usage: /shipwright:test-readiness --repo org/repo");
+  });
+
+  it("has no precheck, resolver or repos/ scan fallback", () => {
     const content = readSkill();
-    const start = content.indexOf("### Step 1:");
-    const end = content.indexOf("### Step 2:");
-    const step1 = content.slice(start, end).replace(/\s+/g, " ");
-    expect(step1).toContain("Explicit `--repo org/repo`");
-    expect(step1).toContain("do not apply the `docs/test-readiness/` opt-in check");
+    expect(content).not.toContain("check-test-readiness.ts");
+    expect(content).not.toContain("resolveScopedRepos");
+    expect(content).not.toContain("for dir in repos/*/");
+    expect(content).not.toContain("shipwright-test-readiness");
+  });
+
+  it("finds or clones the repo and skips the docs/test-readiness opt-in check", () => {
+    const step1 = getStep1Section();
     expect(step1).toContain("git clone");
+    expect(step1).toContain("opt-in");
   });
 });

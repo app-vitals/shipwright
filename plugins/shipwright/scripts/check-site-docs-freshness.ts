@@ -4,7 +4,7 @@
  *
  * Pre-check for a site-docs-freshness cron (not yet wired up — see SDR-4).
  *
- * Mirrors check-docs-freshness.ts's pattern (repo-scoped anchor +
+ * Mirrors the retired repo-scoped docs-freshness precheck's pattern (repo-scoped anchor +
  * getCommitsSince/getChangedFilesSince + exit 0/1 contract), but this script
  * is PAGE-scoped instead of repo-scoped: it operates on exactly one repo
  * (this repo, cwd) and reads site/docs-source-map.json (built by SDR-1) —

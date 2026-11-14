@@ -62,22 +62,6 @@ export const CODING_SPECIALTY_DEFAULTS: SpecialtyDefaults = {
       enabled: false,
     },
     {
-      name: "shipwright-test-readiness",
-      schedule: "0 6 * * *",
-      prompt: "/shipwright:test-readiness --full --publish",
-      preCheck: "shipwright:check-test-readiness.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
-      name: "shipwright-docs-freshness",
-      schedule: "0 7 * * *",
-      prompt: "/shipwright:research-docs --auto",
-      preCheck: "shipwright:check-docs-freshness.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
       name: "learn-dream",
       schedule: "0 3 * * *",
       prompt: "/shipwright:learn-dream --since 1d --review",

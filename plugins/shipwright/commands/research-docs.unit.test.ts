@@ -125,27 +125,18 @@ describe("research-docs.md — auto mode no prompts", () => {
 });
 
 describe("research-docs.md — auto mode per-repo iteration", () => {
-  it("references resolveRepoDirs / check-helpers.ts as the repo resolution mechanism", () => {
-    expect(content).toContain("resolveRepoDirs");
-    expect(content).toContain("check-helpers.ts");
+  it("requires --repo and has no precheck, resolver or repos/ scan fallback", () => {
+    expect(content).toContain("`--repo org/repo` is required");
+    expect(content).not.toContain("check-docs-freshness.ts");
+    expect(content).not.toContain("resolveRepoDirs");
+    expect(content).not.toContain("resolveScopedRepos");
+    expect(content).not.toContain("for dir in repos/*/");
   });
 
-  it("documents parsing the repo list from the precheck-driven invoking prompt", () => {
-    expect(content).toContain("check-docs-freshness.ts");
-    const hasPrecheckLanguage =
-      content.includes("preCheck") || content.includes("precheck");
-    expect(hasPrecheckLanguage).toBe(true);
-    const hasPromptParsing =
-      content.includes("Parse the repo names") ||
-      content.includes("invoking prompt");
-    expect(hasPromptParsing).toBe(true);
-  });
-
-  it("documents a fallback that iterates repos/* directly when run manually", () => {
-    const hasFallback =
-      content.includes("Fallback") || content.includes("fallback");
-    expect(hasFallback).toBe(true);
-    expect(content).toContain("repos/*");
+  it("prints a usage message and stops when --repo is missing", () => {
+    expect(content).toContain(
+      "Usage: /shipwright:research-docs --auto --repo org/repo",
+    );
   });
 
   it("documents cd-ing into repos/{dirname} to scope Steps A1-A8 per repo", () => {

@@ -3,7 +3,7 @@
  *
  * Unit tests for check-site-docs-freshness.ts
  *
- * Design: mirrors check-docs-freshness.unit.test.ts's injected-dependency
+ * Design: mirrors the retired check-docs-freshness.unit.test.ts's injected-dependency
  * style, but page-scoped rather than repo-scoped — one repo (cwd), N pages
  * from site/docs-source-map.json, each with its OWN last-synced anchor SHA.
  * Tests inject stub implementations — no file I/O or git commands are

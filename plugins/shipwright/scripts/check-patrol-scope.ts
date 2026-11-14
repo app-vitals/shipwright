@@ -22,7 +22,7 @@
  * silently — no Claude turn is spent.
  *
  * On success, emits one section per scoped repo (org/repo + local clone
- * dir), mirroring check-docs-freshness.ts's per-repo stdout convention, so
+ * dir), mirroring the per-repo stdout convention of the retired check-docs-freshness.ts, so
  * entropy-scan/SKILL.md and security-scan/SKILL.md can parse the repo list
  * straight out of the invoking prompt.
  *

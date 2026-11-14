@@ -107,24 +107,6 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: null,
   },
   {
-    name: "shipwright-test-readiness",
-    schedule: "0 6 * * *",
-    prompt: "/shipwright:test-readiness --full --publish",
-    silent: true,
-    preCheck: "shipwright:check-test-readiness.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "shipwright-docs-freshness",
-    schedule: "0 7 * * *",
-    prompt: "/shipwright:research-docs --auto",
-    silent: true,
-    preCheck: "shipwright:check-docs-freshness.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
     name: "learn-dream",
     schedule: "0 3 * * *",
     prompt: "/shipwright:learn-dream --since 1d --review",
@@ -301,6 +283,47 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
     expect(
       systemJobs.find((j) => j.name === "shipwright-deploy"),
     ).toBeUndefined();
+    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
+  });
+
+  // SCR-1.5: these two moved to admin-run system crons; reconcile's orphan
+  // pass must delete rows already seeded on existing coding agents.
+  it("reconcileSystemCrons() deletes pre-seeded shipwright-test-readiness and shipwright-docs-freshness rows", async () => {
+    const agentId = await createAgent(prisma, "Coding Agent", "coding");
+    await service.reconcileSystemCrons(agentId);
+    for (const [name, prompt, preCheck] of [
+      [
+        "shipwright-test-readiness",
+        "/shipwright:test-readiness --full --publish",
+        "shipwright:check-test-readiness.ts",
+      ],
+      [
+        "shipwright-docs-freshness",
+        "/shipwright:research-docs --auto",
+        "shipwright:check-docs-freshness.ts",
+      ],
+    ]) {
+      await prisma.agentCronJob.create({
+        data: {
+          agentId,
+          name,
+          system: true,
+          schedule: "0 6 * * *",
+          prompt,
+          preCheck,
+          silent: true,
+          enabled: false,
+        },
+      });
+    }
+
+    const result = await service.reconcileSystemCrons(agentId);
+
+    expect(result.deleted).toBe(2);
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    const names = systemJobs.map((j) => j.name);
+    expect(names).not.toContain("shipwright-test-readiness");
+    expect(names).not.toContain("shipwright-docs-freshness");
     expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
   });
 });

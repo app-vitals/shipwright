@@ -1,14 +1,13 @@
 ---
 name: test-readiness
 description: >
-  Orchestrates the full test-readiness pipeline (phases 1–5), once per
-  qualifying repo under repos/, each in its own worktree + branch. Runs
-  test-inventory → test-design → test-migration → test-roadmap →
-  test-fix in sequence per repo, starting from the first stale artifact.
-  Invoked by the `shipwright-test-readiness` cron on a daily schedule; exits
-  early for a repo when all of its phase artifacts are fresh. Accepts an
-  optional `--repo org/repo` to run only that repo.
-argument-hint: "[--full] [--publish] [--dry-run] [--repo org/repo]"
+  Orchestrates the full test-readiness pipeline (phases 1–5) for one repo,
+  in its own worktree + branch. Runs test-inventory → test-design →
+  test-migration → test-roadmap → test-fix in sequence, starting from the
+  first stale artifact. Queued per repo by the admin system-cron scheduler;
+  exits early when all of the repo's phase artifacts are fresh. Requires
+  `--repo org/repo`.
+argument-hint: "--repo org/repo [--full] [--publish] [--dry-run]"
 ---
 
 # test-readiness skill
@@ -16,31 +15,30 @@ argument-hint: "[--full] [--publish] [--dry-run] [--repo org/repo]"
 ## Purpose
 
 Drive the complete test-readiness pipeline from the first stale phase to
-publication. This skill is the cron-facing entry point — it picks up where the
+publication. This skill is the scheduler-facing entry point — it picks up where the
 staleness guard left off and runs all necessary phases to bring the docs current.
 
 ## When invoked
 
-By the `shipwright-test-readiness` cron, which runs
-`/shipwright:test-readiness --full --publish` daily. The cron fires
-unconditionally on schedule; the flags below decide what actually happens.
+By a task the admin system-cron scheduler queues for each repo, whose prompt is
+`/shipwright:test-readiness --repo {repo} --full --publish`. The flags below
+decide what actually happens.
 
 ## Arguments
 
-Flags are additive — invoking with no flags preserves the original behavior
-(staleness-gated, phase 5 in dry-run), so agents still on the old cron prompt
-keep working unchanged.
+Apart from the required `--repo`, flags are additive — with no other flags the
+run is staleness-gated with phase 5 in dry-run.
 
 | Flag | Effect |
 |------|--------|
 | `--full` | Skip the staleness check entirely and run all phases 1→5 regardless of artifact freshness. Without it, the staleness gate decides the starting phase and exits early when everything is fresh. |
 | `--publish` | Run phase 5 as a **real publish** — forward real-queue mode to `/shipwright:test-fix` so it writes task-store tasks unattended (no confirmation gate — test-fix never has one, matching entropy-fix/error-fix). Without it, phase 5 runs `--dry-run` (preview only, no task-store writes). |
-| `--repo org/repo` | Run only that repo. Skips the `repos/` scan, the precheck-driven list, and the `docs/test-readiness/` opt-in check (naming a repo explicitly is the opt-in). Finds the clone under `repos/` or clones it. The staleness gate still applies (unless `--full`), so a fresh repo is a no-op. Without `--repo`, behavior is unchanged. |
+| `--repo org/repo` | **Required.** The one repo to process. Naming a repo explicitly is the opt-in, so the `docs/test-readiness/` opt-in check does not apply. Finds the clone under `repos/` or clones it. The staleness gate still applies (unless `--full`), so a fresh repo is a no-op. A missing `--repo` is a usage error (see Step 1). |
 | `--dry-run` | Explicit preview: phase 5 runs `--dry-run`. This is the default when `--publish` is absent. |
 
 ## Staleness check
 
-**Skipped entirely when `--full` is passed** (the cron's default) — all phases
+**Skipped entirely when `--full` is passed** (the scheduled default) — all phases
 1→5 run. The check below only applies when `--full` is absent.
 
 Before running any phase, re-read the phase artifacts (scoped to the current
@@ -61,67 +59,27 @@ re-published after any update.
 
 ## Process
 
-This agent's workspace can have multiple repos checked out under `repos/`
-(see `plugins/shipwright/scripts/check-helpers.ts`'s `resolveRepoDirs`).
-Step 1 below is repo-aware: it resolves a list of qualifying repos and Steps
-2-3 run once **per repo**, each in its own worktree + branch, independent of
-every other repo. Step 4 (Report) prints one aggregated summary across every
-repo processed.
+The skill runs for exactly one repo, given by `--repo org/repo`. Steps 2-3 run
+in that repo's own worktree + branch, and Step 4 (Report) prints the summary.
 
-### Step 1: Resolve the repo list
+### Step 1: Resolve the repo
 
-Determine which repos to process, in this priority order:
+`--repo org/repo` is required. If the invocation does not include it, print
+the following and stop without scanning `repos/` or doing any work:
 
-0. **Explicit `--repo org/repo` (overrides everything below).** When the
-   invocation includes `--repo org/repo`, the repo list is exactly that one
-   repo. Do not scan `repos/`, do not parse the precheck output, and do not
-   apply the `docs/test-readiness/` opt-in check — an explicit repo is the
-   opt-in, so a repo without that directory is still processed. Find its
-   clone by matching each `repos/*/`'s `git remote get-url origin` against
-   `org/repo`; if none matches, clone it
-   (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Step 2's
-   staleness gate still decides whether anything runs, so a fresh repo is a
-   no-op.
-1. **Precheck-driven (preferred).** This cron's `preCheck`
-   (`shipwright:check-test-readiness.ts`) already iterated every repo under
-   `repos/`, applied the opt-in qualification (a repo qualifies only if it has
-   a `docs/test-readiness/` directory — a repo without one is not the implicit
-   target and is skipped), and its stdout — which became this prompt (see
-   the specialty manifest's cron `preCheck` contract: "When a preCheck script is
-   set, its stdout becomes the actual prompt sent to Claude") — lists exactly
-   which repo(s) have a stale or missing phase artifact, one repo name
-   (`org/repo`) per section. Parse the repo names out of the invoking prompt
-   and use that as the repo list. Skip any repo not named in the precheck
-   output — it had nothing to run.
-2. **Fallback (manual invocation, or no repo list available in the prompt).**
-   Call the config-driven resolver directly, then keep only repos with a
-   `docs/test-readiness/` directory (the same opt-in signal the precheck uses):
-   ```bash
-   bun run - <<EOF
-   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
-   const repos = await resolveScopedRepos(resolveWorkspacePath());
-   console.log(repos.join("\n"));
-   EOF
-   ```
-   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
-   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
-   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
-   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
-   For each repo name returned, keep it only if its local clone directory has a
-   `docs/test-readiness/` directory; drop the rest. A repo with no `docs/test-readiness/`
-   directory is skipped cleanly — it is never silently treated as the implicit single
-   target. Note: `check-test-readiness.ts`'s own precheck (priority-1 list above) still
-   resolves its repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver —
-   the two paths are not yet unified, so this fallback can scope more narrowly than the
-   precheck does.
+```
+Usage: /shipwright:test-readiness --repo org/repo [--full] [--publish] [--dry-run]
+```
 
-For each resolved repo, match the precheck's `org/repo` name back to its local
-clone directory `repos/{dirname}` by checking each `repos/*/`'s
-`git remote get-url origin` (or `.git/config`) for that owner/repo — same
-matching approach as `research-docs.md` Step A0.
+Find the repo's clone by matching each `repos/*/`'s `git remote get-url origin`
+against `org/repo`; if none matches, clone it
+(`git clone https://github.com/{org}/{repo}.git repos/{repo}`). The local
+directory is `repos/{dirname}`, which need not equal the `org/repo` string.
+Naming the repo explicitly is the opt-in, so a repo without a
+`docs/test-readiness/` directory is still processed. Step 2's staleness gate
+still decides whether anything runs, so a fresh repo is a no-op.
 
-**For each repo in the resolved list, set up (or reuse) a worktree + branch
-and run Steps 2-4 there** — never edit `repos/{dirname}` directly (see this
+**For the repo, set up (or reuse) a worktree + branch and run Steps 2-4 there** — never edit `repos/{dirname}` directly (see this
 repo's own root `CLAUDE.md` for the worktree convention).
 
 **Open-PR supersession check (run first, before any branch is created).**
@@ -169,8 +127,6 @@ open PR, not just today's.
     report the conflict explicitly and distinctly in Step 4's aggregated
     summary (see Step 4 below) — do not fold this into the "skipped — all
     artifacts fresh" case, since the repo was not fresh, it was blocked.
-    Other repos in the resolved list are unaffected and continue processing
-    normally.
 
 **Fresh-branch flow (no earlier-day open PR found, or same-day rerun):**
 
@@ -201,8 +157,7 @@ block or be blocked by another's.
 If `--full` is set, start at phase 1. Otherwise check mtime of each phase
 artifact in order (1 → 4), scoped to the current repo's worktree; the first
 artifact that is missing or older than 24 hours marks the starting phase, and
-if all are fresh for this repo, skip straight to the next repo in the
-resolved list (no phases run for this repo).
+if all are fresh for this repo, skip straight to Step 4 (no phases run).
 
 ### Step 3: Run phases sequentially
 
@@ -218,8 +173,7 @@ From the starting phase through phase 5, in the current repo's worktree:
 Run each skill using the Skill tool. If any phase fails for this repo, report
 the failure for that repo and stop running further phases **for that repo
 only** — do not run subsequent phases for it, as each depends on the previous
-artifact. A failure in one repo does not stop the remaining repos in the
-resolved list; move on to the next repo after logging the failure.
+artifact. Log the failure and proceed to Step 4.
 
 After phase 5 (or an early stop due to failure) completes for the current
 repo, proceed to Step 3.5 to commit and open a PR with the refresh results.
@@ -273,16 +227,12 @@ gh pr create \
   --label shipwright
 ```
 
-After the PR is open (or updated in the reused-branch case), return to Step 1's
-per-repo loop for the next repo in the resolved list. Once every repo has been
-processed (run or skipped for being fresh), proceed to Step 4.
+After the PR is open (or updated in the reused-branch case), proceed to Step 4.
 
 ### Step 4: Report
 
-After every repo in the resolved list has been processed, print one
-aggregated summary across all repos, with a per-repo section: which phases
-ran (or "skipped — all artifacts fresh" / "skipped — precheck did not flag
-this repo" / "skipped — reuse-merge conflict, needs manual resolution" for
+After the repo has been processed, print one summary: which phases
+ran (or "skipped — all artifacts fresh" / "skipped — reuse-merge conflict, needs manual resolution" for
 the open-PR supersession case above), and the number of task-store tasks
 created or updated (from phase 5 output) for that repo. The reuse-merge
 conflict status is reported distinctly from "skipped — all artifacts
@@ -295,15 +245,15 @@ the repo that needs manual conflict resolution on its open PR.
 If a phase fails:
 - Log which phase failed and include any error output.
 - Do not run subsequent phases.
-- Exit with a clear summary so the cron log shows the failure.
+- Exit with a clear summary so the run log shows the failure.
 - A failure in the skill itself is always logged.
 
 ## Notes
 
 - This skill handles its own staleness check (step 2) **unless `--full` is
-  passed**. With `--full` (the cron default) every phase runs; without it, a
+  passed**. With `--full` (the scheduled default) every phase runs; without it, a
   fresh set of artifacts makes the skill exit early.
-- Phase 5 (`test-fix`) has no confirmation gate — the cron passes `--publish`,
+- Phase 5 (`test-fix`) has no confirmation gate — the scheduled prompt passes `--publish`,
   which forwards real-queue mode so it writes task-store tasks unattended.
   The publish step is idempotent (it dedupes on already-active T-NNN
   task-store IDs per repo), so a daily real run queues tasks for new work —

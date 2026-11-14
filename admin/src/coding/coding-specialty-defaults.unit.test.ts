@@ -23,7 +23,7 @@ describe("coding specialtyDefaults hook", () => {
     expect(defaults).toBe(CODING_SPECIALTY_DEFAULTS);
   });
 
-  it("returns exactly the 14 system crons, by name and in order", () => {
+  it("returns exactly the 12 system crons, by name and in order", () => {
     expect(crons.map((c) => c.name)).toEqual([
       "shipwright-plan",
       "shipwright-dev-task",
@@ -31,8 +31,6 @@ describe("coding specialtyDefaults hook", () => {
       "shipwright-review",
       "shipwright-merge",
       "shipwright-loop",
-      "shipwright-test-readiness",
-      "shipwright-docs-freshness",
       "learn-dream",
       "entropy-patrol-maintenance",
       "error-patrol-maintenance",

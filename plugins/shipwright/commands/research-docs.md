@@ -1,13 +1,13 @@
 ---
 description: Analyze codebase and generate or update project documentation
-argument-hint: "[module-or-topic | --auto [--repo org/repo]]"
+argument-hint: "[module-or-topic | --auto --repo org/repo]"
 ---
 
 # Research Docs
 
 Analyze the codebase, audit existing documentation, identify gaps and stale content, then generate or update docs. Like `/init` but for the `docs/` directory.
 
-If `$ARGUMENTS` contains `--auto`, run in **auto mode** — unattended, cron-safe, no user confirmation prompts. Otherwise, run the interactive mode below. In auto mode, an optional `--repo org/repo` argument restricts the run to that one repo (see Step A0).
+If `$ARGUMENTS` contains `--auto`, run in **auto mode** — unattended, cron-safe, no user confirmation prompts. Otherwise, run the interactive mode below. In auto mode, `--repo org/repo` is required and names the one repo to process (see Step A0).
 
 If `$ARGUMENTS` is provided without `--auto`, focus on just that module or topic. Otherwise, audit the entire project.
 
@@ -17,9 +17,9 @@ If `$ARGUMENTS` is provided without `--auto`, focus on just that module or topic
 
 When `$ARGUMENTS` includes `--auto`, skip all interactive steps. Run the following steps in sequence, then stop. Do NOT enter the Interactive Mode steps.
 
-This agent's workspace can have multiple repos checked out under `repos/` (see `plugins/shipwright/scripts/check-helpers.ts`'s `resolveRepoDirs`). Auto mode is repo-aware: Steps A1-A8 run once **per repo**, scoped to that repo's own `state/docs-last-synced.json` and git history, and Step A9 prints one aggregated summary across every repo processed.
+Auto mode runs for exactly one repo, named by `--repo org/repo` (queued per repo by the admin system-cron scheduler). Steps A1-A8 run scoped to that repo's own `state/docs-last-synced.json` and git history, and Step A9 prints the summary.
 
-### Step A0: Confirm Auto Mode and Resolve Repo List
+### Step A0: Confirm Auto Mode and Resolve the Repo
 
 Check that `--auto` is present in `$ARGUMENTS`. Print:
 
@@ -30,31 +30,15 @@ RESEARCH-DOCS AUTO RUN
 Mode: auto (unattended)
 ```
 
-Determine the list of repos to process, in this priority order:
+`--repo org/repo` is required in auto mode. If `$ARGUMENTS` does not contain it, print the following and stop without scanning `repos/` or doing any work:
 
-0. **Explicit `--repo org/repo` (overrides everything below).** When `$ARGUMENTS` contains `--repo org/repo`, process only that repo: skip the precheck-driven list and the resolver fallback entirely, and do not scan `repos/`. Find its clone by matching each `repos/*/`'s `git remote get-url origin` against `org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Then `git -C repos/{dirname} pull`. Rely on the existing per-repo freshness gate (Step A1/A2 sync anchor and diff) so a repo with no changes since its anchor is a no-op. Without `--repo`, behavior is unchanged.
-1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the specialty manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
-2. **Fallback (manual invocation, or no repo list available in the prompt).** Call the
-   config-driven resolver directly:
-   ```bash
-   bun run - <<EOF
-   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
-   const repos = await resolveScopedRepos(resolveWorkspacePath());
-   console.log(repos.join("\n"));
-   EOF
-   ```
-   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
-   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
-   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
-   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
-   Process every repo name it returns; an empty result means nothing configured to process.
-   Note: `check-docs-freshness.ts`'s own precheck (priority-1 list above) still resolves its
-   repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver — the two paths
-   are not yet unified, so this fallback can scope more narrowly than the precheck does.
+```
+Usage: /shipwright:research-docs --auto --repo org/repo
+```
 
-For each resolved repo, the local clone directory is `repos/{dirname}` (the directory name from the `repos/` scan — not necessarily the `org/repo` string, since the precheck output identifies repos by their parsed `org/repo` remote but the local clone folder name may differ). Match the precheck's `org/repo` name back to its local directory by checking each `repos/*/`'s `git remote get-url origin` (or `.git/config`) for that owner/repo.
+Find the repo's clone by matching each `repos/*/`'s `git remote get-url origin` against `org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Then `git -C repos/{dirname} pull`. The local clone directory is `repos/{dirname}` (not necessarily the `org/repo` string). Rely on the per-repo freshness gate (Step A1/A2 sync anchor and diff) so a repo with no changes since its anchor is a no-op.
 
-For each repo in the resolved list, `cd` into `repos/{dirname}` and run Steps A1-A8 below scoped to that repo (all relative paths in A1-A8 — `state/docs-last-synced.json`, `docs/*.md`, `git diff`, etc. — resolve against that repo's working directory). A repo with no `docs/` directory is skipped cleanly: do not create `docs/`, do not read or write a sync anchor, do not emit a per-repo section for it in Step A9 beyond a one-line "skipped (no docs/)" note. After the last repo, `cd` back and print the aggregated Step A9 summary once.
+`cd` into `repos/{dirname}` and run Steps A1-A8 below scoped to that repo (all relative paths in A1-A8 — `state/docs-last-synced.json`, `docs/*.md`, `git diff`, etc. — resolve against that repo's working directory). A repo with no `docs/` directory is skipped cleanly: do not create `docs/`, do not read or write a sync anchor, do not emit a per-repo section for it in Step A9 beyond a one-line "skipped (no docs/)" note. After the last repo, `cd` back and print the aggregated Step A9 summary once.
 
 ### Step A1: Read Sync Anchor
 
@@ -214,7 +198,7 @@ echo '{"sha":"'$(git rev-parse HEAD)'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%
 
 The `"sha"` and `"timestamp"` fields are required. Any future auto run for this repo will diff against this SHA. Each repo's anchor is written independently — writing repo A's anchor does not touch repo B's `state/docs-last-synced.json`.
 
-After Step A8, return to Step A1 for the next repo in the resolved list (Step A0). Once every repo in the list has completed Steps A1-A8 (or been skipped for having no `docs/` directory), proceed to Step A9.
+After Step A8 (or skipping the repo for having no `docs/` directory), proceed to Step A9.
 
 ### Step A9: Auto Run Summary
 

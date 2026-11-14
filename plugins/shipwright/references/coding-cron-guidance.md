@@ -18,13 +18,11 @@ survives reconcile.
 A `preCheck` is a script whose stdout becomes the cron's live prompt; a non-zero exit or empty output
 skips the tick. Plugin scripts use the `plugin:script.ts` form and resolve to the plugin's `scripts/` dir:
 
-- `shipwright:check-docs-freshness.ts` — docs freshness guard
 - `shipwright:check-site-docs-freshness.ts` — site docs freshness guard
 - `shipwright:check-error-patrol.ts` — error patrol
 - `shipwright:check-consolidation-patrol.ts` — consolidation patrol
 - `shipwright:check-prompt-audit.ts` — prompt audit patrol
 - `shipwright:check-learn-dream.ts` — learn-dream batch
-- `shipwright:check-test-readiness.ts` — test-readiness pipeline
 
 ```bash
 # Set a preCheck without touching schedule/prompt; pass null to clear it
@@ -32,7 +30,7 @@ curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
-  -d '{"preCheck": "shipwright:check-docs-freshness.ts"}'
+  -d '{"preCheck": "shipwright:check-site-docs-freshness.ts"}'
 ```
 
 The delivery-loop phases (dev-task, review, patch, deploy) are not preCheck crons: the
