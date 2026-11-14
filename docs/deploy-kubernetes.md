@@ -150,6 +150,7 @@ The admin service supports several optional feature flags that gate functionalit
 - **`admin.podServiceAccount.enabled`** — Pod ServiceAccount flag (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). Defaults to `false`.
 - **`admin.cronRunNow.enabled`** — Cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). Defaults to `false`.
 - **`admin.transcriptApi.enabled`** — Cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). Defaults to `false`.
+- **`admin.loopTranscriptUpload.agentIds`** — Agent ids whose coding-loop runs may upload a redacted transcript (intended for `SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS`; also needs `admin.transcriptApi.enabled`). Defaults to `[]` (no agent uploads). Not yet rendered by the bundled agent-platform library chart, so setting it has no effect until that chart supports it.
 - **`admin.repoAccessCheck.enabled`** — Agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). Defaults to `false`.
 
 Example:
