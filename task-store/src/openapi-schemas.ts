@@ -1512,3 +1512,166 @@ export const VerificationCheckListResponseSchema = z
     offset: z.number().int().openapi({ example: 0 }),
   })
   .openapi("VerificationCheckListResponse");
+
+// ─── System Cron (SCR-1.1) ────────────────────────────────────────────────────
+
+export const SystemCronDefinitionSchema = z
+  .object({
+    id: z.string().openapi({
+      example: "dep-audit",
+      description:
+        "Lowercase slug ([a-z0-9][a-z0-9-]*, max 63 chars). Embedded verbatim in generated task ids.",
+    }),
+    accountId: z.string().openapi({
+      example: "default",
+      description:
+        "The account this definition belongs to. Tasks it generates inherit it.",
+    }),
+    name: z.string().openapi({ example: "Dependency audit" }),
+    schedule: z.string().openapi({
+      example: "0 9 * * 1",
+      description:
+        "5-field cron expression, interpreted by the external scheduler that calls /fire.",
+    }),
+    timezone: z.string().openapi({
+      example: "UTC",
+      description: "IANA timezone the schedule is evaluated in.",
+    }),
+    enabled: z.boolean().openapi({ example: true }),
+    titleTemplate: z.string().openapi({
+      example: "Dependency audit: {repo}",
+      description:
+        "Task title template. `{repo}` is the only placeholder, replaced by plain substitution with the org/repo string; nothing else is evaluated.",
+    }),
+    descriptionTemplate: z.string().openapi({
+      example: "Audit {repo}'s dependencies and open a PR for safe bumps.",
+      description:
+        "Task description template — same `{repo}`-only plain substitution as titleTemplate.",
+    }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-14T00:00:00.000Z" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-14T00:00:00.000Z" }),
+  })
+  .openapi("SystemCronDefinition");
+
+/** Path param for /system-crons/:id routes. */
+export const SystemCronIdParamSchema = z
+  .object({
+    id: z.string().openapi({ example: "dep-audit" }),
+  })
+  .openapi("SystemCronIdParam");
+
+/** Query for GET /system-crons */
+export const SystemCronListQuerySchema = z
+  .object({
+    enabled: z.enum(["true", "false"]).optional().openapi({
+      example: "true",
+      description: "Only definitions with this enabled state.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Restrict to one account's definitions. Omitted: every account's definitions.",
+    }),
+  })
+  .openapi("SystemCronListQuery");
+
+/** Query for the single-definition routes (PATCH, enable, disable, fire). */
+export const SystemCronAccountQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Optional: require the definition to belong to this account (404 otherwise).",
+    }),
+  })
+  .openapi("SystemCronAccountQuery");
+
+/** Response for GET /system-crons */
+export const SystemCronListResponseSchema = z
+  .object({
+    systemCrons: z.array(SystemCronDefinitionSchema),
+  })
+  .openapi("SystemCronListResponse");
+
+/** Request body for POST /system-crons */
+export const CreateSystemCronBodySchema = z
+  .object({
+    id: z.string().openapi({ example: "dep-audit" }),
+    name: z.string().openapi({ example: "Dependency audit" }),
+    schedule: z.string().openapi({ example: "0 9 * * 1" }),
+    timezone: z
+      .string()
+      .optional()
+      .openapi({ example: "UTC", description: "Defaults to UTC." }),
+    enabled: z
+      .boolean()
+      .optional()
+      .openapi({ example: true, description: "Defaults to true." }),
+    titleTemplate: z.string().openapi({ example: "Dependency audit: {repo}" }),
+    descriptionTemplate: z
+      .string()
+      .openapi({ example: "Audit {repo}'s dependencies." }),
+  })
+  .openapi("CreateSystemCronBody");
+
+/** Request body for PATCH /system-crons/:id — every field optional. */
+export const PatchSystemCronBodySchema = z
+  .object({
+    name: z.string().optional(),
+    schedule: z.string().optional(),
+    timezone: z.string().optional(),
+    titleTemplate: z.string().optional(),
+    descriptionTemplate: z.string().optional(),
+  })
+  .openapi("PatchSystemCronBody");
+
+/** Request body for POST /system-crons/:id/fire */
+export const FireSystemCronBodySchema = z
+  .object({
+    scheduledFor: z.string().openapi({
+      example: "2026-11-14T09:00:00Z",
+      description:
+        "The slot being fired — ISO-8601 with an explicit timezone (`Z` or `±HH:MM`), truncated to whole seconds. Together with the cron id this is the idempotency key.",
+    }),
+    repos: z
+      .array(z.string())
+      .min(1)
+      .max(MAX_BULK_TASKS)
+      .openapi({
+        example: ["org/repo-a", "org/repo-b"],
+        description: `One task is created per distinct org/repo (max ${MAX_BULK_TASKS}).`,
+      }),
+  })
+  .openapi("FireSystemCronBody");
+
+/** Response for POST /system-crons/:id/fire */
+export const FireSystemCronResponseSchema = z
+  .object({
+    claimed: z.boolean().openapi({
+      example: true,
+      description:
+        "true: this call claimed the slot and created the tasks. false: the slot was already claimed (or lost a concurrent race) — nothing was created.",
+    }),
+    cronId: z.string().openapi({ example: "dep-audit" }),
+    scheduledFor: z.string().openapi({ example: "2026-11-14T09:00:00.000Z" }),
+    slot: z.string().openapi({
+      example: "20261114T090000Z",
+      description:
+        "Compact UTC form of scheduledFor (YYYYMMDDTHHMMSSZ) used in task ids.",
+    }),
+    taskIds: z.array(z.string()).openapi({
+      example: [
+        "SC-dep-audit-20261114T090000Z-org-repo-a",
+        "SC-dep-audit-20261114T090000Z-org-repo-b",
+      ],
+      description:
+        "Ids of tasks created by this call: SC-{cronId}-{slot}-{owner}-{repo}. Always empty when claimed is false.",
+    }),
+  })
+  .openapi("FireSystemCronResponse");

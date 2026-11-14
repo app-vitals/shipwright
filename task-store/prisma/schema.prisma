@@ -1,5 +1,6 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck.
+// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck,
+// SystemCronDefinition, SystemCronTrigger.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -601,6 +602,67 @@ model Session {
   accountId  String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
 
   @@unique([accountId, slug])
+  @@index([accountId])
+}
+
+// ─── System Cron Definition ───────────────────────────────────────────────────
+// A platform-level scheduled job that, each time it fires, fans out into one
+// ordinary `dev` task per repo (SCR-1.1). The scheduler itself lives outside
+// the task store — it calls POST /system-crons/:id/fire with the slot it is
+// firing (`scheduledFor`) and the repos to fan out to; the task store owns
+// only the definition and the exactly-once claim of each slot.
+//
+// id is a caller-chosen lowercase slug (e.g. "dep-audit"), not a cuid — it is
+// embedded verbatim in every generated task id (SC-{id}-{slot}-{owner}-{repo}).
+//
+// titleTemplate/descriptionTemplate support exactly one placeholder, `{repo}`,
+// replaced by plain substitution (see src/system-cron-template.ts) — nothing
+// else in a template is ever evaluated.
+
+model SystemCronDefinition {
+  id                  String  @id
+  accountId           String  @default("default") // SSP-6.1: tenant scope; generated tasks inherit it
+  name                String
+  schedule            String // 5-field cron expression, interpreted by the external scheduler
+  timezone            String  @default("UTC") // IANA zone the schedule is evaluated in
+  enabled             Boolean @default(true)
+  titleTemplate       String
+  descriptionTemplate String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  triggers SystemCronTrigger[]
+
+  @@index([accountId])
+}
+
+// ─── System Cron Trigger ──────────────────────────────────────────────────────
+// One row per claimed (cronId, scheduledFor) slot — the idempotency key for
+// POST /system-crons/:id/fire. The row is inserted in the same transaction as
+// the slot's tasks, so either both land or neither does; a concurrent fire for
+// the same slot loses the unique-key race and creates nothing.
+//
+// scheduledFor is a real DateTime (normalized to whole seconds, UTC) rather
+// than this schema's usual ISO-string convention, because it is the unique
+// key: two spellings of the same instant must collide. slot is the derived
+// compact form (YYYYMMDDTHHMMSSZ) used in task ids, stored for readability.
+//
+// The definition relation omits onDelete (RESTRICT), matching the audit-trail
+// tables above — a claim record must not silently disappear.
+
+model SystemCronTrigger {
+  id           String               @id @default(cuid())
+  accountId    String               @default("default")
+  cronId       String
+  definition   SystemCronDefinition @relation(fields: [cronId], references: [id])
+  scheduledFor DateTime
+  slot         String
+  taskCount    Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([cronId, scheduledFor])
   @@index([accountId])
 }
 

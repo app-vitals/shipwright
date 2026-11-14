@@ -26,6 +26,7 @@ import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
+import { SystemCronService } from "./system-cron-service.ts";
 import { TaskService, WEBHOOK_TX_TIMEOUT_MS } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 import { VerificationCheckService } from "./verification-check-service.ts";
@@ -216,6 +217,11 @@ async function startServer(): Promise<void> {
     pullRequestService.lookupBlockedPrNumbers(pairs),
   );
   const verificationCheckService = new VerificationCheckService(prisma);
+  const systemCronService = new SystemCronService(
+    prisma,
+    undefined,
+    webhookDispatcher,
+  );
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -251,6 +257,7 @@ async function startServer(): Promise<void> {
     pullRequestService,
     sessionService,
     verificationCheckService,
+    systemCronService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
     pool,

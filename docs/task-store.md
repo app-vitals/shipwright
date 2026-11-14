@@ -128,6 +128,15 @@ Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<i
 
 The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
 
+### System crons
+
+`/system-crons` (admin-only; agent tokens get `403`) stores system-cron definitions — `id` (lowercase slug), `name`, `schedule` (5-field cron), `timezone` (IANA, default `UTC`), `enabled`, `titleTemplate`, `descriptionTemplate` — managed with `GET /system-crons`, `POST /system-crons`, `PATCH /system-crons/:id`, and `POST /system-crons/:id/enable` / `/disable`. The task store does not schedule anything itself: an external scheduler calls `POST /system-crons/:id/fire` with `{ "scheduledFor": "<ISO with Z or offset>", "repos": ["org/repo", ...] }`.
+
+- Each `(id, scheduledFor)` slot is claimed exactly once via a `SystemCronTrigger` row (unique on `cronId` + `scheduledFor`). `scheduledFor` is normalized to whole-second UTC.
+- The claiming call creates, in the same transaction, one `pending` task per distinct repo: kind `dev`, `hitl: false`, no assignee, `source: "system-cron"`, the definition's account, and id `SC-{id}-{slot}-{owner}-{repo}`. The slot is the compact UTC form `YYYYMMDDTHHMMSSZ` (e.g. `2026-11-14T09:00:00Z` → `20261114T090000Z`).
+- Title and description come from the templates by plain `{repo}` substitution (the full `org/repo`). Nothing else is evaluated, so `${x}`, `{{x}}` and `{other}` stay literal.
+- Response: `201 { "claimed": true, "taskIds": [...] }` for the winner; `200 { "claimed": false, "taskIds": [] }` when the slot was already claimed or a concurrent call won. A failed fire rolls back the claim along with the tasks, so retrying is always safe. A disabled definition is `409`.
+
 ### Token management
 
 All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope), and revoke (soft-delete via `revokedAt`) scoped tokens. See the OpenAPI spec for request/response shapes.
