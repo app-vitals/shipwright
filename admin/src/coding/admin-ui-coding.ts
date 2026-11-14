@@ -10,6 +10,8 @@
  *   POST /admin/agents/:id/phase-methodology/:phase — set/clear a phase override
  *   GET  /admin/tasks, /admin/tasks/:id           — task-store tasks (board/table, detail)
  *   POST /admin/tasks/:id/release                 — release a claimed task
+ *   POST /admin/tasks/quick-add                   — create an initiative/idea task (INI-1.3)
+ *   POST /admin/tasks/:id/promote                 — promote idea→initiative→prd (INI-1.3)
  *   GET  /admin/sessions, /admin/sessions/:id     — sessions list and detail
  *   POST /admin/sessions/:slug/{follow,unfollow,archive,unarchive,rename}
  *   GET|POST /admin/settings/notifications        — session notification prefs
@@ -40,7 +42,7 @@ import {
 } from "@app-vitals/agent-admin/caller-scope";
 import { AGENT_PHASES } from "@app-vitals/agent-admin/openapi-schemas";
 import type { PushService } from "@app-vitals/agent-admin/push-service";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import {
   buildMergedWorkQueueRows,
   renderMergedQueueActivityPage,
@@ -62,12 +64,14 @@ import type { VerificationCheckItem } from "./admin-ui-verification-cards.ts";
 import {
   type PrListItem,
   type PullRequestItem,
+  promoteTargetKind,
   renderPrDetailPage,
   renderPrsPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
+  TASK_ACTION_MESSAGES,
   TASK_KIND_FILTERS,
   type TaskItem,
   type TaskKindFilter,
@@ -116,6 +120,23 @@ export interface CodingTaskStoreFetchers {
    * Release a task (unclaim → pending) via the task-store service.
    */
   releaseTask?: (id: string, accountId?: string) => Promise<void>;
+  /**
+   * Create a task via POST /tasks (INI-1.3 quick-add). If absent, the route
+   * redirects back with `?error=task_store_unavailable`.
+   */
+  createTask?: (
+    body: Record<string, unknown>,
+    accountId?: string,
+  ) => Promise<unknown>;
+  /**
+   * Patch a task via PATCH /tasks/:id (INI-1.3 promote). Resolves null when
+   * the task doesn't exist in the addressed account.
+   */
+  patchTask?: (
+    id: string,
+    patch: Record<string, unknown>,
+    accountId?: string,
+  ) => Promise<unknown>;
   /**
    * Fetch distinct session and repo values from the task-store service.
    * Used to populate datalist autocomplete suggestions in the tasks filter form.
@@ -375,6 +396,8 @@ export function createCodingAdminUIApp(
     fetchTaskStoreTasks,
     fetchTaskStoreTask,
     releaseTask,
+    createTask,
+    patchTask,
     fetchDistinctTaskValues,
     fetchTaskStorePrs,
     fetchTaskStorePrById,
@@ -615,6 +638,13 @@ export function createCodingAdminUIApp(
         fetchTaskStoreTask &&
         ((id: string) => fetchTaskStoreTask(id, accountId)),
       release: releaseTask && ((id: string) => releaseTask(id, accountId)),
+      createTask:
+        createTask &&
+        ((body: Record<string, unknown>) => createTask(body, accountId)),
+      patchTask:
+        patchTask &&
+        ((id: string, patch: Record<string, unknown>) =>
+          patchTask(id, patch, accountId)),
       fetchDistinct:
         fetchDistinctTaskValues && (() => fetchDistinctTaskValues(accountId)),
       fetchPrs:
@@ -687,6 +717,7 @@ export function createCodingAdminUIApp(
     );
     const ideas = c.req.query("ideas") === "1";
     const error = c.req.query("error") ?? undefined;
+    const success = c.req.query("success") ?? undefined;
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
     // TBC-2.1: the default board view scopes its outbound query to the
@@ -806,6 +837,7 @@ export function createCodingAdminUIApp(
         { total, limit, page },
         {
           ...(error ? { error } : {}),
+          ...(success ? { success } : {}),
           agentFilterActive,
         },
         suggestions,
@@ -888,8 +920,121 @@ export function createCodingAdminUIApp(
         pullRequest,
         backHref,
         verificationChecks,
+        detailNotice(c.req.query("success"), c.req.query("error")),
       ),
     );
+  });
+
+  // ─── Quick-add and promote (INI-1.3) ───────────────────────────────────────
+
+  const QUICK_ADD_KINDS = new Set(["initiative", "idea"]);
+  const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
+  const RETURN_PATTERN = /^\/admin\/tasks(\/[^/?\s]+)?(\?[^\s]*)?$/;
+
+  /** Known flash code → banner for the task detail page. */
+  function detailNotice(
+    success: string | undefined,
+    error: string | undefined,
+  ): { kind: "success" | "error"; message: string } | undefined {
+    if (success && TASK_ACTION_MESSAGES[success])
+      return { kind: "success", message: TASK_ACTION_MESSAGES[success] };
+    if (error && TASK_ACTION_MESSAGES[error])
+      return { kind: "error", message: TASK_ACTION_MESSAGES[error] };
+    return undefined;
+  }
+
+  /** Redirect to the (allowlisted) `return` path with a flash param. */
+  function flashRedirect(
+    c: Context<AdminUIEnv>,
+    returnTo: string | undefined,
+    flash: string,
+  ): Response {
+    const base =
+      returnTo && RETURN_PATTERN.test(returnTo) ? returnTo : "/admin/tasks";
+    return c.redirect(`${base}${base.includes("?") ? "&" : "?"}${flash}`, 302);
+  }
+
+  async function readForm(
+    c: Context<AdminUIEnv>,
+  ): Promise<Record<string, string>> {
+    try {
+      const data = await c.req.formData();
+      const out: Record<string, string> = {};
+      for (const [k, v] of data.entries()) {
+        if (typeof v === "string") out[k] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  app.post("/admin/tasks/quick-add", requireAuth, async (c) => {
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
+    const form = await readForm(c);
+    const returnTo = form.return;
+    if (!ts.createTask)
+      return flashRedirect(c, returnTo, "error=task_store_unavailable");
+    const title = (form.title ?? "").trim();
+    const kind = form.kind ?? "";
+    const repo = (form.repo ?? "").trim();
+    const description = (form.description ?? "").trim();
+    const session = (form.session ?? "").trim();
+    if (
+      !title ||
+      !QUICK_ADD_KINDS.has(kind) ||
+      (repo && !REPO_PATTERN.test(repo))
+    ) {
+      return flashRedirect(c, returnTo, "error=quick_add_invalid");
+    }
+    try {
+      await ts.createTask({
+        title,
+        status: "pending",
+        repo: repo || null,
+        kind,
+        source: "admin-quick-add",
+        ...(description ? { description } : {}),
+        ...(session ? { session } : {}),
+      });
+    } catch {
+      return flashRedirect(c, returnTo, "error=quick_add_failed");
+    }
+    return flashRedirect(c, returnTo, "success=task_created");
+  });
+
+  app.post("/admin/tasks/:id/promote", requireAuth, async (c) => {
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
+    const taskId = c.req.param("id");
+    const returnTo = (await readForm(c)).return;
+    if (!ts.fetchTask || !ts.patchTask)
+      return flashRedirect(c, returnTo, "error=task_store_unavailable");
+    let task: TaskItem | null = null;
+    try {
+      task = await ts.fetchTask(taskId);
+    } catch {
+      return flashRedirect(c, returnTo, "error=promote_failed");
+    }
+    if (!task && view.kind === "account") return NOT_FOUND();
+    if (!task) return flashRedirect(c, returnTo, "error=task_not_found");
+    const target = promoteTargetKind(task.kind);
+    if (!target) return flashRedirect(c, returnTo, "error=promote_invalid");
+    try {
+      const updated = await ts.patchTask(taskId, { kind: target });
+      if (updated === null)
+        return flashRedirect(c, returnTo, "error=task_not_found");
+    } catch {
+      return flashRedirect(c, returnTo, "error=promote_failed");
+    }
+    return flashRedirect(c, returnTo, "success=task_promoted");
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {

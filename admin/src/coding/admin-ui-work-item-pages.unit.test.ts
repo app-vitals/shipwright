@@ -20,6 +20,7 @@ import {
   heartbeatFreshness,
   type PrListItem,
   type PullRequestItem,
+  promoteTargetKind,
   renderPrDetailPage,
   renderPrsPage,
   renderSessionDetailPage,
@@ -6454,5 +6455,149 @@ describe("renderTasksPage — planning/ideas columns, kind filter, badges (INI-1
     );
     expect(html).not.toContain("<script>x</script>");
     expect(html).not.toContain('"><img src=x>');
+  });
+});
+
+// ─── INI-1.3: quick-add form and promote actions ─────────────────────────────
+
+describe("quick-add form and promote buttons (INI-1.3)", () => {
+  const initiative: TaskItem = {
+    id: "T-INI",
+    title: "Initiative title",
+    status: "pending",
+    kind: "initiative",
+  };
+  const idea: TaskItem = {
+    id: "T-IDEA",
+    title: "Idea title",
+    status: "pending",
+    kind: "idea",
+  };
+  const dev: TaskItem = { id: "T-DEV", title: "Dev title", status: "pending" };
+  const prd: TaskItem = { ...dev, id: "T-PRD", kind: "prd" };
+
+  function page(
+    tasks: TaskItem[],
+    opts: {
+      view?: "board" | "table";
+      readOnly?: boolean;
+      pageOpts?: Parameters<typeof renderTasksPage>[6];
+    } = {},
+  ): string {
+    return renderTasksPage(
+      tasks,
+      { ideas: true },
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      opts.pageOpts,
+      undefined,
+      opts.readOnly ?? false,
+      "America/Los_Angeles",
+      {},
+      opts.view ?? "board",
+    );
+  }
+
+  for (const view of ["board", "table"] as const) {
+    test(`${view}: quick-add form posts title/notes/repo/session/kind`, () => {
+      const html = page([], { view });
+      expect(html).toContain('action="/admin/tasks/quick-add"');
+      const form = html.slice(
+        html.indexOf('action="/admin/tasks/quick-add"'),
+        html.indexOf(
+          "</form>",
+          html.indexOf('action="/admin/tasks/quick-add"'),
+        ),
+      );
+      for (const n of ["title", "description", "repo", "session", "kind"]) {
+        expect(form).toContain(`name="${n}"`);
+      }
+      expect(form).toContain('<option value="initiative"');
+      expect(form).toContain('<option value="idea"');
+    });
+
+    test(`${view}: quick-add form hidden when read-only`, () => {
+      const html = page([initiative], { view, readOnly: true });
+      expect(html).not.toContain("/admin/tasks/quick-add");
+      expect(html).not.toContain("/promote");
+    });
+
+    test(`${view}: promote buttons by kind`, () => {
+      const html = page([idea, initiative, dev, prd], { view });
+      expect(html).toContain('action="/admin/tasks/T-IDEA/promote');
+      expect(html).toContain("Promote to initiative");
+      expect(html).toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-DEV/promote');
+      expect(html).not.toContain('action="/admin/tasks/T-PRD/promote');
+    });
+  }
+
+  test("renders success and mapped error notices", () => {
+    const ok = page([], { pageOpts: { success: "task_created" } });
+    expect(ok).toContain("alert-success");
+    expect(ok).toContain("Task created.");
+    const bad = page([], { pageOpts: { error: "quick_add_invalid" } });
+    expect(bad).toContain("alert-error");
+    expect(bad).toContain("Title is required");
+  });
+
+  test("unknown error codes still render raw (escaped)", () => {
+    const html = page([], { pageOpts: { error: "<b>x</b>" } });
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+  });
+
+  test("promoteTargetKind maps idea->initiative, initiative->prd, else null", () => {
+    expect(promoteTargetKind("idea")).toBe("initiative");
+    expect(promoteTargetKind("initiative")).toBe("prd");
+    expect(promoteTargetKind("dev")).toBeNull();
+    expect(promoteTargetKind("prd")).toBeNull();
+    expect(promoteTargetKind(undefined)).toBeNull();
+  });
+
+  describe("detail page", () => {
+    const render = (
+      task: TaskItem,
+      notice?: { kind: "success" | "error"; message: string },
+    ) =>
+      renderTaskDetailPage(
+        task,
+        USER_NAME,
+        {},
+        "UTC",
+        undefined,
+        "/admin/tasks",
+        [],
+        notice,
+      );
+
+    test("initiative shows copyable plan-session hint and promote to PRD", () => {
+      const html = render({ ...initiative, session: "my-sess" });
+      expect(html).toContain("/shipwright:plan-session");
+      expect(html).toContain("<code");
+      expect(html).toContain("T-INI");
+      expect(html).toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).toContain("Promote to PRD");
+    });
+
+    test("idea shows promote to initiative but no plan-session hint", () => {
+      const html = render(idea);
+      expect(html).toContain("Promote to initiative");
+      expect(html).not.toContain("/shipwright:plan-session");
+    });
+
+    test("dev task shows neither", () => {
+      const html = render(dev);
+      expect(html).not.toContain("/promote");
+      expect(html).not.toContain("/shipwright:plan-session");
+    });
+
+    test("renders notice", () => {
+      const html = render(dev, { kind: "success", message: "Promoted." });
+      expect(html).toContain("alert-success");
+      expect(html).toContain("Promoted.");
+    });
   });
 });

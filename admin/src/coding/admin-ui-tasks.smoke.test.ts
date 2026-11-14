@@ -1443,3 +1443,337 @@ describe("admin UI — tasks page", () => {
     );
   });
 });
+
+// ─── INI-1.3: quick-add and promote routes ────────────────────────────────────
+
+describe("admin UI — quick-add and promote (INI-1.3)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  const post = (
+    app: ReturnType<typeof createCodingTestApp>,
+    path: string,
+    fields: Record<string, string>,
+  ) =>
+    app.request(path, {
+      method: "POST",
+      headers: {
+        Cookie: `admin_session=${cookie}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(fields).toString(),
+    });
+
+  const emptyList = async () => ({
+    tasks: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+  });
+
+  it("POST /admin/tasks/quick-add creates a pending initiative and redirects with success", async () => {
+    const created: Record<string, unknown>[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: emptyList,
+        createTask: async (body: Record<string, unknown>) => {
+          created.push(body);
+          return { id: "new-1" };
+        },
+      }),
+    );
+    const res = await post(app, "/admin/tasks/quick-add", {
+      title: "  Add risk score ",
+      description: "some notes",
+      repo: "app-vitals/shipwright",
+      session: "risk",
+      kind: "initiative",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks?success=task_created",
+    );
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      title: "Add risk score",
+      description: "some notes",
+      repo: "app-vitals/shipwright",
+      session: "risk",
+      kind: "initiative",
+      status: "pending",
+    });
+  });
+
+  it("POST /admin/tasks/quick-add accepts idea with only a title (repo null)", async () => {
+    const created: Record<string, unknown>[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        createTask: async (body: Record<string, unknown>) => {
+          created.push(body);
+          return { id: "new-2" };
+        },
+      }),
+    );
+    const res = await post(app, "/admin/tasks/quick-add", {
+      title: "Maybe do X",
+      kind: "idea",
+    });
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks?success=task_created",
+    );
+    expect(created[0]).toMatchObject({ kind: "idea", repo: null });
+    expect(created[0]).not.toHaveProperty("session");
+  });
+
+  it("POST /admin/tasks/quick-add rejects invalid input without calling the store", async () => {
+    let calls = 0;
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        createTask: async () => {
+          calls++;
+          return {};
+        },
+      }),
+    );
+    const invalidInputs: Record<string, string>[] = [
+      { title: "", kind: "idea" },
+      { title: "x", kind: "dev" },
+      { title: "x", kind: "prd" },
+      { title: "x" },
+      { title: "x", kind: "idea", repo: "not a repo" },
+    ];
+    for (const fields of invalidInputs) {
+      const res = await post(app, "/admin/tasks/quick-add", fields);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe(
+        "/admin/tasks?error=quick_add_invalid",
+      );
+    }
+    expect(calls).toBe(0);
+  });
+
+  it("POST /admin/tasks/quick-add redirects with error when the store fails or is absent", async () => {
+    const failing = createCodingTestApp(
+      makeCodingMockDeps({
+        createTask: async () => {
+          throw new Error("boom");
+        },
+      }),
+    );
+    const res = await post(failing, "/admin/tasks/quick-add", {
+      title: "x",
+      kind: "idea",
+    });
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks?error=quick_add_failed",
+    );
+    const absent = createCodingTestApp(makeCodingMockDeps({}));
+    const res2 = await post(absent, "/admin/tasks/quick-add", {
+      title: "x",
+      kind: "idea",
+    });
+    expect(res2.headers.get("Location")).toBe(
+      "/admin/tasks?error=task_store_unavailable",
+    );
+  });
+
+  it("POST /admin/tasks/quick-add requires auth", async () => {
+    const app = createCodingTestApp(makeCodingMockDeps({}));
+    const res = await app.request("/admin/tasks/quick-add", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "title=x&kind=idea",
+    });
+    expect(res.status).not.toBe(200);
+    expect(res.headers.get("Location") ?? "").not.toContain("success=");
+  });
+
+  it("POST /admin/tasks/:id/promote patches idea->initiative and redirects with success", async () => {
+    const patches: { id: string; patch: Record<string, unknown> }[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTask: async (id: string) => ({
+          id,
+          title: "t",
+          status: "pending",
+          kind: "idea",
+        }),
+        patchTask: async (id: string, patch: Record<string, unknown>) => {
+          patches.push({ id, patch });
+          return {};
+        },
+      }),
+    );
+    const res = await post(app, "/admin/tasks/T-1/promote", {});
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks?success=task_promoted",
+    );
+    expect(patches).toEqual([{ id: "T-1", patch: { kind: "initiative" } }]);
+  });
+
+  it("POST /admin/tasks/:id/promote patches initiative->prd and honours a valid return path", async () => {
+    const patches: Record<string, unknown>[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTask: async (id: string) => ({
+          id,
+          title: "t",
+          status: "pending",
+          kind: "initiative",
+        }),
+        patchTask: async (_id: string, patch: Record<string, unknown>) => {
+          patches.push(patch);
+          return {};
+        },
+      }),
+    );
+    const res = await post(app, "/admin/tasks/T-2/promote", {
+      return: "/admin/tasks/T-2",
+    });
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks/T-2?success=task_promoted",
+    );
+    expect(patches).toEqual([{ kind: "prd" }]);
+  });
+
+  it("POST /admin/tasks/:id/promote ignores an off-site return path", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTask: async (id: string) => ({
+          id,
+          title: "t",
+          status: "pending",
+          kind: "idea",
+        }),
+        patchTask: async () => ({}),
+      }),
+    );
+    const res = await post(app, "/admin/tasks/T-1/promote", {
+      return: "https://evil.example/x",
+    });
+    expect(res.headers.get("Location")).toBe(
+      "/admin/tasks?success=task_promoted",
+    );
+  });
+
+  it("POST /admin/tasks/:id/promote is rejected for dev and prd tasks", async () => {
+    let patched = 0;
+    for (const kind of ["dev", "prd", undefined]) {
+      const app = createCodingTestApp(
+        makeCodingMockDeps({
+          fetchTaskStoreTask: async (id: string) => ({
+            id,
+            title: "t",
+            status: "pending",
+            ...(kind ? { kind } : {}),
+          }),
+          patchTask: async () => {
+            patched++;
+            return {};
+          },
+        }),
+      );
+      const res = await post(app, "/admin/tasks/T-3/promote", {});
+      expect(res.headers.get("Location")).toBe(
+        "/admin/tasks?error=promote_invalid",
+      );
+    }
+    expect(patched).toBe(0);
+  });
+
+  it("POST /admin/tasks/:id/promote handles missing task and store failure", async () => {
+    const missing = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTask: async () => null,
+        patchTask: async () => ({}),
+      }),
+    );
+    expect(
+      (await post(missing, "/admin/tasks/nope/promote", {})).headers.get(
+        "Location",
+      ),
+    ).toBe("/admin/tasks?error=task_not_found");
+    const failing = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTask: async (id: string) => ({
+          id,
+          title: "t",
+          status: "pending",
+          kind: "idea",
+        }),
+        patchTask: async () => {
+          throw new Error("boom");
+        },
+      }),
+    );
+    expect(
+      (await post(failing, "/admin/tasks/T-1/promote", {})).headers.get(
+        "Location",
+      ),
+    ).toBe("/admin/tasks?error=promote_failed");
+  });
+
+  it("GET /admin/tasks renders the quick-add form and success notice", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: emptyList }),
+    );
+    const res = await app.request("/admin/tasks?success=task_created", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).toContain("/admin/tasks/quick-add");
+    expect(html).toContain("Task created.");
+  });
+
+  it("GET /admin/tasks/:id shows plan-session hint for an initiative", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: emptyList,
+        fetchTaskStoreTask: async (id: string) => ({
+          id,
+          title: "Init",
+          status: "pending",
+          kind: "initiative",
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks/T-9?success=task_promoted", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).toContain("/shipwright:plan-session");
+    expect(html).toContain("Task promoted.");
+  });
+
+  it("GET /public/tasks never renders quick-add or promote controls", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        publicRepo: "app-vitals/shipwright",
+        fetchTaskStoreTasks: async () => ({
+          tasks: [
+            {
+              id: "P-1",
+              title: "Pub",
+              status: "pending",
+              kind: "initiative",
+              repo: "app-vitals/shipwright",
+              assignee: null,
+              claimedBy: null,
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const html = await (await app.request("/public/tasks")).text();
+    expect(html).toContain("Pub");
+    expect(html).not.toContain("quick-add");
+    expect(html).not.toContain("/promote");
+  });
+});

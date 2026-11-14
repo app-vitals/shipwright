@@ -321,7 +321,11 @@ export function renderTasksPage(
     limit: 50,
     page: 1,
   },
-  opts?: { error?: string; agentFilterActive?: boolean },
+  opts?: {
+    error?: string;
+    success?: string;
+    agentFilterActive?: boolean;
+  },
   suggestions?: {
     sessions?: string[];
     repos?: string[];
@@ -357,9 +361,15 @@ export function renderTasksPage(
   const tasks = filters.ideas
     ? fetchedTasks
     : fetchedTasks.filter((t) => t.kind !== "idea");
-  const errorHtml = opts?.error
-    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
-    : "";
+  const errorHtml = `${
+    opts?.error
+      ? `<div class="alert alert-error">${escapeHtml(TASK_ACTION_MESSAGES[opts.error] ?? opts.error)}</div>`
+      : ""
+  }${
+    opts?.success
+      ? `<div class="alert alert-success">${escapeHtml(TASK_ACTION_MESSAGES[opts.success] ?? opts.success)}</div>`
+      : ""
+  }`;
 
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -522,7 +532,7 @@ export function renderTasksPage(
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`
               : ""
-          }</td>`
+          }${renderPromoteForm(t, currentListUrl)}</td>`
     }
   </tr>`;
           })
@@ -622,6 +632,7 @@ export function renderTasksPage(
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
+    ${readOnly ? "" : renderQuickAddForm(currentListUrl, suggestions?.repos)}
     ${
       readOnly
         ? ""
@@ -912,6 +923,7 @@ function renderTasksBoard(args: {
         </div>
         ${blockerBadges}${prBadge}${kindBadge}
         ${releaseForm}
+        ${readOnly ? "" : renderPromoteForm(t, currentBoardUrl)}
       </div>`;
 
     // For readOnly, render the card without drawer wrapper
@@ -1032,6 +1044,7 @@ function renderTasksBoard(args: {
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
+    ${readOnly ? "" : renderQuickAddForm(currentBoardUrl, suggestions?.repos)}
     ${filterFormHtml}
     <div class="board">
       ${columnsHtml}
@@ -1080,6 +1093,7 @@ export function renderTaskDetailPage(
   pullRequest?: PullRequestItem,
   backHref = "/admin/tasks",
   verificationChecks: VerificationCheckItem[] = [],
+  notice?: { kind: "success" | "error"; message: string },
 ): string {
   const statusClass =
     task.status === "in_progress"
@@ -1206,6 +1220,22 @@ export function renderTaskDetailPage(
       ? `<form method="POST" action="/admin/tasks/${escapeHtml(task.id)}/release" style="display:inline">
           <button type="submit" class="btn btn-secondary" style="font-size:12px">Release</button>
         </form>`
+      : "";
+
+  const detailPath = `/admin/tasks/${encodeURIComponent(task.id)}`;
+  const promoteButton = renderPromoteForm(task, detailPath);
+  const noticeHtml = notice
+    ? `<div class="alert alert-${notice.kind === "success" ? "success" : "error"}">${escapeHtml(notice.message)}</div>`
+    : "";
+  // INI-1.3: HITL planning path for initiatives — plain selectable text, no
+  // clipboard JS (same convention as waitingTaskHint).
+  const planSessionHint =
+    task.kind === "initiative"
+      ? `<div class="card" style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Plan this initiative</div>
+        <div style="font-size:13px;color:#374151;margin-bottom:6px">Run in a planning session (human-in-the-loop), or promote to PRD for auto-planning:</div>
+        <code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:plan-session ${escapeHtml(task.title)} (${escapeHtml(task.id)})</code>
+      </div>`
       : "";
 
   const descriptionSection = task.description
@@ -1335,9 +1365,11 @@ export function renderTaskDetailPage(
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(task.title)}</h1>
       <span class="badge ${statusClass}">${escapeHtml(task.status)}</span>
       ${releaseButton}
+      ${promoteButton}
     </div>
     <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(task.id)}</div>
-
+    ${noticeHtml}
+    ${planSessionHint}
     ${blockersSection}
     ${descriptionSection}
     ${acSection}
@@ -1676,6 +1708,84 @@ function renderKindFilterField(selected: TaskKindFilter | undefined): string {
 /** "Show ideas" checkbox (?ideas=1) shared by the table and board filter forms. */
 function renderIdeasToggle(ideas: boolean | undefined): string {
   return `<label class="form-label" style="font-size:11px;display:flex;gap:4px;align-items:center;margin-bottom:6px"><input type="checkbox" name="ideas" value="1"${ideas ? " checked" : ""} /> Show ideas</label>`;
+}
+
+/** Kind a task is promoted to (INI-1.3): idea → initiative → prd. Null when not promotable. */
+export function promoteTargetKind(
+  kind: string | null | undefined,
+): "initiative" | "prd" | null {
+  if (kind === "idea") return "initiative";
+  if (kind === "initiative") return "prd";
+  return null;
+}
+
+/** Human-readable text for the quick-add / promote `?success=` / `?error=` codes. */
+export const TASK_ACTION_MESSAGES: Record<string, string> = {
+  task_created: "Task created.",
+  task_promoted: "Task promoted.",
+  quick_add_invalid:
+    "Title is required, kind must be initiative or idea, and repo (if given) must look like org/repo.",
+  quick_add_failed: "Failed to create the task. Please try again.",
+  promote_invalid: "Only idea and initiative tasks can be promoted.",
+  promote_failed: "Failed to promote the task. Please try again.",
+  task_not_found: "Task not found.",
+  task_store_unavailable: "Task store is not configured.",
+};
+
+/** Promote button form (idea → initiative, initiative → prd); empty for other kinds. */
+function renderPromoteForm(
+  task: Pick<TaskItem, "id" | "kind">,
+  returnTo: string,
+): string {
+  const target = promoteTargetKind(task.kind);
+  if (!target) return "";
+  const label =
+    target === "initiative" ? "Promote to initiative" : "Promote to PRD";
+  return `<form method="POST" action="/admin/tasks/${escapeHtml(task.id)}/promote" style="display:inline">
+        <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${label}</button>
+      </form>`;
+}
+
+/** Quick-add form (initiative / idea) shown above the board and table. */
+function renderQuickAddForm(
+  returnTo: string,
+  repos: string[] | undefined,
+): string {
+  const listAttr = repos?.length ? ' list="quick-add-repos"' : "";
+  const datalist = repos?.length
+    ? `<datalist id="quick-add-repos">${repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>`
+    : "";
+  return `<div class="card" style="margin-bottom:16px" data-quick-add>
+      <form method="POST" action="/admin/tasks/quick-add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Title</label>
+          <input name="title" type="text" required class="form-input" style="font-size:12px;padding:4px 8px" placeholder="Quick add…" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Notes</label>
+          <input name="description" type="text" class="form-input" style="font-size:12px;padding:4px 8px" placeholder="optional notes" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Repo</label>
+          <input type="text" name="repo" class="form-input" style="font-size:12px;padding:4px 8px" placeholder="org/repo"${listAttr} />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Session</label>
+          <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" placeholder="optional" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Kind</label>
+          <select name="kind" id="quick-add-kind" class="form-input" style="font-size:12px;padding:4px 8px">
+            <option value="initiative">Initiative</option>
+            <option value="idea">Idea</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="font-size:12px">Add</button>
+        ${datalist}
+      </form>
+    </div>`;
 }
 
 /**
