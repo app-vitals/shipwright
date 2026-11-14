@@ -117,6 +117,47 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
         throw new Error(`task-store POST /tasks/${id}/release → ${res.status}`);
     },
 
+    /** POST /tasks — resolves the created task; throws on any non-2xx. */
+    createTask: async (
+      body: Record<string, unknown>,
+      accountId?: string,
+    ): Promise<unknown> => {
+      const res = await doFetch(
+        path("/tasks", new URLSearchParams(), accountId),
+        {
+          method: "POST",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) throw new Error(`task-store POST /tasks → ${res.status}`);
+      return res.json();
+    },
+
+    /** PATCH /tasks/:id — resolves null on 404; throws on any other non-2xx. */
+    patchTask: async (
+      id: string,
+      patch: Record<string, unknown>,
+      accountId?: string,
+    ): Promise<unknown> => {
+      const res = await doFetch(
+        path(
+          `/tasks/${encodeURIComponent(id)}`,
+          new URLSearchParams(),
+          accountId,
+        ),
+        {
+          method: "PATCH",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
+      return res.json();
+    },
+
     fetchDistinctTaskValues: (accountId?: string) =>
       getJson<{ sessions: string[]; repos: string[]; orgs: string[] }>(
         "/tasks/distinct",

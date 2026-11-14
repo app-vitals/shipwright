@@ -132,6 +132,31 @@ describe("createTaskStoreFetchers — accountId forwarding (SSP-6.8)", () => {
     ).toBeNull();
   });
 
+  it("createTask POSTs JSON to /tasks and patchTask PATCHes /tasks/:id, both account-scoped", async () => {
+    const { calls, fetchers } = make(() => new Response("{}"));
+    await fetchers.createTask({ title: "t", kind: "idea" }, "acct-a");
+    await fetchers.patchTask("T-1", { kind: "initiative" }, "acct-a");
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual([
+      "POST /tasks",
+      "PATCH /tasks/T-1",
+    ]);
+    for (const call of calls) {
+      expect(call.url.searchParams.get("accountId")).toBe("acct-a");
+    }
+    expect(calls[0]?.body).toBe(JSON.stringify({ title: "t", kind: "idea" }));
+    expect(calls[1]?.body).toBe(JSON.stringify({ kind: "initiative" }));
+  });
+
+  it("patchTask maps 404 to null; createTask/patchTask throw on other failures", async () => {
+    const nf = make(() => new Response("{}", { status: 404 }));
+    expect(await nf.fetchers.patchTask("T-x", { kind: "prd" })).toBeNull();
+    const bad = make(() => new Response("{}", { status: 400 }));
+    await expect(bad.fetchers.createTask({ title: "t" })).rejects.toThrow(
+      "400",
+    );
+    await expect(bad.fetchers.patchTask("T-1", {})).rejects.toThrow("400");
+  });
+
   it("throws on non-404 failures", async () => {
     const { fetchers } = make(() => new Response("{}", { status: 500 }));
     await expect(

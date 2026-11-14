@@ -20,12 +20,14 @@ import {
   heartbeatFreshness,
   type PrListItem,
   type PullRequestItem,
+  promoteTargetKind,
   renderPrDetailPage,
   renderPrsPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
+  TASK_BOARD_COLUMNS,
   type TaskItem,
 } from "./admin-ui-work-item-pages.ts";
 
@@ -1631,7 +1633,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   }
 
-  test("renders 3 board columns in order: Queued, In Progress, Blocked-HITL (TBC-2.1)", () => {
+  test("renders 4 board columns in order: Planning, Queued, In Progress, Blocked-HITL (TBC-2.1, INI-1.2)", () => {
     const html = renderBoard([]);
     expect(html).toContain('class="board"');
     expect(html).toContain("Queued");
@@ -1639,13 +1641,15 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).toContain("Blocked-HITL");
     expect(html).not.toContain("Claimed");
     expect(html).not.toContain(">Done<");
-    // Exactly 3 column containers
-    expect((html.match(/class="column"/g) ?? []).length).toBe(3);
+    expect(html).toContain("Planning");
+    // Exactly 4 column containers (Ideas is hidden by default)
+    expect((html.match(/class="column"/g) ?? []).length).toBe(4);
     // Columns must render left-to-right in this exact order.
     const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map(
       (m) => m[1],
     );
     expect(dataColumnSequence).toEqual([
+      "planning",
       "queued",
       "in_progress",
       "blocked_hitl",
@@ -6262,5 +6266,338 @@ describe("admin wide pages (AWT-1.1)", () => {
       [],
     );
     expect(html.split(WIDE_RULE).length - 1).toBe(1);
+  });
+});
+
+// ─── INI-1.2: planning / ideas columns, kind filter, kind badges ─────────────
+
+describe("bucketTaskColumn — initiative and idea kinds (INI-1.2)", () => {
+  const BASE: TaskItem = { id: "T-1", title: "t", status: "pending" };
+
+  test("open initiative buckets as planning", () => {
+    expect(bucketTaskColumn({ ...BASE, kind: "initiative" })).toBe("planning");
+  });
+
+  test("open idea buckets as ideas", () => {
+    expect(bucketTaskColumn({ ...BASE, kind: "idea" })).toBe("ideas");
+  });
+
+  test("initiative/idea win over blocked/hitl signals while open", () => {
+    expect(
+      bucketTaskColumn({ ...BASE, kind: "initiative", hitl: true }, true),
+    ).toBe("planning");
+    expect(bucketTaskColumn({ ...BASE, kind: "idea", status: "blocked" })).toBe(
+      "ideas",
+    );
+  });
+
+  test.each(["initiative", "idea"] as const)(
+    "closed %s buckets as done",
+    (kind) => {
+      expect(bucketTaskColumn({ ...BASE, kind, status: "done" })).toBe("done");
+      expect(bucketTaskColumn({ ...BASE, kind, status: "cancelled" })).toBe(
+        "done",
+      );
+    },
+  );
+
+  test("dev and prd bucketing is unchanged", () => {
+    expect(bucketTaskColumn({ ...BASE, kind: "dev" })).toBe("queued");
+    expect(bucketTaskColumn({ ...BASE, kind: "prd" })).toBe("queued");
+    expect(
+      bucketTaskColumn({ ...BASE, kind: "prd", status: "in_progress" }),
+    ).toBe("in_progress");
+  });
+});
+
+describe("TASK_BOARD_COLUMNS (INI-1.2)", () => {
+  test("lists planning first, then queued, in_progress, blocked_hitl, ideas", () => {
+    expect(TASK_BOARD_COLUMNS.map((c) => c.key)).toEqual([
+      "planning",
+      "queued",
+      "in_progress",
+      "blocked_hitl",
+      "ideas",
+    ]);
+  });
+});
+
+describe("renderTasksPage — planning/ideas columns, kind filter, badges (INI-1.2)", () => {
+  const initiative: TaskItem = {
+    id: "T-INI",
+    title: "Initiative title",
+    status: "pending",
+    kind: "initiative",
+  };
+  const idea: TaskItem = {
+    id: "T-IDEA",
+    title: "Idea title",
+    status: "pending",
+    kind: "idea",
+  };
+  const dev: TaskItem = { id: "T-DEV", title: "Dev title", status: "pending" };
+
+  function page(
+    tasks: TaskItem[],
+    filters: Parameters<typeof renderTasksPage>[1] = {},
+    view: "board" | "table" = "board",
+  ): string {
+    return renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      view,
+    );
+  }
+
+  function columnKeys(html: string): string[] {
+    return [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
+  }
+
+  function column(html: string, key: string): string {
+    const marker = `<div class="column" data-column="${key}">`;
+    const start = html.indexOf(marker);
+    if (start === -1) return "";
+    const next = html.indexOf('<div class="column"', start + marker.length);
+    return html.slice(start, next === -1 ? html.length : next);
+  }
+
+  test("board: initiative lands in Planning, rendered before Queued", () => {
+    const html = page([initiative, dev]);
+    const keys = columnKeys(html);
+    expect(keys.indexOf("planning")).toBe(0);
+    expect(keys.indexOf("planning")).toBeLessThan(keys.indexOf("queued"));
+    expect(column(html, "planning")).toContain("Initiative title");
+    expect(column(html, "queued")).toContain("Dev title");
+    expect(column(html, "queued")).not.toContain("Initiative title");
+  });
+
+  test("board: Ideas column and idea cards hidden without ?ideas=1", () => {
+    const html = page([idea, initiative]);
+    expect(html).not.toContain('data-column="ideas"');
+    expect(html).not.toContain("Idea title");
+  });
+
+  test("board: Ideas column shown with ideas=1 and holds idea tasks", () => {
+    const html = page([idea, initiative], { ideas: true });
+    const keys = columnKeys(html);
+    expect(keys).toContain("ideas");
+    expect(keys[keys.length - 1]).toBe("ideas");
+    expect(column(html, "ideas")).toContain("Idea title");
+  });
+
+  test("filter bar shows an ideas toggle reflecting state", () => {
+    const off = page([]);
+    expect(off).toContain('name="ideas"');
+    expect(off).not.toMatch(/name="ideas"[^>]*checked/);
+    const on = page([], { ideas: true });
+    expect(on).toMatch(/name="ideas"[^>]*checked/);
+  });
+
+  test("table: idea rows hidden without ideas=1, shown with it", () => {
+    expect(page([idea, dev], {}, "table")).not.toContain("Idea title");
+    expect(page([idea, dev], { ideas: true }, "table")).toContain("Idea title");
+  });
+
+  test("kind filter select present in table and board with selection", () => {
+    for (const view of ["table", "board"] as const) {
+      const html = page([], { kind: "initiative" }, view);
+      expect(html).toContain('name="kind"');
+      expect(html).toMatch(/<option value="initiative" selected>/);
+      for (const v of ["", "dev", "prd", "initiative", "idea"]) {
+        expect(html).toContain(`<option value="${v}"`);
+      }
+    }
+  });
+
+  test("kind and ideas are carried in table pagination/state links", () => {
+    const html = renderTasksPage(
+      [dev],
+      { kind: "initiative", ideas: true, state: "ready" },
+      false,
+      USER_NAME,
+      {},
+      { total: 120, limit: 50, page: 1 },
+    );
+    expect(html).toContain("kind=initiative");
+    expect(html).toContain("ideas=1");
+  });
+
+  test("badges render for initiative and idea in table and board", () => {
+    const tableHtml = page([initiative, idea], { ideas: true }, "table");
+    expect(tableHtml).toContain(">Initiative</span>");
+    expect(tableHtml).toContain(">Idea</span>");
+    const boardHtml = page([initiative, idea], { ideas: true });
+    expect(boardHtml).toContain(">Initiative</span>");
+    expect(boardHtml).toContain(">Idea</span>");
+  });
+
+  test("PRD badge still renders and dev has no kind badge", () => {
+    const html = page([{ ...dev, kind: "prd" }], {}, "table");
+    expect(html).toContain(">PRD</span>");
+    expect(page([dev], {}, "table")).not.toMatch(
+      />(PRD|Initiative|Idea)<\/span>/,
+    );
+  });
+
+  test("kind-driven values are HTML-escaped", () => {
+    const html = page(
+      [{ ...dev, kind: "<script>x</script>" as unknown as TaskItem["kind"] }],
+      { kind: '"><img src=x>' as unknown as "dev" },
+    );
+    expect(html).not.toContain("<script>x</script>");
+    expect(html).not.toContain('"><img src=x>');
+  });
+});
+
+// ─── INI-1.3: quick-add form and promote actions ─────────────────────────────
+
+describe("quick-add form and promote buttons (INI-1.3)", () => {
+  const initiative: TaskItem = {
+    id: "T-INI",
+    title: "Initiative title",
+    status: "pending",
+    kind: "initiative",
+  };
+  const idea: TaskItem = {
+    id: "T-IDEA",
+    title: "Idea title",
+    status: "pending",
+    kind: "idea",
+  };
+  const dev: TaskItem = { id: "T-DEV", title: "Dev title", status: "pending" };
+  const prd: TaskItem = { ...dev, id: "T-PRD", kind: "prd" };
+
+  function page(
+    tasks: TaskItem[],
+    opts: {
+      view?: "board" | "table";
+      readOnly?: boolean;
+      pageOpts?: Parameters<typeof renderTasksPage>[6];
+    } = {},
+  ): string {
+    return renderTasksPage(
+      tasks,
+      { ideas: true },
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      opts.pageOpts,
+      undefined,
+      opts.readOnly ?? false,
+      "America/Los_Angeles",
+      {},
+      opts.view ?? "board",
+    );
+  }
+
+  for (const view of ["board", "table"] as const) {
+    test(`${view}: quick-add form posts title/notes/repo/session/kind`, () => {
+      const html = page([], { view });
+      expect(html).toContain('action="/admin/tasks/quick-add"');
+      const form = html.slice(
+        html.indexOf('action="/admin/tasks/quick-add"'),
+        html.indexOf(
+          "</form>",
+          html.indexOf('action="/admin/tasks/quick-add"'),
+        ),
+      );
+      for (const n of ["title", "description", "repo", "session", "kind"]) {
+        expect(form).toContain(`name="${n}"`);
+      }
+      expect(form).toContain('<option value="initiative"');
+      expect(form).toContain('<option value="idea"');
+    });
+
+    test(`${view}: quick-add form hidden when read-only`, () => {
+      const html = page([initiative], { view, readOnly: true });
+      expect(html).not.toContain("/admin/tasks/quick-add");
+      expect(html).not.toContain("/promote");
+    });
+
+    test(`${view}: promote buttons by kind`, () => {
+      const html = page([idea, initiative, dev, prd], { view });
+      expect(html).toContain('action="/admin/tasks/T-IDEA/promote');
+      expect(html).toContain("Promote to initiative");
+      expect(html).toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-DEV/promote');
+      expect(html).not.toContain('action="/admin/tasks/T-PRD/promote');
+    });
+  }
+
+  test("renders success and mapped error notices", () => {
+    const ok = page([], { pageOpts: { success: "task_created" } });
+    expect(ok).toContain("alert-success");
+    expect(ok).toContain("Task created.");
+    const bad = page([], { pageOpts: { error: "quick_add_invalid" } });
+    expect(bad).toContain("alert-error");
+    expect(bad).toContain("Title is required");
+  });
+
+  test("unknown error codes still render raw (escaped)", () => {
+    const html = page([], { pageOpts: { error: "<b>x</b>" } });
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+  });
+
+  test("promoteTargetKind maps idea->initiative, initiative->prd, else null", () => {
+    expect(promoteTargetKind("idea")).toBe("initiative");
+    expect(promoteTargetKind("initiative")).toBe("prd");
+    expect(promoteTargetKind("dev")).toBeNull();
+    expect(promoteTargetKind("prd")).toBeNull();
+    expect(promoteTargetKind(undefined)).toBeNull();
+  });
+
+  describe("detail page", () => {
+    const render = (
+      task: TaskItem,
+      notice?: { kind: "success" | "error"; message: string },
+    ) =>
+      renderTaskDetailPage(
+        task,
+        USER_NAME,
+        {},
+        "UTC",
+        undefined,
+        "/admin/tasks",
+        [],
+        notice,
+      );
+
+    test("initiative shows copyable plan-session hint and promote to PRD", () => {
+      const html = render({ ...initiative, session: "my-sess" });
+      expect(html).toContain("/shipwright:plan-session");
+      expect(html).toContain("<code");
+      expect(html).toContain("T-INI");
+      expect(html).toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).toContain("Promote to PRD");
+    });
+
+    test("idea shows promote to initiative but no plan-session hint", () => {
+      const html = render(idea);
+      expect(html).toContain("Promote to initiative");
+      expect(html).not.toContain("/shipwright:plan-session");
+    });
+
+    test("dev task shows neither", () => {
+      const html = render(dev);
+      expect(html).not.toContain("/promote");
+      expect(html).not.toContain("/shipwright:plan-session");
+    });
+
+    test("renders notice", () => {
+      const html = render(dev, { kind: "success", message: "Promoted." });
+      expect(html).toContain("alert-success");
+      expect(html).toContain("Promoted.");
+    });
   });
 });
