@@ -154,6 +154,25 @@ describe("sensitive-paths", () => {
     expect(x.evidence).toContain(path);
     expect(x.evidence.toLowerCase()).toContain(kw);
   });
+  it.each([
+    "docs/authors.md",
+    "src/authorize-helper.ts",
+    "src/author/profile.ts",
+  ])("does not flag non-auth path %s as auth/security", (path) => {
+    const x = find(computeRiskSignals({ files: [f(path)] }), "sensitive-paths");
+    expect(x.points).toBe(0);
+  });
+  it.each([
+    "src/authn/token.ts",
+    "src/authz/policy.ts",
+    "lib/authentication.ts",
+    "lib/authorization/rules.ts",
+    "auth.ts",
+  ])("flags real auth path %s as auth/security", (path) => {
+    const x = find(computeRiskSignals({ files: [f(path)] }), "sensitive-paths");
+    expect(x.points).toBe(2);
+    expect(x.evidence).toContain("auth/security");
+  });
   it("multiple categories escalate to high", () => {
     const x = find(
       computeRiskSignals({
@@ -274,6 +293,31 @@ describe("evidence", () => {
     expect(absent.points).toBe(0);
     expect(absent.evidence).toContain("unknown");
   });
+  it("CODEOWNERS: leading **/ matches top-level and nested paths", () => {
+    const owners = "**/docs @org/docs\n";
+    for (const path of ["docs/a.md", "pkg/docs/a.md", "a/b/docs/c.md"]) {
+      const x = find(
+        computeRiskSignals({ files: [f(path)], codeowners: owners }),
+        "evidence-codeowners",
+      );
+      expect(x.points).toBe(0);
+    }
+    const other = find(
+      computeRiskSignals({ files: [f("src/docs.ts")], codeowners: owners }),
+      "evidence-codeowners",
+    );
+    expect(other.points).toBeGreaterThan(0);
+  });
+  it("CODEOWNERS: middle /**/ matches zero or more directories", () => {
+    const owners = "/src/**/api @org/api\n";
+    for (const path of ["src/api/a.ts", "src/x/y/api/a.ts"]) {
+      const x = find(
+        computeRiskSignals({ files: [f(path)], codeowners: owners }),
+        "evidence-codeowners",
+      );
+      expect(x.points).toBe(0);
+    }
+  });
 });
 
 describe("collectFileHistory (injected runner)", () => {
@@ -309,5 +353,27 @@ describe("collectFileHistory (injected runner)", () => {
   it("empty log (untracked/new file) degrades to null", async () => {
     const h = await collectFileHistory(["a.ts"], async () => "", now);
     expect(h["a.ts"]).toBeNull();
+  });
+  it("counts a commit touching several files only once across the PR", async () => {
+    const shared = ["h9", "a@x", String(now - 86400), "fix: shared bug"].join(
+      "\x1f",
+    );
+    const paths = ["a.ts", "b.ts", "c.ts"];
+    const h = await collectFileHistory(paths, async () => shared, now);
+    const total = paths.reduce((s, p) => s + (h[p]?.bugfixCommits ?? 0), 0);
+    const churn = paths.reduce((s, p) => s + (h[p]?.commits90d ?? 0), 0);
+    expect(total).toBe(1);
+    expect(churn).toBe(1);
+    // per-file age/contributors still reflect every commit touching the file
+    for (const p of paths) {
+      expect(h[p]?.contributors).toBe(1);
+      expect(h[p]?.ageDays).toBe(1);
+    }
+    const x = find(
+      computeRiskSignals({ files: paths.map((p) => f(p)), history: h }),
+      "file-history",
+    );
+    expect(x.evidence).toContain("1 bug-fix commit");
+    expect(x.evidence).not.toContain("3 bug-fix");
   });
 });

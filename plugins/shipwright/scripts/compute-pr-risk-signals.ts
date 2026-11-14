@@ -143,7 +143,7 @@ const SENSITIVE: { label: string; patterns: RegExp[] }[] = [
   {
     label: "auth/security",
     patterns: [
-      /(^|\/)(auth\w*|security|oauth|sso|crypto|secrets?|permissions?|rbac)([/._-]|$)/i,
+      /(^|\/)(auth|authn|authz|authentication|authorization|security|oauth|sso|crypto|secrets?|permissions?|rbac)([/._-]|$)/i,
     ],
   },
   {
@@ -307,6 +307,9 @@ function globToRegex(pattern: string): RegExp {
     .replace(/\*\*/g, "@@GLOBSTAR@@")
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
+    // `**/` matches zero or more directories (leading or between segments).
+    .replace(/^@@GLOBSTAR@@\//, "(?:.*/)?")
+    .replace(/\/@@GLOBSTAR@@\//g, "/(?:.*/)?")
     .replace(/@@GLOBSTAR@@/g, ".*");
   return new RegExp(`${anchored ? "^" : "(^|/)"}${src}(/|$)`);
 }
@@ -377,7 +380,17 @@ export type GitRunner = (args: string[]) => Promise<string>;
 const FIELD = "\x1f";
 const DAY = 86400;
 
-function parseHistory(out: string, nowSec: number): FileHistory | null {
+/**
+ * `seen` is shared across all paths of one PR: commit-count fields
+ * (commits90d / bugfixCommits / revertCommits) only count a commit hash the
+ * first time it is seen, so summing them across files counts each commit once.
+ * contributors and ageDays are per-file and use every row.
+ */
+function parseHistory(
+  out: string,
+  nowSec: number,
+  seen: Set<string>,
+): FileHistory | null {
   const rows = out.split("\n").filter((l) => l.trim().length > 0);
   if (rows.length === 0) return null;
   const emails = new Set<string>();
@@ -386,15 +399,17 @@ function parseHistory(out: string, nowSec: number): FileHistory | null {
   let reverts = 0;
   let oldest = nowSec;
   for (const row of rows) {
-    const [, email, ts, ...subj] = row.split(FIELD);
+    const [hash, email, ts, ...subj] = row.split(FIELD);
     const subject = subj.join(FIELD);
     const t = Number(ts);
     if (!Number.isFinite(t)) continue;
     emails.add(email ?? "");
+    oldest = Math.min(oldest, t);
+    if (seen.has(hash)) continue;
+    seen.add(hash);
     if (nowSec - t <= 90 * DAY) commits90d++;
     if (/^revert\b/i.test(subject)) reverts++;
     else if (/\b(fix(es|ed)?|bug|hotfix|regression)\b/i.test(subject)) bugfix++;
-    oldest = Math.min(oldest, t);
   }
   return {
     commits90d,
@@ -411,10 +426,10 @@ export async function collectFileHistory(
   run: GitRunner,
   nowSec: number = Math.floor(Date.now() / 1000),
 ): Promise<Record<string, FileHistory | null>> {
-  const entries = await Promise.all(
-    paths.map(async (p): Promise<[string, FileHistory | null]> => {
+  const outputs = await Promise.all(
+    paths.map(async (p): Promise<string | null> => {
       try {
-        const out = await run([
+        return await run([
           "log",
           "-n",
           "200",
@@ -422,13 +437,19 @@ export async function collectFileHistory(
           "--",
           p,
         ]);
-        return [p, parseHistory(out, nowSec)];
       } catch {
-        return [p, null];
+        return null;
       }
     }),
   );
-  return Object.fromEntries(entries);
+  // Parse sequentially in path order so commit de-duplication is deterministic.
+  const seen = new Set<string>();
+  return Object.fromEntries(
+    paths.map((p, i) => {
+      const out = outputs[i];
+      return [p, out === null ? null : parseHistory(out, nowSec, seen)];
+    }),
+  );
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
