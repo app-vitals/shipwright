@@ -6,6 +6,7 @@
   },
   "include": [
     "src/admin-fetchers-account-scope.integration.test.ts",
+    "src/system-cron-scheduler.integration.test.ts",
     "src/blocked-by-type-parity.check.ts"
   ],
   "exclude": ["node_modules", "dist"]

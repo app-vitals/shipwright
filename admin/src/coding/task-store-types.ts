@@ -4091,6 +4091,12 @@ export interface components {
             /** @example true */
             enabled: boolean;
             /**
+             * Format: date-time
+             * @description When the definition last went disabled→enabled; null while disabled. The scheduler never fires a slot at or before it.
+             * @example 2026-11-14T00:00:00.000Z
+             */
+            enabledAt: string | null;
+            /**
              * @description Task title template. `{repo}` is the only placeholder, replaced by plain substitution with the org/repo string; nothing else is evaluated.
              * @example Dependency audit: {repo}
              */

@@ -17,7 +17,8 @@
  *                         and Phase Methodology (coding/admin-ui-agent-cards.ts)
  *   openApi             — the coding API routes' fragment of admin/openapi.json,
  *                         placed where they sat before the split
- *   backgroundPasses    — the session alert sweeper
+ *   backgroundPasses    — the session alert sweeper and the system-cron
+ *                         scheduler (coding/system-cron-scheduler.ts)
  *   specialtyDefaults   — the coding specialty's default crons, tools and
  *                         plugin (coding/coding-specialty-defaults.ts)
  *   agentTypes          — the `coding` type in the new-agent picker
@@ -70,6 +71,12 @@ import {
   SessionFollowService,
 } from "./session-follow-service.ts";
 import { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
+import {
+  createHttpSystemCronStore,
+  SYSTEM_CRON_SCHEDULER_INTERVAL_MS,
+  SYSTEM_CRON_SCHEDULER_LOG_PREFIX,
+  SystemCronScheduler,
+} from "./system-cron-scheduler.ts";
 import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 
 /**
@@ -155,6 +162,32 @@ function sessionAlertPass(
     logPrefix: "[session-alert-sweeper]",
     intervalMs: resolveSessionAlertIntervalMs(ctx.env),
     tick: () => sweeper.tick(),
+  };
+}
+
+/**
+ * The system-cron scheduler (SCR-1.3): fires due system-cron slots every 60s.
+ * Needs the task-store (definitions, triggers, /fire) and the platform's
+ * lookup-App repo lister; without either there is nothing it could do, so no
+ * pass is registered. An unconfigured lookup App is a per-tick skip instead —
+ * it can be configured at runtime from the settings page.
+ */
+function systemCronSchedulerPass(
+  ctx: AdminExtensionContext,
+): AdminBackgroundPass | undefined {
+  const url = ctx.env.SHIPWRIGHT_TASK_STORE_URL;
+  const adminToken = ctx.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  const lookup = ctx.services.githubLookup;
+  if (!url || !adminToken || !lookup) return undefined;
+  const scheduler = new SystemCronScheduler({
+    store: createHttpSystemCronStore({ url, adminToken }),
+    lookup,
+  });
+  return {
+    name: "system-cron-scheduler",
+    logPrefix: SYSTEM_CRON_SCHEDULER_LOG_PREFIX,
+    intervalMs: SYSTEM_CRON_SCHEDULER_INTERVAL_MS,
+    tick: () => scheduler.tick(),
   };
 }
 
@@ -294,8 +327,8 @@ export const codingAdminExtension: AdminExtension = {
   openApi: codingAdminOpenApi,
   specialtyDefaults: codingSpecialtyDefaults,
   agentTypes: () => [{ name: "coding", displayName: "Coding Agent" }],
-  backgroundPasses: (ctx) => {
-    const pass = sessionAlertPass(ctx);
-    return pass ? [pass] : [];
-  },
+  backgroundPasses: (ctx) =>
+    [sessionAlertPass(ctx), systemCronSchedulerPass(ctx)].filter(
+      (pass): pass is AdminBackgroundPass => pass !== undefined,
+    ),
 };
