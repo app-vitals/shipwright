@@ -68,7 +68,7 @@ describe("check-patrol-scope — repo list emission", () => {
     expect(result.output).not.toContain(REPO_B.repo);
   });
 
-  test("exits 0 with one section per configured repo, mirroring check-docs-freshness.ts's convention", async () => {
+  test("exits 0 with one section per configured repo, mirroring the per-repo stdout convention", async () => {
     const deps = makeDeps({
       scopedRepos: [REPO_A.repo, REPO_B.repo],
       repoDirs: [REPO_A, REPO_B],
@@ -78,7 +78,7 @@ describe("check-patrol-scope — repo list emission", () => {
     expect(result.output).toContain(`${REPO_A.repo}:\n${REPO_A.dir}`);
     expect(result.output).toContain(`${REPO_B.repo}:\n${REPO_B.dir}`);
     // Sections are separated by a blank line, same join convention as
-    // check-docs-freshness.ts's RepoFinding sections.
+    // the retired check-docs-freshness.ts's RepoFinding sections.
     expect(result.output).toContain("\n\n");
   });
 

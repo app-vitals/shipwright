@@ -46,7 +46,7 @@ describe("classifyCronJobsForScheduling", () => {
       ...makePipelineJobs(true),
       makeJob({
         id: "daily-1",
-        name: "shipwright-test-readiness",
+        name: "learn-dream",
         enabled: true,
       }),
     ];
@@ -102,7 +102,7 @@ describe("classifyCronJobsForScheduling", () => {
       ...makePipelineJobs(true),
       makeJob({
         id: "daily-1",
-        name: "shipwright-test-readiness",
+        name: "learn-dream",
         enabled: true,
       }),
     ];

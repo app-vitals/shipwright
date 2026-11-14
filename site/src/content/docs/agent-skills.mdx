@@ -39,14 +39,13 @@ audits and improves test coverage end to end.
 
 ### test-readiness
 
-Orchestrates the full test-readiness pipeline (phases 1–5), once per qualifying repo under
-`repos/`, each in its own worktree + branch. Runs test-inventory → test-design → test-migration →
-test-roadmap → test-fix in sequence per repo, starting from the first stale artifact. Invoked by
-the `shipwright-test-readiness` cron on a daily schedule; exits early for a repo when all of its
-phase artifacts are fresh.
+Orchestrates the full test-readiness pipeline (phases 1–5) for one repo (`--repo org/repo`,
+required), in its own worktree + branch. Runs test-inventory → test-design → test-migration →
+test-roadmap → test-fix in sequence, starting from the first stale artifact. Queued per repo by the admin system-cron
+scheduler; exits early when all of the repo's phase artifacts are fresh.
 
-*Invocation:* Auto-triggered by the `shipwright-test-readiness` cron on a daily schedule — no
-matching `/shipwright:test-readiness` command.
+*Invocation:* Queued per repo as `/shipwright:test-readiness --repo {repo} --full --publish` by the admin
+system-cron scheduler — no matching command file.
 
 ### test-inventory
 

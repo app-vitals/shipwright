@@ -1,11 +1,9 @@
 /**
- * research-docs.md content tests — Step A0 config-driven fallback.
+ * research-docs.md content tests — Step A0 requires an explicit --repo.
  *
- * Step A0's manual-invocation fallback previously instructed a raw shell
- * for-loop over every directory under repos/ as its repo-list source.
- * RSF-2.3 replaced that with resolveScopedRepos() (RSF-2.1), the same
- * config-driven resolver the check-docs-freshness.ts precheck itself
- * resolves against (RSF-2.2) to produce the priority-1 list.
+ * SCR-1.5: the agent-level docs-freshness cron and its check-docs-freshness.ts
+ * precheck are gone; the admin system-cron scheduler queues one task per repo
+ * with `--repo org/repo`. Auto mode no longer scans repos/ or resolves a list.
  */
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -26,22 +24,19 @@ function getStepA0Section(): string {
   return content.slice(stepA0Idx, stepA1Idx);
 }
 
-describe("research-docs.md — Step A0 fallback uses the config-driven resolver", () => {
-  it("does not instruct raw repos/* directory iteration as a repo-list source", () => {
+describe("research-docs.md — Step A0 requires --repo", () => {
+  it("does not instruct repos/* iteration or the config-driven resolver", () => {
     const section = getStepA0Section();
     expect(section).not.toContain("for dir in repos/*/");
+    expect(section).not.toContain("resolveScopedRepos");
   });
 
-  it("references resolveScopedRepos as the fallback repo-list source", () => {
+  it("fails with a usage message when --repo is missing", () => {
     const section = getStepA0Section();
-    expect(section).toContain("resolveScopedRepos");
-    expect(section).toContain("check-helpers.ts");
-  });
-
-  it("documents the fail-closed behavior of the config-driven resolver", () => {
-    const section = getStepA0Section();
-    expect(section.toLowerCase()).toContain("fail");
-    expect(section.toLowerCase()).toContain("closed");
+    expect(section).toContain("`--repo org/repo` is required");
+    expect(section).toContain(
+      "Usage: /shipwright:research-docs --auto --repo org/repo",
+    );
   });
 });
 
@@ -74,15 +69,13 @@ describe("research-docs.md — measured-values guard (NMV-1.2)", () => {
 });
 
 describe("research-docs.md — explicit --repo input", () => {
-  it("documents --repo in the argument hint", () => {
-    expect(readResearchDocs()).toMatch(/argument-hint:.*--repo org\/repo/);
+  it("documents --repo (required with --auto) in the argument hint", () => {
+    expect(readResearchDocs()).toMatch(/argument-hint:.*--auto --repo org\/repo/);
   });
 
-  it("Step A0 has an explicit-repo path that skips the precheck and repos/ scan", () => {
+  it("Step A0 finds or clones the repo and pulls it", () => {
     const a0 = getStepA0Section();
-    expect(a0).toContain("`--repo org/repo`");
-    expect(a0).toContain("skip the precheck-driven list");
     expect(a0).toContain("git clone");
-    expect(a0).toContain("Without `--repo`, behavior is unchanged");
+    expect(a0).toContain("git remote get-url origin");
   });
 });
