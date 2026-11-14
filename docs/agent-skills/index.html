@@ -40,13 +40,12 @@ and <code>/shipwright:plan-session</code> all invoke it internally, but there is
 <p>A five-phase pipeline (plus a post-execution skill and three cross-cutting contracts) that
 audits and improves test coverage end to end.</p>
 <h3 id="test-readiness">test-readiness</h3>
-<p>Orchestrates the full test-readiness pipeline (phases 1–5), once per qualifying repo under
-<code>repos/</code>, each in its own worktree + branch. Runs test-inventory → test-design → test-migration →
-test-roadmap → test-fix in sequence per repo, starting from the first stale artifact. Invoked by
-the <code>shipwright-test-readiness</code> cron on a daily schedule; exits early for a repo when all of its
-phase artifacts are fresh.</p>
-<p><em>Invocation:</em> Auto-triggered by the <code>shipwright-test-readiness</code> cron on a daily schedule — no
-matching <code>/shipwright:test-readiness</code> command.</p>
+<p>Orchestrates the full test-readiness pipeline (phases 1–5) for one repo (<code>--repo org/repo</code>,
+required), in its own worktree + branch. Runs test-inventory → test-design → test-migration →
+test-roadmap → test-fix in sequence, starting from the first stale artifact. Queued per repo by the admin system-cron
+scheduler; exits early when all of the repo’s phase artifacts are fresh.</p>
+<p><em>Invocation:</em> Queued per repo as <code>/shipwright:test-readiness --repo {repo} --full --publish</code> by the admin
+system-cron scheduler — no matching command file.</p>
 <h3 id="test-inventory">test-inventory</h3>
 <p>Phase 1 of the test-readiness pipeline. Crawls a target repo, classifies every meaningful unit of
 code (business logic, service boundary, HTTP route, error path, external integration, user

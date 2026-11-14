@@ -100,10 +100,9 @@ all. The only way a pipeline cron dispatches is indirectly: <code>shipwright-loo
 child row’s <code>enabled</code> toggle (via <code>resolveLoopPhaseToggles</code>), and if true, dispatches that phase
 directly as part of the loop’s own run. Re-enabling <code>shipwright-loop</code> is what restores real
 dispatch — not the phase cron’s own schedule kicking back in.</p>
-<p>By contrast, the maintenance crons — <code>shipwright-test-readiness</code>, <code>shipwright-docs-freshness</code>,
-<code>learn-dream</code>, and the entropy/error/security/consolidation patrol crons —
+<p>By contrast, the maintenance crons — <code>learn-dream</code>, and the entropy/error/security/consolidation patrol crons —
 are <strong>standalone</strong>. Each is fully self-contained: its own <code>preCheck</code> does its own discovery (e.g.
-scanning repos for stale docs, or querying Sentry for unresolved errors), with no dependency on
+querying Sentry for unresolved errors), with no dependency on
 <code>shipwright-loop</code> at all.</p>
 <h3 id="default-system-crons">Default system crons</h3>
 <table>
@@ -165,22 +164,6 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <td>—</td>
 <td>off</td>
 <td>Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry.</td>
-</tr>
-<tr>
-<td><code>shipwright-test-readiness</code></td>
-<td>daily 06:00</td>
-<td><code>/shipwright:test-readiness --full --publish</code></td>
-<td>test-readiness</td>
-<td>off</td>
-<td>Full test-readiness audit for repos with stale or missing artifacts.</td>
-</tr>
-<tr>
-<td><code>shipwright-docs-freshness</code></td>
-<td>daily 07:00</td>
-<td><code>/shipwright:research-docs --auto</code></td>
-<td>—</td>
-<td>off</td>
-<td>Refreshes docs that have drifted from the code.</td>
 </tr>
 <tr>
 <td><code>learn-dream</code></td>
