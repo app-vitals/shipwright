@@ -618,6 +618,19 @@
           },
           "anthropicApiKey": {
             "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "ANTHROPIC_MODEL": "claude-opus-4-1"
+            }
+          },
+          "templateDetached": {
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -865,6 +878,217 @@
           "schedule",
           "prompt"
         ]
+      },
+      "TemplateReconcileResult": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "reconciled",
+              "detached",
+              "unknown_specialty"
+            ]
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "env": {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer"
+                  },
+                  "updated": {
+                    "type": "integer"
+                  },
+                  "adopted": {
+                    "type": "integer"
+                  },
+                  "deleted": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "created",
+                  "updated",
+                  "adopted",
+                  "deleted"
+                ]
+              },
+              "tool": {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer"
+                  },
+                  "updated": {
+                    "type": "integer"
+                  },
+                  "adopted": {
+                    "type": "integer"
+                  },
+                  "deleted": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "created",
+                  "updated",
+                  "adopted",
+                  "deleted"
+                ]
+              },
+              "plugin": {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer"
+                  },
+                  "updated": {
+                    "type": "integer"
+                  },
+                  "adopted": {
+                    "type": "integer"
+                  },
+                  "deleted": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "created",
+                  "updated",
+                  "adopted",
+                  "deleted"
+                ]
+              },
+              "cron": {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer"
+                  },
+                  "updated": {
+                    "type": "integer"
+                  },
+                  "adopted": {
+                    "type": "integer"
+                  },
+                  "deleted": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "created",
+                  "updated",
+                  "adopted",
+                  "deleted"
+                ]
+              }
+            },
+            "required": [
+              "env",
+              "tool",
+              "plugin",
+              "cron"
+            ]
+          },
+          "systemCrons": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "integer"
+              },
+              "updated": {
+                "type": "integer"
+              },
+              "deleted": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created",
+              "updated",
+              "deleted"
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "env",
+                    "tool",
+                    "plugin",
+                    "cron"
+                  ]
+                },
+                "key": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "cron_name_conflict",
+                    "invalid_cron_schedule",
+                    "denylisted_env_key"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "key",
+                "reason"
+              ]
+            }
+          },
+          "toolsEmptyGuarded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "status",
+          "counts",
+          "systemCrons",
+          "conflicts",
+          "toolsEmptyGuarded"
+        ]
+      },
+      "TemplateDetachResult": {
+        "type": "object",
+        "properties": {
+          "templateDetached": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "templateDetached"
+        ]
+      },
+      "ResetTemplateBody": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "env",
+              "tool",
+              "plugin",
+              "cron"
+            ]
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       },
       "ReconcileCronResult": {
         "type": "object",
@@ -5345,6 +5569,132 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/template/reconcile": {
+      "post": {
+        "summary": "Reconcile the agent against its template",
+        "description": "Applies the agent's merged template (specialty defaults, deployment/account layers) to its env, tools, plugins and crons in one transaction: adds missing items, updates template-sourced rows, removes orphans, and leaves custom rows and tombstones alone. A detached agent is left untouched (status `detached`). Called automatically on agent startup and when a template changes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template reconcile summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateReconcileResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/template/detach": {
+      "post": {
+        "summary": "Detach the agent from its template",
+        "description": "Stops applying template writes to the agent. Existing rows stay as they are. Admin or session member only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent detached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetachResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/template/reattach": {
+      "post": {
+        "summary": "Reattach the agent to its template",
+        "description": "Clears the detach flag and reconciles the agent against its template. Custom rows are kept. Admin or session member only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template reconcile summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateReconcileResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/template/reset": {
+      "post": {
+        "summary": "Reset the agent to its template",
+        "description": "Drops the agent's custom rows (overrides and tombstones) for every key its template defines, or only the one `kind`/`key` given, then reconciles so the template values return as template-sourced rows. 409 when the agent is detached. Admin or session member only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetTemplateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template reconcile summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateReconcileResult"
                 }
               }
             }
