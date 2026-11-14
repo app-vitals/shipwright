@@ -45,7 +45,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/hitl {task-id}` | Execute a human-in-the-loop task — loads task context, assists with infra execution, marks done on exit |
 | `/unblock [repo ...]` | Interactive triage for blocked tasks/PRs — discovers escalations, infers origin phase, lets you retry, redirect, or abandon each one |
 | `/refresh-plan {folder}` | Syncs planning doc against current codebase state |
-| `/review` | Auto-detecting multi-agent code review for the current branch |
+| `/review` | Auto-detecting multi-agent code review for the current branch; APPROVE reviews include a Low/Medium/High [risk rating](../../docs/review-risk-rating.md) |
 | `/review-staged` | Walk through staged PR reviews conversationally — APPROVEs first, smallest diff first, owner steers each with verbs |
 | `/research {task}` | Load relevant project docs and web research for a given task |
 | `/research-docs [module|--auto]` | Analyze codebase and generate or update project documentation. `--auto` runs unattended (no prompts) for cron/scheduled use |
