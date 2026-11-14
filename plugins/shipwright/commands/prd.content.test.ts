@@ -287,3 +287,66 @@ describe("prd.md — Phase 3 acceptance criteria require automated verification"
     );
   });
 });
+
+describe("prd.md — --initiative close-out (ICO-1.2)", () => {
+  const extractCloseout = () => {
+    const phase5Idx = content.indexOf("## Phase 5: Summary and Next Steps");
+    const start = content.indexOf("**Initiative close-out**", phase5Idx);
+    expect(phase5Idx).toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(phase5Idx);
+    const end = content.indexOf("## Important Notes", start);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  };
+
+  it("documents --initiative {task-id} and folder-name parsing before Phase 0", () => {
+    const head = content.slice(0, content.indexOf("## Phase 0"));
+    expect(head).toContain("`--initiative {task-id}`");
+    expect(head).toMatch(/first token is the folder name/);
+    expect(head).toMatch(/behavior is unchanged/);
+    expect(head).toContain("name: --initiative");
+  });
+
+  it("places the close-out inside Phase 5, after the heading", () => {
+    const phase5Idx = content.indexOf("## Phase 5: Summary and Next Steps");
+    const specWriteIdx = content.indexOf("4. Write the approved spec to");
+    expect(specWriteIdx).toBeGreaterThan(-1);
+    expect(specWriteIdx).toBeLessThan(phase5Idx);
+    expect(extractCloseout().length).toBeGreaterThan(0);
+  });
+
+  it("checks kind is initiative or idea", () => {
+    const s = extractCloseout();
+    expect(s).toContain("GET");
+    expect(s).toMatch(/`initiative`/);
+    expect(s).toMatch(/`idea`/);
+  });
+
+  it("skips tasks that are already closed", () => {
+    const s = extractCloseout();
+    for (const st of ["done", "merged", "deployed", "released", "cancelled"]) {
+      expect(s).toContain(st);
+    }
+  });
+
+  it("PATCHes to done with source pointing at PRODUCT-SPEC.md", () => {
+    const s = extractCloseout();
+    expect(s).toContain("PATCH");
+    expect(s).toContain("planning/{session}/PRODUCT-SPEC.md");
+    expect(s).toMatch(/\\"status\\": \\"done\\"/);
+  });
+
+  it("warns and continues on wrong kind, already closed, 404, or failed PATCH — never fails the session", () => {
+    const s = extractCloseout();
+    expect(s).toMatch(/warning/i);
+    expect(s).toContain("404");
+    expect(s).toMatch(/never fails the session/i);
+  });
+
+  it("states both built-in and Configured Methodology Dispatch paths reach it", () => {
+    const s = extractCloseout();
+    expect(s).toContain("path-agnostic");
+    expect(s).toContain("Configured Methodology Dispatch");
+    expect(s).toMatch(/built-in/);
+  });
+});

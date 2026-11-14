@@ -4,11 +4,16 @@ arguments:
   - name: folder-name
     description: Name of the planning session folder under planning/ (e.g., april-2026-workspace-switcher)
     required: true
+  - name: --initiative
+    description: "Optional `--initiative {task-id}` — id of an `initiative` or `idea` task to close out once PRODUCT-SPEC.md is finalized"
+    required: false
 ---
 
 # PRD: $ARGUMENTS
 
 Run an interactive requirements session for `planning/$ARGUMENTS/`. Ask qualifying questions one at a time to fully understand what you're building, then produce a structured `PRODUCT-SPEC.md` that `/plan-session` can consume directly.
+
+**Argument parsing:** `$ARGUMENTS` is the folder name token, optionally followed by `--initiative {task-id}`. The first token is the folder name (`{session}`); every `$ARGUMENTS` reference below that names the folder (e.g. `planning/$ARGUMENTS/`) means that token only, never the flag. **`--initiative {task-id}`** (optional) is the id of an `initiative` or `idea` task in the task store that this PRD fulfils; it is used only by the Phase 5 initiative close-out step. Without it, behavior is unchanged.
 
 Follow all phases in order. Proceed automatically between phases. The only pauses are to receive user answers to questions.
 
@@ -422,6 +427,23 @@ Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line
 On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely and
 print `Resolved Decisions:` with only its total (see the two exceptions above the template)
 rather than printing a partial or guessed count.
+
+**Initiative close-out** (only when `--initiative {task-id}` was passed):
+
+Run this after `PRODUCT-SPEC.md` is finalized, alongside the summary. Phase 5 is path-agnostic, so this step runs identically after the built-in path and after the Configured Methodology Dispatch path.
+
+1. `GET $SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}` (header `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN`). On 404 or any other failure, print a warning and continue.
+2. If `kind` is not `initiative` or `idea`, print a warning and continue. If `status` is already one of `done`, `merged`, `deployed`, `released`, `cancelled`, print a warning (already closed) and continue.
+3. Otherwise PATCH it to done:
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PRODUCT-SPEC.md\"}" | jq .
+```
+
+A failed PATCH also prints a warning and continues. This step never fails the session — the spec is already on disk.
 
 ---
 

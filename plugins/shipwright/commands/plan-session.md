@@ -17,6 +17,7 @@ Parse `$ARGUMENTS` to extract:
 - **repo**: first argument
 - **session**: second argument
 - **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one recorded as `kind: "prd"`. `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
+- **`--initiative {task-id}`** (optional): the id of an `initiative` or `idea` task in the task store that this planning session fulfils. Used only by Step 6c.2 to close that task out once the plan's tasks are written. Independent of `--autonomous` (which closes a `kind: "prd"` task) — both may be passed. Without it, behavior is unchanged.
 - _(no arguments)_: respond `[silent]` and stop immediately — no repo auto-detect, no
   task-store queries, no planning work. This command always targets one explicitly-named
   planning session; it never self-selects work.
@@ -820,11 +821,28 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 Only run this after the bulk write succeeds — a failed or partial `tasks/bulk` POST must not mark the originating task done.
 
+**Step 6c.2 — Initiative close-out** (only when `--initiative {task-id}` was passed):
+
+Both the built-in path and the Configured Methodology Dispatch path converge on Step 6b, so this step runs identically after either one. Run it only once Step 6b's bulk POST has succeeded — if the bulk write fails (or is only partial), skip it entirely.
+
+1. `GET $SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}` (same auth header as above). On 404 or any other failure, print a warning and continue.
+2. If `kind` is not `initiative` or `idea`, print a warning and continue. If `status` is already one of `done`, `merged`, `deployed`, `released`, `cancelled`, print a warning (already closed) and continue.
+3. Otherwise PATCH it to done:
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PLAN.md\"}" | jq .
+```
+
+A failed PATCH also prints a warning and continues. This step never fails the session — the plan is already in the queue.
+
 **Step 6d — Persist the plan to the repo (additive — never blocks the plan):**
 
 Every task's `source` points at `planning/{session}/PLAN.md`, but that file only exists in *this* checkout — and many repos gitignore `planning/`. When the session runs inside an ephemeral agent workspace, the plan is lost with the pod unless it is committed. Open a docs-only PR carrying the plan so the `source` link resolves for everyone once it merges.
 
-Run this after Step 6b succeeds (and after 6c when `--autonomous`). Use a throwaway worktree off the default branch so the current checkout's branch and working tree are never touched:
+Run this after Step 6b succeeds (and after 6c when `--autonomous`, and 6c.2 when `--initiative`). Use a throwaway worktree off the default branch so the current checkout's branch and working tree are never touched:
 
 ```bash
 SESSION="{session}"

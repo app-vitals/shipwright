@@ -1507,3 +1507,68 @@ describe("plan-session.md — Step 5 carries spec-level statements into the task
     expect(section.split("\n").length).toBeLessThanOrEqual(10);
   });
 });
+
+describe("plan-session.md — --initiative close-out (ICO-1.1)", () => {
+  const closeoutHeadingIdx = () => content.indexOf("**Step 6c.2");
+  const extractCloseout = () => {
+    const start = closeoutHeadingIdx();
+    expect(start).toBeGreaterThan(-1);
+    const end = content.indexOf("**Step 6d", start);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  };
+
+  it("documents --initiative {task-id} in the argument-parsing list, independent of --autonomous", () => {
+    const argsSection = content.slice(0, content.indexOf("## Step 1: Load Context"));
+    expect(argsSection).toContain("`--initiative {task-id}`");
+    expect(argsSection).toMatch(/Independent of `--autonomous`/);
+  });
+
+  it("places the close-out after the Step 6b bulk POST and before Step 6d", () => {
+    const bulkIdx = content.indexOf("**Step 6b — Write tasks to the store:**");
+    const bulkPostIdx = content.indexOf("/tasks/bulk", bulkIdx);
+    const step6dIdx = content.indexOf("**Step 6d");
+    expect(bulkPostIdx).toBeGreaterThan(bulkIdx);
+    expect(closeoutHeadingIdx()).toBeGreaterThan(bulkPostIdx);
+    expect(closeoutHeadingIdx()).toBeLessThan(step6dIdx);
+  });
+
+  it("checks kind is initiative or idea", () => {
+    const s = extractCloseout();
+    expect(s).toContain("GET");
+    expect(s).toMatch(/`initiative`/);
+    expect(s).toMatch(/`idea`/);
+  });
+
+  it("skips tasks that are already closed", () => {
+    const s = extractCloseout();
+    for (const st of ["done", "merged", "deployed", "released", "cancelled"]) {
+      expect(s).toContain(st);
+    }
+  });
+
+  it("PATCHes to done with source pointing at PLAN.md", () => {
+    const s = extractCloseout();
+    expect(s).toContain("PATCH");
+    expect(s).toContain("planning/{session}/PLAN.md");
+    expect(s).toMatch(/\\"status\\": \\"done\\"/);
+  });
+
+  it("warns and continues on wrong kind, already closed, 404, or failed PATCH — never fails the session", () => {
+    const s = extractCloseout();
+    expect(s).toMatch(/warning/i);
+    expect(s).toContain("404");
+    expect(s).toMatch(/never fail/i);
+  });
+
+  it("only runs when the bulk write succeeded", () => {
+    expect(extractCloseout()).toMatch(/bulk (write|POST) (fails|failed)|failed or partial/);
+  });
+
+  it("states that both the built-in and Configured Methodology Dispatch paths converge on it", () => {
+    const s = extractCloseout();
+    expect(s).toContain("Configured Methodology Dispatch");
+    expect(s).toMatch(/built-in/);
+    expect(s).toContain("Step 6b");
+  });
+});
