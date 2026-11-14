@@ -102,6 +102,19 @@ function fakeService(
       if (id !== DEF.id) throw new NotFoundError("system cron not found");
       return { scheduledFor: "2026-11-14T09:00:00.000Z" };
     },
+    async recentTriggers(id, limit, accountId) {
+      calls.push({ method: "recentTriggers", args: [id, limit, accountId] });
+      if (id !== DEF.id) throw new NotFoundError("system cron not found");
+      return {
+        triggers: [
+          {
+            scheduledFor: "2026-11-14T09:00:00.000Z",
+            claimedAt: "2026-11-14T09:00:01.000Z",
+            taskCount: 2,
+          },
+        ],
+      };
+    },
   };
 }
 
@@ -153,6 +166,7 @@ describe("/system-crons auth", () => {
       ["POST", "/system-crons/dep-audit/disable", undefined],
       ["POST", "/system-crons/dep-audit/fire", FIRE_BODY],
       ["GET", "/system-crons/dep-audit/last-trigger", undefined],
+      ["GET", "/system-crons/dep-audit/triggers", undefined],
     ];
     for (const [method, path, body] of cases) {
       const res = await app.request(
@@ -272,6 +286,55 @@ describe("GET /system-crons/:id/last-trigger", () => {
   it("404s an unknown id", async () => {
     const res = await makeApp(fakeService()).request(
       req("/system-crons/nope/last-trigger"),
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /system-crons/:id/triggers", () => {
+  it("200s with the service's triggers, defaulting limit to 5", async () => {
+    const service = fakeService();
+    const res = await makeApp(service).request(
+      req("/system-crons/dep-audit/triggers"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      triggers: [
+        {
+          scheduledFor: "2026-11-14T09:00:00.000Z",
+          claimedAt: "2026-11-14T09:00:01.000Z",
+          taskCount: 2,
+        },
+      ],
+    });
+    expect(service.calls).toEqual([
+      { method: "recentTriggers", args: ["dep-audit", 5, null] },
+    ]);
+  });
+
+  it("passes ?limit and ?accountId through", async () => {
+    const service = fakeService();
+    const res = await makeApp(service).request(
+      req("/system-crons/dep-audit/triggers?limit=50&accountId=acct-1"),
+    );
+    expect(res.status).toBe(200);
+    expect(service.calls).toEqual([
+      { method: "recentTriggers", args: ["dep-audit", 50, "acct-1"] },
+    ]);
+  });
+
+  it.each(["0", "51", "abc", "1.5"])("400s invalid limit %s", async (limit) => {
+    const service = fakeService();
+    const res = await makeApp(service).request(
+      req(`/system-crons/dep-audit/triggers?limit=${limit}`),
+    );
+    expect(res.status).toBe(400);
+    expect(service.calls).toEqual([]);
+  });
+
+  it("404s an unknown id", async () => {
+    const res = await makeApp(fakeService()).request(
+      req("/system-crons/nope/triggers"),
     );
     expect(res.status).toBe(404);
   });

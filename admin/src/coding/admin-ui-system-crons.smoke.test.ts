@@ -11,7 +11,10 @@ import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
-import type { SystemCronItem } from "./admin-ui-system-crons.ts";
+import type {
+  SystemCronItem,
+  SystemCronsFetchers,
+} from "./admin-ui-system-crons.ts";
 
 const PATH = "/admin/settings/system-crons";
 
@@ -221,5 +224,78 @@ describe("POST toggle and template edit", () => {
     expect(res.headers.get("location")).toBe(
       `${PATH}?error=task_store_unavailable`,
     );
+  });
+});
+
+describe("Recent runs (SCR-1.10)", () => {
+  const trig = (scheduledFor: string, taskCount: number) => ({
+    scheduledFor,
+    claimedAt: scheduledFor,
+    taskCount,
+  });
+  const get = async (
+    store: ReturnType<typeof makeStore> & SystemCronsFetchers,
+  ) => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...store,
+      githubEnterpriseApi: gheApi({ slug: "lookup-app" }),
+    });
+    return app.request(PATH, { headers: { Cookie: await adminCookie() } });
+  };
+
+  it("lists the last 5 triggers newest first with time and task count", async () => {
+    const asked: Array<[string, number]> = [];
+    const res = await get({
+      ...makeStore(),
+      fetchSystemCronTriggers: async (id: string, limit: number) => {
+        asked.push([id, limit]);
+        return {
+          triggers: [
+            trig("2026-11-01T09:00:00.000Z", 1),
+            trig("2026-11-08T09:00:00.000Z", 3),
+          ],
+        };
+      },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(asked).toEqual([["dep-audit", 5]]);
+    expect(html).toContain('data-recent-runs="list"');
+    const newer = html.indexOf("2026-11-08 09:00 UTC — 3 tasks created");
+    const older = html.indexOf("2026-11-01 09:00 UTC — 1 task created");
+    expect(newer).toBeGreaterThan(-1);
+    expect(older).toBeGreaterThan(newer);
+  });
+
+  it("shows an empty state when the cron has never fired", async () => {
+    const html = await (
+      await get({
+        ...makeStore(),
+        fetchSystemCronTriggers: async () => ({ triggers: [] }),
+      })
+    ).text();
+    expect(html).toContain('data-recent-runs="empty"');
+    expect(html).toContain("has not fired yet");
+  });
+
+  it("renders an inline note for a failed fetch without breaking the page", async () => {
+    const store = makeStore([
+      makeCron(),
+      makeCron({ id: "docs-sweep", name: "Docs sweep" }),
+    ]);
+    const res = await get({
+      ...store,
+      fetchSystemCronTriggers: async (id: string) => {
+        if (id === "dep-audit") throw new Error("task-store 500");
+        return { triggers: [trig("2026-11-08T09:00:00.000Z", 2)] };
+      },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-recent-runs="error"');
+    expect(html).toContain("Recent runs are unavailable");
+    expect(html).toContain("2026-11-08 09:00 UTC — 2 tasks created");
+    expect(html).toContain("Docs sweep");
   });
 });

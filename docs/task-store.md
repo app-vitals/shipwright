@@ -137,6 +137,8 @@ The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to fin
 - Title and description come from the templates by plain `{repo}` substitution (the full `org/repo`). Nothing else is evaluated, so `${x}`, `{{x}}` and `{other}` stay literal.
 - Response: `201 { "claimed": true, "taskIds": [...] }` for the winner; `200 { "claimed": false, "taskIds": [] }` when the slot was already claimed or a concurrent call won. A failed fire rolls back the claim along with the tasks, so retrying is always safe. A disabled definition is `409`.
 
+To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (admin-only; returns `{ triggers: [...] }`). Triggers are sorted newest first by `scheduledFor` (tie-break: `createdAt` desc), capped at `limit` (1–50, default 5). Each trigger object contains `scheduledFor` (ISO timestamp of the slot), `claimedAt` (when the slot was claimed), and `taskCount` (number of tasks created for that slot). This is read-only and does not record skipped ticks.
+
 ### Token management
 
 All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope), and revoke (soft-delete via `revokedAt`) scoped tokens. See the OpenAPI spec for request/response shapes.
