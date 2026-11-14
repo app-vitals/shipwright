@@ -22,6 +22,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 - **[Platform manifest](./platform-manifest.md)** — pointer: the platform lives in app-vitals/agent and the copy-paste-readiness gate moved with it; how Shipwright consumes it.
 - **[Local cross-repo development](./local-platform-development.md)** — link a local app-vitals/agent checkout into Shipwright (`bun link`) for `task dev`, minikube, hitl and seed-dev-agent
 - **[Release gate runbook](./release-gate.md)** — the cross-repo release chain a RELEASE GATE task waits on, `scripts/check-platform-pin.sh` behavior and stages, watch list and failure playbook.
+- **[Review risk rating](./review-risk-rating.md)** — how `/shipwright:review` scores a PR Low/Medium/High: factor categories, the points-to-level threshold table, the raise-only subagent merge rule, APPROVE-only posting, and the exclusion of author-based signals.
 - **[Finding suppressions](./suppressions.md)** — `.shipwright/suppressions.yml`: match keys, `false_positive` vs `accepted_risk` expiry, which scan/fix skills honor it, and the hitl proposal flow.
 - **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 
