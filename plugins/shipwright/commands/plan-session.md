@@ -54,6 +54,18 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 ---
 
+## Preflight
+
+**Preflight — GitHub auth, repo and git identity.** Before any other work, check three things:
+```bash
+gh auth status >/dev/null 2>&1 || { echo "GitHub CLI is not signed in. Run: gh auth login — then re-run /shipwright:plan-session."; exit 1; }
+git remote get-url origin 2>/dev/null | grep -q 'github.com' || { echo "This folder is not a git repository with a GitHub remote. cd into your repo (a clone of the target repo) and re-run /shipwright:plan-session."; exit 1; }
+{ git config user.name >/dev/null && git config user.email >/dev/null; } || { echo "Git identity is not set. Run: git config --global user.name \"Your Name\" and git config --global user.email \"you@example.com\" — then re-run /shipwright:plan-session."; exit 1; }
+```
+On any failure print that single message and stop. Run the repo check from the working folder, or from the repo checkout under `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}` when running as a managed agent. This command must not set, guess or invent a git identity (or sign in to `gh`) on the user's behalf — the person fixes it and re-runs. When the harness already provides auth and identity, all three checks pass silently and add no prompts.
+
+---
+
 ## Step 1: Load Context
 
 1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`

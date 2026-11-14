@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const DEV_TASK_MD_PATH = join(import.meta.dir, "dev-task.md");
 const REFERENCES_DIR = join(import.meta.dir, "..", "references", "dev-task");
@@ -461,7 +460,12 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
 });
 
 describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (LVB-4.3)", () => {
-  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesPath = join(
+    import.meta.dir,
+    "..",
+    "references",
+    "toolchain-patterns.md",
+  );
   const referencesContent = readFileSync(referencesPath, "utf-8");
 
   it("defines a Relocation on Broken Pointer subsection under Caching Across Runs", () => {
@@ -470,13 +474,17 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
     expect(cachingIdx).toBeGreaterThan(-1);
     expect(detectionOrderIdx).toBeGreaterThan(cachingIdx);
 
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(cachingIdx);
     expect(relocationIdx).toBeLessThan(detectionOrderIdx);
   });
 
   it("defines a broken pointer as path-no-longer-exists OR heading-no-longer-found, citing doc-refresh-recipe.md's verification checks", () => {
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
@@ -488,7 +496,9 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
   });
 
   it("attempts a relocation search BEFORE falling back to config-file fallback / doc recreation", () => {
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
@@ -506,18 +516,24 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
   });
 
   it("relocate-success: a successful relocation updates the stored docsSource pointer to the new path/heading", () => {
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
 
     expect(section).toMatch(/succeed/i);
     expect(section).toMatch(/update(s|d)?\s+(the\s+)?stored\s+`?docsSource/i);
-    expect(section).not.toMatch(/relocation succeeds[\s\S]{0,300}config-file fallback/i);
+    expect(section).not.toMatch(
+      /relocation succeeds[\s\S]{0,300}config-file fallback/i,
+    );
   });
 
   it("relocate-fails-fallback-to-default: falls back to config-file detection / doc recreation only when relocation also fails", () => {
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
@@ -529,7 +545,9 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
 
   it("step 2's cache-miss routing defers to the relocation subsection for a broken docsSource pointer", () => {
     const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
-    const relocationIdx = referencesContent.indexOf("### Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "### Relocation on Broken Pointer",
+    );
     expect(cachingIdx).toBeGreaterThan(-1);
     expect(relocationIdx).toBeGreaterThan(cachingIdx);
 
@@ -547,7 +565,9 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
   });
 
   it("the relocation subsection states it refines step 2 rather than standing alongside it", () => {
-    const relocationIdx = referencesContent.indexOf("### Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "### Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
@@ -557,14 +577,18 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
   });
 
   it("delegates to doc-refresh-recipe.md's verification-table pattern rather than re-embedding the table", () => {
-    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    const relocationIdx = referencesContent.indexOf(
+      "Relocation on Broken Pointer",
+    );
     expect(relocationIdx).toBeGreaterThan(-1);
     const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
 
     expect(section).toMatch(/doc-refresh-recipe\.md/);
     // Must not re-embed the verification table itself (its distinctive header row).
-    expect(section).not.toMatch(/\|\s*Check\s*\|\s*Method\s*\|\s*Stale if\s*\|/i);
+    expect(section).not.toMatch(
+      /\|\s*Check\s*\|\s*Method\s*\|\s*Stale if\s*\|/i,
+    );
   });
 });
 
@@ -643,16 +667,22 @@ describe("dev-task.md — links", () => {
   });
 
   it("links every reference file in references/dev-task/", () => {
-    for (const f of readdirSync(REFERENCES_DIR).filter((n) => n.endsWith(".md"))) {
+    for (const f of readdirSync(REFERENCES_DIR).filter((n) =>
+      n.endsWith(".md"),
+    )) {
       expect(command).toContain(`references/dev-task/${f}`);
     }
   });
 
   it("every relative link inside the moved reference files resolves", () => {
-    for (const f of readdirSync(REFERENCES_DIR).filter((n) => n.endsWith(".md"))) {
+    for (const f of readdirSync(REFERENCES_DIR).filter((n) =>
+      n.endsWith(".md"),
+    )) {
       const text = readFileSync(join(REFERENCES_DIR, f), "utf-8");
       for (const m of text.matchAll(/\]\(((?!https?:|#)[^)\s]+)\)/g)) {
-        expect(existsSync(resolve(REFERENCES_DIR, m[1].split("#")[0]))).toBe(true);
+        expect(existsSync(resolve(REFERENCES_DIR, m[1].split("#")[0]))).toBe(
+          true,
+        );
       }
     }
   });
@@ -669,13 +699,19 @@ describe("dev-task references — preserved behavior", () => {
   it("claim sends claimedBy with the SHIPWRIGHT_AGENT_ID:-local fallback (CRQ-6.2)", () => {
     // Previously pinned a no-body claim; non-agent tokens get 400 `claimedBy is required` without it.
     expect(command).toContain("${SHIPWRIGHT_AGENT_ID:-local}");
-    expect(corpus).toContain('jq -n --arg claimedBy "$CLAIMED_BY" \'{claimedBy: $claimedBy}\'');
+    expect(corpus).toContain(
+      "jq -n --arg claimedBy \"$CLAIMED_BY\" '{claimedBy: $claimedBy}'",
+    );
     expect(corpus).not.toContain("No body (the agent token pins `claimedBy`)");
   });
 
   it("defers with namespaced skip-reason markers", () => {
-    expect(corpus).toContain("[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]");
-    expect(corpus).toContain("[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]");
+    expect(corpus).toContain(
+      "[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]",
+    );
+    expect(corpus).toContain(
+      "[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]",
+    );
   });
 
   it("blocks misrouted PRD-shaped tasks", () => {
@@ -732,4 +768,23 @@ describe("dev-task references — missing-branch block reason (DBH-1.1)", () => 
     expect(section).toContain('"blockedReason":"missing_branch"');
     expect(section).toContain("`branch`");
   });
+});
+
+describe("first-PR preflight (CRQ-7.3)", () => {
+  for (const cmd of ["plan-session", "dev-task"]) {
+    it(`${cmd}.md preflights gh auth, GitHub remote and git identity before any step`, () => {
+      const md = readFileSync(join(import.meta.dir, `${cmd}.md`), "utf-8");
+      const pre = md.indexOf(
+        "**Preflight — GitHub auth, repo and git identity.**",
+      );
+      expect(pre).toBeGreaterThan(-1);
+      expect(pre).toBeLessThan(md.indexOf("## Step 1:"));
+      expect(md).toContain("gh auth status");
+      expect(md).toContain("gh auth login");
+      expect(md).toContain("git remote get-url origin");
+      expect(md).toContain("git config --global user.name");
+      expect(md).toContain("git config --global user.email");
+      expect(md).toContain("must not set, guess or invent a git identity");
+    });
+  }
 });
