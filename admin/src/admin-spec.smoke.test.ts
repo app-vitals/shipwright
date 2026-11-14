@@ -22,6 +22,7 @@ import {
   collectOpenApiContributions,
 } from "@app-vitals/agent-admin/admin-extension";
 import { NoopAgentProvisioner } from "@app-vitals/agent-admin/agent-provisioner";
+import { createAgentTemplatesApp } from "@app-vitals/agent-admin/agent-templates-api";
 import {
   createAdminApp,
   parseAdminApiKeys,
@@ -370,6 +371,18 @@ function buildSpecApp() {
       appService: {} as never,
       agentService: {} as never,
       agentEnvService: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+    }),
+  );
+  // The /templates routes (ATP-1.3) are likewise their own app mounted at the
+  // root in admin-boot.ts.
+  root.route(
+    "/",
+    createAgentTemplatesApp({
+      templateService: {} as never,
+      callerScopeResolver: async () => ({ kind: "all" }),
       sessionSecret: SESSION_SECRET,
       adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
       agentTokenService: { validate: async () => null },
