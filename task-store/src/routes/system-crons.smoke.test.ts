@@ -166,6 +166,7 @@ describe("/system-crons auth", () => {
       ["POST", "/system-crons/dep-audit/disable", undefined],
       ["POST", "/system-crons/dep-audit/fire", FIRE_BODY],
       ["GET", "/system-crons/dep-audit/last-trigger", undefined],
+      ["GET", "/system-crons/dep-audit/triggers", undefined],
     ];
     for (const [method, path, body] of cases) {
       const res = await app.request(
