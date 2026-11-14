@@ -66,3 +66,22 @@ so no old cron calls a skill that now rejects it. Reconcile deletes the seeded r
 - Catch-up: unbounded, per Dan's "catch up"; no window cap (kept simple). Baseline for a never-fired definition is its enable time, so first enable never fires a backlog.
 - Custom crons: supported only as definition rows with a template; no per-cron code.
 - Precheck: dropped; skills' own freshness gates replace it.
+
+## Revision 2026-11-14: producer gap on SCR-1.3
+SCR-1.3 blocked (`producer_gap`): `@app-vitals/agent-admin@1.38.0` exposes no lookup-App repo
+lister to extensions, and the task-store has no read for the last claimed trigger.
+
+| Task | Repo | Title | Depends on | Model |
+|---|---|---|---|---|
+| SCR-1.6 | shipwright | feat: add last-trigger read to the task-store system-cron API | — | haiku |
+| SCR-1.7 | app-vitals/agent | feat: expose a lookup-App repository lister on AdminPlatformServices | — | opus |
+| SCR-1.8 | shipwright | chore: wait for @app-vitals/agent-admin release containing SCR-1.7 | 1.7 | haiku |
+
+SCR-1.3 now depends on 1.1, 1.2, 1.6 and 1.8. SCR-1.7 is an additive optional member
+(`githubLookup.listRepositories()`), built from `listInstallableOrganizations()` filtered to orgs
+with the lookup App, then `listInstallationRepositories(org)`. SCR-1.5 still waits on SCR-1.3
+being deployed.
+
+Decision Log (addendum):
+- Archived repos are skipped by the scheduler: no value in docs/test-readiness tasks for them.
+- Unconfigured lookup App returns `configured:false`; errors reject rather than return an empty list, so a GitHub failure never records a trigger with no tasks.
