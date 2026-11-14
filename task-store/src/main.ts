@@ -223,6 +223,10 @@ async function startServer(): Promise<void> {
     webhookDispatcher,
   );
 
+  // SCR-1.3: the default system-cron definitions (disabled), insert-if-missing.
+  await systemCronService.seedDefaults();
+  console.log("[task-store] default system-cron definitions seeded");
+
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
     await tokenService.seed(seedToken);

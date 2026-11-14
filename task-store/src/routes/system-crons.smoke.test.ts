@@ -31,6 +31,7 @@ const DEF: SystemCronDefinition = {
   schedule: "0 9 * * 1",
   timezone: "UTC",
   enabled: true,
+  enabledAt: new Date("2026-11-14T00:00:00.000Z"),
   titleTemplate: "Audit {repo}",
   descriptionTemplate: "Audit {repo}",
   createdAt: new Date("2026-11-14T00:00:00.000Z"),

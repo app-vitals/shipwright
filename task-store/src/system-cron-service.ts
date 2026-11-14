@@ -59,6 +59,33 @@ export const MAX_FIRE_REPOS = MAX_BULK_TASKS;
 /** `source` stamped on every task a system cron creates. */
 export const SYSTEM_CRON_TASK_SOURCE = "system-cron";
 
+/**
+ * Definitions seeded at boot (SCR-1.3), disabled. seedDefaults() only inserts
+ * missing ids, so an operator's later edits and enable state always win.
+ * Schedules match the agent-level crons they replace.
+ */
+export const DEFAULT_SYSTEM_CRONS: readonly CreateSystemCronInput[] = [
+  {
+    id: "docs-freshness",
+    name: "Docs freshness",
+    schedule: "0 7 * * *",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Docs freshness: {repo}",
+    descriptionTemplate: "/shipwright:research-docs --auto --repo {repo}",
+  },
+  {
+    id: "test-readiness",
+    name: "Test readiness",
+    schedule: "0 6 * * *",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Test readiness: {repo}",
+    descriptionTemplate:
+      "/shipwright:test-readiness --repo {repo} --full --publish",
+  },
+];
+
 export interface CreateSystemCronInput {
   id: string;
   name: string;
@@ -243,6 +270,7 @@ export class SystemCronService implements SystemCronServiceLike {
         "id must be a lowercase slug ([a-z0-9][a-z0-9-]*, max 63 chars)",
       );
     }
+    const enabled = data.enabled ?? true;
     try {
       return await this.prisma.systemCronDefinition.create({
         data: {
@@ -254,7 +282,8 @@ export class SystemCronService implements SystemCronServiceLike {
             data.timezone === undefined
               ? "UTC"
               : validateTimezone(data.timezone),
-          enabled: data.enabled ?? true,
+          enabled,
+          enabledAt: enabled ? this.clock.now() : null,
           titleTemplate: requireNonEmpty("titleTemplate", data.titleTemplate),
           descriptionTemplate: requireNonEmpty(
             "descriptionTemplate",
@@ -301,10 +330,35 @@ export class SystemCronService implements SystemCronServiceLike {
     enabled: boolean,
     accountId: string | null,
   ): Promise<SystemCronDefinition> {
-    await this.findScoped(id, accountId);
+    const def = await this.findScoped(id, accountId);
+    // Only a disabled→enabled flip moves enabledAt: re-enabling an enabled
+    // definition must not push the scheduler's catch-up baseline forward.
+    if (def.enabled === enabled) return def;
     return this.prisma.systemCronDefinition.update({
       where: { id },
-      data: { enabled },
+      data: { enabled, enabledAt: enabled ? this.clock.now() : null },
+    });
+  }
+
+  /**
+   * Inserts DEFAULT_SYSTEM_CRONS that don't exist yet (default account).
+   * Idempotent and race-safe across replicas (ON CONFLICT DO NOTHING); never
+   * touches an existing row.
+   */
+  async seedDefaults(): Promise<void> {
+    await this.prisma.systemCronDefinition.createMany({
+      data: DEFAULT_SYSTEM_CRONS.map((d) => ({
+        id: d.id,
+        accountId: DEFAULT_ACCOUNT_ID,
+        name: d.name,
+        schedule: d.schedule,
+        timezone: d.timezone ?? "UTC",
+        enabled: false,
+        enabledAt: null,
+        titleTemplate: d.titleTemplate,
+        descriptionTemplate: d.descriptionTemplate,
+      })),
+      skipDuplicates: true,
     });
   }
 

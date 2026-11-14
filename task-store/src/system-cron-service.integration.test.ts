@@ -462,4 +462,92 @@ describeOrSkip("SystemCronService definitions (integration)", () => {
       service.update(CRON_ID, { name: "x" }, "acct-other"),
     ).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  it("stamps enabledAt on create and on a disabled→enabled flip only; disable clears it", async () => {
+    let now = new Date("2026-11-14T08:00:00.000Z");
+    const clocked = new SystemCronService(prisma, { now: () => now });
+    const base = {
+      name: "Audit",
+      schedule: "0 9 * * *",
+      titleTemplate: "Audit {repo}",
+      descriptionTemplate: "Audit {repo}",
+    };
+
+    const on = await clocked.create({ id: CRON_ID, ...base }, "acct-scr");
+    expect(on.enabledAt?.toISOString()).toBe("2026-11-14T08:00:00.000Z");
+    const off = await clocked.create(
+      { id: `${CRON_ID}-off`, ...base, enabled: false },
+      "acct-scr",
+    );
+    expect(off.enabledAt).toBeNull();
+
+    // Re-enabling an already-enabled definition keeps the original stamp.
+    now = new Date("2026-11-14T09:30:00.000Z");
+    const again = await clocked.setEnabled(CRON_ID, true, null);
+    expect(again.enabledAt?.toISOString()).toBe("2026-11-14T08:00:00.000Z");
+
+    // Template edits don't move it either.
+    const patched = await clocked.update(CRON_ID, { name: "Renamed" }, null);
+    expect(patched.enabledAt?.toISOString()).toBe("2026-11-14T08:00:00.000Z");
+
+    const disabled = await clocked.setEnabled(CRON_ID, false, null);
+    expect(disabled.enabledAt).toBeNull();
+
+    now = new Date("2026-11-20T12:00:00.000Z");
+    const reenabled = await clocked.setEnabled(CRON_ID, true, null);
+    expect(reenabled.enabledAt?.toISOString()).toBe("2026-11-20T12:00:00.000Z");
+  });
+});
+
+describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
+  let prisma: PrismaClient;
+  let service: SystemCronService;
+
+  beforeEach(async () => {
+    prisma = createPrismaClient(TEST_DB as string);
+    service = new SystemCronService(prisma);
+    await cleanup(prisma);
+  });
+
+  afterEach(async () => {
+    await cleanup(prisma);
+    await prisma.$disconnect();
+  });
+
+  it("seeds docs-freshness and test-readiness disabled in the default account", async () => {
+    await service.seedDefaults();
+    const defs = await service.list({ accountId: null });
+    expect(defs.map((d) => d.id)).toEqual(["docs-freshness", "test-readiness"]);
+    for (const d of defs) {
+      expect(d.enabled).toBe(false);
+      expect(d.enabledAt).toBeNull();
+      expect(d.accountId).toBe("default");
+      expect(d.timezone).toBe("UTC");
+    }
+    const byId = Object.fromEntries(defs.map((d) => [d.id, d]));
+    expect(byId["docs-freshness"].descriptionTemplate).toBe(
+      "/shipwright:research-docs --auto --repo {repo}",
+    );
+    expect(byId["test-readiness"].descriptionTemplate).toBe(
+      "/shipwright:test-readiness --repo {repo} --full --publish",
+    );
+  });
+
+  it("is idempotent and never overwrites an operator's edits or enable state", async () => {
+    await service.seedDefaults();
+    await service.update(
+      "docs-freshness",
+      { descriptionTemplate: "custom {repo}" },
+      null,
+    );
+    await service.setEnabled("docs-freshness", true, null);
+
+    await service.seedDefaults();
+    const def = (await service.list({ accountId: null })).find(
+      (d) => d.id === "docs-freshness",
+    );
+    expect(def?.descriptionTemplate).toBe("custom {repo}");
+    expect(def?.enabled).toBe(true);
+    expect(await service.list({ accountId: null })).toHaveLength(2);
+  });
 });

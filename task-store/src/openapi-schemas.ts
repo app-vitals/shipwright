@@ -1538,6 +1538,11 @@ export const SystemCronDefinitionSchema = z
       description: "IANA timezone the schedule is evaluated in.",
     }),
     enabled: z.boolean().openapi({ example: true }),
+    enabledAt: z.string().datetime().nullable().openapi({
+      example: "2026-11-14T00:00:00.000Z",
+      description:
+        "When the definition last went disabled→enabled; null while disabled. The scheduler never fires a slot at or before it.",
+    }),
     titleTemplate: z.string().openapi({
       example: "Dependency audit: {repo}",
       description:

@@ -141,6 +141,36 @@ describe("codingAdminExtension", () => {
     expect(passes({ env, push })).toHaveLength(1);
   });
 
+  it("starts the system-cron scheduler (60s) only with the task-store AND the platform's lookup lister", async () => {
+    const env = {
+      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
+    };
+    let listed = 0;
+    const githubLookup = {
+      listRepositories: async () => {
+        listed++;
+        return { configured: false, repos: [] };
+      },
+    };
+    const passes = (extra: Record<string, unknown>) =>
+      resolveAdminExtensions([codingAdminExtension], {
+        prisma: {},
+        adminAllowedEmails: [],
+        ...extra,
+      } as unknown as AdminExtensionContext).backgroundPasses;
+
+    expect(passes({ env, services: {} })).toEqual([]);
+    expect(passes({ env: {}, services: { githubLookup } })).toEqual([]);
+    const [pass] = passes({ env, services: { githubLookup } });
+    expect(pass).toMatchObject({
+      name: "system-cron-scheduler",
+      logPrefix: "[system-cron-scheduler]",
+      intervalMs: 60_000,
+    });
+    expect(listed).toBe(0);
+  });
+
   it("registers the task-store service integration", () => {
     const env = {
       SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
