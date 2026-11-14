@@ -3525,6 +3525,93 @@
           }
         }
       }
+    },
+    "/system-crons/{id}/triggers": {
+      "get": {
+        "tags": [
+          "System Crons"
+        ],
+        "summary": "Recent claimed slots of a system cron — admin-only",
+        "description": "Returns `{ triggers }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "dep-audit"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Optional: require the definition to belong to this account (404 otherwise)."
+            },
+            "required": false,
+            "description": "Optional: require the definition to belong to this account (404 otherwise).",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 5,
+              "example": 5,
+              "description": "Max triggers to return (1-50, default 5)."
+            },
+            "required": false,
+            "description": "Max triggers to return (1-50, default 5).",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent claimed slots, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemCronTriggersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — invalid or missing fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — system-cron routes are admin-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — no such definition, or it is outside the ?accountId= scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5991,6 +6078,41 @@
         },
         "required": [
           "scheduledFor"
+        ]
+      },
+      "SystemCronTriggersResponse": {
+        "type": "object",
+        "properties": {
+          "triggers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scheduledFor": {
+                  "type": "string",
+                  "example": "2026-11-14T09:00:00.000Z"
+                },
+                "claimedAt": {
+                  "type": "string",
+                  "example": "2026-11-14T09:00:01.234Z",
+                  "description": "When the slot was claimed (trigger row createdAt)."
+                },
+                "taskCount": {
+                  "type": "integer",
+                  "example": 2
+                }
+              },
+              "required": [
+                "scheduledFor",
+                "claimedAt",
+                "taskCount"
+              ]
+            },
+            "description": "Claimed slots, newest first by scheduledFor (createdAt desc tie-break)."
+          }
+        },
+        "required": [
+          "triggers"
         ]
       }
     }

@@ -3079,6 +3079,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-crons/{id}/triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent claimed slots of a system cron — admin-only
+         * @description Returns `{ triggers }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                    /** @description Max triggers to return (1-50, default 5). */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recent claimed slots, newest first */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronTriggersResponse"];
+                    };
+                };
+                /** @description Bad request — invalid or missing fields */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4185,6 +4258,20 @@ export interface components {
              * @example 2026-11-14T09:00:00.000Z
              */
             scheduledFor: string | null;
+        };
+        SystemCronTriggersResponse: {
+            /** @description Claimed slots, newest first by scheduledFor (createdAt desc tie-break). */
+            triggers: {
+                /** @example 2026-11-14T09:00:00.000Z */
+                scheduledFor: string;
+                /**
+                 * @description When the slot was claimed (trigger row createdAt).
+                 * @example 2026-11-14T09:00:01.234Z
+                 */
+                claimedAt: string;
+                /** @example 2 */
+                taskCount: number;
+            }[];
         };
     };
     responses: never;

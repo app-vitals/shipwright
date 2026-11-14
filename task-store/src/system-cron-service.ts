@@ -118,6 +118,19 @@ export interface SystemCronServiceLike {
     id: string,
     accountId: string | null,
   ): Promise<{ scheduledFor: string | null }>;
+  recentTriggers(
+    id: string,
+    limit: number,
+    accountId: string | null,
+  ): Promise<{ triggers: RecentTrigger[] }>;
+}
+
+/** One claimed slot as returned by recentTriggers. */
+export interface RecentTrigger {
+  scheduledFor: string;
+  /** SystemCronTrigger.createdAt — when the slot was claimed. */
+  claimedAt: string;
+  taskCount: number;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -392,6 +405,30 @@ export class SystemCronService implements SystemCronServiceLike {
       _max: { scheduledFor: true },
     });
     return { scheduledFor: latest._max.scheduledFor?.toISOString() ?? null };
+  }
+
+  /**
+   * The definition's most recent claimed slots, newest first by scheduledFor
+   * (createdAt breaks ties), capped at `limit`.
+   */
+  async recentTriggers(
+    id: string,
+    limit: number,
+    accountId: string | null,
+  ): Promise<{ triggers: RecentTrigger[] }> {
+    await this.findScoped(id, accountId);
+    const rows = await this.prisma.systemCronTrigger.findMany({
+      where: { cronId: id },
+      orderBy: [{ scheduledFor: "desc" }, { createdAt: "desc" }],
+      take: limit,
+    });
+    return {
+      triggers: rows.map((r) => ({
+        scheduledFor: r.scheduledFor.toISOString(),
+        claimedAt: r.createdAt.toISOString(),
+        taskCount: r.taskCount,
+      })),
+    };
   }
 
   private async findScoped(

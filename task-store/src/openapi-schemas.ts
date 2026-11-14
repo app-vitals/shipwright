@@ -1686,3 +1686,41 @@ export const LastTriggerResponseSchema = z
     }),
   })
   .openapi("LastTriggerResponse");
+
+/** Query for GET /system-crons/:id/triggers */
+export const SystemCronTriggersQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Optional: require the definition to belong to this account (404 otherwise).",
+    }),
+    limit: z.coerce.number().int().min(1).max(50).default(5).openapi({
+      example: 5,
+      description: "Max triggers to return (1-50, default 5).",
+    }),
+  })
+  .openapi("SystemCronTriggersQuery");
+
+/** Response for GET /system-crons/:id/triggers */
+export const SystemCronTriggersResponseSchema = z
+  .object({
+    triggers: z
+      .array(
+        z.object({
+          scheduledFor: z
+            .string()
+            .openapi({ example: "2026-11-14T09:00:00.000Z" }),
+          claimedAt: z.string().openapi({
+            example: "2026-11-14T09:00:01.234Z",
+            description: "When the slot was claimed (trigger row createdAt).",
+          }),
+          taskCount: z.number().int().openapi({ example: 2 }),
+        }),
+      )
+      .openapi({
+        description:
+          "Claimed slots, newest first by scheduledFor (createdAt desc tie-break).",
+      }),
+  })
+  .openapi("SystemCronTriggersResponse");
