@@ -187,3 +187,21 @@ describe("test-readiness — Step 1 fallback uses the config-driven resolver", (
     expect(section.toLowerCase()).toContain("closed");
   });
 });
+
+describe("test-readiness — explicit --repo input", () => {
+  it("documents --repo in the argument hint and flag table", () => {
+    const content = readSkill();
+    expect(content).toMatch(/argument-hint:.*--repo org\/repo/);
+    expect(content).toContain("| `--repo org/repo` |");
+  });
+
+  it("Step 1 explicit-repo path skips the scan and the docs/test-readiness opt-in check", () => {
+    const content = readSkill();
+    const start = content.indexOf("### Step 1:");
+    const end = content.indexOf("### Step 2:");
+    const step1 = content.slice(start, end).replace(/\s+/g, " ");
+    expect(step1).toContain("Explicit `--repo org/repo`");
+    expect(step1).toContain("do not apply the `docs/test-readiness/` opt-in check");
+    expect(step1).toContain("git clone");
+  });
+});
