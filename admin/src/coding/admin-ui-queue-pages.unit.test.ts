@@ -1312,7 +1312,10 @@ describe("renderMergedQueueActivityPage", () => {
     });
     expect(html).toContain("1–20 of 25");
     expect(html).toContain("Next →");
-    expect(html).toContain("/admin/queue-activity?queuePage=2");
+    // Links now carry the (default) outcome selection (COF-2.2).
+    expect(html).toContain(
+      "/admin/queue-activity?outcome=completed&amp;outcome=failed&amp;outcome=unknown&amp;queuePage=2",
+    );
   });
 
   test("Upcoming pagination Prev link appears on page 2 and not page 1", () => {
@@ -1342,6 +1345,72 @@ describe("renderMergedQueueActivityPage", () => {
     expect(page2).toContain(
       '<a href="/admin/queue-activity" class="btn btn-secondary"',
     );
+  });
+
+  describe("outcome multi-select filter (COF-2.2)", () => {
+    const base = {
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [mergedRow()],
+      runs: [baseRun()],
+      userName: "admin@example.com",
+    };
+
+    test("defaults to completed/failed/unknown selected, skipped not", () => {
+      const html = renderMergedQueueActivityPage({
+        ...base,
+        workQueuePagination: { total: 1, limit: 20, page: 1 },
+        runsPagination: { total: 1, limit: 20, page: 1 },
+      });
+      expect(html).toContain('<select name="outcome" multiple');
+      expect(html).toContain('<option value="completed" selected>');
+      expect(html).toContain('<option value="failed" selected>');
+      expect(html).toContain('<option value="unknown" selected>');
+      expect(html).toContain('<option value="skipped">');
+      expect(html).toContain('action="/admin/queue-activity"');
+      expect(html).toContain("Filter");
+      expect(html).toContain(
+        '<a href="/admin/queue-activity" class="btn btn-secondary"',
+      );
+    });
+
+    test("marks the provided outcomes as selected", () => {
+      const html = renderMergedQueueActivityPage({
+        ...base,
+        outcomes: ["skipped"],
+        workQueuePagination: { total: 1, limit: 20, page: 1 },
+        runsPagination: { total: 1, limit: 20, page: 1 },
+      });
+      expect(html).toContain('<option value="skipped" selected>');
+      expect(html).not.toContain('<option value="completed" selected>');
+    });
+
+    test("Past pagination carries outcomes and queuePage", () => {
+      const html = renderMergedQueueActivityPage({
+        ...base,
+        outcomes: ["skipped", "failed"],
+        workQueuePagination: { total: 45, limit: 20, page: 3 },
+        runsPagination: { total: 45, limit: 20, page: 2 },
+      });
+      expect(html).toContain(
+        "/admin/queue-activity?outcome=skipped&amp;outcome=failed&amp;queuePage=3&amp;page=3",
+      );
+      expect(html).toContain(
+        "/admin/queue-activity?outcome=skipped&amp;outcome=failed&amp;queuePage=3",
+      );
+    });
+
+    test("Upcoming pagination carries outcomes and the Past page", () => {
+      const html = renderMergedQueueActivityPage({
+        ...base,
+        outcomes: ["skipped"],
+        workQueuePagination: { total: 45, limit: 20, page: 1 },
+        runsPagination: { total: 45, limit: 20, page: 2 },
+      });
+      expect(html).toContain(
+        "/admin/queue-activity?outcome=skipped&amp;page=2&amp;queuePage=2",
+      );
+    });
   });
 
   test("renders empty states for both sections when there is nothing across the fleet", () => {

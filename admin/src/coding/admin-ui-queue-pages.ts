@@ -268,8 +268,10 @@ function renderPaginationBar(opts: {
   pagination: { total: number; limit: number; page: number };
   basePath: string;
   pageParam: string;
+  /** Params carried on every link, placed before the page param. */
+  preserve?: URLSearchParams;
 }): string {
-  const { pagination, basePath, pageParam } = opts;
+  const { pagination, basePath, pageParam, preserve } = opts;
   if (pagination.total === 0) return "";
 
   const totalPages = Math.max(
@@ -280,10 +282,10 @@ function renderPaginationBar(opts: {
   const from = (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
   const makePageUrl = (p: number) => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(preserve);
     if (p > 1) params.set(pageParam, String(p));
     const qs = params.toString();
-    return `${basePath}${qs ? `?${qs}` : ""}`;
+    return escapeHtml(`${basePath}${qs ? `?${qs}` : ""}`);
   };
 
   return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
@@ -829,6 +831,8 @@ export function renderMergedQueueActivityPage(opts: {
   runs: CronRunItem[];
   runsPagination: { total: number; limit: number; page: number };
   userName: string;
+  /** Selected outcome filter values (COF-2.2); defaults to DEFAULT_OUTCOMES. */
+  outcomes?: string[];
   timezone?: string;
   now?: Date;
 }): string {
@@ -843,6 +847,20 @@ export function renderMergedQueueActivityPage(opts: {
   } = opts;
   const timezone = opts.timezone ?? "America/Los_Angeles";
   const now = opts.now ?? new Date();
+  const selectedOutcomes = opts.outcomes ?? [...DEFAULT_OUTCOMES];
+  const outcomeOptions = renderOutcomeOptions(selectedOutcomes);
+
+  // Each table's pagination keeps the filter and the other table's page.
+  const upcomingPreserve = new URLSearchParams();
+  appendOutcomeParams(upcomingPreserve, selectedOutcomes);
+  if (runsPagination.page > 1) {
+    upcomingPreserve.set("page", String(runsPagination.page));
+  }
+  const pastPreserve = new URLSearchParams();
+  appendOutcomeParams(pastPreserve, selectedOutcomes);
+  if (workQueuePagination.page > 1) {
+    pastPreserve.set("queuePage", String(workQueuePagination.page));
+  }
 
   // ─── Agent selector (AAV-2) ──────────────────────────────────────────────
   const agentSelectorHtml = renderAgentSelector({
@@ -869,6 +887,7 @@ export function renderMergedQueueActivityPage(opts: {
     pagination: workQueuePagination,
     basePath: "/admin/queue-activity",
     pageParam: "queuePage",
+    preserve: upcomingPreserve,
   });
 
   const upcomingContent =
@@ -922,6 +941,7 @@ export function renderMergedQueueActivityPage(opts: {
     pagination: runsPagination,
     basePath: "/admin/queue-activity",
     pageParam: "page",
+    preserve: pastPreserve,
   });
 
   return renderAdminPage({
@@ -939,6 +959,18 @@ export function renderMergedQueueActivityPage(opts: {
     ${upcomingContent}
 
     <h2 class="section-title" style="font-size:14px;margin:24px 0 8px">Past</h2>
+    <div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/queue-activity" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Outcome</label>
+          <select name="outcome" multiple size="4" class="form-input" style="font-size:12px;padding:4px 8px">
+            ${outcomeOptions}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
+        <a href="/admin/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+      </form>
+    </div>
     <div class="card">
       <div class="data-table-wrapper">
         <table class="data-table">
