@@ -274,3 +274,48 @@ describe("VERDICT_APPROVE_LABEL / VERDICT_COMMENT_LABEL regex parity with check-
     expect(localPattern).toBe(expectedCommentPattern);
   });
 });
+
+describe("validateReviewVerdict — Risk line (RSK-2.1)", () => {
+  const riskBody = [
+    "Verdict: APPROVE — clean change.",
+    "",
+    "Risk: Low - small diff, tests present",
+    "",
+    "<details><summary>Risk factors</summary>",
+    "",
+    "| Source | Factor | Level | Evidence |",
+    "|---|---|---|---|",
+    "| heuristic | PR size | low | 12 lines |",
+    "</details>",
+  ].join("\n");
+
+  it("accepts an APPROVE body that carries a Risk line and factor table", () => {
+    const result = validateReviewVerdict({
+      selfReview: false,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
+      body: riskBody,
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts the Risk body on a self-authored PR (event forced to COMMENT, label APPROVE)", () => {
+    const result = validateReviewVerdict({
+      selfReview: true,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
+      body: riskBody,
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("still rejects a Risk body whose label mismatches the computed verdict", () => {
+    const result = validateReviewVerdict({
+      selfReview: false,
+      unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
+      body: riskBody,
+    });
+    expect(result.valid).toBe(false);
+  });
+});
