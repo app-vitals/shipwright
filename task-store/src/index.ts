@@ -11,6 +11,8 @@ export type {
   PullRequest,
   PullRequestEvent,
   Session,
+  SystemCronDefinition,
+  SystemCronTrigger,
   Task,
   TaskEvent,
   TaskToken,

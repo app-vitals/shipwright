@@ -2615,6 +2615,408 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-crons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List system-cron definitions — admin-only
+         * @description Returns `{ systemCrons }`, ordered by id. `?enabled=true|false` filters by enabled state; `?accountId=` narrows to one account (omitted: every account).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only definitions with this enabled state. */
+                    enabled?: "true" | "false";
+                    /** @description Restrict to one account's definitions. Omitted: every account's definitions. */
+                    accountId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description System-cron definitions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronListResponse"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Create a system-cron definition — admin-only
+         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateSystemCronBody"];
+                };
+            };
+            responses: {
+                /** @description Created definition */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronDefinition"];
+                    };
+                };
+                /** @description Bad request — invalid or missing fields */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — a definition with this id already exists */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system-crons/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a system-cron definition — admin-only
+         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
+         */
+        patch: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PatchSystemCronBody"];
+                };
+            };
+            responses: {
+                /** @description The system-cron definition */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronDefinition"];
+                    };
+                };
+                /** @description Bad request — invalid or missing fields */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/system-crons/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a system-cron definition — admin-only
+         * @description Sets `enabled: true` so /fire accepts the definition again. Idempotent.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The system-cron definition */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronDefinition"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system-crons/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable a system-cron definition — admin-only
+         * @description Sets `enabled: false`; a disabled definition's /fire is `409`. Idempotent.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The system-cron definition */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemCronDefinition"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system-crons/{id}/fire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fire one slot of a system cron, exactly once — admin-only
+         * @description Claims the `(id, scheduledFor)` slot and, in the same transaction, creates one task per distinct repo: kind `dev`, status `pending`, `hitl: false`, no assignee, `source: 'system-cron'`, id `SC-{id}-{slot}-{owner}-{repo}` where slot is the compact UTC form of scheduledFor (`YYYYMMDDTHHMMSSZ`), and title/description rendered from the definition's templates by plain `{repo}` substitution (nothing else is evaluated). `scheduledFor` must carry an explicit timezone and is truncated to whole seconds. `201 { claimed: true, taskIds }` when this call claimed the slot; `200 { claimed: false, taskIds: [] }` when it was already claimed or a concurrent call won the race — nothing is created. A failed fire rolls back the claim with the tasks, so retrying is always safe. Disabled definition: `409`.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FireSystemCronBody"];
+                };
+            };
+            responses: {
+                /** @description Slot already claimed — nothing created (claimed: false) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FireSystemCronResponse"];
+                    };
+                };
+                /** @description Slot claimed — tasks created (claimed: true) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FireSystemCronResponse"];
+                    };
+                };
+                /** @description Bad request — invalid or missing fields */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — system-cron routes are admin-only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — the definition is disabled */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3597,6 +3999,123 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+        };
+        SystemCronListResponse: {
+            systemCrons: components["schemas"]["SystemCronDefinition"][];
+        };
+        SystemCronDefinition: {
+            /**
+             * @description Lowercase slug ([a-z0-9][a-z0-9-]*, max 63 chars). Embedded verbatim in generated task ids.
+             * @example dep-audit
+             */
+            id: string;
+            /**
+             * @description The account this definition belongs to. Tasks it generates inherit it.
+             * @example default
+             */
+            accountId: string;
+            /** @example Dependency audit */
+            name: string;
+            /**
+             * @description 5-field cron expression, interpreted by the external scheduler that calls /fire.
+             * @example 0 9 * * 1
+             */
+            schedule: string;
+            /**
+             * @description IANA timezone the schedule is evaluated in.
+             * @example UTC
+             */
+            timezone: string;
+            /** @example true */
+            enabled: boolean;
+            /**
+             * @description Task title template. `{repo}` is the only placeholder, replaced by plain substitution with the org/repo string; nothing else is evaluated.
+             * @example Dependency audit: {repo}
+             */
+            titleTemplate: string;
+            /**
+             * @description Task description template — same `{repo}`-only plain substitution as titleTemplate.
+             * @example Audit {repo}'s dependencies and open a PR for safe bumps.
+             */
+            descriptionTemplate: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-14T00:00:00.000Z
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-14T00:00:00.000Z
+             */
+            updatedAt: string;
+        };
+        CreateSystemCronBody: {
+            /** @example dep-audit */
+            id: string;
+            /** @example Dependency audit */
+            name: string;
+            /** @example 0 9 * * 1 */
+            schedule: string;
+            /**
+             * @description Defaults to UTC.
+             * @example UTC
+             */
+            timezone?: string;
+            /**
+             * @description Defaults to true.
+             * @example true
+             */
+            enabled?: boolean;
+            /** @example Dependency audit: {repo} */
+            titleTemplate: string;
+            /** @example Audit {repo}'s dependencies. */
+            descriptionTemplate: string;
+        };
+        PatchSystemCronBody: {
+            name?: string;
+            schedule?: string;
+            timezone?: string;
+            titleTemplate?: string;
+            descriptionTemplate?: string;
+        };
+        FireSystemCronResponse: {
+            /**
+             * @description true: this call claimed the slot and created the tasks. false: the slot was already claimed (or lost a concurrent race) — nothing was created.
+             * @example true
+             */
+            claimed: boolean;
+            /** @example dep-audit */
+            cronId: string;
+            /** @example 2026-11-14T09:00:00.000Z */
+            scheduledFor: string;
+            /**
+             * @description Compact UTC form of scheduledFor (YYYYMMDDTHHMMSSZ) used in task ids.
+             * @example 20261114T090000Z
+             */
+            slot: string;
+            /**
+             * @description Ids of tasks created by this call: SC-{cronId}-{slot}-{owner}-{repo}. Always empty when claimed is false.
+             * @example [
+             *       "SC-dep-audit-20261114T090000Z-org-repo-a",
+             *       "SC-dep-audit-20261114T090000Z-org-repo-b"
+             *     ]
+             */
+            taskIds: string[];
+        };
+        FireSystemCronBody: {
+            /**
+             * @description The slot being fired — ISO-8601 with an explicit timezone (`Z` or `±HH:MM`), truncated to whole seconds. Together with the cron id this is the idempotency key.
+             * @example 2026-11-14T09:00:00Z
+             */
+            scheduledFor: string;
+            /**
+             * @description One task is created per distinct org/repo (max 500).
+             * @example [
+             *       "org/repo-a",
+             *       "org/repo-b"
+             *     ]
+             */
+            repos: string[];
         };
     };
     responses: never;

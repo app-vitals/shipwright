@@ -16,10 +16,12 @@ import { resolve } from "node:path";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
+import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
 import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
 import type { SessionServiceLike } from "./session-service.ts";
+import type { SystemCronServiceLike } from "./system-cron-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 import type { VerificationCheckServiceLike } from "./verification-check-service.ts";
@@ -186,6 +188,24 @@ const stubVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+const stubSystemCronService: SystemCronServiceLike = {
+  async list() {
+    return [];
+  },
+  async create() {
+    return {} as never;
+  },
+  async update() {
+    return {} as never;
+  },
+  async setEnabled() {
+    return {} as never;
+  },
+  async fire() {
+    return {} as never;
+  },
+};
+
 // ─── Spec assembly ────────────────────────────────────────────────────────────
 
 function prefixPaths(
@@ -212,6 +232,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const verificationChecksApp = createVerificationChecksRoutes(
     stubVerificationCheckService,
   );
+  const systemCronsApp = createSystemCronsRoutes(stubSystemCronService);
 
   const innerDocInfo = {
     openapi: "3.1.0" as const,
@@ -224,6 +245,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
   const verificationChecksSpec =
     verificationChecksApp.getOpenAPI31Document(innerDocInfo);
+  const systemCronsSpec = systemCronsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
     ...prefixPaths(
@@ -249,6 +271,10 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       >,
       "/verification-checks",
     ),
+    ...prefixPaths(
+      (systemCronsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
+      "/system-crons",
+    ),
   };
 
   return {
@@ -268,6 +294,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(prsSpec.components?.schemas ?? {}),
         ...(sessionsSpec.components?.schemas ?? {}),
         ...(verificationChecksSpec.components?.schemas ?? {}),
+        ...(systemCronsSpec.components?.schemas ?? {}),
       },
     },
   };

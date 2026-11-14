@@ -14,6 +14,7 @@
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
  *   * /verification-checks/* — record/list structured per-check verification outcomes
+ *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
@@ -43,10 +44,12 @@ import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
+import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
 import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
 import type { SessionServiceLike } from "./session-service.ts";
+import type { SystemCronServiceLike } from "./system-cron-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 import type { VerificationCheckServiceLike } from "./verification-check-service.ts";
@@ -125,12 +128,32 @@ const noopVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+/** Disabled SystemCronService used when the feature is not wired up in a test context. */
+const unwiredSystemCronService: SystemCronServiceLike = {
+  async list() {
+    return [];
+  },
+  async create() {
+    throw new Error("system crons are not configured");
+  },
+  async update() {
+    throw new Error("system crons are not configured");
+  },
+  async setEnabled() {
+    throw new Error("system crons are not configured");
+  },
+  async fire() {
+    throw new Error("system crons are not configured");
+  },
+};
+
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
+  systemCronService?: SystemCronServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: ScopeResolver;
   /**
@@ -258,6 +281,10 @@ export function createTaskStoreApp(
     createVerificationChecksRoutes(
       deps.verificationCheckService ?? noopVerificationCheckService,
     ),
+  );
+  app.route(
+    "/system-crons",
+    createSystemCronsRoutes(deps.systemCronService ?? unwiredSystemCronService),
   );
 
   return app;
