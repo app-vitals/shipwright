@@ -31,7 +31,7 @@ actions: idea → initiative → prd. `task-store-types.ts` regenerated.
 | INI-1.1 | feat: add initiative and idea task kinds to task-store | Database | — | sonnet | feat/ini-task-kinds |
 | INI-1.2 | feat: render planning and hidden ideas columns on admin tasks page | Frontend | INI-1.1 | sonnet | feat/ini-admin-planning-columns |
 | INI-1.3 | feat: quick-add and promote initiative/idea tasks from admin | Frontend | INI-1.1, INI-1.2 | sonnet | feat/ini-admin-planning-columns |
-| INI-1.4 | chore: seed initial shipwright initiatives (SWI-1..6) | Shared | INI-1.1 | haiku (HITL) | feat/ini-seed-initiatives |
+| INI-1.4 | chore: seed initial shipwright initiatives (SWI-1..5) | Shared | INI-1.1 | haiku (HITL) | feat/ini-seed-initiatives |
 
 INI-1.2 and INI-1.3 are bundled (same branch/PR). All tasks are additive — safe to deploy
 standalone. INI-1.1 must ship first (admin consumes the new enum values).
