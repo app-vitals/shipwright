@@ -692,6 +692,23 @@ Before reading individual files, build a structural picture of what kind of work
 
 Note which categories are present (even if "none") — this drives review focus.
 
+### Step 6.1: Compute Risk Signals (RSK-2.1)
+
+After the classification above, compute the deterministic risk signals for the PR from the
+data already gathered in Step 5 (changed-file list, CI status). Build the `files` array from
+`git diff --numstat "origin/$base"...HEAD` (`additions`/`deletions` per path) and map the Step 5
+CI status to `passing|failing|pending|unknown`:
+
+```bash
+RISK_SIGNALS=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-pr-risk-signals.ts" \
+  "$(jq -n --argjson files "$FILES_JSON" --arg ci "$CI_STATUS" --arg repoDir "." \
+    '{files: $files, ci: {status: $ci}, repoDir: $repoDir}')") \
+  || { RISK_SIGNALS=""; echo "⚠ risk signals failed — continuing without a Risk line (non-fatal)"; }
+```
+
+`RISK_SIGNALS` is `{factors, totalPoints}`. A failure leaves it empty; the Risk line is then
+simply omitted downstream — risk computation never blocks the review.
+
 ---
 
 ## Step 7: Deep Review (dispatch `shipwright:code-reviewer` subagent)
@@ -749,6 +766,12 @@ identifies which prior review the entry addresses (matching the `ref` passed in 
 explaining why the issue is not resolved. Parse the full response and carry the data into
 Step 8 and Step 9 (Step 9's Re-Review "Prior Findings Resolution" table is populated from
 `priorFindingsStatus[]` — see Step 9).
+
+**Collect `riskAssessment` (RSK-2.1).** Each response may carry an optional top-level
+`riskAssessment` (`{level, factors[]}`, see `agents/code-reviewer.md`). Append every response's
+`riskAssessment` to `RISK_ASSESSMENTS` (a list). A reviewer that omits `riskAssessment` (or
+returns a malformed one) is tolerated — it contributes nothing; absence is never an error and
+never triggers the retry above.
 
 #### Findings Ledger Persistence — Prior Findings Attestations (PFL-2.1)
 
@@ -878,6 +901,10 @@ passes through unchanged. Merge BEFORE applying any policy threshold.
   said `false`, the merged entry is `resolved: false` and its `evidence` is taken from a
   `resolved: false` reviewer. A reviewer that omitted the `ref` does not count as attesting
   resolved. Emit exactly one entry per input `ref`.
+- **`riskAssessment` (RSK-2.1).** Keep each surviving reviewer's `riskAssessment` in
+  `RISK_ASSESSMENTS` and take the union of their `factors[]` (compute-risk-rating.ts consumes
+  the list and de-duplicates/raises the level itself). Reviewers that omitted it are tolerated.
+  The field is not added to the merged finding objects.
 - **Other fields.** `strengths[]` is the de-duplicated union; `recommendation` is `COMMENT` if
   any surviving reviewer said `COMMENT`, else `APPROVE`; `summary` and
   `recommendation_reason` come from the reviewer that supplied the highest-severity finding
@@ -887,6 +914,21 @@ The merged object conforms to the unchanged review contract shape (`summary`, `f
 `strengths[]`, `recommendation`, `recommendation_reason`, `priorFindingsStatus[]`), so Steps
 8-11 consume it exactly as they would a single reviewer's response. Step 7 must still end with
 SOME valid parsed response (or the inline fallback) as required above.
+
+**Compute the rating (RSK-2.1).** After the Merge/Verify above (or directly for a single
+reviewer), combine `RISK_SIGNALS` (Step 6.1) with `RISK_ASSESSMENTS`:
+
+```bash
+RISK_RATING=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-risk-rating.ts" \
+  "$(jq -n --argjson heuristic "$RISK_SIGNALS" --argjson subagents "$RISK_ASSESSMENTS" \
+    '{heuristic: $heuristic, subagents: $subagents}')") \
+  || { RISK_RATING=""; echo "⚠ risk rating failed — omitting Risk line (non-fatal)"; }
+```
+
+`RISK_RATING` is `{level, heuristicLevel, factors, table, reason}`. Rating failure is
+non-fatal: if `RISK_SIGNALS` is empty, `RISK_ASSESSMENTS` is not valid JSON, or the script
+errors, leave `RISK_RATING` empty, omit the Risk line and Risk section, and continue — it must
+never block Steps 8-11.
 
 **Verify (MPS-2.3).** Runs only when `REVIEWERS` had more than one entry AND more than one
 surviving response was merged; a single-reviewer run, or a multi-reviewer run with a single
@@ -977,6 +1019,16 @@ Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`:
 ## CI Status
 
 {Current status of checks}
+
+## Risk
+
+{Only present when `RISK_RATING` is set (RSK-2.1) — omit this entire section (heading
+included) when rating computation failed or was skipped.}
+
+**Risk**: {RISK_RATING.level — Low|Medium|High}
+**Reason**: {RISK_RATING.reason}
+
+{RISK_RATING.table}
 
 ## Dependency Risk Analysis
 
@@ -1323,6 +1375,29 @@ This is additive to the verdict computed above, not a replacement for it — the
 dependency-risk `recommendation` (`merge`/`review`/`hold`) does not feed into that
 computation. When Step 5.8 did not trigger, omit this clause entirely — the body reads
 exactly as it would without this feature.
+
+**Folding in the risk rating (RSK-2.1).** Only when `verdictLabel` is `APPROVE`
+(this includes self-authored PRs where `event` is forced to `COMMENT`) and `RISK_RATING` is
+set, append the following to the `body` AFTER the `Verdict: APPROVE — ...` lead-in — the
+literal `Verdict: APPROVE` phrase must remain first in the body:
+
+```
+Risk: Low|Medium|High - {reason}
+
+<details>
+<summary>Risk factors</summary>
+
+{RISK_RATING.table}
+
+</details>
+```
+
+Use `RISK_RATING.level` capitalized (`Low`/`Medium`/`High`) and a short reason from
+`RISK_RATING.reason`. Never add the Risk line or factor table when `verdictLabel` is
+`COMMENT` (never on a `Verdict: COMMENT` body), and omit it when `RISK_RATING` is empty
+(rating failure is non-fatal — post the body without it). The Risk text is purely additive:
+it does not feed `compute-review-verdict.ts`, and the Step 10.5 validation still passes
+because the body leads with the `Verdict: APPROVE` label.
 
 **Diff-line mapping**: for each finding with a `file:line` reference, check if the
 line is in the diff (`git diff origin/{base}...HEAD -- {file}`). Only lines within diff

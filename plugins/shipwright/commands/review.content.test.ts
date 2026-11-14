@@ -2899,3 +2899,58 @@ describe("bun prerequisite preflight (CRQ-6.1)", () => {
     expect(readme).toMatch(/Prerequisites:[^\n]*\[Bun\]\(https:\/\/bun\.sh\)/);
   });
 });
+
+describe("review.md — risk rating wiring (RSK-2.1)", () => {
+  function section(from: string, to: string): string {
+    const a = content.indexOf(from);
+    const b = content.indexOf(to);
+    expect(a).toBeGreaterThan(-1);
+    expect(b).toBeGreaterThan(a);
+    return content.slice(a, b);
+  }
+
+  it("Step 6 computes risk signals via compute-pr-risk-signals.ts", () => {
+    const s = section("## Step 6:", "## Step 7:");
+    expect(s).toContain("compute-pr-risk-signals.ts");
+    expect(s).toContain("RISK_SIGNALS");
+  });
+
+  it("Step 7 collects riskAssessment from every reviewer, tolerating absence", () => {
+    const s = extractStep7Section(content);
+    expect(s).toContain("RISK_ASSESSMENTS");
+    expect(s).toContain("riskAssessment");
+    expect(s).toMatch(
+      /omit[^\n]*riskAssessment|riskAssessment[^\n]*(omit|absent)/i,
+    );
+  });
+
+  it("Step 7 Merge unions riskAssessment factors", () => {
+    const s = extractStep7Section(content);
+    const merge = s.slice(s.indexOf("**Merge (MPS-2.2).**"));
+    expect(merge).toContain("riskAssessment");
+    expect(merge).toMatch(/union/i);
+  });
+
+  it("computes the rating via compute-risk-rating.ts and treats failure as non-fatal", () => {
+    expect(content).toContain("compute-risk-rating.ts");
+    expect(content).toContain("RISK_RATING");
+    expect(content).toMatch(
+      /rating failure[^\n]*non-fatal|non-fatal[^\n]*rating/i,
+    );
+  });
+
+  it("Step 9 review file template has a Risk section", () => {
+    const s = section("## Step 9: Write Review File", "## Step 9.5:");
+    expect(s).toContain("## Risk");
+    expect(s).toContain("RISK_RATING");
+  });
+
+  it("Step 10 appends Risk line and <details> table after the Verdict lead-in, APPROVE-only", () => {
+    const s = section("## Step 10: Build Review JSON", "### Step 10.5:");
+    expect(s).toContain("Risk: Low|Medium|High");
+    expect(s).toContain("<details>");
+    expect(s).toMatch(/only when `verdictLabel` is `APPROVE`/i);
+    expect(s).toMatch(/never[^\n]*`Verdict: COMMENT`|never on a `COMMENT`/i);
+    expect(s).toMatch(/Verdict: APPROVE[^\n]*(remain|first|lead)/i);
+  });
+});
