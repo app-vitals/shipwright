@@ -6,8 +6,13 @@ A shipwright builds ships. This one ships software.
 
 ## Installation
 
+Inside Claude Code, run these one at a time (pasting both together fails silently):
+
 ```
 /plugin marketplace add app-vitals/shipwright
+```
+
+```
 /plugin install shipwright@shipwright
 ```
 
