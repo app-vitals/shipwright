@@ -517,6 +517,78 @@ describe("admin UI — authenticated pages", () => {
     });
   });
 
+  describe("fleet queue-activity outcome multi-select filter (COF-2.2)", () => {
+    const RUNS = [
+      makeCronRun({ id: "run-completed", outcome: "completed" }),
+      makeCronRun({ id: "run-failed", outcome: "failed" }),
+      makeCronRun({
+        id: "run-skipped",
+        skipped: true,
+        outcome: null,
+        skipReason: "fleet pre-check failed",
+      }),
+    ];
+    const matches = (
+      r: (typeof RUNS)[number],
+      outcomes: string[] | undefined,
+    ) =>
+      !outcomes ||
+      outcomes.some((o) =>
+        o === "skipped"
+          ? r.skipped
+          : !r.skipped &&
+            (o === "unknown" ? r.outcome === null : r.outcome === o),
+      );
+
+    async function fetchFleet(query: string) {
+      let capturedOpts: { outcomes?: string[] } | undefined;
+      const app = createCodingTestApp(
+        makeCodingMockDeps({
+          agentCronRunService: {
+            listForAgent: async () => ({
+              items: [],
+              total: 0,
+              limit: 20,
+              offset: 0,
+            }),
+            listAcrossAgents: async (_ids: string[], opts?: unknown) => {
+              capturedOpts = opts as { outcomes?: string[] };
+              const items = RUNS.filter((r) =>
+                matches(r, capturedOpts?.outcomes),
+              );
+              return { items, total: items.length, limit: 20, offset: 0 };
+            },
+          },
+        }),
+      );
+      const res = await app.request(`/admin/queue-activity${query}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      return { html: await res.text(), capturedOpts };
+    }
+
+    it("default hides skipped runs across agents", async () => {
+      const { html, capturedOpts } = await fetchFleet("");
+      expect(capturedOpts?.outcomes).toEqual([
+        "completed",
+        "failed",
+        "unknown",
+      ]);
+      expect(html).not.toContain("fleet pre-check failed");
+      expect(html).toMatch(/<option value="completed" selected>/);
+      expect(html).not.toMatch(/<option value="skipped" selected>/);
+    });
+
+    it("?outcome=skipped shows skipped runs", async () => {
+      const { html, capturedOpts } = await fetchFleet("?outcome=skipped");
+      expect(capturedOpts?.outcomes).toEqual(["skipped"]);
+      expect(html).toContain("fleet pre-check failed");
+      expect(html).toMatch(/<option value="skipped" selected>/);
+      expect(html).not.toMatch(/<option value="completed" selected>/);
+    });
+  });
+
   it("non-admin non-member gets 403 on GET /admin/agents/:id/queue-activity", async () => {
     const outsiderCookie = await makeSessionCookie(
       SESSION_SECRET,

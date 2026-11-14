@@ -439,6 +439,7 @@ export function createCodingAdminUIApp(
 
     const agentIds = agents.map((a) => a.id);
 
+    const outcomes = parseOutcomeParams(c.req.queries("outcome") ?? []);
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
     const limit = 20;
@@ -453,7 +454,11 @@ export function createCodingAdminUIApp(
 
     const [snapshots, runResult, loopJobs] = await Promise.all([
       agentWorkQueueService.getMany(agentIds),
-      agentCronRunService.listAcrossAgents(agentIds, { limit, offset }),
+      agentCronRunService.listAcrossAgents(agentIds, {
+        limit,
+        offset,
+        outcomes,
+      }),
       shipwrightLoopJobService.listShipwrightLoopJobs(agentIds),
     ]);
 
@@ -493,6 +498,7 @@ export function createCodingAdminUIApp(
         },
         runs: runResult.items,
         runsPagination: { total: runResult.total, limit, page },
+        outcomes,
         userName: c.var.userEmail,
         timezone,
       }),
