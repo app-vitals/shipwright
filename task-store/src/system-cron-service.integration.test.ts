@@ -350,6 +350,68 @@ describeOrSkip("SystemCronService definitions (integration)", () => {
     });
   });
 
+  it("recentTriggers returns claimed slots newest first, capped by limit, account-scoped", async () => {
+    await service.create(
+      {
+        id: CRON_ID,
+        name: "Audit",
+        schedule: "0 9 * * *",
+        titleTemplate: "Audit {repo}",
+        descriptionTemplate: "Audit {repo}",
+      },
+      "acct-scr",
+    );
+    // No triggers yet.
+    expect(await service.recentTriggers(CRON_ID, 5, null)).toEqual({
+      triggers: [],
+    });
+
+    // Fewer than limit; fired out of order, ordered by scheduledFor desc.
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-14T09:00:00Z",
+      repos: ["org/repo-a"],
+    });
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-16T09:00:00Z",
+      repos: ["org/repo-a", "org/repo-b"],
+    });
+    await service.fire(CRON_ID, {
+      scheduledFor: "2026-11-15T09:00:00Z",
+      repos: ["org/repo-a"],
+    });
+    const few = await service.recentTriggers(CRON_ID, 5, "acct-scr");
+    expect(few.triggers.map((t) => t.scheduledFor)).toEqual([
+      "2026-11-16T09:00:00.000Z",
+      "2026-11-15T09:00:00.000Z",
+      "2026-11-14T09:00:00.000Z",
+    ]);
+    expect(few.triggers.map((t) => t.taskCount)).toEqual([2, 1, 1]);
+    for (const t of few.triggers) {
+      expect(new Date(t.claimedAt).toISOString()).toBe(t.claimedAt);
+    }
+
+    // More than limit: capped, still newest first.
+    for (const day of ["17", "18", "19"]) {
+      await service.fire(CRON_ID, {
+        scheduledFor: `2026-11-${day}T09:00:00Z`,
+        repos: ["org/repo-a"],
+      });
+    }
+    const capped = await service.recentTriggers(CRON_ID, 2, null);
+    expect(capped.triggers.map((t) => t.scheduledFor)).toEqual([
+      "2026-11-19T09:00:00.000Z",
+      "2026-11-18T09:00:00.000Z",
+    ]);
+
+    // Another account's definition is invisible; unknown id too.
+    await expect(
+      service.recentTriggers(CRON_ID, 5, "other"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.recentTriggers("nope", 5, null)).rejects.toMatchObject(
+      { statusCode: 404 },
+    );
+  });
+
   it("creates, lists, patches and enables/disables definitions", async () => {
     const created = await service.create(
       {

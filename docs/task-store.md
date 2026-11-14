@@ -141,6 +141,8 @@ The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to fin
 
 The scheduler is the admin's `system-cron-scheduler` background pass (`admin/src/coding/system-cron-scheduler.ts`, every 60s; registered when the task store is configured). Each tick it lists enabled definitions and computes every due slot strictly after `max(last-trigger, enabledAt)` and up to now, evaluated in the definition's timezone (`system-cron-schedule.ts`; standard 5-field cron, Vixie day-of-month/day-of-week OR rule). So a never-fired or re-enabled definition fires no backlog, while slots missed during downtime are caught up, oldest first, with no cap. Only when a slot is due does it list repositories once through the GitHub lookup App (archived repos dropped); with no lookup App configured the tick is skipped and nothing is recorded, and a listing error fires nothing. It then fires each slot in order; the claim makes N admin replicas safe, and a failed fire stops that definition's later slots until the next tick.
 
+To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (admin-only; returns `{ triggers: [...] }`). Triggers are sorted newest first by `scheduledFor` (tie-break: `createdAt` desc), capped at `limit` (1–50, default 5). Each trigger object contains `scheduledFor` (ISO timestamp of the slot), `claimedAt` (when the slot was claimed), and `taskCount` (number of tasks created for that slot). This is read-only and does not record skipped ticks.
+
 ### Token management
 
 All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope), and revoke (soft-delete via `revokedAt`) scoped tokens. See the OpenAPI spec for request/response shapes.

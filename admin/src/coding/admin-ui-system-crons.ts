@@ -6,6 +6,11 @@
  * to /admin/settings/github-enterprise while the GitHub lookup App is not
  * configured (system crons fan out over the repos that App can see).
  *
+ * Each definition also lists its last 5 triggers (SCR-1.10) via the SCR-1.9
+ * GET /system-crons/:id/triggers; a failed fetch renders an inline note for
+ * that cron only. Skipped ticks are not shown: with the lookup App missing,
+ * the banner above is the signal.
+ *
  * A thin UI over the SCR-1.1 task-store endpoints (GET /system-crons, PATCH
  * /system-crons/:id, POST /system-crons/:id/{enable,disable}) via the injected
  * fetchers. Without them the page renders in degraded mode.
@@ -23,6 +28,12 @@ import {
 } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { validateTemplateForm } from "./system-cron-form.ts";
+import {
+  formatTriggerRow,
+  RECENT_RUNS_LIMIT,
+  recentTriggers,
+  type SystemCronTrigger,
+} from "./system-cron-runs.ts";
 
 export const SYSTEM_CRONS_SETTINGS_PATH = "/admin/settings/system-crons";
 export const GITHUB_ENTERPRISE_SETTINGS_PATH =
@@ -46,7 +57,14 @@ export interface SystemCronsFetchers {
     patch: { titleTemplate?: string; descriptionTemplate?: string },
   ) => Promise<unknown>;
   setSystemCronEnabled?: (id: string, enabled: boolean) => Promise<unknown>;
+  fetchSystemCronTriggers?: (
+    id: string,
+    limit: number,
+  ) => Promise<{ triggers: SystemCronTrigger[] }>;
 }
+
+/** A cron's recent triggers, or `null` when the fetch failed (or isn't wired). */
+export type RecentRuns = SystemCronTrigger[] | null;
 
 export interface SystemCronsDeps extends SystemCronsFetchers {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
@@ -75,6 +93,8 @@ const ERRORS: Record<string, string> = {
 interface PageOpts {
   userEmail: string;
   crons: SystemCronItem[];
+  /** Recent triggers keyed by cron id; a missing/null entry renders the fetch-failure note. */
+  recentRuns?: Record<string, RecentRuns>;
   degraded: boolean;
   lookupConfigured: boolean;
   notice?: string;
@@ -82,6 +102,20 @@ interface PageOpts {
   warnings?: string[];
   /** Submitted-but-invalid values, keyed by cron id, to re-fill the form. */
   draft?: { id: string; titleTemplate: string; descriptionTemplate: string };
+}
+
+function renderRecentRuns(runs: RecentRuns | undefined): string {
+  const heading = `<div class="form-label" style="margin-top:16px">Recent runs</div>`;
+  if (!runs) {
+    return `<div data-recent-runs="error">${heading}<p style="font-size:12px;color:#6b7280;margin:4px 0 0">Recent runs are unavailable right now.</p></div>`;
+  }
+  if (runs.length === 0) {
+    return `<div data-recent-runs="empty">${heading}<p class="empty-state" style="margin:4px 0 0">This cron has not fired yet.</p></div>`;
+  }
+  const rows = recentTriggers(runs)
+    .map((t) => `<li>${escapeHtml(formatTriggerRow(t))}</li>`)
+    .join("");
+  return `<div data-recent-runs="list">${heading}<ul style="font-size:13px;margin:4px 0 0;padding-left:20px">${rows}</ul></div>`;
 }
 
 function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
@@ -113,6 +147,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
       </div>
       <button type="submit" class="btn btn-primary">Save templates</button>
     </form>
+    ${renderRecentRuns(opts.recentRuns?.[c.id])}
   </div>`;
 }
 
@@ -197,12 +232,26 @@ export function registerSystemCronsRoutes(
         error ??= "Could not load system crons from the task store.";
       }
     }
+    const recentRuns: Record<string, RecentRuns> = {};
+    const fetchTriggers = deps.fetchSystemCronTriggers;
+    await Promise.all(
+      crons.map(async (cron) => {
+        try {
+          recentRuns[cron.id] = fetchTriggers
+            ? (await fetchTriggers(cron.id, RECENT_RUNS_LIMIT)).triggers
+            : null;
+        } catch {
+          recentRuns[cron.id] = null;
+        }
+      }),
+    );
     const noticeKey = c.req.query("notice");
     const errorKey = c.req.query("error");
     return deps.html(
       renderSystemCronsPage({
         userEmail: c.var.userEmail,
         crons,
+        recentRuns,
         degraded,
         lookupConfigured: await lookupAppConfigured(c),
         ...rest,

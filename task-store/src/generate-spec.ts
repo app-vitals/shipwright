@@ -207,6 +207,9 @@ const stubSystemCronService: SystemCronServiceLike = {
   async lastTrigger() {
     return { scheduledFor: null };
   },
+  async recentTriggers() {
+    return { triggers: [] };
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────

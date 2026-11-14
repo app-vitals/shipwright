@@ -4273,6 +4273,159 @@
         "required": [
           "agentId"
         ]
+      },
+      "AgentTemplatesList": {
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTemplate"
+            }
+          }
+        },
+        "required": [
+          "templates"
+        ]
+      },
+      "AgentTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "specialty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "specialist"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateItem"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "specialty",
+          "items",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TemplateItem": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TemplateItemKind"
+          },
+          "key": {
+            "type": "string",
+            "description": "Env var name, tool pattern, plugin name or cron name (cron items need a stable, non-empty name).",
+            "example": "LINEAR_API_KEY"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Secret env values are returned masked as \"***\"."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "kind",
+          "key",
+          "payload",
+          "updatedAt"
+        ]
+      },
+      "TemplateItemKind": {
+        "type": "string",
+        "enum": [
+          "env",
+          "tool",
+          "plugin",
+          "cron"
+        ]
+      },
+      "PutTemplateBody": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Owning account; null or omitted = deployment-wide (platform admins only). Account callers may omit it or send their own account."
+          },
+          "specialty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Specialty the template applies to; null = every specialty."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateItemInput"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "TemplateItemInput": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TemplateItemKind"
+          },
+          "key": {
+            "type": "string",
+            "description": "Env var name, tool pattern, plugin name or cron name (cron items need a stable, non-empty name).",
+            "example": "LINEAR_API_KEY"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Kind-specific fields. env: {value, secret?}; tool: {enabled?}; plugin: {version?, enabled?}; cron: {schedule, prompt, channel?, user?, silent?, enabled?, preCheck?}.",
+            "example": {
+              "value": "lin_abc",
+              "secret": true
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "key"
+        ]
       }
     },
     "parameters": {}
@@ -8701,6 +8854,437 @@
           },
           "504": {
             "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "List agent templates",
+        "description": "Platform admins see every template (optionally narrowed by `accountId` / `specialty`); account callers see only their account's. Secret env values are masked as `***`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": false,
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "specialist"
+            },
+            "required": false,
+            "name": "specialty",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplatesList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Create or replace an agent template",
+        "description": "Creates the template for the (accountId, specialty) scope, or replaces the items of the existing one (201 / 200). Account callers may only write their own account (403 otherwise); only platform admins write deployment-wide templates. 422 for an unknown specialty, a denylisted env key (per-agent credentials: Slack tokens, GH_TOKEN, Anthropic credentials, task-store URL/token), an invalid item payload, a cron item without a name key, or a duplicate (kind, key). Env values are encrypted at rest; a secret env item sent as `\"***\"` keeps its stored value.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutTemplateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Template created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{id}": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Get an agent template",
+        "description": "Returns the template with its items. Secret env values are masked as `***`; non-secret ones are returned in clear.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Delete an agent template",
+        "description": "Deletes the template and all of its items.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Template deleted"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{id}/items": {
+      "put": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Add or replace a template item",
+        "description": "Upserts one item by (kind, key) without touching the others. Same validation as PUT /templates (422).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateItemInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template with the item applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Remove a template item",
+        "description": "Removes the item identified by the `kind` and `key` query params (a query rather than a path segment because plugin and tool keys can contain `/`). 404 when it does not exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/TemplateItemKind"
+            },
+            "required": true,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "key",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Item removed"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (caller has no account, or names another account / the deployment scope)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found (or not in the caller's account)",
             "content": {
               "application/json": {
                 "schema": {
