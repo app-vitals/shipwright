@@ -24,7 +24,10 @@ Task ids are deterministic: `SC-{cron}-{slot}-{owner}-{repo}`. Tasks are `kind: 
 
 **admin** — `system-cron-scheduler` background pass (60s tick) via the `AdminExtension`
 `backgroundPasses` seam. For each enabled definition it fires every slot between the last
-claimed trigger and now, oldest first (catch-up). The repo list comes from the GitHub lookup
+claimed trigger and now, oldest first (catch-up). A definition with no claimed trigger yet
+(freshly seeded or just enabled) has no backlog: its baseline is the enable time, so the first
+fire is the first slot after enabling. SCR-1.3 acceptance includes a test for this seed rule.
+The repo list comes from the GitHub lookup
 App; with no lookup App configured the tick is skipped and nothing is recorded. The trigger
 row is only written after the repo list is fetched. Settings page lists definitions with an
 enable toggle and editable template, plus a banner when the lookup App is missing.
@@ -52,14 +55,14 @@ their prechecks and the skills' scan fallback in one task, and runs only after 1
 so no old cron calls a skill that now rejects it. Reconcile deletes the seeded rows.
 
 ## Risks
-- The pinned `@app-vitals/agent-admin@0.16.0` may lack a repo-listing method for the lookup
-  App. SCR-1.3 verifies this first; if missing, add a producer task in app-vitals/agent plus a
+- The pinned `@app-vitals/agent-admin@1.38.0` may lack a repo-listing method for the lookup
+  App. SCR-1.3 re-checks it against 1.38.0 first; if missing, add a producer task in app-vitals/agent plus a
   release gate before the scheduler.
 - Tasks run through dev-task; the skills open their own worktree and PR, so dev-task must defer
   to the skill. SCR-1.3 includes a test of this flow.
 
 ## Decision Log
 - Ledger location: task-store, not admin DB — avoids a cross-repo schema chain; claim and task creation share a transaction.
-- Catch-up: unbounded, per Dan's "catch up"; no window cap (kept simple).
+- Catch-up: unbounded, per Dan's "catch up"; no window cap (kept simple). Baseline for a never-fired definition is its enable time, so first enable never fires a backlog.
 - Custom crons: supported only as definition rows with a template; no per-cron code.
 - Precheck: dropped; skills' own freshness gates replace it.
