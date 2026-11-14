@@ -261,6 +261,15 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
         "/system-crons",
       ),
 
+    /** GET /system-crons/:id/triggers?limit=N (SCR-1.9, admin-only) → { triggers }. */
+    fetchSystemCronTriggers: <T>(id: string, limit: number) =>
+      getJson<T>(
+        `/system-crons/${encodeURIComponent(id)}/triggers`,
+        new URLSearchParams({ limit: String(limit) }),
+        undefined,
+        "/system-crons/:id/triggers",
+      ),
+
     /** PATCH /system-crons/:id — resolves null on 404; throws on other non-2xx. */
     patchSystemCron: async (
       id: string,
