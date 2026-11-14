@@ -364,3 +364,27 @@ describe("code-reviewer.md — prior findings attestation input and output (PVD-
     expect(nearby.toLowerCase()).toContain("both");
   });
 });
+
+describe("code-reviewer.md — optional riskAssessment output", () => {
+  it("instructs emitting riskAssessment as optional", () => {
+    expect(reviewerContent).toContain("riskAssessment");
+    expect(reviewerContent).toContain("**optional**");
+  });
+
+  it("lists the judgment factors", () => {
+    const lower = reviewerContent.toLowerCase();
+    for (const f of [
+      "blast radius",
+      "data integrity",
+      "reversibility",
+      "availability hot paths",
+      "public api changes",
+    ]) {
+      expect(lower).toContain(f);
+    }
+  });
+
+  it("explicitly excludes author-based factors", () => {
+    expect(reviewerContent).toContain("Never use author-based");
+  });
+});

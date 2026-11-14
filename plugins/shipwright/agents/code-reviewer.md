@@ -120,3 +120,17 @@ empty array) only when the caller passed no such input. `evidence` is required i
 `resolved: true` and `resolved: false` cases — never leave it blank: for a resolved finding, cite
 the exact `file:line` or diff excerpt proving the fix; for an unresolved finding, explain why the
 originally-described issue is still present.
+
+`riskAssessment` is **optional** — emit it for every review, and omit it entirely only when you
+cannot form a judgment. Rate the overall `level` (`low|medium|high`) of merging this PR and
+list the `factors` behind it, each with its own `level` and `evidence`. Add it as a top-level key of the JSON object: `"riskAssessment": {"level": "low|medium|high", "factors": [{"factor": "...", "level": "low|medium|high", "evidence": "..."}]}`. Assess only these
+judgment-based factors:
+
+- **Blast radius** — how many callers, services, or users a defect here would affect.
+- **Data integrity / migrations** — schema changes, backfills, destructive writes.
+- **Reversibility / rollback** — whether the change can be safely reverted after deploy.
+- **Availability hot paths** — changes to request-critical, startup, or high-traffic code.
+- **Public API changes** — changes to contracts external callers depend on.
+
+Never use author-based or other person-based factors (who wrote the PR, their seniority,
+history, or team). Risk is a property of the change, not the author.
