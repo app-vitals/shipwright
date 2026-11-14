@@ -80,14 +80,14 @@ opposed to what state it's in:
 |---|---|---|
 | `dev` | An ordinary work item. The default, and what every row created before the enum existed was backfilled to. | `/shipwright:dev-task {id}` |
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
-| `initiative` | Early-stage idea or initiative not yet ready for planning. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` (close-out only) |
-| `idea` | Brainstorm or concept pending review and scoping. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` (close-out only) |
+| `initiative` | Early-stage idea or initiative not yet ready for planning. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` or `/shipwright:prd {session} --initiative {id}` (close-out only) |
+| `idea` | Brainstorm or concept pending review and scoping. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` or `/shipwright:prd {session} --initiative {id}` (close-out only) |
 
 Filter on it with `?kind=dev` / `?kind=prd` / `?kind=initiative` / `?kind=idea`; `agent/src/coding/check-plan.ts` collects the plan phase's
 candidates with `?kind=prd&status=pending`. A PRD task is deliberately excluded from `?ready=true` —
 it has no dependency graph to resolve and must not be picked up as dev work. Initiative and idea tasks
 are also excluded from `?ready=true` as they are not yet planned work.
-An initiative or idea task can be closed out by the plan that fulfils it: `/shipwright:plan-session {repo} {session} --initiative {id}` PATCHes it to `done` (with `source: planning/{session}/PLAN.md`) after the bulk task write succeeds. Wrong kind, already-closed, missing, or failed PATCH only warns — it never fails the session.
+An initiative or idea task can be closed out by the plan that fulfils it: `/shipwright:plan-session {repo} {session} --initiative {id}` PATCHes it to `done` (with `source: planning/{session}/PLAN.md`) after the bulk task write succeeds. `/shipwright:prd {session} --initiative {id}` does the same after PRODUCT-SPEC.md is finalized (with `source: planning/{session}/PRODUCT-SPEC.md`). Wrong kind, already-closed, missing, or failed PATCH only warns — it never fails the session.
 
 `autonomousPlanSession` was a boolean predecessor to `kind` (TKD-1.1 introduced `kind` alongside it
 for a transition window; TKD-1.3 dropped the legacy column, field, and query filter once every
