@@ -1,13 +1,13 @@
 ---
 description: Analyze codebase and generate or update project documentation
-argument-hint: "[module-or-topic | --auto]"
+argument-hint: "[module-or-topic | --auto [--repo org/repo]]"
 ---
 
 # Research Docs
 
 Analyze the codebase, audit existing documentation, identify gaps and stale content, then generate or update docs. Like `/init` but for the `docs/` directory.
 
-If `$ARGUMENTS` contains `--auto`, run in **auto mode** — unattended, cron-safe, no user confirmation prompts. Otherwise, run the interactive mode below.
+If `$ARGUMENTS` contains `--auto`, run in **auto mode** — unattended, cron-safe, no user confirmation prompts. Otherwise, run the interactive mode below. In auto mode, an optional `--repo org/repo` argument restricts the run to that one repo (see Step A0).
 
 If `$ARGUMENTS` is provided without `--auto`, focus on just that module or topic. Otherwise, audit the entire project.
 
@@ -32,6 +32,7 @@ Mode: auto (unattended)
 
 Determine the list of repos to process, in this priority order:
 
+0. **Explicit `--repo org/repo` (overrides everything below).** When `$ARGUMENTS` contains `--repo org/repo`, process only that repo: skip the precheck-driven list and the resolver fallback entirely, and do not scan `repos/`. Find its clone by matching each `repos/*/`'s `git remote get-url origin` against `org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Then `git -C repos/{dirname} pull`. Rely on the existing per-repo freshness gate (Step A1/A2 sync anchor and diff) so a repo with no changes since its anchor is a no-op. Without `--repo`, behavior is unchanged.
 1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the specialty manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
 2. **Fallback (manual invocation, or no repo list available in the prompt).** Call the
    config-driven resolver directly:

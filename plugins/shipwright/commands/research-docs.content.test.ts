@@ -72,3 +72,17 @@ describe("research-docs.md — measured-values guard (NMV-1.2)", () => {
     expect(section).toContain("speed budgets and coverage targets");
   });
 });
+
+describe("research-docs.md — explicit --repo input", () => {
+  it("documents --repo in the argument hint", () => {
+    expect(readResearchDocs()).toMatch(/argument-hint:.*--repo org\/repo/);
+  });
+
+  it("Step A0 has an explicit-repo path that skips the precheck and repos/ scan", () => {
+    const a0 = getStepA0Section();
+    expect(a0).toContain("`--repo org/repo`");
+    expect(a0).toContain("skip the precheck-driven list");
+    expect(a0).toContain("git clone");
+    expect(a0).toContain("Without `--repo`, behavior is unchanged");
+  });
+});

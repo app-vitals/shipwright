@@ -45,6 +45,8 @@ note and the fix (enable `shipwright-loop`).
 
 ## Multi-repo scoping via `resolveScopedRepos`
 
+Both skills also accept an optional `--repo org/repo` argument (`/shipwright:research-docs --auto --repo org/repo`, `/shipwright:test-readiness --repo org/repo`). When given, the `repos/` scan and precheck are skipped and only that repo runs (its clone is found under `repos/` or cloned); each skill's own freshness gate still applies, so a fresh repo is a no-op. For test-readiness the `docs/test-readiness/` opt-in check does not apply to an explicit repo. Without `--repo`, behavior is unchanged.
+
 `shipwright-docs-freshness` and `shipwright-test-readiness` precheck scripts filter the filesystem-scanned repo list down to the agent's configured `repos[]` via the `resolveScopedRepos` helper (defined in `plugins/shipwright/scripts/check-helpers.ts`). This ensures that a repo cloned locally but absent from the agent's configuration is **excluded from output**, even if it would otherwise qualify (e.g., it has source changes or stale test-readiness artifacts).
 
 `resolveScopedRepos` resolves this intersection by:

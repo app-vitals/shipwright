@@ -6,7 +6,9 @@ description: >
   test-inventory → test-design → test-migration → test-roadmap →
   test-fix in sequence per repo, starting from the first stale artifact.
   Invoked by the `shipwright-test-readiness` cron on a daily schedule; exits
-  early for a repo when all of its phase artifacts are fresh.
+  early for a repo when all of its phase artifacts are fresh. Accepts an
+  optional `--repo org/repo` to run only that repo.
+argument-hint: "[--full] [--publish] [--dry-run] [--repo org/repo]"
 ---
 
 # test-readiness skill
@@ -33,6 +35,7 @@ keep working unchanged.
 |------|--------|
 | `--full` | Skip the staleness check entirely and run all phases 1→5 regardless of artifact freshness. Without it, the staleness gate decides the starting phase and exits early when everything is fresh. |
 | `--publish` | Run phase 5 as a **real publish** — forward real-queue mode to `/shipwright:test-fix` so it writes task-store tasks unattended (no confirmation gate — test-fix never has one, matching entropy-fix/error-fix). Without it, phase 5 runs `--dry-run` (preview only, no task-store writes). |
+| `--repo org/repo` | Run only that repo. Skips the `repos/` scan, the precheck-driven list, and the `docs/test-readiness/` opt-in check (naming a repo explicitly is the opt-in). Finds the clone under `repos/` or clones it. The staleness gate still applies (unless `--full`), so a fresh repo is a no-op. Without `--repo`, behavior is unchanged. |
 | `--dry-run` | Explicit preview: phase 5 runs `--dry-run`. This is the default when `--publish` is absent. |
 
 ## Staleness check
@@ -69,6 +72,16 @@ repo processed.
 
 Determine which repos to process, in this priority order:
 
+0. **Explicit `--repo org/repo` (overrides everything below).** When the
+   invocation includes `--repo org/repo`, the repo list is exactly that one
+   repo. Do not scan `repos/`, do not parse the precheck output, and do not
+   apply the `docs/test-readiness/` opt-in check — an explicit repo is the
+   opt-in, so a repo without that directory is still processed. Find its
+   clone by matching each `repos/*/`'s `git remote get-url origin` against
+   `org/repo`; if none matches, clone it
+   (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Step 2's
+   staleness gate still decides whether anything runs, so a fresh repo is a
+   no-op.
 1. **Precheck-driven (preferred).** This cron's `preCheck`
    (`shipwright:check-test-readiness.ts`) already iterated every repo under
    `repos/`, applied the opt-in qualification (a repo qualifies only if it has
