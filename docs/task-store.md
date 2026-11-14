@@ -80,8 +80,8 @@ opposed to what state it's in:
 |---|---|---|
 | `dev` | An ordinary work item. The default, and what every row created before the enum existed was backfilled to. | `/shipwright:dev-task {id}` |
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
-| `initiative` | Early-stage idea or initiative not yet ready for planning. Never part of the `?ready=true` set and never dispatched for execution. | Not dispatched |
-| `idea` | Brainstorm or concept pending review and scoping. Never part of the `?ready=true` set and never dispatched for execution. | Not dispatched |
+| `initiative` | Early-stage idea or initiative not yet ready for planning. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` (close-out only) |
+| `idea` | Brainstorm or concept pending review and scoping. Never part of the `?ready=true` set and never executed as regular work. Can be closed out after planning via `--initiative`. | `/shipwright:plan-session {repo} {session} --initiative {id}` (close-out only) |
 
 Filter on it with `?kind=dev` / `?kind=prd` / `?kind=initiative` / `?kind=idea`; `agent/src/coding/check-plan.ts` collects the plan phase's
 candidates with `?kind=prd&status=pending`. A PRD task is deliberately excluded from `?ready=true` —
