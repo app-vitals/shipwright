@@ -15,6 +15,7 @@
  *   GET  /admin/sessions, /admin/sessions/:id     — sessions list and detail
  *   POST /admin/sessions/:slug/{follow,unfollow,archive,unarchive,rename}
  *   GET|POST /admin/settings/notifications        — session notification prefs
+ *   GET|POST /admin/settings/system-crons[/:id[/enable|disable]] — system-cron settings (SCR-1.4)
  *   GET  /admin/prs, /admin/prs/:id               — task-store PRs (list, detail)
  *   GET  /public/tasks                            — unauthenticated read-only board
  *
@@ -60,6 +61,10 @@ import {
   resolveVisibilityScope,
   type Session,
 } from "./admin-ui-sessions-list.ts";
+import {
+  registerSystemCronsRoutes,
+  type SystemCronsFetchers,
+} from "./admin-ui-system-crons.ts";
 import type { VerificationCheckItem } from "./admin-ui-verification-cards.ts";
 import {
   type PrListItem,
@@ -94,7 +99,7 @@ import { fetchRecentVerificationChecks } from "./verification-checks.ts";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** The task-store fetchers (task-store-fetchers.ts); each is optional. */
-export interface CodingTaskStoreFetchers {
+export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
@@ -281,6 +286,15 @@ export interface CodingAdminUIDeps extends CodingTaskStoreFetchers {
    */
   pushService?: PushService;
   vapidPublicKey?: string;
+  /**
+   * The platform's /github-enterprise API (`.request`), used by the
+   * system-crons settings page to detect whether the GitHub lookup App is
+   * configured. Absent → the page shows the "not configured" banner.
+   */
+  githubEnterpriseApi?: (
+    path: string,
+    init?: RequestInit,
+  ) => Response | Promise<Response>;
 }
 
 /**
@@ -409,6 +423,10 @@ export function createCodingAdminUIApp(
     publicRepo,
     pushService,
     vapidPublicKey = "",
+    fetchSystemCrons,
+    patchSystemCron,
+    setSystemCronEnabled,
+    githubEnterpriseApi,
   } = deps;
 
   // Push is enabled only when the service was constructed (VAPID fully set) AND
@@ -1261,6 +1279,17 @@ export function createCodingAdminUIApp(
     pushService,
     timezone,
     html,
+  });
+
+  // ─── System-cron settings (SCR-1.4) ───────────────────────────────────────
+
+  registerSystemCronsRoutes(app, {
+    requireAuth,
+    html,
+    fetchSystemCrons,
+    patchSystemCron,
+    setSystemCronEnabled,
+    githubEnterpriseApi,
   });
 
   // ─── PRs ─────────────────────────────────────────────────────────────────

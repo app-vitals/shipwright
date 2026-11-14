@@ -10,7 +10,7 @@
  *   apiRoutes           — work-queue snapshots, phase-methodology overrides and
  *                         dev-task adherence (coding/agents-api-coding.ts)
  *   adminUiRoutes       — Queue & Activity, tasks, sessions (+ follow, actions,
- *                         notification settings), PRs, the phase-methodology
+ *                         notification and system-cron settings), PRs, the phase-methodology
  *                         form and the public task board
  *                         (coding/admin-ui-coding.ts)
  *   agentDetailCards    — Recent Verification Activity, GitHub Installations
@@ -31,6 +31,7 @@
  */
 
 import {
+  DEFAULT_PORT,
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   SESSION_ALERT_FETCH_TIMEOUT_MS,
@@ -259,6 +260,15 @@ export const codingAdminExtension: AdminExtension = {
         // When set, the board renders unauthenticated, scoped to this repo;
         // when absent the route stays in degraded mode (no tasks).
         publicRepo: resolvePublicRepo(ctx.env),
+        // The extension context doesn't expose the platform's GHE API app, so
+        // the system-crons page reaches /github-enterprise/apps over loopback
+        // (it forwards the caller's session cookie, so the API's own admin
+        // check applies).
+        githubEnterpriseApi: (path, init) =>
+          fetch(
+            `http://127.0.0.1:${Number(ctx.env.PORT ?? DEFAULT_PORT)}${path}`,
+            init,
+          ),
         ...(ctx.push
           ? {
               pushService: ctx.push.service,
