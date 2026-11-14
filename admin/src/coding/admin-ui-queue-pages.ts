@@ -27,6 +27,11 @@ import {
   buildEligibilityIndex,
   mergeWorkQueueSnapshots,
 } from "./agent-work-queue-merge.ts";
+import {
+  appendOutcomeParams,
+  DEFAULT_OUTCOMES,
+  renderOutcomeOptions,
+} from "./outcome-filter.ts";
 
 /**
  * Renders a link for a work-queue/cron-log item id, which is either a task id
@@ -503,7 +508,7 @@ export function renderQueueActivityPage(opts: {
   snapshot: WorkQueueSnapshotItem | null;
   crons: { id: string; name: string | null; schedule: string }[];
   runs: CronRunItem[];
-  filters: { cronId?: string; outcome?: string };
+  filters: { cronId?: string; outcomes?: string[] };
   pagination: { total: number; limit: number; page: number };
   userName: string;
   timezone?: string;
@@ -646,11 +651,8 @@ export function renderQueueActivityPage(opts: {
     })
     .join("\n");
 
-  const OUTCOME_OPTIONS = ["posted", "dm", "silent", "skipped", "error"];
-  const outcomeOptions = OUTCOME_OPTIONS.map((o) => {
-    const selected = filters.outcome === o ? "selected" : "";
-    return `<option value="${o}" ${selected}>${o}</option>`;
-  }).join("\n");
+  const selectedOutcomes = filters.outcomes ?? [...DEFAULT_OUTCOMES];
+  const outcomeOptions = renderOutcomeOptions(selectedOutcomes);
 
   // Pagination — mirrors renderPrsPage's pattern.
   const totalPages = Math.max(
@@ -661,7 +663,7 @@ export function renderQueueActivityPage(opts: {
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();
     if (filters.cronId) params.set("cronId", filters.cronId);
-    if (filters.outcome) params.set("outcome", filters.outcome);
+    appendOutcomeParams(params, selectedOutcomes);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
     return `/admin/agents/${escapeHtml(agent.id)}/queue-activity${qs ? `?${qs}` : ""}`;
@@ -706,8 +708,7 @@ export function renderQueueActivityPage(opts: {
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Outcome</label>
-          <select name="outcome" class="form-input" style="font-size:12px;padding:4px 8px">
-            <option value="">Any</option>
+          <select name="outcome" multiple size="4" class="form-input" style="font-size:12px;padding:4px 8px">
             ${outcomeOptions}
           </select>
         </div>

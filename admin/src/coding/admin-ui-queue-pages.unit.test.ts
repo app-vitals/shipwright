@@ -72,7 +72,7 @@ describe("renderQueueActivityPage — Past section", () => {
   function render(
     runs: CronRunItem[],
     opts?: {
-      filters?: { cronId?: string; outcome?: string };
+      filters?: { cronId?: string; outcomes?: string[] };
       pagination?: { total: number; limit: number; page: number };
       crons?: { id: string; name: string | null; schedule: string }[];
       now?: Date;
@@ -569,32 +569,43 @@ describe("renderQueueActivityPage — Past section", () => {
     expect(optionMatch?.[0]).toContain("selected");
   });
 
-  test("filter form renders an outcome dropdown with Any/posted/dm/silent/skipped/error options", () => {
+  test("filter form renders a multi-select with the four outcome options", () => {
     const html = render([makeRun()]);
-    expect(html).toContain(">Any<");
-    expect(html).toContain('value="posted"');
-    expect(html).toContain('value="dm"');
-    expect(html).toContain('value="silent"');
-    expect(html).toContain('value="skipped"');
-    expect(html).toContain('value="error"');
+    expect(html).toMatch(/<select name="outcome" multiple/);
+    for (const o of ["completed", "skipped", "failed", "unknown"]) {
+      expect(html).toContain(`<option value="${o}"`);
+    }
+    expect(html).not.toContain('<option value="posted"');
+    expect(html).not.toContain('<option value="dm"');
+    expect(html).not.toContain('<option value="silent"');
   });
 
-  test("filter form preserves the selected outcome as 'selected' on the matching option", () => {
-    const html = render([makeRun()], { filters: { outcome: "error" } });
-    const optionMatch = html.match(/<option value="error"[^>]*>/);
-    expect(optionMatch).not.toBeNull();
-    expect(optionMatch?.[0]).toContain("selected");
+  test("filter form defaults to completed/failed/unknown selected (skipped hidden)", () => {
+    const html = render([makeRun()]);
+    expect(html).toMatch(/<option value="completed" selected>/);
+    expect(html).toMatch(/<option value="failed" selected>/);
+    expect(html).toMatch(/<option value="unknown" selected>/);
+    expect(html).not.toMatch(/<option value="skipped" selected>/);
+  });
+
+  test("filter form marks every effectively selected outcome", () => {
+    const html = render([makeRun()], {
+      filters: { outcomes: ["skipped", "failed"] },
+    });
+    expect(html).toMatch(/<option value="skipped" selected>/);
+    expect(html).toMatch(/<option value="failed" selected>/);
+    expect(html).not.toMatch(/<option value="completed" selected>/);
   });
 
   // ─── Pagination ─────────────────────────────────────────────────────────────
 
   test("pagination links preserve active cronId/outcome filters as query params", () => {
     const html = render([makeRun()], {
-      filters: { cronId: CRON.id, outcome: "posted" },
+      filters: { cronId: CRON.id, outcomes: ["skipped", "failed"] },
       pagination: { total: 100, limit: 20, page: 2 },
     });
     expect(html).toContain(`cronId=${CRON.id}`);
-    expect(html).toContain("outcome=posted");
+    expect(html).toContain("outcome=skipped&outcome=failed");
     // Prev (page 1) omits the page param, mirroring renderPrsPage's convention
     // that page=1 is the implicit default; Next (page 3) is explicit.
     expect(html).toContain("page=3"); // Next
