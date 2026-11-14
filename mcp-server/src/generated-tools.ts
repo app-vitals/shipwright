@@ -67,9 +67,9 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org/repo",
           description:
             "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
+          example: "org/repo",
         },
         org: {
           anyOf: [
@@ -83,9 +83,9 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org",
           description:
             "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
+          example: "org",
         },
         assignee: {
           type: "string",
@@ -116,12 +116,6 @@ export const generatedTools: GeneratedTool[] = [
           enum: ["true", "false"],
           example: "true",
         },
-        accountId: {
-          type: "string",
-          example: "default",
-          description:
-            "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
-        },
         hitl: {
           type: "string",
           enum: ["true", "false"],
@@ -130,9 +124,9 @@ export const generatedTools: GeneratedTool[] = [
         kind: {
           type: "string",
           enum: ["dev", "prd", "initiative", "idea"],
-          example: "prd",
           description:
             "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally.",
+          example: "prd",
         },
         sort: {
           type: "string",
@@ -141,9 +135,9 @@ export const generatedTools: GeneratedTool[] = [
         },
         updatedSince: {
           type: "string",
-          example: "2026-01-01T00:00:00.000Z",
           description:
             "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+          example: "2026-01-01T00:00:00.000Z",
         },
       },
       required: [],
@@ -165,7 +159,6 @@ export const generatedTools: GeneratedTool[] = [
       "limit",
       "offset",
       "ready",
-      "accountId",
       "hitl",
       "kind",
       "sort",
@@ -210,11 +203,6 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           example: "feat/feature-x",
         },
-        pr: {
-          example: 42,
-          description:
-            'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
-        },
         dependencies: {
           type: "array",
           items: {
@@ -248,8 +236,8 @@ export const generatedTools: GeneratedTool[] = [
         kind: {
           type: "string",
           enum: ["dev", "prd", "initiative", "idea"],
-          example: "dev",
           description: "What the task is (TKD-1.1). Defaults to `dev`.",
+          example: "dev",
         },
       },
       required: [],
@@ -287,13 +275,7 @@ export const generatedTools: GeneratedTool[] = [
                 type: ["string", "null"],
                 example: "org/repo",
               },
-              pr: {
-                example: 42,
-                description:
-                  'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
-              },
             },
-            additionalProperties: {},
           },
         },
       },
@@ -306,50 +288,6 @@ export const generatedTools: GeneratedTool[] = [
     pathParams: [],
     hasBody: true,
     hasArrayBody: true,
-  },
-  {
-    name: "tasks_by_pr",
-    description: "Mark merged tasks deployed or released by PR number",
-    inputSchema: {
-      type: "object",
-      properties: {
-        repo: {
-          type: "string",
-          minLength: 1,
-          example: "org/repo",
-        },
-        prNumbers: {
-          type: "array",
-          items: {
-            type: "integer",
-            exclusiveMinimum: 0,
-          },
-          minItems: 1,
-          maxItems: 100,
-          example: [101, 102],
-          description: "PR numbers of `repo`, 1 to 100 positive integers.",
-        },
-        status: {
-          type: "string",
-          enum: ["deployed", "released"],
-          example: "deployed",
-        },
-        at: {
-          type: "string",
-          minLength: 1,
-          example: "2026-07-02T00:00:00.000Z",
-          description:
-            "ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.",
-        },
-      },
-      required: [],
-      additionalProperties: false,
-    },
-    method: "PATCH",
-    pathTemplate: "/tasks/by-pr",
-    queryParams: [],
-    pathParams: [],
-    hasBody: true,
   },
   {
     name: "tasks_distinct",
@@ -395,18 +333,6 @@ export const generatedTools: GeneratedTool[] = [
         id: {
           type: "string",
           example: "clx1234567890",
-        },
-        pr: {
-          example: 42,
-          description:
-            'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
-        },
-        kind: {
-          type: "string",
-          enum: ["dev", "prd", "initiative", "idea"],
-          example: "initiative",
-          description:
-            "Change what the task is (INI-1.1) — e.g. promote an `idea` to an `initiative`, or an `initiative` to `dev`.",
         },
       },
       required: ["id"],
@@ -557,10 +483,6 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           example: "clx1234567890",
         },
-        reason: {
-          type: "string",
-          example: "dev-task:deferred:unmet-hidden-requirement",
-        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -569,7 +491,7 @@ export const generatedTools: GeneratedTool[] = [
     pathTemplate: "/tasks/{id}/skip",
     queryParams: [],
     pathParams: ["id"],
-    hasBody: true,
+    hasBody: false,
   },
   {
     name: "tasks_reset",
@@ -593,20 +515,13 @@ export const generatedTools: GeneratedTool[] = [
   },
   {
     name: "tasks_unblock",
-    description:
-      "Atomically unblock a task to pending, pr_open, merged, deployed or released",
+    description: "Atomically unblock a task back to pending",
     inputSchema: {
       type: "object",
       properties: {
         id: {
           type: "string",
           example: "clx1234567890",
-        },
-        to: {
-          type: "string",
-          enum: ["pending", "pr_open", "merged", "deployed", "released"],
-          description:
-            "Target status. Omit to infer from task.pr and the PR record (never deployed/released).",
         },
       },
       required: ["id"],
@@ -616,7 +531,7 @@ export const generatedTools: GeneratedTool[] = [
     pathTemplate: "/tasks/{id}/unblock",
     queryParams: [],
     pathParams: ["id"],
-    hasBody: true,
+    hasBody: false,
   },
   {
     name: "tasks_events",
@@ -631,13 +546,13 @@ export const generatedTools: GeneratedTool[] = [
         },
         limit: {
           type: "string",
-          example: "50",
           description: "Max records to return",
+          example: "50",
         },
         offset: {
           type: "string",
-          example: "0",
           description: "Pagination offset",
+          example: "0",
         },
       },
       required: ["id"],
@@ -754,9 +669,9 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org/repo",
           description:
             "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
+          example: "org/repo",
         },
         org: {
           anyOf: [
@@ -770,14 +685,14 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org",
           description:
             "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
+          example: "org",
         },
         prNumber: {
           type: "string",
-          example: "42",
           description: "PR number (parsed as integer)",
+          example: "42",
         },
         state: {
           type: "string",
@@ -792,51 +707,51 @@ export const generatedTools: GeneratedTool[] = [
         staged: {
           type: "string",
           enum: ["true", "false"],
-          example: "false",
           description: "Filter by staged flag",
+          example: "false",
         },
         limit: {
           type: "string",
-          example: "50",
           description: "Max records to return",
+          example: "50",
         },
         offset: {
           type: "string",
-          example: "0",
           description: "Pagination offset",
+          example: "0",
         },
         ready: {
           type: "string",
           enum: ["true", "false"],
-          example: "true",
           description:
             "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
+          example: "true",
         },
         blocked: {
           type: "string",
           enum: ["true", "false"],
-          example: "true",
           description:
             "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
+          example: "true",
         },
         sort: {
           type: "string",
           enum: ["asc", "desc"],
-          example: "asc",
           description:
             "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
+          example: "asc",
         },
         updatedSince: {
           type: "string",
-          example: "2026-01-01T00:00:00.000Z",
           description:
             "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+          example: "2026-01-01T00:00:00.000Z",
         },
         origin: {
           type: "string",
-          example: "shipwright,ci",
           description:
             "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
+          example: "shipwright,ci",
         },
       },
       required: [],
@@ -870,72 +785,54 @@ export const generatedTools: GeneratedTool[] = [
       properties: {
         repo: {
           type: "string",
-          example: "org/repo",
           description: "Repository in org/repo format",
+          example: "org/repo",
         },
         prNumber: {
           type: "integer",
-          example: 42,
           description: "Pull request number",
+          example: 42,
         },
         commitSha: {
           type: "string",
-          example: "abc123def456",
           description: "Commit SHA to associate",
+          example: "abc123def456",
         },
         claimedBy: {
           type: "string",
-          example: "agent-id-123",
           description: "Agent claiming this PR (admin tokens only)",
+          example: "agent-id-123",
         },
         phase: {
           type: "string",
           enum: ["review", "patch", "merge"],
-          example: "patch",
           description:
             "Pipeline phase this claim is for (defaults to 'review' when omitted)",
+          example: "patch",
         },
         prCreatedAt: {
           type: "string",
-          example: "2026-01-01T00:00:00.000Z",
           description:
             "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
+          example: "2026-01-01T00:00:00.000Z",
         },
         authorLogin: {
           type: ["string", "null"],
-          example: "octocat",
           description:
             "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+          example: "octocat",
         },
         headRef: {
           type: ["string", "null"],
-          example: "feat/some-branch",
           description:
             "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+          example: "feat/some-branch",
         },
         title: {
           type: ["string", "null"],
-          example: "Add the origin metrics dimension",
           description:
             "PR title (POM-1.2). Refreshed unconditionally on every claim.",
-        },
-        authorIsBot: {
-          type: "boolean",
-          example: true,
-          description:
-            "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.",
-        },
-        hasAutomatedLabel: {
-          type: "boolean",
-          example: false,
-          description:
-            "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.",
-        },
-        hasShipwrightLabel: {
-          type: "boolean",
-          example: false,
-          description:
-            "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.",
+          example: "Add the origin metrics dimension",
         },
       },
       required: ["repo", "prNumber", "commitSha"],
@@ -955,14 +852,14 @@ export const generatedTools: GeneratedTool[] = [
       properties: {
         agentId: {
           type: "string",
-          example: "agent-id-123",
           description:
             "Agent ID (admin tokens only; agent tokens use token identity)",
+          example: "agent-id-123",
         },
         maxConcurrent: {
           type: "integer",
-          example: 1,
           description: "Maximum concurrent PRs to claim",
+          example: 1,
         },
       },
       required: [],
@@ -1006,8 +903,8 @@ export const generatedTools: GeneratedTool[] = [
       properties: {
         repo: {
           type: "string",
-          example: "org/repo",
           description: "Repository in org/repo format.",
+          example: "org/repo",
         },
       },
       required: ["repo"],
@@ -1112,15 +1009,15 @@ export const generatedTools: GeneratedTool[] = [
         },
         commitSha: {
           type: "string",
-          example: "abc123def456",
           description:
             "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
+          example: "abc123def456",
         },
         ciFailureSignature: {
           type: "string",
-          example: "npm-test-failed-foo.unit.test.ts",
           description:
             "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
+          example: "npm-test-failed-foo.unit.test.ts",
         },
       },
       required: ["id"],
@@ -1195,27 +1092,6 @@ export const generatedTools: GeneratedTool[] = [
     hasBody: false,
   },
   {
-    name: "prs_unblock",
-    description:
-      "Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: {
-          type: "string",
-          example: "clx0987654321",
-        },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-    method: "POST",
-    pathTemplate: "/prs/{id}/unblock",
-    queryParams: [],
-    pathParams: ["id"],
-    hasBody: false,
-  },
-  {
     name: "prs_findings",
     description:
       "Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'",
@@ -1228,21 +1104,21 @@ export const generatedTools: GeneratedTool[] = [
         },
         ref: {
           type: "string",
-          example: "src/foo.ts:42",
           description: "Identifier for the finding (e.g. file:line or a slug).",
+          example: "src/foo.ts:42",
         },
         disposition: {
           type: "string",
           enum: ["resolved", "superseded", "rejected"],
-          example: "resolved",
           description:
             "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
+          example: "resolved",
         },
         source: {
           type: "string",
           enum: ["review", "patch"],
-          example: "review",
           description: "Which pipeline phase is recording this finding.",
+          example: "review",
         },
         evidence: {
           type: "string",
@@ -1250,14 +1126,14 @@ export const generatedTools: GeneratedTool[] = [
         },
         at: {
           type: "string",
-          example: "2026-08-17T12:00:00.000Z",
           description:
             "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
+          example: "2026-08-17T12:00:00.000Z",
         },
         agentId: {
           type: "string",
-          example: "agent-abc123",
           description: "Agent instance that triaged this finding.",
+          example: "agent-abc123",
         },
       },
       required: ["id", "ref", "disposition", "source", "evidence"],
@@ -1282,13 +1158,13 @@ export const generatedTools: GeneratedTool[] = [
         },
         limit: {
           type: "string",
-          example: "50",
           description: "Max records to return",
+          example: "50",
         },
         offset: {
           type: "string",
-          example: "0",
           description: "Pagination offset",
+          example: "0",
         },
       },
       required: ["id"],
@@ -1309,22 +1185,22 @@ export const generatedTools: GeneratedTool[] = [
         state: {
           type: "string",
           enum: ["waiting", "active", "closed", "empty", "archived", "all"],
-          example: "waiting",
           description:
             "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
+          example: "waiting",
         },
         sort: {
           type: "string",
           enum: ["waitingSince", "lastActivityAt"],
-          example: "waitingSince",
           description:
             "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
+          example: "waitingSince",
         },
         agentId: {
           type: "string",
-          example: "agent-id-123",
           description:
             "Only sessions whose rollup.agentIds includes this agent.",
+          example: "agent-id-123",
         },
         repo: {
           anyOf: [
@@ -1338,9 +1214,9 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org/repo",
           description:
             "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
+          example: "org/repo",
         },
         org: {
           anyOf: [
@@ -1354,21 +1230,15 @@ export const generatedTools: GeneratedTool[] = [
               },
             },
           ],
-          example: "org",
           description:
             "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
+          example: "org",
         },
         q: {
           type: "string",
-          example: "launch",
           description:
             "Case-insensitive substring match against slug OR title.",
-        },
-        accountId: {
-          type: "string",
-          example: "default",
-          description:
-            "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
+          example: "launch",
         },
         limit: {
           type: "string",
@@ -1391,7 +1261,6 @@ export const generatedTools: GeneratedTool[] = [
       "repo",
       "org",
       "q",
-      "accountId",
       "limit",
       "offset",
     ],
@@ -1408,19 +1277,13 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           example: "shipwright-may-launch",
         },
-        accountId: {
-          type: "string",
-          example: "default",
-          description:
-            "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
-        },
       },
       required: ["slug"],
       additionalProperties: false,
     },
     method: "GET",
     pathTemplate: "/sessions/{slug}",
-    queryParams: ["accountId"],
+    queryParams: [],
     pathParams: ["slug"],
     hasBody: false,
   },
@@ -1434,23 +1297,17 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           example: "shipwright-may-launch",
         },
-        accountId: {
-          type: "string",
-          example: "default",
-          description:
-            "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
-        },
         title: {
           type: ["string", "null"],
-          example: "May launch prep",
           description:
             "Omitted: title untouched. A string: set. null: clears the title.",
+          example: "May launch prep",
         },
         archived: {
           type: "boolean",
-          example: true,
           description:
             "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
+          example: true,
         },
       },
       required: ["slug"],
@@ -1458,140 +1315,8 @@ export const generatedTools: GeneratedTool[] = [
     },
     method: "PATCH",
     pathTemplate: "/sessions/{slug}",
-    queryParams: ["accountId"],
-    pathParams: ["slug"],
-    hasBody: true,
-  },
-  {
-    name: "verification-checks_list",
-    description:
-      "List verification checks for a task, a PR, or a repo+checkName pair",
-    inputSchema: {
-      type: "object",
-      properties: {
-        taskId: {
-          type: "string",
-          example: "clx1234567890",
-          description:
-            "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
-        },
-        prId: {
-          type: "string",
-          example: "clx0987654321",
-        },
-        repo: {
-          type: "string",
-          example: "org/repo",
-          description:
-            "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
-        },
-        checkName: {
-          type: "string",
-          example: "unit",
-          description:
-            "Paired with ?repo= — supplying only one of the pair is 400.",
-        },
-        limit: {
-          type: "string",
-          example: "50",
-          description: "Max records to return",
-        },
-        offset: {
-          type: "string",
-          example: "0",
-          description: "Pagination offset",
-        },
-      },
-      required: [],
-      additionalProperties: false,
-    },
-    method: "GET",
-    pathTemplate: "/verification-checks",
-    queryParams: ["taskId", "prId", "repo", "checkName", "limit", "offset"],
-    pathParams: [],
-    hasBody: false,
-  },
-  {
-    name: "verification-checks_create",
-    description: "Record a single per-check verification outcome",
-    inputSchema: {
-      type: "object",
-      properties: {
-        taskId: {
-          type: "string",
-          example: "clx1234567890",
-          description:
-            "Exactly one of taskId/prId is required — supplying neither or both is 400.",
-        },
-        prId: {
-          type: "string",
-          example: "clx0987654321",
-        },
-        repo: {
-          type: "string",
-          example: "org/repo",
-        },
-        checkName: {
-          type: "string",
-          example: "unit",
-          description:
-            "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.",
-        },
-        status: {
-          type: "string",
-          enum: ["ran_passed", "ran_failed", "skipped", "timed_out"],
-          example: "ran_passed",
-        },
-        reasonCategory: {
-          type: "string",
-          enum: [
-            "check_timeout",
-            "install_timeout",
-            "resource_limit",
-            "missing_tool",
-            "missing_secret",
-            "missing_dependency",
-            "not_configured",
-            "learned_skip",
-          ],
-          example: "missing_tool",
-          description:
-            "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.",
-        },
-        learnedFromCategory: {
-          type: "string",
-          enum: [
-            "check_timeout",
-            "install_timeout",
-            "resource_limit",
-            "missing_tool",
-            "missing_secret",
-            "missing_dependency",
-            "not_configured",
-            "learned_skip",
-          ],
-          example: "missing_tool",
-          description:
-            "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.",
-        },
-        durationMs: {
-          type: "integer",
-          example: 4200,
-        },
-        at: {
-          type: "string",
-          example: "2026-09-24T12:00:00.000Z",
-          description:
-            "ISO timestamp of when the check completed. Defaults to the current time when omitted.",
-        },
-      },
-      required: ["repo", "checkName", "status"],
-      additionalProperties: false,
-    },
-    method: "POST",
-    pathTemplate: "/verification-checks",
     queryParams: [],
-    pathParams: [],
+    pathParams: ["slug"],
     hasBody: true,
   },
 ];

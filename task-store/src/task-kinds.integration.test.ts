@@ -53,7 +53,7 @@ describeOrSkip("initiative and idea task kinds (INI-1.1, integration)", () => {
     const res = await app.request("/tasks", {
       method: "POST",
       headers: auth(),
-      body: JSON.stringify({ title, kind, repo: null }),
+      body: JSON.stringify({ title, kind, status: "pending", repo: null }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { id: string; kind: string };
