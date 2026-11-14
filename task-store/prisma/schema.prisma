@@ -57,6 +57,8 @@ enum TaskStatus {
 enum TaskKind {
   dev
   prd
+  initiative
+  idea
 }
 
 // ─── Task ─────────────────────────────────────────────────────────────────────

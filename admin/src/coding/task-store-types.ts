@@ -36,8 +36,8 @@ export interface paths {
                     /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
                     accountId?: string;
                     hitl?: "true" | "false";
-                    /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally. */
-                    kind?: "dev" | "prd";
+                    /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally. */
+                    kind?: "dev" | "prd" | "initiative" | "idea";
                     sort?: "asc" | "desc";
                     /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
                     updatedSince?: string;
@@ -2710,12 +2710,12 @@ export interface components {
             /** @example true */
             hitl?: boolean | null;
             /**
-             * @description What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.
+             * @description What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.
              * @default dev
              * @example dev
              * @enum {string}
              */
-            kind: "dev" | "prd";
+            kind: "dev" | "prd" | "initiative" | "idea";
             /**
              * @description Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
              * @default 0
@@ -2823,7 +2823,7 @@ export interface components {
              * @example dev
              * @enum {string}
              */
-            kind?: "dev" | "prd";
+            kind?: "dev" | "prd" | "initiative" | "idea";
         } & {
             [key: string]: unknown;
         };
@@ -2913,6 +2913,12 @@ export interface components {
              * @example 42
              */
             pr?: unknown;
+            /**
+             * @description Change what the task is (INI-1.1) — e.g. promote an `idea` to an `initiative`, or an `initiative` to `dev`.
+             * @example initiative
+             * @enum {string}
+             */
+            kind?: "dev" | "prd" | "initiative" | "idea";
         } & {
             [key: string]: unknown;
         };

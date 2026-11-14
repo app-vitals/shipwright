@@ -123,9 +123,9 @@ export const generatedTools: GeneratedTool[] = [
         },
         kind: {
           type: "string",
-          enum: ["dev", "prd"],
+          enum: ["dev", "prd", "initiative", "idea"],
           description:
-            "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
+            "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally.",
           example: "prd",
         },
         sort: {
@@ -235,7 +235,7 @@ export const generatedTools: GeneratedTool[] = [
         },
         kind: {
           type: "string",
-          enum: ["dev", "prd"],
+          enum: ["dev", "prd", "initiative", "idea"],
           description: "What the task is (TKD-1.1). Defaults to `dev`.",
           example: "dev",
         },

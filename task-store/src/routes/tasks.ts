@@ -26,7 +26,7 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -988,7 +988,7 @@ export function createTasksRoutes(
           ? false
           : undefined;
     // TKD-1.1. The zod query schema already rejects anything outside the enum
-    // with a 400, so a present value is always "dev" | "prd" here.
+    // with a 400, so a present value is always a TaskKind here.
     const kind = c.req.query("kind") as TaskKind | undefined;
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT

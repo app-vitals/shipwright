@@ -73,17 +73,20 @@ Paused status: `blocked` (returned to `pending` on retry).
 
 ### Task kind
 
-`Task.kind` is a `TaskKind` enum — `dev` (the default) or `prd` — recording what a task *is*, as
+`Task.kind` is a `TaskKind` enum — `dev` (the default), `prd`, `initiative`, or `idea` — recording what a task *is*, as
 opposed to what state it's in:
 
 | `kind` | Meaning | Dispatched as |
 |---|---|---|
 | `dev` | An ordinary work item. The default, and what every row created before the enum existed was backfilled to. | `/shipwright:dev-task {id}` |
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
+| `initiative` | Early-stage idea or initiative not yet ready for planning. Never part of the `?ready=true` set and never dispatched for execution. | Not dispatched |
+| `idea` | Brainstorm or concept pending review and scoping. Never part of the `?ready=true` set and never dispatched for execution. | Not dispatched |
 
-Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/coding/check-plan.ts` collects the plan phase's
+Filter on it with `?kind=dev` / `?kind=prd` / `?kind=initiative` / `?kind=idea`; `agent/src/coding/check-plan.ts` collects the plan phase's
 candidates with `?kind=prd&status=pending`. A PRD task is deliberately excluded from `?ready=true` —
-it has no dependency graph to resolve and must not be picked up as dev work.
+it has no dependency graph to resolve and must not be picked up as dev work. Initiative and idea tasks
+are also excluded from `?ready=true` as they are not yet planned work.
 
 `autonomousPlanSession` was a boolean predecessor to `kind` (TKD-1.1 introduced `kind` alongside it
 for a transition window; TKD-1.3 dropped the legacy column, field, and query filter once every
@@ -138,7 +141,7 @@ All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope
 
 ### `?ready=true` returns empty
 
-If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `kind: "prd"` (a product spec awaiting an autonomous plan session) may be set — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](./task-store-pr-tracking.md#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically (three consecutive reaps auto-block the task); (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
+If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `kind` may exclude the task — `kind: "prd"` (a product spec awaiting an autonomous plan session), `kind: "initiative"` (early-stage idea not yet ready for planning), or `kind: "idea"` (brainstorm pending review) are not part of `?ready=true` — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](./task-store-pr-tracking.md#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically (three consecutive reaps auto-block the task); (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
 
 ### 401 Unauthorized
 

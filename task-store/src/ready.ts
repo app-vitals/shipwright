@@ -6,7 +6,7 @@
  * A task is "ready" to execute when:
  *   - task.status === "pending"
  *   - task.hitl !== true
- *   - task.kind !== "prd"
+ *   - task.kind is unset or "dev" (initiative, idea and prd are excluded)
  *   - it has no fresh same-branch in_progress sibling (exclusivity guard, see below)
  *   - every dependency ID resolves to a known task whose status satisfies the
  *     dependency-satisfied rules below
@@ -47,7 +47,7 @@ export interface ReadyTaskLike {
   pr?: number | null;
   hitl?: boolean | null;
   /**
-   * TaskKind ("dev" | "prd"). Typed as a plain string so this stays a
+   * TaskKind ("dev" | "prd" | "initiative" | "idea"). Typed as a plain string so this stays a
    * structural shape the Prisma Task satisfies without importing its enum.
    * Absent/undefined means "dev" — the column's default, and what every row
    * predating TKD-1.1 was backfilled to.
@@ -90,10 +90,10 @@ export async function resolveReadyTasks<T extends ReadyTaskLike>(
   for (const task of tasks) {
     if (task.status !== "pending") continue;
     if (task.hitl === true) continue;
-    // The PRD slice is never dev work (TKD-1.1) — it has no dependency graph
-    // to resolve and must be dispatched as `/shipwright:plan-session
-    // --autonomous`, not `/shipwright:dev-task`.
-    if (task.kind === "prd") continue;
+    // Only `dev` tasks are dev work. `prd` (TKD-1.1) is dispatched as
+    // `/shipwright:plan-session --autonomous`; `initiative` and `idea`
+    // (INI-1.1) are not yet planned work and are never dispatched.
+    if (task.kind && task.kind !== "dev") continue;
 
     if (task.branch) {
       const hasFreshInProgressSibling = tasks.some(

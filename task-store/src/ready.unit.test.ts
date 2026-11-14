@@ -70,6 +70,18 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([]);
   });
 
+  it.each(["initiative", "idea"])(
+    "excludes a task with kind === '%s' even if otherwise ready (INI-1.1)",
+    async (kind) => {
+      const task = makeTask({ id: "t1", kind });
+      const result = await resolveReadyTasks(
+        [task],
+        isPrMergedShouldNotBeCalled,
+      );
+      expect(result).toEqual([]);
+    },
+  );
+
   it("includes a task with kind === 'dev' (the default for every pre-TKD-1.1 row)", async () => {
     const task = makeTask({ id: "t1", kind: "dev" });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
