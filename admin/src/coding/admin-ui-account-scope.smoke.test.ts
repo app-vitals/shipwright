@@ -22,6 +22,10 @@ import type { CallerScopeResolver } from "@app-vitals/agent-admin/caller-scope";
 import type { GoogleAuthClient } from "@app-vitals/agent-admin/google-auth-client";
 import { sign } from "hono/jwt";
 import {
+  agentPluginRow,
+  agentToolRow,
+} from "../platform-row-mocks.fixtures.ts";
+import {
   type CodingMockDeps,
   createCodingTestApp,
 } from "./admin-ui-coding.fixtures.ts";
@@ -196,14 +200,8 @@ function makeMockDeps(overrides?: Partial<CodingMockDeps>): CodingMockDeps {
     },
     agentToolService: {
       list: async () => [],
-      add: async (agentId: string, pattern: string) => ({
-        id: "tool1",
-        agentId,
-        pattern,
-        enabled: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      add: async (agentId: string, pattern: string) =>
+        agentToolRow({ id: "tool1", agentId, pattern, updatedAt: new Date() }),
       toggle: async () => {
         throw new Error("not implemented");
       },
@@ -228,15 +226,8 @@ function makeMockDeps(overrides?: Partial<CodingMockDeps>): CodingMockDeps {
     },
     agentPluginService: {
       list: async () => [],
-      add: async (agentId: string, name: string) => ({
-        id: "plugin1",
-        agentId,
-        name,
-        version: null,
-        enabled: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      add: async (agentId: string, name: string) =>
+        agentPluginRow({ id: "plugin1", agentId, name }),
     },
     agentPhaseMethodologyService: {
       list: async () => [],
