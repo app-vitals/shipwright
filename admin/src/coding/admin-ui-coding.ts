@@ -72,6 +72,7 @@ import {
 } from "./admin-ui-work-item-pages.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
+import { parseOutcomeParams } from "./outcome-filter.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,
@@ -509,7 +510,7 @@ export function createCodingAdminUIApp(
     }
 
     const cronId = c.req.query("cronId") || undefined;
-    const outcome = c.req.query("outcome") || undefined;
+    const outcomes = parseOutcomeParams(c.req.queries("outcome") ?? []);
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
     const limit = 20;
@@ -520,7 +521,7 @@ export function createCodingAdminUIApp(
       agentCronJobService.list(agentId),
       agentCronRunService.listForAgent(agentId, {
         cronId,
-        outcome,
+        outcomes,
         limit,
         offset,
       }),
@@ -543,7 +544,7 @@ export function createCodingAdminUIApp(
           schedule: cr.schedule,
         })),
         runs: runResult.items,
-        filters: { cronId, outcome },
+        filters: { cronId, outcomes },
         pagination: { total: runResult.total, limit, page },
         userName: c.var.userEmail,
         timezone,

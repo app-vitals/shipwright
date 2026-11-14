@@ -427,74 +427,94 @@ describe("admin UI — authenticated pages", () => {
     expect(optionMatch?.[0]).toContain("selected");
   });
 
-  it("authenticated GET /admin/agents/:id/queue-activity?outcome=... filters the Past section by outcome", async () => {
-    let capturedOpts: unknown;
-    const app = createCodingTestApp(
-      makeCodingMockDeps({
-        agentCronRunService: {
-          listForAgent: async (_agentId: string, opts?: unknown) => {
-            capturedOpts = opts;
-            return {
-              items: [makeCronRun({ outcome: "error" })],
-              total: 1,
-              limit: 20,
-              offset: 0,
-            };
-          },
-          listAcrossAgents: async () => ({
-            items: [],
-            total: 0,
-            limit: 20,
-            offset: 0,
-          }),
-        },
+  describe("queue-activity outcome multi-select filter (COF-2.1)", () => {
+    // In-memory runs filtered the way agentCronRunService.listForAgent
+    // filters on `outcomes` (skipped flag / unknown = null outcome / value).
+    const RUNS = [
+      makeCronRun({ id: "run-completed", outcome: "completed" }),
+      makeCronRun({ id: "run-failed", outcome: "failed" }),
+      makeCronRun({ id: "run-unknown", outcome: null }),
+      makeCronRun({
+        id: "run-skipped",
+        skipped: true,
+        outcome: null,
+        skipReason: "pre-check failed",
       }),
-    );
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/queue-activity?outcome=error`,
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect(res.status).toBe(200);
-    expect(capturedOpts).toMatchObject({ outcome: "error" });
-  });
+    ];
+    const matches = (
+      r: (typeof RUNS)[number],
+      outcomes: string[] | undefined,
+    ) =>
+      !outcomes ||
+      outcomes.some((o) =>
+        o === "skipped"
+          ? r.skipped
+          : !r.skipped &&
+            (o === "unknown" ? r.outcome === null : r.outcome === o),
+      );
 
-  it("authenticated GET /admin/agents/:id/queue-activity?outcome=skipped passes the skipped special-case outcome through", async () => {
-    let capturedOpts: unknown;
-    const app = createCodingTestApp(
-      makeCodingMockDeps({
-        agentCronRunService: {
-          listForAgent: async (_agentId: string, opts?: unknown) => {
-            capturedOpts = opts;
-            return {
-              items: [
-                makeCronRun({
-                  skipped: true,
-                  outcome: null,
-                  skipReason: "pre-check failed",
-                }),
-              ],
-              total: 1,
+    async function fetchPage(query: string) {
+      let capturedOpts: { outcomes?: string[] } | undefined;
+      const app = createCodingTestApp(
+        makeCodingMockDeps({
+          agentCronRunService: {
+            listForAgent: async (_agentId: string, opts?: unknown) => {
+              capturedOpts = opts as { outcomes?: string[] };
+              const items = RUNS.filter((r) =>
+                matches(r, capturedOpts?.outcomes),
+              );
+              return { items, total: items.length, limit: 20, offset: 0 };
+            },
+            listAcrossAgents: async () => ({
+              items: [],
+              total: 0,
               limit: 20,
               offset: 0,
-            };
+            }),
           },
-          listAcrossAgents: async () => ({
-            items: [],
-            total: 0,
-            limit: 20,
-            offset: 0,
-          }),
-        },
-      }),
-    );
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/queue-activity?outcome=skipped`,
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect(res.status).toBe(200);
-    expect(capturedOpts).toMatchObject({ outcome: "skipped" });
-    const html = await res.text();
-    expect(html).toContain("skipped");
+        }),
+      );
+      const res = await app.request(
+        `/admin/agents/${AGENT_ID}/queue-activity${query}`,
+        { headers: { Cookie: `admin_session=${cookie}` } },
+      );
+      expect(res.status).toBe(200);
+      return { html: await res.text(), capturedOpts };
+    }
+
+    it("no outcome param defaults to completed/failed/unknown and hides skipped", async () => {
+      const { html, capturedOpts } = await fetchPage("");
+      expect(capturedOpts?.outcomes).toEqual([
+        "completed",
+        "failed",
+        "unknown",
+      ]);
+      expect(html).not.toContain("pre-check failed");
+      expect(html).toMatch(/<option value="completed" selected>/);
+      expect(html).not.toMatch(/<option value="skipped" selected>/);
+    });
+
+    it("?outcome=skipped shows only skipped runs", async () => {
+      const { html, capturedOpts } = await fetchPage("?outcome=skipped");
+      expect(capturedOpts?.outcomes).toEqual(["skipped"]);
+      expect(html).toContain("pre-check failed");
+      expect(html).toMatch(/<option value="skipped" selected>/);
+      expect(html).not.toMatch(/<option value="completed" selected>/);
+    });
+
+    it("multiple outcome values combine", async () => {
+      const { html, capturedOpts } = await fetchPage(
+        "?outcome=skipped&outcome=failed",
+      );
+      expect(capturedOpts?.outcomes).toEqual(["skipped", "failed"]);
+      expect(html).toContain("pre-check failed");
+      expect(html).toMatch(/<option value="failed" selected>/);
+    });
+
+    it("a legacy single value is still passed through", async () => {
+      const { capturedOpts } = await fetchPage("?outcome=error");
+      expect(capturedOpts?.outcomes).toEqual(["error"]);
+    });
   });
 
   it("non-admin non-member gets 403 on GET /admin/agents/:id/queue-activity", async () => {
