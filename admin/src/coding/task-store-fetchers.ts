@@ -251,5 +251,54 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
         throw new Error(`task-store PATCH /sessions/${slug} → ${res.status}`);
       return res.json();
     },
+
+    /** GET /system-crons (SCR-1.1, admin-only) → { systemCrons }. */
+    fetchSystemCrons: <T>() =>
+      getJson<T>(
+        "/system-crons",
+        new URLSearchParams(),
+        undefined,
+        "/system-crons",
+      ),
+
+    /** PATCH /system-crons/:id — resolves null on 404; throws on other non-2xx. */
+    patchSystemCron: async (
+      id: string,
+      patch: Record<string, unknown>,
+    ): Promise<unknown> => {
+      const res = await doFetch(
+        path(`/system-crons/${encodeURIComponent(id)}`, new URLSearchParams()),
+        {
+          method: "PATCH",
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(`task-store PATCH /system-crons/${id} → ${res.status}`);
+      return res.json();
+    },
+
+    /** POST /system-crons/:id/{enable,disable} — null on 404. */
+    setSystemCronEnabled: async (
+      id: string,
+      enabled: boolean,
+    ): Promise<unknown> => {
+      const verb = enabled ? "enable" : "disable";
+      const res = await doFetch(
+        path(
+          `/system-crons/${encodeURIComponent(id)}/${verb}`,
+          new URLSearchParams(),
+        ),
+        { method: "POST", headers: auth },
+      );
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(
+          `task-store POST /system-crons/${id}/${verb} → ${res.status}`,
+        );
+      return res.json();
+    },
   };
 }
