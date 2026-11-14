@@ -121,3 +121,24 @@ describe("review.md — output", () => {
     expect(content).toMatch(/resolved:\s*false/);
   });
 });
+
+describe("review.md — optional riskAssessment output", () => {
+  it("documents riskAssessment as optional", () => {
+    expect(content).toContain("riskAssessment");
+    expect(content).toMatch(/riskAssessment[^\n]*\*\*optional\*\*|\*\*optional\*\*\. An overall risk/);
+  });
+
+  it("documents the level enum and factors shape", () => {
+    expect(content).toContain("low|medium|high");
+    expect(content).toContain("factors");
+    expect(content).toContain("evidence");
+  });
+
+  it("states omitting the field remains valid", () => {
+    expect(content.toLowerCase()).toContain("omitting it is always valid");
+  });
+
+  it("excludes person-based factors", () => {
+    expect(content.toLowerCase()).toContain("person-based");
+  });
+});

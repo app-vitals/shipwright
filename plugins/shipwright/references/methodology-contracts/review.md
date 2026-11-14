@@ -72,7 +72,17 @@ A single JSON object:
       "resolved": true,
       "evidence": "{file:line or diff excerpt proving the fix, or explaining why it's not resolved}"
     }
-  ]
+  ],
+  "riskAssessment": {
+    "level": "low|medium|high",
+    "factors": [
+      {
+        "factor": "{name of the judgment factor, e.g. blast radius}",
+        "level": "low|medium|high",
+        "evidence": "{file:line or diff excerpt supporting the rating}"
+      }
+    ]
+  }
 }
 ```
 
@@ -103,6 +113,16 @@ A single JSON object:
   - `evidence` — **required in both the `resolved: true` and `resolved: false` cases**, never
     left blank. For `resolved: true`, cite the exact `file:line` or diff excerpt proving the
     fix. For `resolved: false`, explain why the originally-described issue is still present.
+- **`riskAssessment`** — **optional**. An overall risk rating for the PR, omitted entirely when
+  the reviewer does not assess risk; omitting it is always valid, so custom reviewers that
+  predate this field are unaffected and the caller must not treat its absence as an error.
+  When present:
+  - `level` — `low`, `medium`, or `high`: the overall risk of merging the PR.
+  - `factors[]` — the judgment-based factors behind the rating, each with `factor` (the factor
+    name), `level` (`low` / `medium` / `high`), and `evidence` (a `file:line` or diff excerpt
+    supporting the rating). Factors are judgment-based, e.g. blast radius, data
+    integrity/migrations, reversibility/rollback, availability hot paths, and public API
+    changes. Factors must not be based on who the author is or any other person-based signal.
 
 ## Multiple reviewers
 
