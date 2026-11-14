@@ -61,8 +61,9 @@ jobs:
       - name: Boot local task store
         run: |
           set -euo pipefail
-          ./scripts/local-store.sh > "$RUNNER_TEMP/store.env"
-          cat "$RUNNER_TEMP/store.env" | sed 's/TOKEN=.*/TOKEN=***/'
+          export SHIPWRIGHT_LOCAL_STORE_ENV_FILE="$RUNNER_TEMP/store.env"
+          ./scripts/local-store.sh
+          sed 's/TOKEN=.*/TOKEN=***/' "$SHIPWRIGHT_LOCAL_STORE_ENV_FILE"
 
       - name: Create and list a task over HTTP
         run: |
