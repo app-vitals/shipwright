@@ -300,7 +300,7 @@ const TASKS_PAGE_EXTRA_STYLES = `
   `;
 
 export function renderTasksPage(
-  tasks: TaskItem[],
+  fetchedTasks: TaskItem[],
   filters: {
     status?: string;
     state?: "ready" | "in_progress" | "blocked" | "closed";
@@ -310,6 +310,8 @@ export function renderTasksPage(
     source?: string;
     agent?: string;
     hitl?: "true" | "false";
+    kind?: TaskKindFilter;
+    ideas?: boolean;
   },
   degraded: boolean,
   userName: string,
@@ -350,6 +352,11 @@ export function renderTasksPage(
   // passes `new Date()` explicitly at its call site.
   now: Date = new Date(),
 ): string {
+  // INI-1.2: idea tasks are hidden everywhere (table rows and board column)
+  // unless the ?ideas=1 toggle is on.
+  const tasks = filters.ideas
+    ? fetchedTasks
+    : fetchedTasks.filter((t) => t.kind !== "idea");
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
@@ -382,6 +389,9 @@ export function renderTasksPage(
   const renderKindBadge = (kind: string | null | undefined): string => {
     if (kind === "prd") {
       return `<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>`;
+    }
+    if (kind === "initiative" || kind === "idea") {
+      return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">${escapeHtml(kind === "initiative" ? "Initiative" : "Idea")}</span>`;
     }
     return "";
   };
@@ -422,6 +432,8 @@ export function renderTasksPage(
     if (filters.source) params.set("source", filters.source);
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
+    if (filters.kind) params.set("kind", filters.kind);
+    if (filters.ideas) params.set("ideas", "1");
     if (p > 1) params.set("page", String(p));
     // Keep self-referential links inside this view — bare /admin/tasks now
     // defaults to the board (AXR-1.3), so every link generated in this
@@ -526,6 +538,8 @@ export function renderTasksPage(
     if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
+    if (filters.kind) p.set("kind", filters.kind);
+    if (filters.ideas) p.set("ideas", "1");
     // See makePageUrl above (TBF-1.1) — state-tab links must stay in table
     // view too, or clicking a tab bounces the user to the board.
     p.set("view", "table");
@@ -623,6 +637,8 @@ export function renderTasksPage(
           <label class="form-label" style="font-size:11px">HITL</label>
           <select name="hitl" class="form-input" style="font-size:12px;padding:4px 8px">${hitlOptions}</select>
         </div>
+        ${renderKindFilterField(filters.kind)}
+        ${renderIdeasToggle(filters.ideas)}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Session</label>
           <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
@@ -720,6 +736,8 @@ function renderTasksBoard(args: {
     source?: string;
     agent?: string;
     hitl?: "true" | "false";
+    kind?: TaskKindFilter;
+    ideas?: boolean;
   };
   userName: string;
   agentNames: Record<string, string>;
@@ -819,6 +837,8 @@ function renderTasksBoard(args: {
     if (filters.source) params.set("source", filters.source);
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
+    if (filters.kind) params.set("kind", filters.kind);
+    if (filters.ideas) params.set("ideas", "1");
     if (page > 1) params.set("page", String(page));
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
@@ -940,19 +960,23 @@ function renderTasksBoard(args: {
     </div>`;
   };
 
-  const columnsHtml = TASK_BOARD_COLUMNS.map(({ key, label }) => {
-    const colTasks = tasks.filter(
-      (t) => bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
-    );
-    const cards =
-      colTasks.length === 0
-        ? `<div class="empty-state" style="font-size:11px">No tasks</div>`
-        : colTasks.map(renderCard).join("\n");
-    return `<div class="column" data-column="${key}">
+  const columnsHtml = TASK_BOARD_COLUMNS.filter(
+    ({ key }) => key !== "ideas" || filters.ideas === true,
+  )
+    .map(({ key, label }) => {
+      const colTasks = tasks.filter(
+        (t) => bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
+      );
+      const cards =
+        colTasks.length === 0
+          ? `<div class="empty-state" style="font-size:11px">No tasks</div>`
+          : colTasks.map(renderCard).join("\n");
+      return `<div class="column" data-column="${key}">
         <div class="column-header"><span>${label}</span><span class="column-count">${colTasks.length}</span></div>
         ${cards}
       </div>`;
-  }).join("\n");
+    })
+    .join("\n");
 
   const filterFormHtml = readOnly
     ? ""
@@ -962,6 +986,8 @@ function renderTasksBoard(args: {
           { org: filters.org, repo: filters.repo },
           { orgs: suggestions?.orgs, repos: suggestions?.repos },
         )}
+        ${renderKindFilterField(filters.kind)}
+        ${renderIdeasToggle(filters.ideas)}
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
         <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
         <details class="more-filters">
@@ -1602,6 +1628,8 @@ const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
 //                      value, so every task still lands in exactly one
 //                      column rather than "none of the above").
 type TaskBoardColumn =
+  | "planning"
+  | "ideas"
   | "queued"
   | "claimed"
   | "in_progress"
@@ -1609,10 +1637,46 @@ type TaskBoardColumn =
   | "done";
 
 export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
+  { key: "planning", label: "Planning" },
   { key: "queued", label: "Queued" },
   { key: "in_progress", label: "In Progress" },
   { key: "blocked_hitl", label: "Blocked-HITL" },
+  // Hidden unless ?ideas=1 (INI-1.2) — filtered out at render time.
+  { key: "ideas", label: "Ideas" },
 ];
+
+export type TaskKindFilter = "dev" | "prd" | "initiative" | "idea";
+export const TASK_KIND_FILTERS: readonly TaskKindFilter[] = [
+  "dev",
+  "prd",
+  "initiative",
+  "idea",
+];
+
+/** Kind <select> shared by the table and board filter forms. */
+function renderKindFilterField(selected: TaskKindFilter | undefined): string {
+  const options = [
+    { value: "", label: "All" },
+    { value: "dev", label: "Dev" },
+    { value: "prd", label: "PRD" },
+    { value: "initiative", label: "Initiative" },
+    { value: "idea", label: "Idea" },
+  ]
+    .map(
+      (o) =>
+        `<option value="${o.value}"${selected && selected === o.value ? " selected" : ""}>${o.label}</option>`,
+    )
+    .join("");
+  return `<div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Kind</label>
+          <select name="kind" class="form-input" style="font-size:12px;padding:4px 8px">${options}</select>
+        </div>`;
+}
+
+/** "Show ideas" checkbox (?ideas=1) shared by the table and board filter forms. */
+function renderIdeasToggle(ideas: boolean | undefined): string {
+  return `<label class="form-label" style="font-size:11px;display:flex;gap:4px;align-items:center;margin-bottom:6px"><input type="checkbox" name="ideas" value="1"${ideas ? " checked" : ""} /> Show ideas</label>`;
+}
 
 /**
  * Buckets a task into one of the 5 board columns above. `prBlocked` is the
@@ -1621,10 +1685,14 @@ export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
  * for full precedence rules.
  */
 export function bucketTaskColumn(
-  task: Pick<TaskItem, "status" | "hitl" | "claimedBy" | "blockedBy">,
+  task: Pick<TaskItem, "status" | "hitl" | "claimedBy" | "blockedBy"> & {
+    kind?: string | null;
+  },
   prBlocked?: boolean | null,
 ): TaskBoardColumn {
   if (SESSION_CLOSED_STATUSES.has(task.status)) return "done";
+  if (task.kind === "initiative") return "planning";
+  if (task.kind === "idea") return "ideas";
   if (
     task.status === "blocked" ||
     (task.blockedBy?.length ?? 0) > 0 ||

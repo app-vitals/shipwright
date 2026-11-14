@@ -118,6 +118,54 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].get("hitl")).toBe("true");
   });
 
+  it("GET /admin/tasks?kind=initiative forwards kind to the task store and renders Planning", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return {
+            tasks: [
+              {
+                id: "INI-1",
+                title: "An initiative",
+                status: "pending",
+                kind: "initiative",
+              },
+            ],
+            total: 1,
+            limit: 200,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks?kind=initiative", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams[0].get("kind")).toBe("initiative");
+    const body = await res.text();
+    expect(body).toContain('data-column="planning"');
+    expect(body).toContain("An initiative");
+  });
+
+  it("GET /admin/tasks?kind=bogus does not forward kind", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?kind=bogus", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams[0].has("kind")).toBe(false);
+  });
+
   it("GET /admin/tasks?hitl=false forwards hitl=false to the task store", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createCodingTestApp(

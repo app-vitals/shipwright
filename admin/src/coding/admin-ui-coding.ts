@@ -68,7 +68,9 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
+  TASK_KIND_FILTERS,
   type TaskItem,
+  type TaskKindFilter,
 } from "./admin-ui-work-item-pages.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
@@ -679,6 +681,11 @@ export function createCodingAdminUIApp(
     const hitlRaw = c.req.query("hitl");
     const hitl: "true" | "false" | undefined =
       hitlRaw === "true" || hitlRaw === "false" ? hitlRaw : undefined;
+    const kindRaw = c.req.query("kind");
+    const kind: TaskKindFilter | undefined = TASK_KIND_FILTERS.find(
+      (k) => k === kindRaw,
+    );
+    const ideas = c.req.query("ideas") === "1";
     const error = c.req.query("error") ?? undefined;
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
@@ -738,6 +745,7 @@ export function createCodingAdminUIApp(
               for (const o of org ?? []) params.append("org", o);
               if (source) params.set("source", source);
               if (hitl) params.set("hitl", hitl);
+              if (kind) params.set("kind", kind);
               params.set("limit", String(fetchLimit));
               params.set("offset", String(fetchOffset));
               params.set("sort", "desc");
@@ -791,7 +799,7 @@ export function createCodingAdminUIApp(
     return html(
       renderTasksPage(
         tasks,
-        { status, state, session, repo, org, source, agent, hitl },
+        { status, state, session, repo, org, source, agent, hitl, kind, ideas },
         degraded,
         c.var.userEmail,
         agentNames,
