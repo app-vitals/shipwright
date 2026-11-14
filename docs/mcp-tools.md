@@ -36,6 +36,15 @@ List pull requests
 - **Has body:** No
 - **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query), `origin` (query)
 
+## `prs_unblock`
+
+Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak
+
+- **Method:** POST
+- **Path:** `/prs/{id}/unblock`
+- **Has body:** No
+- **Parameters:** `id` (path)
+
 ## `prs_update`
 
 Update pull request fields
@@ -52,7 +61,7 @@ Get a session by slug
 - **Method:** GET
 - **Path:** `/sessions/{slug}`
 - **Has body:** No
-- **Parameters:** `slug` (path)
+- **Parameters:** `slug` (path), `accountId` (query)
 
 ## `sessions_list`
 
@@ -61,7 +70,7 @@ List sessions
 - **Method:** GET
 - **Path:** `/sessions`
 - **Has body:** No
-- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `org` (query), `q` (query), `limit` (query), `offset` (query)
+- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `org` (query), `q` (query), `accountId` (query), `limit` (query), `offset` (query)
 
 ## `tasks_bulk`
 
@@ -70,6 +79,15 @@ Bulk insert tasks
 - **Method:** POST
 - **Path:** `/tasks/bulk`
 - **Has body:** Yes (JSON array body via `items`)
+- **Parameters:** None
+
+## `tasks_by_pr`
+
+Mark merged tasks deployed or released by PR number
+
+- **Method:** PATCH
+- **Path:** `/tasks/by-pr`
+- **Has body:** Yes
 - **Parameters:** None
 
 ## `tasks_create`
@@ -106,7 +124,7 @@ List tasks
 - **Method:** GET
 - **Path:** `/tasks`
 - **Has body:** No
-- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `org` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `hitl` (query), `kind` (query), `sort` (query), `updatedSince` (query)
+- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `org` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `accountId` (query), `hitl` (query), `kind` (query), `sort` (query), `updatedSince` (query)
 
 ## `tasks_update`
 
@@ -116,3 +134,21 @@ Update a task
 - **Path:** `/tasks/{id}`
 - **Has body:** Yes
 - **Parameters:** `id` (path)
+
+## `verification-checks_create`
+
+Record a single per-check verification outcome
+
+- **Method:** POST
+- **Path:** `/verification-checks`
+- **Has body:** Yes
+- **Parameters:** None
+
+## `verification-checks_list`
+
+List verification checks for a task, a PR, or a repo+checkName pair
+
+- **Method:** GET
+- **Path:** `/verification-checks`
+- **Has body:** No
+- **Parameters:** `taskId` (query), `prId` (query), `repo` (query), `checkName` (query), `limit` (query), `offset` (query)

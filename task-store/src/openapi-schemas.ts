@@ -151,10 +151,10 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
-    kind: z.enum(["dev", "prd"]).default("dev").openapi({
+    kind: z.enum(["dev", "prd", "initiative", "idea"]).default("dev").openapi({
       example: "dev",
       description:
-        "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.",
+        "What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.",
     }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
@@ -767,10 +767,10 @@ export const TaskListQuerySchema = z.object({
       "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
   }),
   hitl: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
-  kind: z.enum(["dev", "prd"]).optional().openapi({
+  kind: z.enum(["dev", "prd", "initiative", "idea"]).optional().openapi({
     example: "prd",
     description:
-      "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
+      "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally.",
   }),
   sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
   updatedSince: z.string().optional().openapi({
@@ -825,7 +825,7 @@ export const CreateTaskBodySchema = z
     priority: z.string().optional().openapi({ example: "high" }),
     type: z.string().optional().openapi({ example: "feature" }),
     source: z.string().optional().openapi({ example: "manual" }),
-    kind: z.enum(["dev", "prd"]).optional().openapi({
+    kind: z.enum(["dev", "prd", "initiative", "idea"]).optional().openapi({
       example: "dev",
       description: "What the task is (TKD-1.1). Defaults to `dev`.",
     }),
@@ -835,7 +835,14 @@ export const CreateTaskBodySchema = z
 
 /** Request body for PATCH /tasks/:id */
 export const UpdateTaskBodySchema = z
-  .object({ pr: PrInputSchema })
+  .object({
+    pr: PrInputSchema,
+    kind: z.enum(["dev", "prd", "initiative", "idea"]).optional().openapi({
+      example: "initiative",
+      description:
+        "Change what the task is (INI-1.1) — e.g. promote an `idea` to an `initiative`, or an `initiative` to `dev`.",
+    }),
+  })
   .passthrough()
   .openapi("UpdateTaskBody");
 
