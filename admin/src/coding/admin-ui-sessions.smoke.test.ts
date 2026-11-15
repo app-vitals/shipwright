@@ -165,6 +165,20 @@ describe("GET /admin/settings/notifications — page width (AWT-1.1)", () => {
   });
 });
 
+describe("GET /admin/settings/notifications — settings layout (SGL-3.2)", () => {
+  it("renders in the shared settings layout with Notifications active under Personal", async () => {
+    const app = buildApp();
+    const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
+    expect(text).toContain('class="settings-sidebar"');
+    expect(text).toContain('<div class="settings-nav-label">Personal</div>');
+    expect(text).toContain(
+      `<a class="settings-nav-link" href="${NOTIFICATION_SETTINGS_PATH}" aria-current="page">Notifications</a>`,
+    );
+    expect(text).toContain('href="/admin/settings/system-crons"');
+    expect(text).not.toContain('class="page-header"');
+  });
+});
+
 describe("GET /admin/settings/notifications — push toggle gating", () => {
   it("renders the push toggle when VAPID is configured", async () => {
     const app = buildApp({ pushEnabled: true, vapidPublicKey: "BPUBLICKEY" });

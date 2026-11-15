@@ -21,6 +21,9 @@
  *                         scheduler (coding/system-cron-scheduler.ts)
  *   specialtyDefaults   — the coding specialty's default crons, tools and
  *                         plugin (coding/coding-specialty-defaults.ts)
+ *   settingsNavItems    — System crons (Platform, admin only) and Notifications
+ *                         (Personal) in the settings sidebar
+ *                         (coding/coding-settings-nav.ts)
  *   agentTypes          — the `coding` type in the new-agent picker
  *   openWork            — the GitHub reconcile's open-work port: lists and
  *                         blocks the agent's open tasks/PRs on removed repos
@@ -55,6 +58,7 @@ import {
   codingAdminOpenApi,
   createCodingAdminApiApp,
 } from "./agents-api-coding.ts";
+import { CODING_SETTINGS_NAV_ITEMS } from "./coding-settings-nav.ts";
 import { codingSpecialtyDefaults } from "./coding-specialty-defaults.ts";
 import {
   HttpTaskStoreProvisioningClient,
@@ -272,6 +276,7 @@ export const codingAdminExtension: AdminExtension = {
       }),
     },
   ],
+  settingsNavItems: () => [...CODING_SETTINGS_NAV_ITEMS],
   adminUiRoutes: (ctx) => [
     {
       path: "/",
