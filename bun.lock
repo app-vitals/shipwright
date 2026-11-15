@@ -172,7 +172,7 @@
 
     "@apm-js-collab/code-transformer-bundler-plugins": ["@apm-js-collab/code-transformer-bundler-plugins@0.7.4", "", { "dependencies": { "@apm-js-collab/code-transformer": "^0.18.1", "es-module-lexer": "^2.1.0", "magic-string": "^0.30.21", "module-details-from-path": "^1.0.4" } }, "sha512-nAfOeZPSUAQvJa1iFT/5oCrTm5YQhMMrfCNthNnaXHZiOQhu1KGuLoIx7HtbAi3wfwaBYLaICPIeenIaEwcXIg=="],
 
-    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.51.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.135.0", "@app-vitals/agent-lib": "1.51.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" }, "hasInstallScript": true }, "sha512-fZJlTwC/dz6pZ71C4ROiFny8hNnt5nfGWyglA8hGBaNKvSj3kwyzjgZ+KO3uyq7o/EkQO651exREOOekTtovBA=="],
+    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.51.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.135.0", "@app-vitals/agent-lib": "1.51.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" } }, "sha512-fZJlTwC/dz6pZ71C4ROiFny8hNnt5nfGWyglA8hGBaNKvSj3kwyzjgZ+KO3uyq7o/EkQO651exREOOekTtovBA=="],
 
     "@app-vitals/agent-lib": ["@app-vitals/agent-lib@1.51.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-tIGqm7ET8Cui9VOjkN+qEAMEOJKikiKgz8urXffQsLxAFv5nyDvw2JfenwIbejdLSCxv/iUeDT9Pk9KGu2MouA=="],
 
