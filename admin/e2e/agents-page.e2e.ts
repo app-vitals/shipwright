@@ -17,6 +17,9 @@
  *   12. Token form is present (action contains /tokens)
  *   13. Mobile viewport (375px) — no horizontal overflow
  *
+ * Sections (SGL-1.2): general = /:id, automation, configuration, access,
+ * extensions = /:id/<section>. Each check loads the section owning the element.
+ *
  * Architecture:
  *   - Spawns admin/e2e/test-server.ts via Bun as a child process.
  *   - Uses hono/jwt sign() to mint valid session cookies directly.
@@ -109,6 +112,7 @@ async function mintSession(
 async function loadAgentDetailPage(
   page: Page,
   context: BrowserContext,
+  section: "" | "automation" | "configuration" | "access" | "extensions" = "",
 ): Promise<void> {
   const token = await mintSession();
   await context.addCookies([
@@ -121,7 +125,9 @@ async function loadAgentDetailPage(
       sameSite: "Lax",
     },
   ]);
-  await page.goto(`${BASE_URL}/admin/agents/${AGENT_ID}`);
+  await page.goto(
+    `${BASE_URL}/admin/agents/${AGENT_ID}${section ? `/${section}` : ""}`,
+  );
 }
 
 // ─── 1. Unauthenticated redirect ──────────────────────────────────────────────
@@ -158,7 +164,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "configuration");
     await expect(page.locator("body")).toContainText("SLACK_BOT_TOKEN");
   });
 
@@ -166,7 +172,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "configuration");
     const body = await page.locator("body").textContent();
     expect(body).toContain("••••••••");
     expect(body).not.toContain("xoxb-secret-value");
@@ -176,12 +182,12 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "automation");
     await expect(page.locator("body")).toContainText("0 9 * * 1");
   });
 
   test("cron job prompt is visible", async ({ page, context }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "automation");
     await expect(page.locator("body")).toContainText("Send the weekly standup");
   });
 
@@ -189,7 +195,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "access");
     await expect(page.locator("body")).toContainText("Production token");
   });
 
@@ -197,7 +203,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "configuration");
     const envForm = page.locator('form[action*="/envs"]').first();
     await expect(envForm).toBeAttached();
   });
@@ -206,7 +212,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "automation");
     const cronForm = page.locator('form[action*="/crons"]').first();
     await expect(cronForm).toBeAttached();
   });
@@ -215,7 +221,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     page,
     context,
   }) => {
-    await loadAgentDetailPage(page, context);
+    await loadAgentDetailPage(page, context, "access");
     const tokenForm = page.locator('form[action*="/tokens"]').first();
     await expect(tokenForm).toBeAttached();
   });
@@ -251,17 +257,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     context,
   }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await loadAgentDetailPage(page, context);
-
-    // Env Vars now lives inside a collapsed accordion group (AGA-1.1) —
-    // expand it before asserting on the visibility of anything inside.
-    await page
-      .locator("#env-vars")
-      .locator("xpath=ancestor::details[contains(@class, 'group')]")
-      .first()
-      .evaluate((details) => {
-        (details as HTMLDetailsElement).open = true;
-      });
+    await loadAgentDetailPage(page, context, "configuration");
 
     const deleteBtn = page
       .locator("#env-vars .data-table .btn", { hasText: "Delete" })
