@@ -1,5 +1,10 @@
 name: Platform Release Bump
 
+# A caller-supplied release run id (workflow_dispatch `run_id` input, optional)
+# is appended to the run name so an external caller can find its run. Other
+# triggers and dispatches without it keep the plain workflow name.
+run-name: ${{ inputs.run_id && format('Platform Release Bump ({0})', inputs.run_id) || 'Platform Release Bump' }}
+
 # Receiver for the platform release chain (AGR-4.1). When app-vitals/agent
 # publishes a release, its release workflow dispatches `platform-release` here
 # with the version (AGR-3.3):
@@ -68,6 +73,10 @@ on:
         description: "Rebuild attempt (1 = first run, 2 = regenerated after a main conflict; capped at 2)"
         required: false
         default: "1"
+        type: string
+      run_id:
+        description: "Caller-supplied release run id, recorded in the run name so the caller can find this run (optional)"
+        required: false
         type: string
 
 permissions:

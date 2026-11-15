@@ -38,6 +38,7 @@ type Workflow = {
       >;
     };
   };
+  "run-name"?: string;
   permissions?: Record<string, string>;
   jobs: Record<
     string,
@@ -76,6 +77,28 @@ describe("platform-release.yml triggers", () => {
     expect(job.env?.VERSION).toBe(
       gha("github.event.client_payload.version || inputs.version"),
     );
+  });
+});
+
+describe("platform-release.yml run id (RCN-5.3)", () => {
+  it("has an optional string run_id input", () => {
+    const input = wf.on.workflow_dispatch?.inputs?.run_id;
+    expect(input?.required).toBe(false);
+    expect(input?.type).toBe("string");
+  });
+
+  it("records run_id in the run name, falling back to the plain name without it", () => {
+    expect(wf["run-name"]).toBe(
+      gha(
+        "inputs.run_id && format('Platform Release Bump ({0})', inputs.run_id) || 'Platform Release Bump'",
+      ),
+    );
+  });
+
+  it("leaves the version and attempt inputs and the repository_dispatch trigger as they were", () => {
+    expect(wf.on.repository_dispatch?.types).toEqual(["platform-release"]);
+    expect(wf.on.workflow_dispatch?.inputs?.version?.required).toBe(true);
+    expect(wf.on.workflow_dispatch?.inputs?.attempt?.default).toBe("1");
   });
 });
 
