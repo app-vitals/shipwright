@@ -22,11 +22,10 @@
 
 import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
 import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
-import {
-  escapeHtml,
-  renderAdminToolbar,
-} from "@app-vitals/agent-admin/admin-ui-styles";
+import { renderSettingsLayout } from "@app-vitals/agent-admin/admin-ui-settings-layout";
+import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { Context, Hono, MiddlewareHandler } from "hono";
+import { codingSettingsNav } from "./coding-settings-nav.ts";
 import { validateTemplateForm } from "./system-cron-form.ts";
 import {
   formatTriggerRow,
@@ -176,15 +175,15 @@ export function renderSystemCronsPage(opts: PageOpts): string {
 
   return renderAdminPage({
     title: "System Crons — Shipwright Admin",
-    body: `${renderAdminToolbar(opts.userEmail, SYSTEM_CRONS_SETTINGS_PATH)}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">System crons</h1>
-      <p style="font-size:13px;color:#6b7280;margin:4px 0 0"><a href="${GITHUB_ENTERPRISE_SETTINGS_PATH}">GitHub Enterprise settings</a></p>
-    </div>
-    ${banner}${degraded}${notice}${error}${warnings}
-    ${cards}
-  </div>`,
+    body: renderSettingsLayout({
+      userName: opts.userEmail,
+      title: "System crons",
+      nav: codingSettingsNav(),
+      active: SYSTEM_CRONS_SETTINGS_PATH,
+      isAdmin: true,
+      body: `${banner}${degraded}${notice}${error}${warnings}
+    ${cards}`,
+    }),
   });
 }
 

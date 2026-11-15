@@ -22,13 +22,12 @@ import {
   registerPushTestRoute,
   renderPushTestControl,
 } from "@app-vitals/agent-admin/admin-ui-push-test";
-import {
-  escapeHtml,
-  renderAdminToolbar,
-} from "@app-vitals/agent-admin/admin-ui-styles";
+import { renderSettingsLayout } from "@app-vitals/agent-admin/admin-ui-settings-layout";
+import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import { renderPushToggle } from "@app-vitals/agent-admin/push-toggle";
 import type { Hono, MiddlewareHandler } from "hono";
+import { codingSettingsNav } from "./coding-settings-nav.ts";
 import type {
   SessionFollowRow,
   SessionFollowService,
@@ -111,11 +110,13 @@ function renderNotificationSettingsPage(opts: {
 
   return renderAdminPage({
     title: "Notification Settings — Shipwright Admin",
-    body: `${renderAdminToolbar(opts.userEmail, NOTIFICATION_SETTINGS_PATH)}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Notification settings</h1>
-    </div>
+    body: renderSettingsLayout({
+      userName: opts.userEmail,
+      title: "Notification settings",
+      nav: codingSettingsNav(),
+      active: NOTIFICATION_SETTINGS_PATH,
+      isAdmin: true,
+      body: `
     ${errorHtml}
     <div class="card">
       <div class="card-title">Push notifications</div>
@@ -172,8 +173,8 @@ function renderNotificationSettingsPage(opts: {
           </tbody>
         </table>
       </div>
-    </div>
-  </div>`,
+    </div>`,
+    }),
   });
 }
 

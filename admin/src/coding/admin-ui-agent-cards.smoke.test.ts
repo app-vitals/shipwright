@@ -603,7 +603,7 @@ describe("admin UI — phase methodology panel", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/configuration`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -628,7 +628,7 @@ describe("admin UI — phase methodology panel", () => {
 
   it("GET /admin/agents/:id Phase Methodology card help text mentions the comma-separated list for review", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/configuration`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     const html = await res.text();

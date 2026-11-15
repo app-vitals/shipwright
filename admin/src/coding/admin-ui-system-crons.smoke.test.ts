@@ -103,7 +103,30 @@ describe("GET /admin/settings/system-crons", () => {
       await app.request(PATH, { headers: { Cookie: await adminCookie() } })
     ).text();
     expect(html).toContain("lookup-app-missing");
-    expect(html).toContain('href="/admin/settings/github-enterprise"');
+    expect(html).toMatch(
+      /data-banner="lookup-app-missing">[^<]*<a href="\/admin\/settings\/github-enterprise">/,
+    );
+  });
+
+  it("renders inside the shared settings layout with System crons active (SGL-3.2)", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore(),
+      githubEnterpriseApi: gheApi({ slug: "lookup-app" }),
+    });
+    const html = await (
+      await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+    ).text();
+    expect(html).toContain('class="settings-sidebar"');
+    expect(html).toContain(
+      `<a class="settings-nav-link" href="${PATH}" aria-current="page">System crons</a>`,
+    );
+    expect(html).toContain('href="/admin/settings/notifications"');
+    expect(html).toContain('<div class="settings-nav-label">Platform</div>');
+    expect(html).toContain('<div class="settings-nav-label">Personal</div>');
+    // The sidebar replaces the ad hoc header cross-link and page header.
+    expect(html).not.toContain("GitHub Enterprise settings</a>");
+    expect(html).not.toContain('class="page-header"');
   });
 
   it("shows the banner when the GHE API is not wired", async () => {
