@@ -157,10 +157,12 @@ describe("GET /admin/settings/notifications — auth", () => {
 // ─── GET — push toggle gating ───────────────────────────────────────────────
 
 describe("GET /admin/settings/notifications — page width (AWT-1.1)", () => {
-  it("stays capped: no admin-wide-page class on the form-only page", async () => {
+  it("renders full-width via the shared settings layout, not the admin-wide-page class", async () => {
     const app = buildApp();
     const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
-    expect(text).toContain('<div class="vos-page">');
+    expect(text).toContain(
+      '<div class="vos-page vos-page-wide vos-page-settings">',
+    );
     expect(text).not.toContain("admin-wide-page");
   });
 });
