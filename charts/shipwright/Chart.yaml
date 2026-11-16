@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.32.206
+version: 1.32.207
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,13 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.32.206 triggered by release tag admin-v1.344.0"
-    - kind: changed
-      description: "auto-bump to chart v1.32.206 triggered by release tag agent-v1.476.2"
-    - kind: changed
-      description: "auto-bump to chart v1.32.206 triggered by release tag metrics-v1.186.0"
-    - kind: changed
-      description: "auto-bump to chart v1.32.206 triggered by release tag task-store-v1.239.1"
+      description: "bump bundled subcharts: postgresql 18.12.4 -> 18.12.19, traefik 42.0.0 -> 42.4.0, cert-manager v1.21.2 -> v1.21.3"
 dependencies:
   # Shared platform helpers (CHM-3.1): the agent-platform library chart owns the
   # name/label/image helpers this chart's `shipwright.*` helpers delegate to.
@@ -52,7 +46,7 @@ dependencies:
   # `postgresql.image.digest` in values.yaml instead of a concrete tag. See README
   # "Bitnami registry risk" for the full explanation.
   - name: postgresql
-    version: "18.12.4"
+    version: "18.12.19"
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   # Optional bundled ingress controller subcharts (CNH-6.1). Both default off
@@ -64,12 +58,12 @@ dependencies:
     repository: https://kubernetes.github.io/ingress-nginx
     condition: ingress-nginx.enabled
   - name: traefik
-    version: "42.0.0"
+    version: "42.4.0"
     repository: https://traefik.github.io/charts
     condition: traefik.enabled
   # Optional bundled cert-manager subchart (CNH-6.1), default off. Bring your
   # own cert-manager unless you opt in via cert-manager.enabled=true.
   - name: cert-manager
-    version: "v1.21.2"
+    version: "v1.21.3"
     repository: https://charts.jetstack.io
     condition: cert-manager.enabled
