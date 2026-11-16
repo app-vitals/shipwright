@@ -1431,8 +1431,7 @@ describe("renderMergedQueueActivityPage", () => {
 describe("admin wide pages (AWT-1.1)", () => {
   const WRAPPER = /<div class="vos-page[^"]*">/;
   function expectWide(html: string) {
-    expect(html.match(WRAPPER)?.[0]).toContain("admin-wide-page");
-    expect(html).toContain(".admin-wide-page { max-width:none;width:100% }");
+    expect(html.match(WRAPPER)?.[0]).toContain("vos-page-wide");
   }
 
   test("Queue & Activity (per agent) is wide", () => {

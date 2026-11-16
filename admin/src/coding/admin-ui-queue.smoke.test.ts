@@ -47,14 +47,13 @@ describe("admin UI — authenticated pages", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("queue-activity page carries the shared admin-wide-page class and full-width override (AWT-1.1)", async () => {
+  it("queue-activity page carries the shared vos-page-wide class (AWT-1.1)", async () => {
     const app = createCodingTestApp(makeCodingMockDeps());
     const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     const html = await res.text();
-    expect(html).toMatch(/<div class="vos-page[^"]*admin-wide-page[^"]*">/);
-    expect(html).toContain("max-width:none;width:100%");
+    expect(html).toMatch(/<div class="vos-page[^"]*vos-page-wide[^"]*">/);
   });
 
   it("authenticated GET /admin/agents/:id/queue-activity returns 200 with empty Upcoming and Past state", async () => {
