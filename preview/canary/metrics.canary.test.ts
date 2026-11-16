@@ -13,6 +13,9 @@ setDefaultTimeout(45_000);
 const t = loadTargets();
 const created: string[] = [];
 
+/** values-preview.yaml sets metrics.provider.basePath, so every route sits under it. */
+const METRICS_BASE_PATH = "/dashboard";
+
 afterAll(async () => {
   for (const id of created) await deleteTask(t, id);
 });
@@ -26,7 +29,7 @@ afterAll(async () => {
 async function queueMetrics(
   cookie: string,
 ): Promise<{ status: number; tasksBlocked?: number }> {
-  const res = await fetch(`${t.metricsUrl}/metrics/queue?preset=7d`, {
+  const res = await fetch(`${t.metricsUrl}${METRICS_BASE_PATH}/metrics/queue?preset=7d`, {
     headers: { ...bearer(t.taskStoreToken), Cookie: cookie },
   });
   if (res.status !== 200) return { status: res.status };
@@ -57,7 +60,7 @@ describe("metrics canary", () => {
 
   it("exposes read routes only", async () => {
     const cookie = await adminSessionCookie(t.adminUrl);
-    const res = await fetch(`${t.metricsUrl}/metrics/queue`, {
+    const res = await fetch(`${t.metricsUrl}${METRICS_BASE_PATH}/metrics/queue`, {
       method: "POST",
       headers: { Cookie: cookie, "Content-Type": "application/json" },
       body: "{}",
