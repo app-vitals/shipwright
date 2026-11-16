@@ -275,6 +275,11 @@ tasks:
     cmds:
       - bun run scripts/minikube.ts --profile cloud-native-traefik
 
+  preview:up:
+    desc: "Install the preview profile onto an existing kube context (usage: task preview:up -- --context <ctx> --chart <dir> [--host <h>] [--env-out <file>]). Requires helm + kubectl."
+    cmds:
+      - bun run scripts/preview-env.ts {{.CLI_ARGS}}
+
   audit-extraction:
     desc: "Pre-publication audit of an extracted tree and its full git history (usage: task audit-extraction -- <tree> [--json] [--report <path>] [--no-history-banned] [--no-gitleaks] [--working-tree-only])"
     cmds:
