@@ -22,7 +22,7 @@
     "esbuild": "0.28.2",
     "http-cache-semantics": "^4.3.0",
     "js-yaml": "^5.0.0",
-    "nanoid": "^3.3.17",
+    "nanoid": "^6.0.0",
     "postcss": "^8.5.18",
     "sharp": "^0.35.4",
     "smol-toml": "^1.7.1",
@@ -553,7 +553,7 @@
 
     "mz": ["mz@2.7.0", "", { "dependencies": { "any-promise": "^1.0.0", "object-assign": "^4.0.1", "thenify-all": "^1.0.0" } }, "sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q=="],
 
-    "nanoid": ["nanoid@3.3.18", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w=="],
+    "nanoid": ["nanoid@6.0.2", "", { "bin": { "nanoid": "bin/nanoid.js" } }, "sha512-hIvVOb9Qr1p/9CNNLOe0OlWvgx/ziTsVwKN/GDSsuArN2K0wDiafP3s0SWmsm7o2BdnyS8Z9Z64NFBUbn6ziBg=="],
 
     "neotraverse": ["neotraverse@1.0.1", "", {}, "sha512-WmmLty1YWwJl9yZi77v2dVIV6X2kuYV8YYBI/G3LWGKdGHmHUvL1z7FW0iDvEvGAwNEoc5x1tOOOyDnf5jJw/w=="],
 
