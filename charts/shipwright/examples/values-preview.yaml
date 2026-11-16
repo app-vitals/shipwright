@@ -1,0 +1,181 @@
+# Full Shipwright stack for a throwaway preview cluster — every service enabled.
+#
+# FOR THROWAWAY CI CLUSTERS ONLY. auth.mode=open disables authentication
+# entirely, the PostgreSQL password is a known literal, and nothing persists.
+# Never install this profile anywhere that outlives a CI job.
+#
+# Derived from examples/values-minikube.yaml. Differences:
+#   - mcpServer is enabled (needs the pre-created Secret below).
+#   - The five CI-built images (admin, metrics, task-store, mcp-server, agent)
+#     use local repositories, tag 0.1.0 and pullPolicy Never: the bring-up script
+#     builds them from source and side-loads them into the cluster. chat and
+#     PostgreSQL are pulled from their registries.
+#   - metrics runs live (offline: false), reading task-store and admin.
+#   - No persistence anywhere.
+#
+# Secrets the bring-up script must create BEFORE `helm install`:
+#   shipwright-preview-mcp              SHIPWRIGHT_MCP_SERVER_TOKEN,
+#                                       SHIPWRIGHT_TASK_STORE_TOKEN
+#   shipwright-preview-task-store-seed  TASK_STORE_SEED_ADMIN_TOKEN
+#   shipwright-preview-metrics          METRICS_TASK_STORE_TOKEN
+# The task-store seed token, the mcp-server's SHIPWRIGHT_TASK_STORE_TOKEN and the
+# metrics token are the same value, so the seeded admin token authenticates both
+# downstream callers.
+#
+# SIZING — preview probe finding P2 (docs/superpowers/plans/2026-11-14-preview-environment.md):
+# peak used memory was 2.3-2.5 GB on a standard 4-vCPU runner with these
+# requests, with a provisioned agent pod running; no OOM kill and no Pending pod.
+# So the minikube request sizes are kept as they are — no fallback was needed.
+
+networking:
+  type: ingress
+  ingress:
+    className: nginx
+    host: preview.localhost
+    # No basic-auth annotations here on purpose: the preview job adds the gate.
+
+auth:
+  # ⚠️ ADMIN_DEV_AUTH=true — no authentication at all. Throwaway clusters only.
+  mode: open
+
+postgresql:
+  enabled: true
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    # Known literal: an auto-generated password is only readable via `lookup`,
+    # which cannot resolve on the first install, leaving the assembled DSNs with
+    # an empty password. Fine for a cluster that is deleted after the job.
+    password: shipwright-preview
+  primary:
+    persistence:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 192Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+admin:
+  enabled: true
+  appBaseUrl: http://preview.localhost
+  image:
+    repository: shipwright-admin
+    tag: 0.1.0
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+metrics:
+  enabled: true
+  image:
+    repository: shipwright-metrics
+    tag: 0.1.0
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  provider:
+    # Live mode: read the task-store and admin APIs instead of fixture data.
+    offline: false
+    basePath: /dashboard
+    # In-cluster Service DNS names for a release named "shipwright".
+    adminUrl: http://shipwright-admin:3001
+    taskStoreUrl: http://shipwright-task-store:3000
+    taskStoreToken:
+      existingSecret: shipwright-preview-metrics
+      key: METRICS_TASK_STORE_TOKEN
+
+taskStore:
+  enabled: true
+  image:
+    repository: shipwright-task-store
+    tag: 0.1.0
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  database:
+    # Chart-managed database on the bundled PostgreSQL.
+    existingSecret: ""
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+  # Helm replaces arrays wholesale: SHIPWRIGHT_CLAUDE_TIMEOUT_MS is re-stated
+  # here because this list overrides the chart default.
+  extraEnv:
+    - name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
+      value: "3600000"
+    - name: TASK_STORE_SEED_ADMIN_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: shipwright-preview-task-store-seed
+          key: TASK_STORE_SEED_ADMIN_TOKEN
+
+mcpServer:
+  enabled: true
+  image:
+    repository: shipwright-mcp-server
+    tag: 0.1.0
+    pullPolicy: Never
+  taskStoreUrl: http://shipwright-task-store:3000
+  auth:
+    existingSecret: shipwright-preview-mcp
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+chat:
+  enabled: true
+  database:
+    existingSecret: ""
+  adminToken:
+    # Empty: the chart generates the chat admin token and wires it into both the
+    # chat service and the admin console.
+    existingSecret: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+agent:
+  image:
+    repository: shipwright-agent
+    tag: 0.1.0
+    pullPolicy: Never
+  provisioning:
+    enabled: true
+    replicas: 1
+    # Image the admin provisioner stamps onto agent Deployments.
+    image:
+      repository: shipwright-agent
+      tag: 0.1.0
+    pvc:
+      size: 1Gi
+    persistence:
+      enabled: false
+  voice:
+    # The Whisper ASR pod is far too heavy for a CI runner.
+    enabled: false
