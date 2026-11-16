@@ -20,6 +20,7 @@ import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./coding/admin-ui-coding.fixtures.ts";
+import { CODING_SETTINGS_NAV_ITEMS } from "./coding/coding-settings-nav.ts";
 import {
   codingContribution,
   composedOpenApi,
@@ -176,5 +177,58 @@ describe("enterprise GitHub apps surface composes unconfigured (GHE-1.7)", () =>
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("settings sidebar parity between platform and coding pages (SNC-1.1)", () => {
+  const templateService = {
+    list: async () => [],
+    replace: async () => ({}),
+    putItem: async () => ({}),
+    deleteItem: async () => ({}),
+    delete: async () => ({}),
+  } as never;
+  const githubEnterpriseApi = async () => new Response("[]");
+  // Backs the notifications page's prefs read.
+  const prisma = {
+    userNotificationPrefs: {
+      upsert: async () => ({
+        userEmail: "admin@example.com",
+        autoFollowSessions: true,
+        reminderHourLocal: 9,
+        autoFollowSince: new Date("2024-01-01"),
+      }),
+    },
+    sessionFollow: { findMany: async () => [] },
+  } as never;
+
+  /** Sidebar link hrefs, sorted; aria-current state is not part of the href. */
+  function sidebarHrefs(html: string): string[] {
+    const nav =
+      html.match(/<nav[^>]*settings[^>]*>[\s\S]*?<\/nav>/i)?.[0] ?? "";
+    return [...nav.matchAll(/href="(\/admin\/settings\/[^"]*)"/g)]
+      .map((m) => m[1] as string)
+      .sort();
+  }
+
+  it("system-crons and notifications show the same links as the platform templates page", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      templateService,
+      githubEnterpriseApi,
+      prisma,
+      // What the platform merges in from the extension at composition time.
+      settingsNavItems: CODING_SETTINGS_NAV_ITEMS,
+    });
+    const cookie = `admin_session=${await makeSessionCookie()}`;
+    const get = async (path: string) => {
+      const res = await app.request(path, { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      return sidebarHrefs(await res.text());
+    };
+    const platform = await get("/admin/settings/templates");
+    expect(platform).toContain("/admin/settings/templates");
+    expect(await get("/admin/settings/system-crons")).toEqual(platform);
+    expect(await get("/admin/settings/notifications")).toEqual(platform);
   });
 });
