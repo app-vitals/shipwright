@@ -726,3 +726,70 @@ describeOrSkip("PullRequestService.list() repoScope (integration)", () => {
     expect((await service.list()).total).toBe(3);
   });
 });
+
+describeOrSkip(
+  "PullRequestService.update() stale-block clearing (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequestEvent.deleteMany();
+      await prisma.pullRequest.deleteMany();
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    async function seedBlocked(prNumber: number, blockedReason: string) {
+      return prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber,
+          commitSha: `sha-${prNumber}`,
+          state: "open",
+          blocked: true,
+          blockedReason,
+          skipCount: 3,
+        },
+      });
+    }
+
+    it("closed clears the persisted block regardless of reason", async () => {
+      const pr = await seedBlocked(6001, "Post-merge CI failed — run ID: 1");
+      await service.update(pr.id, { state: "closed" });
+      const row = await prisma.pullRequest.findUniqueOrThrow({
+        where: { id: pr.id },
+      });
+      expect(row.blocked).toBe(false);
+      expect(row.blockedReason).toBeNull();
+      expect(row.skipCount).toBe(0);
+    });
+
+    it("merged clears a patch-phase block", async () => {
+      const pr = await seedBlocked(
+        6002,
+        "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+      );
+      await service.update(pr.id, { state: "merged" });
+      const row = await prisma.pullRequest.findUniqueOrThrow({
+        where: { id: pr.id },
+      });
+      expect(row.blocked).toBe(false);
+      expect(row.blockedReason).toBeNull();
+    });
+
+    it("merged keeps a merge-phase block", async () => {
+      const pr = await seedBlocked(6003, "Post-merge CI failed — run ID: 9");
+      await service.update(pr.id, { state: "merged" });
+      const row = await prisma.pullRequest.findUniqueOrThrow({
+        where: { id: pr.id },
+      });
+      expect(row.blocked).toBe(true);
+      expect(row.blockedReason).toBe("Post-merge CI failed — run ID: 9");
+    });
+  },
+);
