@@ -331,6 +331,23 @@ Note: `pull_request_target` and `workflow_dispatch` only run once the workflow i
 - [ ] **Step 3: Run** `task ci` (covers `check-strings` and docs checks). Expected: PASS.
 - [ ] **Step 4: Commit:** `docs: document the preview environment`.
 
+## Probe findings
+
+Measured on a standard `ubuntu-latest` runner with a kind cluster, ingress-nginx, and the chart installed from `examples/values-minikube.yaml` plus `mcpServer.enabled`. The admin, metrics, task-store, mcp-server and agent images were built from source and side-loaded. Six runs were made. The first two failed on probe-script errors, not the stack: a missing Helm repo, and wrong admin API paths. The numbers below come from the runs that completed.
+
+**Decision: GO.** Warm P1 is well under 15 minutes, with no OOM kill and no Pending pod. No fallback was applied.
+
+- **P1 — time to Ready.** Job start to all Deployments Available: 385 s on the first install with an empty build cache. Four later runs gave 438 s, 400 s, 363 s and 309 s. The ~4 min of source image builds are included in each figure. The GitHub Actions layer cache (`type=gha`) did not shorten the builds measurably: admin about 50-60 s, metrics 15-25 s, task-store about 7 s, mcp-server 40-50 s, agent 50-60 s, in cold and warm runs alike. So "cold" and "warm" are effectively the same here, and the whole range is 5-7.5 min.
+- **P2 — memory and scheduling.** Peak used memory sampled every 15 s was 2.3-2.5 GB across runs. No pod was OOM-killed or Pending, including with a provisioned agent pod running.
+- **P3 — agent without a model credential.** `POST /agents` defaults to a self-hosted agent and creates no pod. With `"runtime": "in-cluster"` the admin provisions a Deployment and a 40Gi PVC, and the agent pod reached `1/1 Running` about 2.5 min after creation with no model credential set. The 40Gi PVC bound on kind's `standard` storage class.
+- **P4 — admin API under `auth.mode: open`.** A request with no credentials gets `401`. `GET /admin/dev-login` returns `302` and sets an `admin_session` cookie (HttpOnly, 7 days). With that cookie, `GET /agents` and `POST /agents` return `200`. The API needs the session cookie, not a header.
+- **P5 — ingress basic auth.** ingress-nginx accepted both `htpasswd -B` (bcrypt) and `htpasswd -m` (apr1): `401` with no credentials, requests passed through to the admin with them. A request carrying both the session cookie and a forwarded `Authorization: Basic` header got `401` in every case, so the admin does not tolerate the forwarded Basic header. The ingress must strip `Authorization` on the way to the admin, or the preview must use a different gate. Caveat: the cookie-only control request was also `401`, because the ingress itself demands Basic, so this does not isolate the admin's behaviour.
+- **P6 — quick tunnel.** The tunnel was started after install, then the ingress host and `admin.appBaseUrl` were set to its hostname with a `helm upgrade`. Through the tunnel, `/admin/agents`, `/admin/chat` and `/health/ready` all returned `200` once a dev-login session cookie was obtained through it. The "tunnel started before install" ordering was not tested.
+- **P7 — explicit canary file.** With the root `bunfig.toml` exclusion, a `*.canary.test.ts` file does not run: `bun test ./x.canary.test.ts` (also `./././x`, and a bare `bun test`) reports no matching test files. It does run in a directory with no `bunfig.toml`, and with `--config=/dev/null`. The canary entry point must bypass the config.
+- **P8 — environment protection rules.** The job token can list `GET /repos/{owner}/{repo}/environments` with `actions: read` and see each environment's `protection_rules`; the list shows rule types such as `branch_policy`. `GET .../environments/preview` returned `404` because the `preview` environment does not exist yet, so reading its required-reviewers rule is untested.
+
+The throwaway `spike/preview-probe` branch and its workflow were deleted; nothing from the spike is merged.
+
 ## Human steps
 
 These cannot be done by an agent and are all doable from a browser:
