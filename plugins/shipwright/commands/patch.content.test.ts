@@ -1,3207 +1,567 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 const PATCH_MD_PATH = join(import.meta.dir, "patch.md");
-const ESCALATION_PATTERN_PATH = join(
+const REFERENCES_DIR = join(import.meta.dir, "..", "references", "patch");
+const REQUIRED_STEPS_PATH = join(
   import.meta.dir,
+  "..",
   "references",
-  "escalation-pattern.md",
+  "required-steps",
+  "patch.json",
 );
+const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
 
-let content: string;
-let escalationPatternContent: string;
+interface RequiredStep {
+  stepNumber: string;
+  title: string;
+  proofOfRunning: string;
+  lane: string;
+}
+
+let spine: string;
+let refs: Record<string, string>;
+let corpus: string;
+let steps: RequiredStep[];
+
+/** Collapse whitespace so wrapped prose compares equal across files. */
+function norm(s: string): string {
+  return s.replace(/\s+/g, " ");
+}
+
+/** Text of one step in the spine: a `## Step N:` heading section or a `- **N**` bullet. */
+function stepBlock(stepNumber: string): string {
+  const escaped = stepNumber.replace(/\./g, "\\.");
+  const heading = new RegExp(`^#{2,3} Step ${escaped}:`, "m");
+  const bullet = new RegExp(`^- \\*\\*${escaped}\\*\\* `, "m");
+  const headingMatch = heading.exec(spine);
+  if (headingMatch) {
+    const rest = spine.slice(headingMatch.index + headingMatch[0].length);
+    const end = rest.search(/^## /m);
+    return rest.slice(0, end === -1 ? undefined : end);
+  }
+  const bulletMatch = bullet.exec(spine);
+  if (bulletMatch) {
+    const rest = spine.slice(bulletMatch.index + bulletMatch[0].length);
+    const end = rest.search(/^(- \*\*|## )/m);
+    return rest.slice(0, end === -1 ? undefined : end);
+  }
+  return "";
+}
+
+/** Relative markdown link targets (no URLs, no in-page anchors). */
+function relativeLinks(markdown: string): string[] {
+  return [...markdown.matchAll(/\]\(([^)\s]+)\)/g)]
+    .map((m) => m[1].split("#")[0])
+    .filter((target) => target !== "" && !/^[a-z]+:/i.test(target));
+}
+
+function indexOfOrFail(haystack: string, needle: string): number {
+  const idx = haystack.indexOf(needle);
+  expect(idx).toBeGreaterThan(-1);
+  return idx;
+}
 
 beforeAll(() => {
-  content = readFileSync(PATCH_MD_PATH, "utf-8");
-  escalationPatternContent = readFileSync(ESCALATION_PATTERN_PATH, "utf-8");
+  spine = readFileSync(PATCH_MD_PATH, "utf-8");
+  refs = Object.fromEntries(
+    readdirSync(REFERENCES_DIR)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .map((f) => [f, readFileSync(join(REFERENCES_DIR, f), "utf-8")]),
+  );
+  corpus = [
+    spine,
+    ...Object.entries(refs)
+      .filter(([f]) => f !== "dropped-details.md")
+      .map(([, c]) => c),
+  ].join("\n\n");
+  steps = JSON.parse(readFileSync(REQUIRED_STEPS_PATH, "utf-8")).steps;
 });
 
-describe("patch.md — explicit-target-only argument contract (WLS-3.3)", () => {
-  it("frontmatter declares argument-hint as required (angle brackets, not optional brackets)", () => {
-    const frontmatterEnd = content.indexOf("---", 3);
-    const frontmatter = content.slice(0, frontmatterEnd);
+describe("patch.md — spine shape", () => {
+  it("is at most 150 lines", () => {
+    const lines = spine.endsWith("\n")
+      ? spine.slice(0, -1).split("\n")
+      : spine.split("\n");
+    expect(lines.length).toBeLessThanOrEqual(150);
+  });
+
+  it("frontmatter has a description and the required argument-hint", () => {
+    const frontmatter = spine.slice(0, spine.indexOf("---", 3));
+    expect(frontmatter).toMatch(/^---\ndescription: \S/);
     expect(frontmatter).toContain('argument-hint: "<org/repo#number>"');
-    expect(frontmatter).not.toContain('argument-hint: "[org/repo#number]"');
   });
 
-  it("states the org/repo#number argument is required in prose", () => {
-    expect(content).toMatch(
-      /org\/repo#number.{0,60}required|required.{0,60}org\/repo#number/is,
-    );
+  it("keeps the explicit-target-only rule: no argument → [silent], no discovery", () => {
+    const step0 = stepBlock("0");
+    expect(step0).toContain("**required**");
+    expect(step0).toContain("If `$ARGUMENTS` is empty");
+    expect(step0).toContain("[silent]");
+    expect(step0).toMatch(/no GitHub scan/);
+    expect(spine).not.toContain("gh pr list");
   });
 
-  it("no-argument invocation responds [silent] and stops with no GitHub scan", () => {
-    expect(content).toContain("If `$ARGUMENTS` is empty");
-    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
-    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
-    expect(step0Idx).toBeGreaterThan(-1);
-    expect(step1Idx).toBeGreaterThan(-1);
-    const step0Section = content.slice(step0Idx, step1Idx);
-    expect(step0Section).toContain("[silent]");
+  it("states the no-size-exemption rule for subagent dispatches", () => {
+    expect(norm(spine)).toMatch(/No size exemption/i);
+    expect(norm(spine)).toMatch(/inline or sed-style fix counts as skipping/);
   });
 
-  it("removes the multi-repo self-scan (gh pr list --author across configured repos)", () => {
-    expect(content).not.toContain("Discover Own Open PRs");
-    expect(content).not.toContain("Otherwise (no arguments)");
-    expect(content).not.toContain(
-      'gh pr list --state open --repo {org}/{repo} \\\n  --author "$CURRENT_USER"',
-    );
-    expect(content).not.toContain("No own open PRs found.");
-  });
-
-  it("Step 2 fetches the single target PR via gh pr view instead of scanning", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    expect(step2Idx).toBeGreaterThan(-1);
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-    expect(step2Section).toContain("gh pr view {number} --repo {org}/{repo}");
-    expect(step2Section).toContain("author.login != CURRENT_USER");
+  it("points at references/patch/ for mechanics", () => {
+    expect(spine).toContain("plugins/shipwright/references/patch/");
   });
 });
 
-describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
-  it("Step 1 fetches the agent's patchAuthorAllowlist via /agents/{id}/config, mirroring review.md's config-fetch pattern", () => {
-    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
-    expect(step1Idx).toBeGreaterThan(-1);
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    expect(step2Idx).toBeGreaterThan(-1);
-    const step1Section = content.slice(step1Idx, step2Idx);
-    expect(step1Section).toContain("CURRENT_USER=$(bun run");
-    expect(step1Section).toContain("scripts/login-identity.ts");
-    expect(step1Section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
-    expect(step1Section).toContain("patchAuthorAllowlist");
-    expect(step1Section).toContain("PATCH_AUTHOR_ALLOWLIST");
-  });
+describe("patch.md — a Proof line for every required-steps/patch.json step", () => {
+  // The signal each step's Proof line must name, keyed by stepNumber. Every
+  // patch.json step must appear here so a new required step fails this test.
+  const expectedProof: Record<string, string[]> = {
+    "3d": ["POST /prs/{id}/release"],
+    "4a.6": ["POST /prs/claim", 'phase: "patch"', "pre-claim marker"],
+    "4b": ["Agent dispatch"],
+    "4c.5": ["POST /prs/{id}/patch", "commitSha", "heartbeat"],
+    "5a.6": ["POST /prs/claim", 'phase: "patch"', "pre-claim marker"],
+    "5a.6b": ["⏸", "no match"],
+    "5a.7": ["Judgment:", "no candidate replies"],
+    "5b": ["Agent dispatch"],
+    "5c.5": ["POST /prs/{id}/patch", "POST /prs/{id}/findings", "heartbeat"],
+    "6b.5": ["POST /prs/claim", 'phase: "patch"', "pre-claim marker"],
+    "6b.6": ["GET", "⏸"],
+    "6c": ["Agent dispatch"],
+    "6d.5": ["POST /prs/{id}/patch", "ciFailureSignature", "heartbeat"],
+    "6.5": ["is-ci-green.ts", "bonus dispatch"],
+  };
 
-  it("documents fail-closed behavior: a failed config fetch or empty/absent allowlist falls back to CURRENT_USER-only", () => {
-    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step1Section = content.slice(step1Idx, step2Idx);
-    expect(step1Section).toMatch(/fail[- ]closed/i);
-    expect(step1Section).toContain("today's `CURRENT_USER`-only behavior");
-  });
-
-  it("Step 2's scope check widens to author.login == CURRENT_USER OR author.login in PATCH_AUTHOR_ALLOWLIST, preserving the pre-existing CURRENT_USER-only substring", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-    // Pre-existing substring must survive (WLS-3.3's original test pins this exact string).
-    expect(step2Section).toContain("author.login != CURRENT_USER");
-    // New: the gate must also reference the allowlist as an alternative match.
-    expect(step2Section).toContain("PATCH_AUTHOR_ALLOWLIST");
-  });
-
-  it("Step 1 keeps the allowlist as a JSON array (jq -c), not a comma-joined string, so Step 2 can test exact membership", () => {
-    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step1Section = content.slice(step1Idx, step2Idx);
-    expect(step1Section).toContain("jq -c '.patchAuthorAllowlist // []'");
-    // A comma-joined string is exactly what invites a substring match downstream.
-    expect(step1Section).not.toContain('join(",")');
-  });
-
-  it("Step 2 shows a concrete exact-membership jq snippet and explicitly warns off the substring form", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-    // The mechanical check must be shown, not just described in prose.
-    expect(step2Section).toContain(`jq -e --arg a "$PR_AUTHOR_CANON"`);
-    expect(step2Section).toContain("any(.[]; canon == $a)");
-    // And the unsafe substring alternative must be called out as forbidden.
-    expect(step2Section).toContain(
-      `[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`,
-    );
-    expect(step2Section).toMatch(
-      /never a substring|not a substring|Do \*\*not\*\*/,
-    );
-  });
-
-  it("Step 2 captures PR_AUTHOR from the gh pr view result for reuse at Step 5a.7", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-    expect(step2Section).toContain("PR_AUTHOR");
-  });
-
-  it("Step 5a.7's author-reply detection threads PR_AUTHOR instead of a hardcoded CURRENT_USER-only comparison", () => {
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    expect(step5a7Idx).toBeGreaterThan(-1);
-    const nextSectionIdx = content.indexOf("### Step 5a.8", step5a7Idx);
-    const step5a7End =
-      nextSectionIdx > -1
-        ? nextSectionIdx
-        : content.indexOf("### Step 5b", step5a7Idx);
-    expect(step5a7End).toBeGreaterThan(-1);
-    const step5a7Section = content.slice(step5a7Idx, step5a7End);
-    expect(step5a7Section).toContain("author.login == PR_AUTHOR");
-    expect(step5a7Section).not.toContain("author.login == CURRENT_USER");
-  });
-});
-
-describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
-  it("Step 4 (merge conflicts): claims the PR (phase: patch) before dispatching the conflict-resolution subagent", () => {
-    const step4bIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    expect(step4bIdx).toBeGreaterThan(-1);
-    const preStep4b = content.slice(0, step4bIdx);
-    const lastClaimBeforeStep4b = preStep4b.lastIndexOf("/prs/claim");
-    expect(lastClaimBeforeStep4b).toBeGreaterThan(-1);
-    // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep4b.slice(
-      lastClaimBeforeStep4b,
-      lastClaimBeforeStep4b + 400,
-    );
-    expect(claimSnippet).toContain("phase");
-    expect(claimSnippet).toContain("patch");
-  });
-
-  it("Step 5 (review findings): claims the PR (phase: patch) before dispatching the fix subagent", () => {
-    const step5a6Idx = content.indexOf("### Step 5a.6:");
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(step5a6Idx).toBeGreaterThan(-1);
-    expect(step5bIdx).toBeGreaterThan(-1);
-    const preStep5b = content.slice(step5a6Idx, step5bIdx);
-    const lastClaimBeforeStep5b = preStep5b.lastIndexOf("/prs/claim");
-    expect(lastClaimBeforeStep5b).toBeGreaterThan(-1);
-    // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep5b.slice(
-      lastClaimBeforeStep5b,
-      lastClaimBeforeStep5b + 400,
-    );
-    expect(claimSnippet).toContain("phase");
-    expect(claimSnippet).toContain("patch");
-  });
-
-  it("Step 6 (failing CI): claims the PR (phase: patch) before dispatching the CI-fix subagent", () => {
-    const step6b5Idx = content.indexOf("### Step 6b.5:");
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b5Idx).toBeGreaterThan(-1);
-    expect(step6cIdx).toBeGreaterThan(-1);
-    const preStep6c = content.slice(step6b5Idx, step6cIdx);
-    const lastClaimBeforeStep6c = preStep6c.lastIndexOf("/prs/claim");
-    expect(lastClaimBeforeStep6c).toBeGreaterThan(-1);
-    // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep6c.slice(
-      lastClaimBeforeStep6c,
-      lastClaimBeforeStep6c + 400,
-    );
-    expect(claimSnippet).toContain("phase");
-    expect(claimSnippet).toContain("patch");
-  });
-
-  it("all three pre-work claims occur before their respective dispatch points (ordering)", () => {
-    const claimIndices: number[] = [];
-    let searchFrom = 0;
-    for (;;) {
-      const idx = content.indexOf("/prs/claim", searchFrom);
-      if (idx === -1) break;
-      claimIndices.push(idx);
-      searchFrom = idx + 1;
+  it("covers every step in patch.json", () => {
+    expect(steps.length).toBeGreaterThan(0);
+    for (const step of steps) {
+      expect(Object.keys(expectedProof)).toContain(step.stepNumber);
     }
-    const step4bIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-
-    expect(claimIndices.some((i) => i < step4bIdx)).toBe(true);
-    expect(claimIndices.some((i) => i < step5bIdx)).toBe(true);
-    expect(claimIndices.some((i) => i < step6cIdx)).toBe(true);
   });
 
-  it("409 handling causes the PR to be skipped and the next candidate in the list to be tried (List C)", () => {
-    const step4aIdx = content.indexOf("### Step 4a: Set Up Worktree");
-    const step4bIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const preDispatchSection = content.slice(step4aIdx, step4bIdx);
-    expect(preDispatchSection).toContain("409");
-    const hasSkipLanguage =
-      preDispatchSection.includes("skip") ||
-      preDispatchSection.includes("skipping");
-    expect(hasSkipLanguage).toBe(true);
-    expect(preDispatchSection.toLowerCase()).toContain("next");
-    expect(preDispatchSection).toContain("List C");
+  it("each patch.json step has its own block ending in a **Proof:** line", () => {
+    for (const step of steps) {
+      const block = stepBlock(step.stepNumber);
+      expect({ step: step.stepNumber, found: block !== "" }).toEqual({
+        step: step.stepNumber,
+        found: true,
+      });
+      expect({
+        step: step.stepNumber,
+        hasProof: block.includes("**Proof:**"),
+      }).toEqual({ step: step.stepNumber, hasProof: true });
+    }
   });
 
-  it("409 handling causes the PR to be skipped and the next candidate in the list to be tried (List A)", () => {
-    const step5aIdx = content.indexOf("### Step 5a: Set Up Worktree");
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const preDispatchSection = content.slice(step5aIdx, step5bIdx);
-    expect(preDispatchSection).toContain("409");
-    const hasSkipLanguage =
-      preDispatchSection.includes("skip") ||
-      preDispatchSection.includes("skipping");
-    expect(hasSkipLanguage).toBe(true);
-    expect(preDispatchSection.toLowerCase()).toContain("next");
-    expect(preDispatchSection).toContain("List A");
+  it("each Proof line names the patch.json proof signal", () => {
+    for (const step of steps) {
+      const block = stepBlock(step.stepNumber);
+      const proof = norm(block.slice(block.indexOf("**Proof:**")));
+      for (const token of expectedProof[step.stepNumber]) {
+        expect({
+          step: step.stepNumber,
+          token,
+          ok: proof.includes(token),
+        }).toEqual({ step: step.stepNumber, token, ok: true });
+      }
+    }
   });
 
-  it("409 handling causes the PR to be skipped and the next candidate in the list to be tried (List D)", () => {
-    const step6aIdx = content.indexOf("### Step 6a: Set Up Worktree");
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const preDispatchSection = content.slice(step6aIdx, step6cIdx);
-    expect(preDispatchSection).toContain("409");
-    const hasSkipLanguage =
-      preDispatchSection.includes("skip") ||
-      preDispatchSection.includes("skipping");
-    expect(hasSkipLanguage).toBe(true);
-    expect(preDispatchSection.toLowerCase()).toContain("next");
-    expect(preDispatchSection).toContain("List D");
+  it("the lane-specific dispatch steps exist for every lane in patch.json", () => {
+    const lanes = new Set(steps.map((s) => s.lane));
+    expect([...lanes].sort()).toEqual(["any", "ci", "conflict", "review"]);
+    expect(stepBlock("4b")).toMatch(/conflict-resolution subagent/);
+    expect(stepBlock("5b")).toMatch(/fix subagent/);
+    expect(stepBlock("6c")).toMatch(/CI-fix subagent/);
   });
 
-  it("Step 4c (merge conflicts): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
-    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
-    const step4c5Idx = content.indexOf("### Step 4c.5:");
-    expect(step4cIdx).toBeGreaterThan(-1);
-    expect(step4c5Idx).toBeGreaterThan(-1);
-    const section = content.slice(step4cIdx, step4c5Idx);
-    expect(section).toContain("BLOCKED");
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
-  });
-
-  it("Step 5c (review findings): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    expect(step5cIdx).toBeGreaterThan(-1);
-    expect(step5c5Idx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5c5Idx);
-    expect(section).toContain("BLOCKED");
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
-  });
-
-  it("Step 6d (failing CI): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    const step6d5Idx = content.indexOf("### Step 6d.5:");
-    expect(step6dIdx).toBeGreaterThan(-1);
-    expect(step6d5Idx).toBeGreaterThan(-1);
-    const section = content.slice(step6dIdx, step6d5Idx);
-    expect(section).toContain("BLOCKED");
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
-  });
-
-  it("post-fix step 4c.5 reuses PR_RECORD_ID instead of re-calling POST /prs/claim", () => {
-    const sectionIdx = content.indexOf("### Step 4c.5: Upsert PR Record");
-    expect(sectionIdx).toBeGreaterThan(-1);
-    const nextSectionIdx = content.indexOf("### Step 4d:", sectionIdx);
-    const section = content.slice(sectionIdx, nextSectionIdx);
-    expect(section.includes("/prs/claim")).toBe(false);
-    expect(section.includes("PR_RECORD_ID")).toBe(true);
-  });
-
-  it("post-fix step 5c.5 reuses PR_RECORD_ID instead of re-calling POST /prs/claim", () => {
-    const sectionIdx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    expect(sectionIdx).toBeGreaterThan(-1);
-    const nextSectionIdx = content.indexOf("### Step 5d:", sectionIdx);
-    const section = content.slice(sectionIdx, nextSectionIdx);
-    expect(section.includes("/prs/claim")).toBe(false);
-    expect(section.includes("PR_RECORD_ID")).toBe(true);
-  });
-
-  it("post-fix step 6d.5 reuses PR_RECORD_ID instead of re-calling POST /prs/claim", () => {
-    const sectionIdx = content.indexOf("### Step 6d.5: Upsert PR Record");
-    expect(sectionIdx).toBeGreaterThan(-1);
-    const nextSectionIdx = content.indexOf("### Step 6e:", sectionIdx);
-    const section = content.slice(sectionIdx, nextSectionIdx);
-    expect(section.includes("/prs/claim")).toBe(false);
-    expect(section.includes("PR_RECORD_ID")).toBe(true);
-  });
-
-  it("still calls POST /prs/{id}/patch in each post-fix step (patchCycles increment is patch.md-specific)", () => {
-    const matches = content.match(/\/prs\/\$PR_RECORD_ID\/patch/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(3);
+  it("the extra CI guards (6b.7, 6b.8, 6b.9) also carry Proof lines", () => {
+    for (const n of ["6b.7", "6b.8", "6b.9"]) {
+      expect(stepBlock(n)).toContain("**Proof:**");
+    }
   });
 });
 
-describe("patch.md — pre-claim marker documentation (CBD-1.5)", () => {
-  it("Arguments section documents the [preclaim:{recordId}:{commitSha}] marker format", () => {
-    const argsIdx = content.indexOf("## Arguments");
-    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
-    expect(argsIdx).toBeGreaterThan(-1);
-    expect(step0Idx).toBeGreaterThan(-1);
-    const argsSection = content.slice(argsIdx, step0Idx);
-
-    expect(argsSection).toContain("[preclaim:{recordId}:{commitSha}]");
-    expect(argsSection).toContain("CBD-1.3");
+describe("patch.md — merged lane skeleton", () => {
+  let skeleton: string;
+  beforeAll(() => {
+    const start = spine.indexOf("## Lane Skeleton");
+    skeleton = spine.slice(start, spine.indexOf("## Step 4:", start));
   });
 
-  it("Arguments section attributes the marker to the loop orchestrator, not a human caller", () => {
-    const argsIdx = content.indexOf("## Arguments");
-    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
-    const argsSection = content.slice(argsIdx, step0Idx);
-
-    expect(argsSection).toContain("loop orchestrator");
-    expect(argsSection.toLowerCase()).toContain("human");
-  });
-
-  it("Arguments section says the marker must be stripped before parsing org/repo#number", () => {
-    const argsIdx = content.indexOf("## Arguments");
-    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
-    const argsSection = content.slice(argsIdx, step0Idx);
-
-    expect(argsSection).toContain("strip");
-  });
-
-  it("Step 2 parses and strips the marker once, extracting PRECLAIM_RECORD_ID/PRECLAIM_COMMIT_SHA", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    expect(step2Idx).toBeGreaterThan(-1);
-    expect(step2_5Idx).toBeGreaterThan(-1);
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-
-    expect(step2Section).toContain("PRECLAIM_RECORD_ID");
-    expect(step2Section).toContain("PRECLAIM_COMMIT_SHA");
-    expect(step2Section).toContain("strip");
-  });
-});
-
-describe("patch.md — pre-claim fast path skips re-claiming at all three sites (CBD-1.5)", () => {
-  // List C — merge conflicts — Step 4a.6
-  it("Step 4a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf(
-      "### Step 4a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    expect(siteIdx).toBeGreaterThan(-1);
-    expect(nextIdx).toBeGreaterThan(-1);
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("Pre-Claim Fast Path");
-    expect(section).toContain("headRefOid");
-    expect(section).toContain("PRECLAIM_COMMIT_SHA");
-  });
-
-  it("Step 4a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf(
-      "### Step 4a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
-    expect(section).toContain("skip");
-  });
-
-  it("Step 4a.6 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf(
-      "### Step 4a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("no marker present");
-    expect(section).toContain("self-claim");
-    // self-claim path is preserved: still POSTs /prs/claim with phase patch
-    expect(section).toContain("/prs/claim");
-    expect(section).toContain("HEAD_SHA_PRE_PATCH");
-  });
-
-  // List A — review findings — Step 5a.6
-  it("Step 5a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(siteIdx).toBeGreaterThan(-1);
-    expect(nextIdx).toBeGreaterThan(-1);
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("Pre-Claim Fast Path");
-    expect(section).toContain("headRefOid");
-    expect(section).toContain("PRECLAIM_COMMIT_SHA");
-  });
-
-  it("Step 5a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
-    expect(section).toContain("skip");
-  });
-
-  it("Step 5a.6 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("no marker present");
-    expect(section).toContain("self-claim");
-    expect(section).toContain("/prs/claim");
-    expect(section).toContain("HEAD_SHA_PRE_PATCH");
-  });
-
-  // List D — failing CI — Step 6b.5
-  it("Step 6b.5 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf(
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(siteIdx).toBeGreaterThan(-1);
-    expect(nextIdx).toBeGreaterThan(-1);
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("Pre-Claim Fast Path");
-    expect(section).toContain("headRefOid");
-    expect(section).toContain("PRECLAIM_COMMIT_SHA");
-  });
-
-  it("Step 6b.5 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf(
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
-    expect(section).toContain("skip");
-  });
-
-  it("Step 6b.5 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf(
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-    );
-    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const section = content.slice(siteIdx, nextIdx);
-
-    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
-    expect(section).toContain("no marker present");
-    expect(section).toContain("self-claim");
-    expect(section).toContain("/prs/claim");
-    expect(section).toContain("HEAD_SHA_PRE_PATCH");
-  });
-
-  it("each fast path re-fetches the live head independently (three gh pr view --json headRefOid reads)", () => {
-    const matches =
-      content.match(
-        /gh pr view \{pr\} --repo \{org\}\/\{repo\} --json headRefOid/g,
-      ) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(3);
-  });
-});
-
-describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () => {
-  it("Step 5b Instructions [D] requires a gh pr comment rebuttal whenever any finding was REJECTed, independent of the commit/push condition", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    expect(step5bIdx).toBeGreaterThan(-1);
-    expect(step5cIdx).toBeGreaterThan(-1);
-    const step5bSection = content.slice(step5bIdx, step5cIdx);
-
-    const dIdx = step5bSection.indexOf("[D] Commit");
-    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
-    expect(dIdx).toBeGreaterThan(-1);
-    expect(eIdx).toBeGreaterThan(-1);
-    const dSection = step5bSection.slice(dIdx, eIdx);
-
-    expect(dSection).toContain("gh pr comment");
-    expect(dSection).toContain("classified REJECT");
-    expect(dSection).toContain("independent");
-    expect(dSection).toContain("regardless of whether other");
-  });
-
-  it("Step 5b Instructions [D] leaves the ACCEPT/MODIFY commit+push flow unchanged for the real-fix case", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5bSection = content.slice(step5bIdx, step5cIdx);
-
-    const dIdx = step5bSection.indexOf("[D] Commit");
-    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
-    const dSection = step5bSection.slice(dIdx, eIdx);
-
-    expect(dSection).toContain("ACCEPTED or MODIFIED");
-    expect(dSection).toContain("git add {changed files}");
-    expect(dSection).toContain(
-      "fix: address review findings on #{pr} — {one-line summary of changes}",
-    );
-    expect(dSection).toContain("git push origin {branch}");
-  });
-
-  it("Step 5b Instructions [F] report template ties DONE_WITH_CONCERNS confirmation to the rebuttal comment", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5bSection = content.slice(step5bIdx, step5cIdx);
-
-    const fIdx = step5bSection.indexOf("[F] Report back");
-    expect(fIdx).toBeGreaterThan(-1);
-    const fSection = step5bSection.slice(fIdx);
-
-    expect(fSection).toContain("rebuttal comment was posted");
-  });
-
-  it("Step 5c's DONE_WITH_CONCERNS branch requires confirming the rebuttal comment was posted before treating the no-push case as complete", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    expect(step5cIdx).toBeGreaterThan(-1);
-    expect(step5c5Idx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5c5Idx);
-
-    expect(section).toContain("DONE_WITH_CONCERNS");
-    expect(section).toContain("confirm");
-    expect(section).toContain("gh pr comment");
-    expect(section).toContain("rebuttal");
-    expect(section).not.toContain("note it and skip Step 5c.5");
-  });
-
-  it("Step 5c does not itself post the rebuttal comment — it only verifies the subagent already did", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    const section = content.slice(step5cIdx, step5c5Idx);
-
-    expect(section).toContain("Do not post the comment here");
-  });
-
-  it("Step 5c no longer skips Step 5c.5 on the all-REJECT no-push path — it always proceeds", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    const section = content.slice(step5cIdx, step5c5Idx);
-
-    expect(section).not.toContain("skip Step 5c.5");
-    expect(section).toMatch(/proceed(s)? to Step 5c\.5/i);
-    // Still distinguishes the all-REJECT/no-push case from the mixed/push case in prose,
-    // it just no longer skips the step for it.
-    expect(section).toContain("no-push");
-  });
-});
-
-describe("patch.md — no manual reviewState reset; ledger write is the sole re-review trigger (PFL-4.1)", () => {
-  it("Step 5c always proceeds to Step 5c.5 for both the mixed-push and no-push cases", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    const section = content.slice(step5cIdx, step5c5Idx);
-
-    expect(section).toContain("DONE_WITH_CONCERNS");
-    expect(section).toMatch(/proceed(s)? to Step 5c\.5/i);
-    expect(section.toLowerCase()).toContain("mixed");
-    expect(section).toContain("no-push");
-    expect(section).not.toContain("ALL_REJECT_NO_PUSH_REBUTTAL_CONFIRMED");
-    // The manual reviewState reset's own gating variable is gone — PFL-4.1 removed it
-    // entirely, along with the reset it used to gate.
-    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
-  });
-
-  it("Step 5c.5 no longer PATCHes /prs/{id} with reviewState:pending — the manual reset is fully removed", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    expect(step5c5Idx).toBeGreaterThan(-1);
-    expect(step5dIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    // Existing unconditional heartbeat + commitSha patch calls remain.
-    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
-    expect(section).toContain("/prs/$PR_RECORD_ID/patch");
-    expect(section).toContain("commitSha");
-
-    // No manual reviewState reset anywhere in this step.
-    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
-    expect(section).not.toContain('"reviewState": "pending"');
-    expect(section).not.toContain("reviewState reset failed");
-  });
-
-  it("Step 5c.5 documents the ledger POST as the sole mechanism re-qualifying a no-push rebuttal cycle for review, citing PFL-3.1's hasFreshLedgerFinding", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    expect(section).toContain("hasFreshLedgerFinding");
-    expect(section).toContain("PFL-3.1");
-    expect(section.toLowerCase()).toContain("sole mechanism");
-    expect(section).toContain("PFL-4.1");
-  });
-
-  it("the ACCEPT/MODIFY push path text in Step 5b [D] is unchanged — still commits, pushes, and records commitSha", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5bSection = content.slice(step5bIdx, step5cIdx);
-
-    const dIdx = step5bSection.indexOf("[D] Commit");
-    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
-    const dSection = step5bSection.slice(dIdx, eIdx);
-
-    expect(dSection).toContain("ACCEPTED or MODIFIED");
-    expect(dSection).toContain("git add {changed files}");
-    expect(dSection).toContain("git push origin {branch}");
-    // No reviewState reset language belongs in the subagent-dispatched commit instructions —
-    // there is no reviewState reset anywhere now (PFL-4.1).
-    expect(dSection).not.toContain("reviewState");
-  });
-});
-
-describe("patch.md — POST a rejected ledger entry on rebuttal (PFL-2.2)", () => {
-  it("Step 5c.5 POSTs a source:patch, disposition:rejected ledger entry to /prs/:id/findings for each REJECTed finding", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    expect(step5c5Idx).toBeGreaterThan(-1);
-    expect(step5dIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    expect(section).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings"',
-    );
-    expect(section).toContain('\\"source\\": \\"patch\\"');
-    expect(section).toContain('\\"disposition\\": \\"rejected\\"');
-  });
-
-  it("the ledger POST runs alongside the existing rebuttal comment + thread resolution, unconditionally whenever findings were REJECTed", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    const findingsIdx = section.indexOf("/prs/$PR_RECORD_ID/findings");
-    expect(findingsIdx).toBeGreaterThan(-1);
-    // No reviewState reset for it to be gated on or nested inside anymore.
-    expect(section).not.toContain('"reviewState": "pending"');
-    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
-  });
-
-  it("Step 5c tracks REJECTed findings this cycle (ref + rejection reason), for Step 5c.5 to loop over", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    const section = content.slice(step5cIdx, step5c5Idx);
-
-    expect(section).toContain("REJECTED_FINDINGS_THIS_CYCLE");
-  });
-
-  it("the ledger POST call follows the same warn-and-continue error-handling idiom as the other Step 5c.5 task-store calls", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    const findingsIdx = section.indexOf("/prs/$PR_RECORD_ID/findings");
-    const after = section.slice(findingsIdx, findingsIdx + 400);
-    expect(after).toMatch(/\|\|\s*\\?\s*\n\s*echo "⚠/);
-  });
-
-  it("Step 5c.5 findings POST includes agentId set to $SHIPWRIGHT_AGENT_ID", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    expect(section).toContain('\\"agentId\\": \\"$SHIPWRIGHT_AGENT_ID\\"');
-  });
-});
-
-describe("patch.md — escalate to HITL instead of looping on a second-round disagreement (RPF-1.3)", () => {
-  function getStep5a7Section() {
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(step5a7Idx).toBeGreaterThan(-1);
-    expect(step5bIdx).toBeGreaterThan(-1);
-    return content.slice(step5a7Idx, step5bIdx);
-  }
-
-  it("Step 5a.7 exists between Step 5a.6 (claim) and Step 5b (dispatch)", () => {
-    const step5a6Idx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(step5a6Idx).toBeGreaterThan(-1);
-    expect(step5a7Idx).toBeGreaterThan(step5a6Idx);
-    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
-  });
-
-  it("the claim step (5a.6) hands off to 5a.6b, not straight to 5a.7 or 5b", () => {
-    const step5a6Idx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const step5a6bIdx = content.indexOf(
-      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
-    );
-    expect(step5a6bIdx).toBeGreaterThan(step5a6Idx);
-    const section = content.slice(step5a6Idx, step5a6bIdx);
-    expect(section).toContain("Proceed to Step 5a.6b");
-    expect(section).not.toContain("Proceed to Step 5a.7");
-  });
-
-  it("second-round detection compares an author-reply comment's createdAt against the qualifying review's submittedAt", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("CURRENT_USER");
-    expect(section).toContain("createdAt");
-    expect(section).toContain("submittedAt");
-    expect(section).toContain("before");
-    expect(section).toContain("isAddressedByAuthorReply");
-  });
-
-  it("distinguishes this check from isAddressedByAuthorReply's direction (reply after vs. before the review)", () => {
-    const section = getStep5a7Section();
-    expect(section.toLowerCase()).toContain("opposite direction");
-    expect(section).toContain("reply *after* a review marks");
-    expect(section).toContain("reply dated *before* the");
-  });
-
-  it("escalation case reuses the shared PR_TASK_ID from Step 2.1, and the shared escalation pattern PATCHes status: blocked (no fresh taskId fetch) (PH-1.2)", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("PR_TASK_ID");
-    // No independent GET .../prs/$PR_RECORD_ID fetch for taskId purposes anymore — that
-    // resolution now lives once in Step 2.1 (MTR-2.1) and is only referenced here.
-    expect(section).not.toMatch(
-      /GET[^\n]*\n[^\n]*"\$SHIPWRIGHT_TASK_STORE_URL\/prs\/\$PR_RECORD_ID"[^\n]*\n[^\n]*taskId/,
-    );
-    expect(section).toMatch(/Step 2\.1|reuse/i);
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(escalationPatternContent).toContain("-X PATCH");
-    expect(escalationPatternContent).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-    );
-    expect(escalationPatternContent).toContain('"status": "blocked"');
-  });
-
-  it("escalation case's {blockedReason} is stated inline, and the shared pattern PATCHes the PR record with blocked: true when no task is linked (PH-1.2)", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain(
-      "second-round disagreement between reviewer and automated fix",
-    );
-    expect(section).toContain("references/escalation-pattern.md");
-    const patchPrSnippet =
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n  -d \'{"blocked": true, "blockedReason"';
-    expect(escalationPatternContent).toContain("PR_TASK_ID` is empty");
-    expect(escalationPatternContent).not.toContain(
-      "log a warning and skip the",
-    );
-    expect(escalationPatternContent).toContain(
-      `curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  ${patchPrSnippet}`,
-    );
-    const emptyBranchIdx = escalationPatternContent.indexOf(
-      "PR_TASK_ID` is empty",
-    );
-    const patchPrIdx = escalationPatternContent.indexOf(patchPrSnippet);
-    expect(patchPrIdx).toBeGreaterThan(emptyBranchIdx);
-  });
-
-  it("escalation case states its {temp_file_slug}/comment inline, and the shared pattern posts exactly one PR comment via a temp file scoped by PR number (PH-1.2)", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(section).toContain("`escalation`");
-    expect(section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
-    expect(escalationPatternContent).toContain(
-      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
-    );
-    expect(escalationPatternContent).toContain(
-      "rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
-    );
-  });
-
-  it("escalation case releases the pre-work claim (via the shared pattern) and skips to the next PR without dispatching a fix subagent", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
-    expect(section).toContain("do not dispatch the fix subagent");
-    expect(section).toContain("do not post another rebuttal");
-    expect(section).toContain("do not reset");
-    expect(section).toContain("Move to the next qualifying PR in List A");
-  });
-
-  it("escalation case resolves the unresolved inline threads for the qualifying second-round review before releasing the claim (site-specific hook step, per escalation-pattern.md)", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("resolveReviewThread");
-    expect(section).toContain("re-flag this same PR next");
-    expect(section).toContain("Extra step, unique to this site");
-    const resolveIdx = section.indexOf("resolveReviewThread");
-    const releaseNoteIdx = section.indexOf("Claim released");
-    expect(resolveIdx).toBeGreaterThan(-1);
-    // The site documents the thread-resolution step; the actual release call lives in the
-    // shared reference (verified above) and happens after this site-specific hook per
-    // escalation-pattern.md's step 3/4 ordering.
-    expect(releaseNoteIdx).toBeGreaterThan(-1);
-    expect(escalationPatternContent).toContain("Site-specific hook point");
-  });
-
-  it("does not reference commit.oid, a field Step 3a's reviews query never fetches", () => {
-    const section = getStep5a7Section();
-    expect(section).not.toContain("commit.oid");
-  });
-
-  it("first-round rebuttals (no prior author reply before the current review) proceed normally to Step 5b", () => {
-    const section = getStep5a7Section();
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("proceed normally to Step 5b");
-    expect(otherwiseSection).toContain(
-      "RPF-1.1/1.2 behavior applies as before",
-    );
-  });
-
-  it("frames the escalation as a human-judgment deadlock, explicitly skipping the reviewState reset", () => {
-    const section = getStep5a7Section();
-    expect(section.toLowerCase()).toContain("human-judgment deadlock");
-    expect(section).toContain("do not reset");
-    expect(section).toContain("reviewState");
-  });
-
-  it("requires an explicit SAME_FINDING/DIFFERENT_FINDING judgment with justification for each candidate reply before escalating", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("SAME_FINDING");
-    expect(section).toContain("DIFFERENT_FINDING");
-    expect(section.toLowerCase()).toContain("justification");
-    // The judgment must be printed/decided before the escalation branch runs, not after.
-    const judgmentIdx = section.indexOf("SAME_FINDING");
-    const escalationBranchIdx = section.indexOf(
-      "**If any qualifying review has an author-reply comment",
-    );
-    expect(escalationBranchIdx).toBe(-1); // old unconditional-timestamp escalation framing must be gone
-    const ifEscalateIdx = section.search(/\*\*If.{0,80}SAME_FINDING/is);
-    expect(ifEscalateIdx).toBeGreaterThan(-1);
-    expect(judgmentIdx).toBeLessThan(ifEscalateIdx);
-  });
-
-  it("states the anti-pattern explicitly: a reply predating the review is not sufficient by itself to escalate", () => {
-    const section = getStep5a7Section();
-    expect(section.toLowerCase()).toContain("anti-pattern");
-    expect(section).toMatch(
-      /predat(e|ing|es) the review.{0,200}(not sufficient|is not enough|alone is not)/is,
-    );
-    expect(section.toLowerCase()).toContain("content must be verified");
-  });
-
-  it("gates escalation on at least one candidate reply judged SAME_FINDING, not on timestamp precedence alone", () => {
-    const section = getStep5a7Section();
-    expect(section).toMatch(
-      /at least one.{0,40}candidate.{0,60}SAME_FINDING/is,
-    );
-    expect(section).not.toContain(
-      "If any qualifying review has an author-reply comment dated before its `submittedAt`",
-    );
-  });
-
-  it("the no-escalation path covers both no-candidate-replies and all-candidates-judged-DIFFERENT_FINDING, proceeding to Step 5b as a first-round finding", () => {
-    const section = getStep5a7Section();
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("proceed normally to Step 5b");
-    expect(otherwiseSection.toLowerCase()).toContain("first-round finding");
-    expect(otherwiseSection).toMatch(/no candidate replies|no candidates/i);
-    expect(otherwiseSection).toContain("DIFFERENT_FINDING");
-  });
-
-  it("prefers inline-thread anchors (stable path/line) over freeform PR-comment text matching when the finding came from a thread", () => {
-    const section = getStep5a7Section();
-    expect(section.toLowerCase()).toContain("inline-thread anchor");
-    expect(section).toContain("path");
-    expect(section).toContain("line");
-    expect(section.toLowerCase()).toMatch(
-      /freeform (pr-comment )?text matching/,
-    );
-  });
-
-  it("frames the timestamp check as a shared pre-filter with check-patch.ts, and explains why the extra correlation judgment is needed here but not there", () => {
-    const section = getStep5a7Section();
-    expect(section).toContain("isAddressedByAuthorReply");
-    expect(section.toLowerCase()).toContain("pre-filter");
-    // Must no longer imply timestamp-order alone is sufficient signal for this step's decision.
-    expect(section).not.toContain(
-      "a reply dated *before* the\ncurrent review means we already rebutted once, the reviewer looked at that\nrebuttal, and\nstill raised a finding this round.",
-    );
-    // Should explain reply-after-review is inherently a stronger signal than reply-before-review.
-    expect(section).toMatch(/after a review.{0,120}(stronger|inherent)/is);
-  });
-});
-
-describe("patch.md — escalate .claude/** path findings to HITL on the first round (CDH-1.2)", () => {
-  function getStep5a6bSection() {
-    const step5a6bIdx = content.indexOf(
-      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
-    );
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    expect(step5a6bIdx).toBeGreaterThan(-1);
-    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
-    return content.slice(step5a6bIdx, step5a7Idx);
-  }
-
-  it("Step 5a.6b exists between Step 5a.6 (claim) and Step 5a.7 (second-round check)", () => {
-    const step5a6Idx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    const step5a6bIdx = content.indexOf(
-      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
-    );
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    expect(step5a6Idx).toBeGreaterThan(-1);
-    expect(step5a6bIdx).toBeGreaterThan(step5a6Idx);
-    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
-  });
-
-  it("fires unconditionally on the first round -- no second-round wait, unlike 5a.7", () => {
-    const section = getStep5a6bSection();
-    expect(section.toLowerCase()).toMatch(/first round|first-round/);
-    expect(section).not.toContain("SAME_FINDING");
-    expect(section).not.toContain("DIFFERENT_FINDING");
-  });
-
-  it("matches an inline thread's `.claude/` path, with a fallback to a review-body-level text mention", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain(".claude/");
-    expect(section.toLowerCase()).toContain("inline thread");
-    expect(section.toLowerCase()).toContain("fallback");
-    expect(section).toContain("reviewThreads.nodes[]");
-  });
-
-  it("the review-body fallback requires the `.claude/` mention to co-occur with remediation language, not a bare anywhere-in-body substring", () => {
-    // Markdown hard-wraps, so compare against a whitespace-normalized copy.
-    const flat = getStep5a6bSection().replace(/\s+/g, " ");
-    // The fallback must be anchored on a code span, not free text anywhere in the body.
-    expect(flat).toContain("inside an inline code span");
-    // ...and scoped to the same sentence as a remediation verb.
-    expect(flat).toContain("**same sentence**");
-    expect(flat).toContain("remediation verb");
-    for (const verb of [
-      "edit",
-      "update",
-      "change",
-      "modify",
-      "rewrite",
-      "delete",
-      "fix",
+  it("lists setup, toolchain, claim, dispatch, status, upsert, cleanup in order", () => {
+    let last = -1;
+    for (const item of [
+      "**Setup**",
+      "**Toolchain**",
+      "**Claim**",
+      "**Dispatch**",
+      "**Status**",
+      "**Upsert**",
+      "**Cleanup**",
     ]) {
-      expect(flat).toContain(`\`${verb}\``);
-    }
-    // A bare substring match is explicitly called out as insufficient.
-    expect(flat).toMatch(
-      /bare `\.claude\/` substring anywhere in the body is \*\*not\*\* enough/,
-    );
-    // ...with the false-positive risk (incidental context citations) spelled out.
-    expect(flat).toMatch(/cite `\.claude\/`-rooted paths as \*context\*/);
-    // Ambiguity resolves toward not matching (false-negative is cheaper than false-positive).
-    expect(flat).toContain("**do not match**");
-  });
-
-  it("has a distinct blockedReason from Step 5a.7's second-round-disagreement string", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain("structurally unfixable");
-    expect(section).not.toContain(
-      "second-round disagreement between reviewer and automated fix",
-    );
-  });
-
-  it("points at the shared escalation pattern and states its own temp_file_slug/comment body inline", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain("references/escalation-pattern.md");
-    expect(section).toContain("`claude-dir`");
-    expect(section).toContain("/tmp/shipwright-patch-claude-dir-{pr}.txt");
-    expect(escalationPatternContent).toContain(
-      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
-    );
-  });
-
-  it("reuses PR_TASK_ID/PR_RECORD_ID already resolved earlier in Step 5, same as Step 5a.7", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain("PR_TASK_ID");
-    expect(section).toContain("PR_RECORD_ID");
-    expect(section).toMatch(/Step 2\.1|reuse/i);
-    expect(section).toContain("Step 5a.6");
-  });
-
-  it("skips dispatching the fix subagent for this PR this cycle entirely, not deferring to 5a.7 or 5b", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain("do not dispatch the fix subagent");
-    expect(section).toContain("Move to the next qualifying PR in List A");
-  });
-
-  it("has the site-specific inline-thread-resolution hook before releasing the claim, to avoid re-qualifying for List A every cycle", () => {
-    const section = getStep5a6bSection();
-    expect(section).toContain("resolveReviewThread");
-    expect(section).toContain("Extra step, unique to this site");
-    expect(section.toLowerCase()).toMatch(
-      /re-qualify for list a|re-flag.{0,40}list a/,
-    );
-  });
-
-  it("the no-match path leaves this check inapplicable and proceeds to Step 5a.7 unaffected", () => {
-    const section = getStep5a6bSection();
-    expect(section).toMatch(/no finding matches/i);
-    expect(section).toContain("proceed to Step 5a.7");
-  });
-});
-
-describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation already exists (CFE-1.1)", () => {
-  function getStep6b6Section() {
-    const step6b6Idx = content.indexOf(
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b6Idx).toBeGreaterThan(-1);
-    expect(step6cIdx).toBeGreaterThan(-1);
-    return content.slice(step6b6Idx, step6cIdx);
-  }
-
-  it("Step 6b.6 exists between Step 6b.5 (claim) and Step 6c (dispatch)", () => {
-    const step6b5Idx = content.indexOf(
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-    );
-    const step6b6Idx = content.indexOf(
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b5Idx).toBeGreaterThan(-1);
-    expect(step6b6Idx).toBeGreaterThan(step6b5Idx);
-    expect(step6cIdx).toBeGreaterThan(step6b6Idx);
-  });
-
-  it("the claim step (6b.5) hands off to 6b.6 in both branches, not straight to 6c", () => {
-    const step6b5Idx = content.indexOf(
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-    );
-    const step6b6Idx = content.indexOf(
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    );
-    const section = content.slice(step6b5Idx, step6b6Idx);
-    expect(section).not.toContain("Proceed directly to Step 6c");
-    expect(section).not.toContain("Proceed to Step 6c");
-    expect(section).toContain("Proceed directly to Step 6b.6");
-    expect(section).toContain("Proceed to Step 6b.6");
-  });
-
-  it("references Step 5a.7 as the mirrored precedent for this check", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain("5a.7");
-  });
-
-  it("fetches the PR record fresh and checks its blocked field", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain("GET");
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(section).toContain("PR_BLOCKED");
-  });
-
-  it("queries GET /tasks?repo=&pr= directly instead of reading PR_RECORD.taskId", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
-    );
-    // No jq extraction of .taskId off the PR record anymore.
-    expect(section).not.toMatch(/jq -r '\.taskId/);
-    expect(section).not.toContain('echo "$PR_RECORD" | jq -r \'.taskId');
-  });
-
-  it("treats the PR as HITL-escalated if ANY matched task has hitl===true OR status==='blocked' (OR across all matches, mirrors PTL-1.1's check-helpers.ts semantics)", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain("TASK_BLOCKED");
-    expect(section).toMatch(/hitl.{0,20}(===|==)\s*true/i);
-    expect(section).toMatch(/status.{0,20}(===|==)\s*['"]blocked['"]/i);
-    expect(section.toLowerCase()).toContain("any");
-    expect(section).toContain("PTL-1.1");
-    expect(section).toContain("check-helpers.ts");
-  });
-
-  it("zero-match fallback at Step 6b.6 is unchanged: only PR_BLOCKED (from the PR record) matters, no task-based escalation signal", () => {
-    const section = getStep6b6Section();
-    expect(section).toMatch(/no (matching )?tasks?.{0,60}(found|match)/i);
-    expect(section.toLowerCase()).toContain("no task-based escalation signal");
-  });
-
-  it("Step 6b.6 exposes a single PR_TASK_ID (first matched task, or empty if none) for Step 6d's downstream BLOCKED-escalation reuse", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain("PR_TASK_ID");
-    expect(section.toLowerCase()).toMatch(/first match|first task/i);
-  });
-
-  it("true branch releases the claim, does not dispatch the fix subagent, and moves to the next PR in List D", () => {
-    const section = getStep6b6Section();
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
-    const hasSkipLanguage =
-      /do not\s+dispatch.{0,40}fix subagent/is.test(section) ||
-      /skip.{0,40}fix subagent/is.test(section) ||
-      /fix subagent.{0,40}skip/is.test(section);
-    expect(hasSkipLanguage).toBe(true);
-    expect(section).toContain("next PR in List D");
-  });
-
-  it("otherwise branch proceeds normally to Step 6c", () => {
-    const section = getStep6b6Section();
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("Step 6c");
-  });
-
-  it("otherwise branch hands off to Step 6b.7, not straight to 6c", () => {
-    const section = getStep6b6Section();
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("Step 6b.7");
-  });
-});
-
-describe("patch.md — bundle-incomplete self-check before CI-fix dispatch (PH-1.1)", () => {
-  function getStep6b7Section() {
-    const step6b7Idx = content.indexOf(
-      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
-    );
-    const step6b8Idx = content.indexOf(
-      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
-    );
-    expect(step6b7Idx).toBeGreaterThan(-1);
-    expect(step6b8Idx).toBeGreaterThan(-1);
-    return content.slice(step6b7Idx, step6b8Idx);
-  }
-
-  it("Step 6b.7 exists between Step 6b.6 (escalation check) and Step 6c (dispatch)", () => {
-    const step6b6Idx = content.indexOf(
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    );
-    const step6b7Idx = content.indexOf(
-      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b6Idx).toBeGreaterThan(-1);
-    expect(step6b7Idx).toBeGreaterThan(step6b6Idx);
-    expect(step6cIdx).toBeGreaterThan(step6b7Idx);
-  });
-
-  it("re-queries /tasks?branch= and checks for pending/in_progress/blocked statuses, matching isBundleComplete's signal", () => {
-    const section = getStep6b7Section();
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=");
-    expect(section).toContain('"pending"');
-    expect(section).toContain('"in_progress"');
-    expect(section).toContain('"blocked"');
-  });
-
-  it("uses {branch} already in scope rather than re-deriving HEAD_BRANCH via gh pr view again", () => {
-    const section = getStep6b7Section();
-    expect(section).not.toContain("gh pr view");
-    expect(section).not.toContain("headRefName");
-  });
-
-  it("contains [silent] and the fully-interpolated [skip-reason:patch:deferred:bundle-incomplete:{branch}] marker", () => {
-    const section = getStep6b7Section();
-    expect(section).toContain("[silent]");
-    expect(section).toContain("[skip-reason:patch:deferred:bundle-incomplete:");
-    expect(section).toContain(
-      "[skip-reason:patch:deferred:bundle-incomplete:{branch}]",
-    );
-  });
-
-  it("does not require a specific ordering between [skip-reason:...] and [silent]", () => {
-    const section = getStep6b7Section();
-    expect(section).toContain("does not matter");
-  });
-
-  it("releases the Step 6b.5 pre-work claim before stopping", () => {
-    const section = getStep6b7Section();
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
-  });
-
-  it("fully stops the command on incomplete bundle rather than continuing to the next PR in List D (unlike Step 6b.6)", () => {
-    const section = getStep6b7Section();
-    expect(section).not.toContain("next PR in List D");
-    expect(section).not.toContain("Step 7");
-    const hasStopLanguage =
-      /stop\s+here/is.test(section) || /stop\s+the\s+command/is.test(section);
-    expect(hasStopLanguage).toBe(true);
-  });
-
-  it("otherwise branch (bundle complete) proceeds to Step 6b.8 (which itself falls through to Step 6c) and does not emit [silent]", () => {
-    const section = getStep6b7Section();
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("Step 6b.8");
-    expect(otherwiseSection).not.toContain("[silent]");
-  });
-});
-
-describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
-  function getStep2_1Section() {
-    const step2_1Idx = content.indexOf("## Step 2.1:");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    expect(step2_1Idx).toBeGreaterThan(-1);
-    expect(step2_5Idx).toBeGreaterThan(-1);
-    return content.slice(step2_1Idx, step2_5Idx);
-  }
-
-  it("Step 2.1 exists between Step 2 (resolve target PR) and Step 2.5 (DIRTY handling)", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_1Idx = content.indexOf("## Step 2.1:");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    expect(step2Idx).toBeGreaterThan(-1);
-    expect(step2_1Idx).toBeGreaterThan(step2Idx);
-    expect(step2_5Idx).toBeGreaterThan(step2_1Idx);
-  });
-
-  it("Step 2.1 resolves matched tasks via GET /tasks?repo=&pr= directly, not PullRequest.taskId", () => {
-    const section = getStep2_1Section();
-    expect(section).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
-    );
-    expect(section).not.toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}",
-    );
-    expect(section).not.toContain(".prs[0].taskId");
-  });
-
-  it("Step 2.1 escalates the HIGHEST model tier among ALL matched tasks (mirrors PTL-1.2's review.md rule)", () => {
-    const section = getStep2_1Section();
-    expect(section.toLowerCase()).toContain("highest tier");
-    expect(section).toMatch(/all match(ed|es)/i);
-    expect(section).toContain("PTL-1.2");
-  });
-
-  it("Step 2.1 has real jq/bash computing PATCH_MODEL and PR_TASK_ID from $MATCHED_TASKS, not just prose (mirrors Step 6b.6's jq mechanics)", () => {
-    const section = getStep2_1Section();
-    // Must reference the tasks array and each task's model field via jq, not just describe
-    // the computation in prose.
-    expect(section).toMatch(/\.tasks\[\]/);
-    expect(section).toMatch(/\.model/);
-    expect(section).toContain("jq -r");
-    expect(section).toContain('echo "$MATCHED_TASKS"');
-    // Must actually assign both output variables from that jq, not just declare them.
-    expect(section).toMatch(/PATCH_MODEL=\$\(/);
-    expect(section).toMatch(/PR_TASK_ID=\$\(/);
-  });
-
-  it("Step 2.1 still resolves a single PR_TASK_ID scalar for downstream single-task escalation-PATCH reuse, and documents why", () => {
-    const section = getStep2_1Section();
-    expect(section).toContain("PR_TASK_ID");
-    // Must explain the single-scalar choice explicitly, since the model-tier calc now
-    // considers multiple matches but downstream consumers still PATCH one task.
-    expect(section.toLowerCase()).toMatch(
-      /downstream|escalation-patch consumers/i,
-    );
-  });
-
-  it("Step 2.1's zero-match fallback is unchanged: PATCH_MODEL=sonnet, warning, not a hard stop", () => {
-    const section = getStep2_1Section();
-    expect(section).toMatch(/no (matching )?tasks?.{0,60}(found|match)/i);
-    expect(section).toMatch(/PATCH_MODEL\s*=\s*"?sonnet"?/);
-    expect(section.toLowerCase()).toContain("no escalation");
-    expect(section.toLowerCase()).toContain("not a hard stop");
-    expect(section).toContain("⚠");
-  });
-
-  it("Step 2.1 documents the full escalation ladder (haiku->sonnet, sonnet->opus, opus->opus) and the no-task/failed-fetch sonnet fallback with no hard stop", () => {
-    const section = getStep2_1Section();
-    expect(section).toContain("PATCH_MODEL");
-    expect(section.toLowerCase()).toContain("haiku");
-    expect(section.toLowerCase()).toContain("sonnet");
-    expect(section.toLowerCase()).toContain("opus");
-    // Ladder direction: haiku -> sonnet, sonnet -> opus, opus stays opus.
-    expect(section).toMatch(/haiku[^\n]{0,40}(->|→)[^\n]{0,10}sonnet/i);
-    expect(section).toMatch(/sonnet[^\n]{0,40}(->|→)[^\n]{0,10}opus/i);
-    expect(section).toMatch(
-      /opus[^\n]{0,60}(->|→)[^\n]{0,10}opus|opus.{0,40}stays opus/i,
-    );
-    // No-task / failed-fetch fallback: plain 'sonnet', no escalation, not a hard stop.
-    expect(section).toMatch(/PATCH_MODEL\s*=\s*"?sonnet"?/);
-    expect(section.toLowerCase()).toContain("no escalation");
-    expect(section.toLowerCase()).toContain("not a hard stop");
-    expect(section).toContain("⚠");
-  });
-
-  it("Step 2.1 notes the value is reused at Step 4b, Step 5b, Step 6c, and Step 5a.7 with no second fetch", () => {
-    const section = getStep2_1Section();
-    expect(section).toContain("Step 4b");
-    expect(section).toContain("Step 5b");
-    expect(section).toContain("Step 6c");
-    expect(section).toContain("Step 5a.7");
-  });
-
-  it("Step 4b dispatch (conflict resolution) passes model: PATCH_MODEL to the Agent() call", () => {
-    const step4bIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
-    expect(step4bIdx).toBeGreaterThan(-1);
-    expect(step4cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step4bIdx, step4cIdx);
-    expect(section).toContain("model: PATCH_MODEL");
-  });
-
-  it("Step 5b dispatch (finding fixes) passes model: PATCH_MODEL to the Agent() call", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    expect(step5bIdx).toBeGreaterThan(-1);
-    expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5bIdx, step5cIdx);
-    expect(section).toContain("model: PATCH_MODEL");
-  });
-
-  it("Step 6c dispatch (CI fixes) passes model: PATCH_MODEL to the Agent() call", () => {
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    expect(step6cIdx).toBeGreaterThan(-1);
-    expect(step6dIdx).toBeGreaterThan(-1);
-    const section = content.slice(step6cIdx, step6dIdx);
-    expect(section).toContain("model: PATCH_MODEL");
-  });
-});
-
-describe("patch.md — [C.5] Add test coverage in fix subagent prompts (PTR-1.1)", () => {
-  function getStep5bSection() {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    expect(step5bIdx).toBeGreaterThan(-1);
-    expect(step5cIdx).toBeGreaterThan(-1);
-    return content.slice(step5bIdx, step5cIdx);
-  }
-
-  function getStep6cSection() {
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    expect(step6cIdx).toBeGreaterThan(-1);
-    expect(step6dIdx).toBeGreaterThan(-1);
-    return content.slice(step6cIdx, step6dIdx);
-  }
-
-  it("Step 5b prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
-    const section = getStep5bSection();
-    const cIdx = section.indexOf("[C] Validate");
-    const c5Idx = section.indexOf("[C.5] Add test coverage");
-    const dIdx = section.indexOf("[D] Commit");
-    expect(cIdx).toBeGreaterThan(-1);
-    expect(c5Idx).toBeGreaterThan(cIdx);
-    expect(dIdx).toBeGreaterThan(c5Idx);
-  });
-
-  it("Step 6c prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
-    const section = getStep6cSection();
-    const cIdx = section.indexOf("[C] Validate");
-    const c5Idx = section.indexOf("[C.5] Add test coverage");
-    const dIdx = section.indexOf("[D] Commit");
-    expect(cIdx).toBeGreaterThan(-1);
-    expect(c5Idx).toBeGreaterThan(cIdx);
-    expect(dIdx).toBeGreaterThan(c5Idx);
-  });
-
-  it("Step 5b's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
-    const section = getStep5bSection();
-    const c5Idx = section.indexOf("[C.5] Add test coverage");
-    const dIdx = section.indexOf("[D] Commit");
-    const c5Section = section.slice(c5Idx, dIdx);
-    expect(c5Section.toLowerCase()).toContain("test framework");
-    expect(c5Section.toLowerCase()).toContain("existing tests");
-    expect(c5Section.toLowerCase()).toContain("no test is needed");
-  });
-
-  it("Step 6c's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
-    const section = getStep6cSection();
-    const c5Idx = section.indexOf("[C.5] Add test coverage");
-    const dIdx = section.indexOf("[D] Commit");
-    const c5Section = section.slice(c5Idx, dIdx);
-    expect(c5Section.toLowerCase()).toContain("test framework");
-    expect(c5Section.toLowerCase()).toContain("existing tests");
-    expect(c5Section.toLowerCase()).toContain("no test is needed");
-  });
-
-  it("neither [C.5] block hardcodes a repo-specific test-suffix convention", () => {
-    const step5bSection = getStep5bSection();
-    const step6cSection = getStep6cSection();
-    const c5In5b = step5bSection.slice(
-      step5bSection.indexOf("[C.5] Add test coverage"),
-      step5bSection.indexOf("[D] Commit"),
-    );
-    const c5In6c = step6cSection.slice(
-      step6cSection.indexOf("[C.5] Add test coverage"),
-      step6cSection.indexOf("[D] Commit"),
-    );
-    for (const c5Section of [c5In5b, c5In6c]) {
-      expect(c5Section).not.toContain("*.unit.test.ts");
-      expect(c5Section).not.toContain("*.integration.test.ts");
-      expect(c5Section).not.toContain("*.smoke.test.ts");
-      expect(c5Section).not.toContain("*.content.test.ts");
+      const idx = indexOfOrFail(skeleton, item);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
     }
   });
 
-  it("Step 5b's [F] Report back block includes a TESTS_ADDED: field", () => {
-    const section = getStep5bSection();
-    const fIdx = section.indexOf("[F] Report back");
-    expect(fIdx).toBeGreaterThan(-1);
-    const fSection = section.slice(fIdx);
-    expect(fSection).toContain("TESTS_ADDED:");
+  it("claim keeps the Pre-Claim Fast Path and the 409 skip", () => {
+    expect(skeleton).toContain("Pre-Claim Fast Path");
+    expect(skeleton).toContain("PRECLAIM_COMMIT_SHA");
+    expect(skeleton).toContain("`PR_RECORD_ID = PRECLAIM_RECORD_ID`");
+    expect(skeleton).toContain('`POST /prs/claim` with `phase: "patch"`');
+    expect(skeleton).toContain("`409`");
+    expect(skeleton).toContain(
+      "⏸ PR #{pr} is already claimed by another patch run — skipping.",
+    );
   });
 
-  it("Step 6c's [E] Report back block includes a TESTS_ADDED: field", () => {
-    const section = getStep6cSection();
-    const eIdx = section.indexOf("[E] Report back");
-    expect(eIdx).toBeGreaterThan(-1);
-    const eSection = section.slice(eIdx);
-    expect(eSection).toContain("TESTS_ADDED:");
+  it("dispatch renews the heartbeat and runs PATCH_SUBAGENT_TYPE in the foreground", () => {
+    expect(skeleton).toContain("POST /prs/{id}/heartbeat");
+    expect(skeleton).toContain("PATCH_SUBAGENT_TYPE");
+    expect(skeleton).toContain("model: PATCH_MODEL");
+    expect(skeleton).toContain("run_in_background: false");
+  });
+
+  it("status handling retries unparseable STATUS and escalates BLOCKED via escalation-pattern.md", () => {
+    expect(skeleton).toMatch(/no parseable `STATUS:` → retry once/);
+    expect(skeleton).toContain("escalation-pattern.md");
+  });
+
+  it("upsert posts commitSha to POST /prs/{id}/patch", () => {
+    expect(skeleton).toContain("`POST /prs/{id}/patch` with `commitSha`");
+  });
+
+  it("guards release the claim before moving on", () => {
+    expect(skeleton).toContain("POST /prs/{id}/release");
+  });
+
+  it("each lane names its BLOCKED escalation slug", () => {
+    expect(stepBlock("4c")).toContain("`blocked-4c`");
+    expect(stepBlock("5c")).toContain("`blocked-5c`");
+    expect(stepBlock("6d")).toContain("`blocked-6d`");
   });
 });
 
-describe("patch.md — escalate first-time BLOCKED status to HITL before releasing the claim (BHE-1.1)", () => {
-  function getStep4cSection() {
-    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
-    const step4c5Idx = content.indexOf("### Step 4c.5:");
-    expect(step4cIdx).toBeGreaterThan(-1);
-    expect(step4c5Idx).toBeGreaterThan(-1);
-    return content.slice(step4cIdx, step4c5Idx);
-  }
-
-  function getStep5cSection() {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5:");
-    expect(step5cIdx).toBeGreaterThan(-1);
-    expect(step5c5Idx).toBeGreaterThan(-1);
-    return content.slice(step5cIdx, step5c5Idx);
-  }
-
-  function getStep6dSection() {
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    const step6d5Idx = content.indexOf("### Step 6d.5:");
-    expect(step6dIdx).toBeGreaterThan(-1);
-    expect(step6d5Idx).toBeGreaterThan(-1);
-    return content.slice(step6dIdx, step6d5Idx);
-  }
-
-  function getBlockedBranch(section: string) {
-    const blockedIdx = section.indexOf("**BLOCKED**");
-    expect(blockedIdx).toBeGreaterThan(-1);
-    return section.slice(blockedIdx);
-  }
-
-  // PH-1.2: the literal PATCH/comment/release curl sequence lives once in
-  // references/escalation-pattern.md now, rather than being repeated at each of the 4 call
-  // sites. Verify the shared file's sequencing once, then verify each call site (a) points
-  // at the shared reference and (b) still carries its own distinct blockedReason/comment/
-  // temp-file-slug parameter values inline.
-  function assertSharedPatternSequencing() {
-    // status: blocked PATCH to the linked task
-    expect(escalationPatternContent).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-    );
-    expect(escalationPatternContent).toContain('"status": "blocked"');
-
-    // blocked + blockedReason PATCH fallback to the PR record
-    expect(escalationPatternContent).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-    );
-    expect(escalationPatternContent).toContain("blockedReason");
-
-    // PR comment via temp file
-    expect(escalationPatternContent).toContain(
-      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
-    );
-    expect(escalationPatternContent).toContain(
-      "rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
-    );
-
-    // Ordering: status PATCH + comment must occur BEFORE the release call
-    const taskPatchIdx = escalationPatternContent.indexOf(
-      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-    );
-    const prPatchIdx = escalationPatternContent.indexOf(
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-    );
-    const commentIdx = escalationPatternContent.indexOf(
-      "--body-file /tmp/shipwright-patch-",
-    );
-    const releaseIdx = escalationPatternContent.indexOf(
-      "/prs/$PR_RECORD_ID/release",
-    );
-
-    expect(releaseIdx).toBeGreaterThan(-1);
-    expect(taskPatchIdx).toBeGreaterThan(-1);
-    expect(taskPatchIdx).toBeLessThan(releaseIdx);
-    expect(prPatchIdx).toBeGreaterThan(-1);
-    expect(prPatchIdx).toBeLessThan(releaseIdx);
-    expect(commentIdx).toBeGreaterThan(-1);
-    expect(commentIdx).toBeLessThan(releaseIdx);
-  }
-
-  it("the shared escalation-pattern.md sequences task/PR PATCH + PR comment before the claim release", () => {
-    assertSharedPatternSequencing();
-  });
-
-  it("Step 4c BLOCKED branch points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
-    const section = getStep4cSection();
-    const blocked = getBlockedBranch(section);
-    expect(blocked).toContain("references/escalation-pattern.md");
-    expect(blocked).toContain(
-      '"merge-conflict resolution blocked — automated conflict\n    resolution could not complete"',
-    );
-    expect(blocked.toLowerCase()).toContain(
-      "merge-conflict resolution subagent reported blocked",
-    );
-    expect(blocked).toContain("`blocked-4c`");
-    expect(blocked).toContain("/tmp/shipwright-patch-blocked-4c-{pr}.txt");
-    expect(blocked).toContain("Step 2.1");
-  });
-
-  it("Step 5c BLOCKED branch (first-round, plain BLOCKED) points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
-    const section = getStep5cSection();
-    const blocked = getBlockedBranch(section);
-    expect(blocked).toContain("references/escalation-pattern.md");
-    expect(blocked).toContain(
-      '"review-finding fix blocked — automated fix subagent could not\n    complete"',
-    );
-    expect(blocked.toLowerCase()).toContain(
-      "review-finding fix subagent reported blocked",
-    );
-    expect(blocked).toContain("`blocked-5c`");
-    expect(blocked).toContain("/tmp/shipwright-patch-blocked-5c-{pr}.txt");
-    expect(blocked).toContain("Step 2.1");
-  });
-
-  it("Step 5c's BLOCKED escalation reuses PR_TASK_ID rather than re-fetching taskId", () => {
-    const section = getStep5cSection();
-    const blocked = getBlockedBranch(section);
-    expect(blocked).toContain("PR_TASK_ID");
-    expect(blocked).not.toMatch(
-      /GET[^\n]*\n[^\n]*"\$SHIPWRIGHT_TASK_STORE_URL\/prs\/\$PR_RECORD_ID"[^\n]*\n[^\n]*taskId/,
-    );
-  });
-
-  it("Step 6d BLOCKED branch points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
-    const section = getStep6dSection();
-    const blocked = getBlockedBranch(section);
-    expect(blocked).toContain("references/escalation-pattern.md");
-    expect(blocked).toContain(
-      '"CI-fix blocked — automated CI-fix subagent could not\n    complete"',
-    );
-    expect(blocked.toLowerCase()).toContain("ci-fix subagent reported blocked");
-    expect(blocked).toContain("`blocked-6d`");
-    expect(blocked).toContain("/tmp/shipwright-patch-blocked-6d-{pr}.txt");
-    // Distinct from the other two BLOCKED sites: this one reuses PR_TASK_ID from Step 6b.6,
-    // not Step 2.1.
-    expect(blocked).toContain("Step 6b.6");
-  });
-
-  it("all three BLOCKED sites use distinct temp file names to avoid cross-worktree collisions", () => {
-    expect(content).toContain("/tmp/shipwright-patch-blocked-4c-{pr}.txt");
-    expect(content).toContain("/tmp/shipwright-patch-blocked-5c-{pr}.txt");
-    expect(content).toContain("/tmp/shipwright-patch-blocked-6d-{pr}.txt");
-  });
-
-  it("the existing Step 5a.7 second-round-disagreement escalation is unaffected by the new Step 5c BLOCKED escalation", () => {
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(step5a7Idx).toBeGreaterThan(-1);
-    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
-    const step5a7Section = content.slice(step5a7Idx, step5bIdx);
-    expect(step5a7Section).toContain(
-      "/tmp/shipwright-patch-escalation-{pr}.txt",
-    );
-    expect(step5a7Section).toContain("second-round disagreement");
-  });
-
-  it("the existing Step 5a.7 second-round-disagreement escalation is unaffected by the new Step 5a.6b .claude/** escalation", () => {
-    const step5a6bIdx = content.indexOf(
-      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
-    );
-    const step5a7Idx = content.indexOf(
-      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
-    );
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    expect(step5a6bIdx).toBeGreaterThan(-1);
-    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
-    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
-
-    const step5a7Section = content.slice(step5a7Idx, step5bIdx);
-    expect(step5a7Section).toContain(
-      "/tmp/shipwright-patch-escalation-{pr}.txt",
-    );
-    expect(step5a7Section).toContain("second-round disagreement");
-
-    const step5a6bSection = content.slice(step5a6bIdx, step5a7Idx);
-    expect(step5a6bSection).toContain("structurally unfixable");
-    expect(step5a6bSection).not.toContain(
-      "second-round disagreement between reviewer and automated fix",
-    );
-  });
-
-  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets, via the shared escalation pattern)", () => {
-    const step6b6Idx = content.indexOf(
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const step6b6Section = content.slice(step6b6Idx, step6cIdx);
-    expect(step6b6Section).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-    );
-    expect(step6b6Section).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
-    );
-
-    const step6dSection = getStep6dSection();
-    const blocked = getBlockedBranch(step6dSection);
-    expect(blocked).toContain("references/escalation-pattern.md");
-    // The shared pattern Step 6d points at uses the same two PATCH targets as Step 6b.6's
-    // own pre-dispatch check.
-    expect(escalationPatternContent).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-    );
-    expect(escalationPatternContent).toContain(
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-    );
-  });
-});
-
-describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)", () => {
-  function checkSite(step: string, next: string) {
-    const stepIdx = content.indexOf(step);
-    expect(stepIdx).toBeGreaterThan(-1);
-    const nextIdx = content.indexOf(next, stepIdx);
-    expect(nextIdx).toBeGreaterThan(stepIdx);
-    const section = content.slice(stepIdx, nextIdx);
-    expect(section).toContain("state/toolchain-cache/{repo}.json");
-    expect(section).toMatch(
-      /CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is,
-    );
-    expect(section).toMatch(/authoritative if found/i);
-  }
-
-  it("Step 4a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
-    checkSite("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
-  });
-
-  it("Step 5a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
-    checkSite("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
-  });
-
-  it("Step 6a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
-    checkSite("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
-  });
-
-  it("does not reference the old single shared cache file", () => {
-    expect(content).not.toContain("state/toolchain-cache.json");
-  });
-
-  it("stores a tests object for multi-layer test commands at each detection site", () => {
-    function checkTestsField(step: string, next: string) {
-      const stepIdx = content.indexOf(step);
-      const nextIdx = content.indexOf(next, stepIdx);
-      const section = content.slice(stepIdx, nextIdx);
-      expect(section).toMatch(/\{tests\}/i);
-    }
-    checkTestsField("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
-    checkTestsField("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
-    checkTestsField("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
-  });
-});
-
-describe("patch.md — delegates to toolchain-patterns.md's docsSource pointer (LVB-4.1)", () => {
-  // The docsSource pointer field and scoped-fingerprint rule are asserted against
-  // toolchain-patterns.md's actual content in dev-task.content.test.ts — this file
-  // only needs to confirm patch.md's three call sites delegate rather than re-embed.
-  it("Step 4a.5/5a.5/6a.5 delegate to toolchain-patterns.md's Caching Across Runs section rather than re-embedding the fingerprint recipe inline", () => {
-    for (const [step, next] of [
-      ["### Step 4a.5: Detect Project Toolchain", "### Step 4a.6"],
-      ["### Step 5a.5: Detect Project Toolchain", "### Step 5a.6"],
-      ["### Step 6a.5: Detect Project Toolchain", "### Step 6b"],
-    ] as const) {
-      const stepIdx = content.indexOf(step);
-      const nextIdx = content.indexOf(next, stepIdx);
-      const section = content.slice(stepIdx, nextIdx);
-      expect(section).not.toMatch(/docsSource/);
-      expect(section).toMatch(/Caching Across Runs/);
-    }
-  });
-});
-
-describe("patch.md — scoped-lint preference at all three lint-command sites (LSC-1.3)", () => {
-  function checkSite(step: string, next: string) {
-    const stepIdx = content.indexOf(step);
-    expect(stepIdx).toBeGreaterThan(-1);
-    const nextIdx = content.indexOf(next, stepIdx);
-    expect(nextIdx).toBeGreaterThan(stepIdx);
-    const section = content.slice(stepIdx, nextIdx);
-    expect(section).toMatch(/lintScoped/);
-    expect(section).toMatch(/\{base\}/);
-    expect(section).toMatch(/\{head\}/);
-    expect(section).toMatch(/absent.{0,160}unscoped|unscoped.{0,160}absent/is);
-  }
-
-  it("Step 4a.5 (conflict-resolution) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
-    checkSite("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
-  });
-
-  it("Step 5a.5 (review-fix) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
-    checkSite("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
-  });
-
-  it("Step 6a.5 (CI-fix) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
-    checkSite("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
-  });
-
-  it("conflict-resolution and CI-fix sites compute {head} from the worktree's current HEAD SHA for the scoped-lint substitution", () => {
-    // review-fix reuses the $base already fetched for the PR-diff-against-base step instead
-    // of adding a second fetch, so only assert the {head} computation is present at each site
-    const headComputation = "git -C {worktree-path} rev-parse HEAD";
-    expect(content.split(headComputation).length - 1).toBeGreaterThanOrEqual(3);
-  });
-});
-
-describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (PCG-1.1)", () => {
-  function getStep2_5Section() {
-    const step2_5Idx = content.indexOf(
-      "## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)",
-    );
-    const step3Idx = content.indexOf(
-      "## Step 3: Classify PRs into Three Lists",
-    );
-    expect(step2_5Idx).toBeGreaterThan(-1);
-    expect(step3Idx).toBeGreaterThan(-1);
-    return content.slice(step2_5Idx, step3Idx);
-  }
-
-  function getStep3OpeningSection() {
-    const step3Idx = content.indexOf(
-      "## Step 3: Classify PRs into Three Lists",
-    );
-    const step3aIdx = content.indexOf(
-      "### Step 3a: Check for Unaddressed Review Findings",
-    );
-    expect(step3Idx).toBeGreaterThan(-1);
-    expect(step3aIdx).toBeGreaterThan(-1);
-    return content.slice(step3Idx, step3aIdx);
-  }
-
-  it("Step 2.5's opening line no longer describes 'each PR discovered in Step 2'", () => {
-    const section = getStep2_5Section();
-    expect(section).not.toContain("For each PR discovered in Step 2");
-  });
-
-  it("Step 2.5's opening line reflects the single target PR resolved in Step 2", () => {
-    const section = getStep2_5Section();
-    const openingLine =
-      section
-        .split("\n")
-        .filter((line) => line.trim().length > 0)
-        .find((line) => !line.trim().startsWith("#")) ?? "";
-    expect(openingLine).toMatch(/the (target )?PR resolved in Step 2/i);
-  });
-
-  it("Step 3's opening prose no longer says 'each PR' or 'all PRs'", () => {
-    const section = getStep3OpeningSection();
-    expect(section).not.toContain("each PR");
-    expect(section).not.toContain("all PRs");
-    expect(section).not.toContain("Work through all PRs before continuing");
-  });
-
-  it("Step 3's opening prose reflects checking the single target PR against all three conditions", () => {
-    const section = getStep3OpeningSection();
-    expect(section).toMatch(/the (target )?PR against all three conditions/i);
-  });
-
-  it("Step 3's List A/C/D labels and multi-list membership note are unchanged", () => {
-    const section = getStep3OpeningSection();
-    expect(section).toContain(
-      "**List A** — PRs with unresolved review or PR comments",
-    );
-    expect(section).toContain("**List C** — PRs with merge conflicts (DIRTY)");
-    expect(section).toContain("**List D** — PRs with failing CI");
-    expect(section).toMatch(/appear in multiple lists/);
-    expect(section).toContain(
-      "processed in the order the steps execute (C → A → D)",
-    );
-  });
-
-  it("does not touch the 'move to the next PR in List X' fallback phrasing deeper in Steps 4-6", () => {
-    expect(content).toContain("Move to the next candidate PR in List C");
-    expect(content).toContain("Move to the next qualifying PR in List A");
-    expect(content).toContain("Move to the next PR in List D");
-  });
-
-  it("does not touch the List A/C/D classification labels used later in Steps 3a-3c", () => {
-    expect(content).toContain("add it to **List A**");
-    expect(content).toContain("add to **List C**");
-    expect(content).toContain("add the PR to **List D**");
-  });
-});
-
-describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
-  function getStep6_5Section() {
-    const step6_5Idx = content.indexOf("## Step 6.5: Verify CI After Patch");
-    const step7Idx = content.indexOf("## Step 7: Report");
-    expect(step6_5Idx).toBeGreaterThan(-1);
-    expect(step7Idx).toBeGreaterThan(-1);
-    return content.slice(step6_5Idx, step7Idx);
-  }
-
-  it("Step 6.5 exists between Step 6e (cleanup) and Step 7 (report)", () => {
-    const step6eIdx = content.indexOf("### Step 6e: Cleanup Worktree");
-    const step6_5Idx = content.indexOf("## Step 6.5: Verify CI After Patch");
-    const step7Idx = content.indexOf("## Step 7: Report");
-    expect(step6eIdx).toBeGreaterThan(-1);
-    expect(step6_5Idx).toBeGreaterThan(step6eIdx);
-    expect(step7Idx).toBeGreaterThan(step6_5Idx);
-  });
-
-  it("fires only when at least one of Steps 4/5/6 pushed a commit this cycle, and skips cleanly with a one-line message otherwise", () => {
-    const section = getStep6_5Section();
-    expect(section).toMatch(
-      /Step 4.{0,20}Step 5.{0,20}Step 6|Steps 4[/,].{0,10}5[/,].{0,10}6/is,
-    );
-    expect(section.toLowerCase()).toContain("pushed");
-    expect(section).toMatch(/skip/i);
-    // The skip message is a one-liner, not a multi-paragraph explanation.
-    const skipLineMatch = section.match(/^.*no.*push.*$/im);
-    expect(skipLineMatch).not.toBeNull();
-  });
-
-  it("polls the GitHub Actions API for the final HEAD SHA at a bounded cadence (30s interval, ~5 min cap)", () => {
-    const section = getStep6_5Section();
-    expect(section).toContain("repos/$REPO/actions/runs?head_sha=$HEAD_SHA");
-    expect(section).toMatch(/30[\s-]?second|30s/i);
-    expect(section).toMatch(/5[\s-]?min/i);
-  });
-
-  it("renews the PR claim's heartbeat on every poll iteration", () => {
-    const section = getStep6_5Section();
-    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
-    expect(section).toMatch(/each (poll|iteration)|every (poll|iteration)/i);
-  });
-
-  it("skips cleanly if no CI runs are configured for the repo, mirroring the existing no-CI-configured skip pattern", () => {
-    const section = getStep6_5Section();
-    expect(section.toLowerCase()).toContain("no ci");
-    expect(section).toMatch(/skip/i);
-  });
-
-  it("on green (or no CI configured), proceeds to the existing Step 7 report unchanged", () => {
-    const section = getStep6_5Section();
-    expect(section).toContain("Step 7");
-  });
-
-  it("on still-red after the poll window, reuses Step 6c's prompt template verbatim instead of duplicating it", () => {
-    const section = getStep6_5Section();
-    expect(section).toContain("Step 6c");
-    expect(section.toLowerCase()).toMatch(
-      /same prompt template|exact same prompt|reus\w* .{0,40}step 6c/i,
-    );
-    // Must not duplicate Step 6c's actual prompt body text in Step 6.5.
-    expect(section).not.toContain(
-      "You are fixing failing CI on a pull request",
-    );
-    expect(section).not.toContain("[A] Diagnose the failures");
-  });
-
-  it("dispatches exactly one bonus CI-fix subagent and pushes once, with no re-poll or retry", () => {
-    const section = getStep6_5Section();
-    expect(section).toMatch(/one|single/i);
-    expect(section).toMatch(/no.{0,20}(re-poll|retry|further)/i);
-  });
-
-  it("on BLOCKED from the bonus subagent, reuses Step 6d's existing HITL-escalation branch instead of a new escalation path", () => {
-    const section = getStep6_5Section();
-    expect(section).toContain("Step 6d");
-    expect(section.toLowerCase()).toMatch(
-      /same (hitl|escalation)|reus\w* .{0,40}step 6d/i,
-    );
-    // Must not duplicate Step 6d's escalation procedure text in Step 6.5.
-    expect(section).not.toContain("PATCH the linked task to `hitl: true`");
-    expect(section).not.toContain("shipwright-patch-blocked-6d-{pr}.txt");
-  });
-
-  it("uses the same PATCH-hitl/PR-comment/release convention referenced from Step 6d, not a bespoke mechanism", () => {
-    const section = getStep6_5Section();
-    expect(section).toMatch(/hitl/i);
-  });
-});
-
-describe("patch.md — drop stale review-patch reference from claim-release steps (DPF-2.2)", () => {
-  it("contains no reference to the removed review-patch command/cron anywhere", () => {
-    expect(content.toLowerCase()).not.toContain("review-patch");
-  });
-
-  it("the shared escalation-pattern.md reference uses the corrected 'a subsequent patch run' phrasing (PH-1.2 collapsed the 3 formerly-separate inline copies into this one)", () => {
-    const matches =
-      escalationPatternContent.match(/a subsequent patch run/g) ?? [];
-    expect(matches.length).toBe(1);
-  });
-});
-
-describe("patch.md — capture and report CI failure signature (CSD-1.2)", () => {
-  function getStep6bSection() {
-    const step6bIdx = content.indexOf("### Step 6b: Collect CI Failure Output");
-    const step6b5Idx = content.indexOf("### Step 6b.5:");
-    expect(step6bIdx).toBeGreaterThan(-1);
-    expect(step6b5Idx).toBeGreaterThan(step6bIdx);
-    return content.slice(step6bIdx, step6b5Idx);
-  }
-
-  function getStep6d5Section() {
-    const step6d5Idx = content.indexOf("### Step 6d.5: Upsert PR Record");
-    const step6eIdx = content.indexOf("### Step 6e:");
-    expect(step6d5Idx).toBeGreaterThan(-1);
-    expect(step6eIdx).toBeGreaterThan(step6d5Idx);
-    return content.slice(step6d5Idx, step6eIdx);
-  }
-
-  it("Step 6b computes the failing-job-name signature via gh run view --json jobs --jq, sorted and comma-joined", () => {
-    const section = getStep6bSection();
-    expect(section).toContain(
-      'gh run view "$RUN_ID" --repo {org}/{repo} --json jobs',
-    );
-    expect(section).toContain("--jq");
-    expect(section).toContain('select(.conclusion=="failure")');
-    expect(section).toContain(".name");
-    expect(section).toContain("sort");
-    expect(section).toContain('join(",")');
-  });
-
-  it("Step 6b stores the computed signature in a CI_FAILURE_SIGNATURE variable", () => {
-    const section = getStep6bSection();
-    expect(section).toMatch(/CI_FAILURE_SIGNATURE=/);
-  });
-
-  it("Step 6b's signature computation runs after the existing RUN_ID/log-collection block", () => {
-    const section = getStep6bSection();
-    const runIdIdx = section.indexOf("RUN_ID=$(gh run list");
-    const logsIdx = section.indexOf('gh run view "$RUN_ID" --log --failed');
-    const signatureIdx = section.indexOf("CI_FAILURE_SIGNATURE=");
-    expect(runIdIdx).toBeGreaterThan(-1);
-    expect(logsIdx).toBeGreaterThan(runIdIdx);
-    expect(signatureIdx).toBeGreaterThan(logsIdx);
-  });
-
-  it("Step 6d.5's POST /prs/:id/patch payload conditionally includes ciFailureSignature when CI_FAILURE_SIGNATURE is set", () => {
-    const section = getStep6d5Section();
-    // Existing unconditional heartbeat + commitSha patch call remains.
-    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
-    expect(section).toContain("/prs/$PR_RECORD_ID/patch");
-    expect(section).toContain("commitSha");
-    // New conditional inclusion of ciFailureSignature.
-    expect(section).toContain("ciFailureSignature");
-    expect(section).toContain("CI_FAILURE_SIGNATURE");
-    // Must be gated by a condition (guarding Steps 4/5's reuse of this same block, which
-    // never populate CI_FAILURE_SIGNATURE), not unconditionally appended.
-    const codeBlockIdx = section.indexOf("```bash");
-    const sigIdx = section.indexOf("ciFailureSignature", codeBlockIdx);
-    expect(sigIdx).toBeGreaterThan(-1);
-    const before = section.slice(codeBlockIdx, sigIdx);
-    expect(before).toMatch(/if\s*\[\s*-n\s*"\$CI_FAILURE_SIGNATURE"/);
-  });
-
-  it("Step 6d.5's guard on CI_FAILURE_SIGNATURE mirrors the existing PR_RECORD_ID '-n' guard pattern", () => {
-    const section = getStep6d5Section();
-    expect(section).toMatch(/if\s*\[\s*-n\s*"\$PR_RECORD_ID"\s*\]/);
-    expect(section).toMatch(/if\s*\[\s*-n\s*"\$CI_FAILURE_SIGNATURE"\s*\]/);
-  });
-});
-
-describe("patch.md — detect stale-cancelled CI, rerun before escalating to CI-fix (PCC-1.1)", () => {
-  function getStep3cSection() {
-    const step3cIdx = content.indexOf(
-      "### Step 3c: Check for Failing CI (for PRs not in List C)",
-    );
-    const step3dIdx = content.indexOf("### Step 3d: Summary");
-    expect(step3cIdx).toBeGreaterThan(-1);
-    expect(step3dIdx).toBeGreaterThan(step3cIdx);
-    return content.slice(step3cIdx, step3dIdx);
-  }
-
-  function getStep6b8Section() {
-    const step6b8Idx = content.indexOf(
-      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b8Idx).toBeGreaterThan(-1);
-    expect(step6cIdx).toBeGreaterThan(step6b8Idx);
-    return content.slice(step6b8Idx, step6cIdx);
-  }
-
-  it("Step 3c independently detects cancelled CI using the same latest-run-per-workflow dedup, distinct from the failure/timed_out check", () => {
-    const section = getStep3cSection();
-    expect(section).toContain('conclusion == "cancelled"');
-    expect(section).toContain("CI_HAS_CANCELLED");
-    expect(section).toContain("CI_HAS_FAILING");
-    expect(section).toContain("CANCELLED_RUN_ID");
-    expect(section).toContain("independently");
-    expect(section).toContain("not mutually exclusive with");
-  });
-
-  it("Step 3c records that a cancelled-only PR (no CI_HAS_FAILING) routes to the new Step 6b.8 branch", () => {
-    const section = getStep3cSection();
-    expect(section).toContain("Step 6b.8");
-    expect(section).toContain("cancelled-only");
-  });
-
-  it("Step 6b.8 exists between Step 6b.7 (bundle gate) and Step 6c (dispatch)", () => {
-    const step6b7Idx = content.indexOf(
-      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
-    );
-    const step6b8Idx = content.indexOf(
-      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
-    );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    expect(step6b7Idx).toBeGreaterThan(-1);
-    expect(step6b8Idx).toBeGreaterThan(step6b7Idx);
-    expect(step6cIdx).toBeGreaterThan(step6b8Idx);
-  });
-
-  it("Step 6b.7's otherwise branch hands off to Step 6b.8, not straight to 6c", () => {
-    const step6b7Idx = content.indexOf(
-      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
-    );
-    const step6b8Idx = content.indexOf(
-      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
-    );
-    const section = content.slice(step6b7Idx, step6b8Idx);
-    const otherwiseIdx = section.indexOf("**Otherwise**");
-    expect(otherwiseIdx).toBeGreaterThan(-1);
-    const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("Step 6b.8");
-  });
-
-  it("gates the rerun-first branch on cancelled-only, no failure/timed_out", () => {
-    const section = getStep6b8Section();
-    expect(section.toLowerCase()).toContain(
-      "cancelled-only, no failure/timed_out",
-    );
-    expect(section).toContain("CI_HAS_CANCELLED=true");
-    expect(section).toContain("CI_HAS_FAILING");
-    expect(section).toMatch(/CI_HAS_FAILING.{0,40}NOT also true/is);
-  });
-
-  it("a PR with a genuine failure/timed_out run skips this step entirely and proceeds directly to Step 6c", () => {
-    const section = getStep6b8Section();
-    expect(section).toMatch(
-      /does not hold.{0,400}proceed directly to\s+Step 6c/is,
-    );
-    expect(section).toContain(
-      "completely unaffected by the cancelled-only branch",
-    );
-  });
-
-  it("does not treat cancelled as failure-equivalent for concurrency/cancel-in-progress workflows — scoped to run state, not workflow identity", () => {
-    const section = getStep6b8Section();
-    for (const workflow of [
-      "chart-release.yml",
-      "sync-plugin-version.yml",
-      "auto-bump-chart.yml",
-      "deploy-site.yml",
-    ]) {
-      expect(section).toContain(workflow);
-    }
-    expect(section).toContain("concurrency");
-    expect(section.toLowerCase()).toMatch(/not to workflow\s+identity/);
-    expect(section.toLowerCase()).toContain("no-op");
-  });
-
-  it("calls `gh run rerun` for the cancelled run, with no commit and no subagent dispatch in this branch", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("gh run rerun");
-    expect(section).toContain("$CANCELLED_RUN_ID");
-    expect(section).toContain("no commit");
-    expect(section).toContain("no subagent dispatch");
-  });
-
-  it("polls for a terminal result with a brief, bounded cadence distinct from Step 6.5a's 30s/10-poll gate", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("gh run view");
-    expect(section).toMatch(/status.{0,20}conclusion/is);
-    expect(section).toMatch(/15 seconds/);
-    expect(section).toMatch(/8 times/);
-    expect(section).toContain("queued");
-    expect(section).toContain("in_progress");
-    expect(section).toContain("waiting");
-  });
-
-  it("renews the claim heartbeat on each poll iteration, same as other polling loops", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
-  });
-
-  it("treats an exhausted poll window with no terminal result as inconclusive and falls through to Step 6c", () => {
-    const section = getStep6b8Section();
-    expect(section.toLowerCase()).toContain("inconclusive");
-    expect(section).toMatch(/exhausted.{0,200}Step 6c/is);
-  });
-
-  it("on a successful (or other non-cancelled/non-failure terminal) rerun, skips Step 6c, releases the claim, and moves to the next PR in List D", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("Skip Step 6c entirely");
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
-    expect(section).toContain("next PR in List D");
-  });
-
-  it("falls through to Step 6c only when the rerun itself ends cancelled or failure (or times out inconclusively)", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("ends `cancelled` or `failure`");
-    expect(section).toContain("repeated-timeout/hang signal");
-    expect(section).not.toContain("normal test failure");
-  });
-
-  it("collects the job's abnormal duration vs. typical duration from the Actions API for the Step 6c prompt", () => {
-    const section = getStep6b8Section();
-    expect(section).toContain("actions/runs/$CANCELLED_RUN_ID/jobs");
-    expect(section).toContain("started_at");
-    expect(section).toContain("completed_at");
-    expect(section).toContain("typical duration");
-  });
-
-  it("Step 6c's prompt construction notes the repeated-timeout/hang context when arriving via Step 6b.8", () => {
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    expect(step6cIdx).toBeGreaterThan(-1);
-    expect(step6dIdx).toBeGreaterThan(step6cIdx);
-    const section = content.slice(step6cIdx, step6dIdx);
-    expect(section).toContain("REPEATED TIMEOUT/HANG SIGNAL");
-    expect(section).toContain("Step 6b.8");
-    expect(section).toContain("repeated-timeout-context");
-    expect(section.toLowerCase()).toMatch(/not a normal test\s+failure/);
-  });
-});
-
-describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
-  function getStep3dSection() {
-    const step3dIdx = content.indexOf("### Step 3d: Summary");
-    const step4Idx = content.indexOf("## Step 4: Resolve Merge Conflicts");
-    expect(step3dIdx).toBeGreaterThan(-1);
-    expect(step4Idx).toBeGreaterThan(step3dIdx);
-    return content.slice(step3dIdx, step4Idx);
-  }
-
-  it("Step 3d (empty lists) contains [skip-reason:patch:deferred:no-op-at-dispatch:{pr}] alongside [silent]", () => {
-    const section = getStep3dSection();
-    expect(section).toContain("[silent]");
-    expect(section).toContain("[skip-reason:patch:deferred:no-op-at-dispatch:");
-    expect(section).toContain(
-      "[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]",
-    );
-  });
-
-  it("does not require a specific ordering between [skip-reason:...] and [silent]", () => {
-    const section = getStep3dSection();
-    expect(section).toContain("does not matter");
-  });
-
-  it("explains that candidacy needs no write-back because getPatchCandidates() has no persisted cache drift", () => {
-    const section = getStep3dSection();
-    expect(section).toContain("getPatchCandidates");
-    expect(section).toContain("Candidacy needs no write-back");
-    expect(section).toContain("no persisted");
-  });
-
-  it("design note says the pre-claim is persisted state to give back, citing release()'s posted/approved guard", () => {
-    const section = getStep3dSection();
-    expect(section.replace(/\s+/g, " ")).toContain(
-      "persisted state this run must give back",
-    );
-    expect(section).toMatch(/terminal `posted`\/`approved` reviewState/);
-    expect(section).not.toContain("no stale state to correct via a write-back");
-  });
-
-  it("releases PRECLAIM_RECORD_ID by record id before emitting the skip-reason and [silent]", () => {
-    const section = getStep3dSection();
-    const releaseIdx = section.indexOf(
+describe("patch.md — kept guards (DTA-9.6 'keep in spine')", () => {
+  it("3d: pre-claim release with the no-op-at-dispatch skip-reason", () => {
+    const block = stepBlock("3d");
+    expect(block).toContain("PRECLAIM_RECORD_ID");
+    expect(block).toContain(
       '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release"',
     );
-    const skipIdx = section.indexOf(
-      "Emit `[skip-reason:patch:deferred:no-op-at-dispatch:",
-    );
-    expect(releaseIdx).toBeGreaterThan(-1);
-    expect(skipIdx).toBeGreaterThan(releaseIdx);
-    expect(section).toContain("regardless of head SHA");
-  });
-
-  it("guards the release on PRECLAIM_RECORD_ID being set and treats failure as non-fatal", () => {
-    const section = getStep3dSection();
-    expect(section).toContain('if [ -n "$PRECLAIM_RECORD_ID" ]; then');
-    expect(section).toContain("|| true");
-    expect(section).toContain("non-fatal");
-    expect(section).toContain("With no marker, call nothing");
-  });
-});
-
-describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
-  function getStep3a5Section() {
-    const step3a5Idx = content.indexOf(
-      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
-    );
-    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
-    expect(step3a5Idx).toBeGreaterThan(-1);
-    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
-    return content.slice(step3a5Idx, step3bIdx);
-  }
-
-  it("Step 3a.5 exists between Step 3a and Step 3b", () => {
-    const step3aIdx = content.indexOf(
-      "### Step 3a: Check for Unaddressed Review Findings",
-    );
-    const step3a5Idx = content.indexOf(
-      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
-    );
-    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
-    expect(step3aIdx).toBeGreaterThan(-1);
-    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
-    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
-  });
-
-  it("does not try to recover the finding by scanning review bodies — that fast path could never match posted data", () => {
-    const section = getStep3a5Section();
-    // The full **Recommendation**/**Flags**/**Reasoning** block only ever lands in the
-    // local state/reviews/PR_REVIEW_{pr}.md narrative (review.md:782), which is never
-    // posted; the GitHub-posted body carries only a condensed one-line clause with no
-    // flags (review.md:1118-1126). So no parse step may set DEPENDENCY_RISK_FINDING from
-    // a review body — the section must explain that rather than attempt it.
-    expect(section).not.toMatch(
-      /parse\s+`?\{recommendation, flags, reasoning\}`?\s+from/i,
-    );
-    expect(section).toContain("PR_REVIEW_{pr}.md");
-    expect(section).toContain("review.md:1118-1126");
-    expect(section).toMatch(/could never match real posted data/i);
-    expect(section).toMatch(/`flags`\s+is\s+absent from it entirely/i);
-  });
-
-  it("derives the finding from the PR's own diff, invoking resolve-dependency-watched-paths.ts and referencing dependency-risk-analysis.md by name", () => {
-    const section = getStep3a5Section();
-    expect(section).toContain("resolve-dependency-watched-paths.ts");
-    expect(section).toContain("references/dependency-risk-analysis.md");
-  });
-
-  it("derivation mirrors review.md's Step 5.8 without assuming a worktree exists yet", () => {
-    const section = getStep3a5Section();
-    expect(section).toContain("review.md");
-    expect(section).toContain("Step 5.8");
-    expect(section).toContain("gh api");
-    expect(section).toContain(
-      "gh pr diff {pr} --repo {org}/{repo} --name-only",
-    );
-  });
-
-  it("has no dependency on any review-session state ever having existed", () => {
-    const section = getStep3a5Section();
-    expect(section.toLowerCase()).toContain("independently");
-    expect(section).toContain("any agent can claim either phase");
-  });
-
-  it("when not triggered, DEPENDENCY_RISK_FINDING stays unset for the PR", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(/DEPENDENCY_RISK_FINDING.{0,40}stays\s+unset/is);
-  });
-
-  it("routes a hold/review recommendation into List A directly, since a dependency-bump-only PR can still get a clean Verdict: APPROVE", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(
-      /route.{0,60}(?:"hold"|hold).{0,60}(?:"review"|review).{0,80}List A/is,
-    );
-    expect(section).toContain("Verdict: APPROVE");
-    expect(section).toContain("compute-review-verdict.ts");
-    expect(section.toLowerCase()).toContain(
-      "regardless of whether step 3a's own criteria",
-    );
-  });
-
-  it("a merge recommendation does not affect List A membership", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(
-      /"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is,
-    );
-  });
-
-  it("has an already-held exclusion so a held finding is not re-routed into List A every cycle", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(/already-held exclusion/i);
-    expect(section).toContain("Independence Principle #6");
-    expect(section).toContain("Skills Are Idempotent");
-    // The exclusion must be positioned as the analogue of Step 3a's own
-    // resolved/replied/superseded state, which this finding inherently lacks.
-    expect(section).toContain("isResolved");
-    expect(section).toMatch(/synthesized fresh from the diff on every cycle/i);
-  });
-
-  it("the already-held exclusion reads the findings ledger keyed on a HEAD-SHA-scoped ref, so it self-expires on a new commit", () => {
-    const section = getStep3a5Section();
-    expect(section).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}",
-    );
-    expect(section).toContain("dependency-risk@{headRefOid}");
-    expect(section).toContain('disposition == "rejected"');
-    expect(section).toMatch(/self-expiring/i);
-    // headRefOid comes from Step 3a's existing query — no extra GitHub round trip.
-    expect(section).toMatch(/no extra GitHub call/i);
-  });
-
-  it("the already-held exclusion fails open — a missing or unreadable ledger never suppresses a first-round remediation", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(
-      /HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is,
-    );
-    expect(section).toMatch(/must never suppress a\s+first-round remediation/i);
-  });
-
-  it("an excluded already-held finding still leaves ordinary Step 3a findings free to route the PR into List A", () => {
-    const section = getStep3a5Section();
-    expect(section).toMatch(
-      /leave its List A\s+membership entirely to Step 3a's own criteria/i,
-    );
-    expect(section).toMatch(
-      /omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL\s+block/i,
-    );
-  });
-
-  it("the already-held exclusion clears DEPENDENCY_RISK_FINDING itself, so it reaches Step 5b's gate and not just step 2's routing", () => {
-    const section = getStep3a5Section();
-    // The exclusion must act on the one variable Step 5b's protocol gate reads. Skipping
-    // only step 2's List A routing leaves the gate reading a still-set finding, which
-    // re-injects the protocol block whenever an unrelated ordinary finding put the PR in
-    // List A on its own.
-    expect(section).toMatch(
-      /clear\s+`DEPENDENCY_RISK_FINDING`\s+back to unset/i,
-    );
-    expect(section).toMatch(/single source of truth/i);
-    expect(section).toMatch(
-      /rather than only skipping step 2's routing decision/i,
-    );
-    expect(section).toMatch(/Skipping only step 2's routing would leave/i);
-  });
-});
-
-describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)", () => {
-  function getStep5bPromptSection() {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    expect(step5bIdx).toBeGreaterThan(-1);
-    expect(step5cIdx).toBeGreaterThan(-1);
-    return content.slice(step5bIdx, step5cIdx);
-  }
-
-  it("Step 5b's prompt includes a DEPENDENCY-RISK REMEDIATION PROTOCOL section referencing references/dependency-patch.md", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("DEPENDENCY-RISK REMEDIATION PROTOCOL");
-    expect(section).toContain("references/dependency-patch.md");
-  });
-
-  it("the protocol section is gated on DEPENDENCY_RISK_FINDING with recommendation review or hold, since merge has nothing to remediate", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("DEPENDENCY_RISK_FINDING");
-    expect(section).toMatch(/"review"\s+or\s+"hold"/);
-    expect(section.toLowerCase()).toContain("nothing to remediate");
-  });
-
-  it("the gate honors Step 3a.5's already-held exclusion, omitting the block even when an ordinary finding put the PR in List A", () => {
-    const section = getStep5bPromptSection();
-    // Both gating sites — the dispatch instruction and the rendered prompt template — must
-    // reference the exclusion, not just the raw derived value. Otherwise an already-held
-    // finding gets re-injected via an unrelated ordinary Step 3a finding.
-    expect(section).toMatch(
-      /left\s+`DEPENDENCY_RISK_FINDING`\s+set for this PR/i,
-    );
-    expect(section).toMatch(/already-held exclusion did not clear it/i);
-    expect(section).toMatch(
-      /cleared\s+`?DEPENDENCY_RISK_FINDING`?\s+reads the same/i,
-    );
-    expect(section).toMatch(
-      /omit the block, even when this PR is in List A on Step 3a's own criteria/i,
-    );
-    // The rendered prompt template's own gate comment must carry the same exclusion.
-    const templateGateIdx = section.indexOf(
-      "{Only present when Step 3a.5 left DEPENDENCY_RISK_FINDING set for this PR",
-    );
-    expect(templateGateIdx).toBeGreaterThan(-1);
-    expect(section.slice(templateGateIdx)).toMatch(
-      /Omit it\s+too when Step 3a\.5's step 3 already-held exclusion cleared the finding/i,
-    );
-  });
-
-  it("the protocol section is additive, ahead of the [A.5] verify/classify instructions, not a replacement", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("additive");
-    expect(section).toMatch(/ahead of.{0,40}\[A\.5\]/is);
-    expect(section).toMatch(/not replac/i);
-    // Confirm ordering: the protocol block precedes the [A.5] heading in the rendered prompt.
-    const protocolIdx = section.indexOf("DEPENDENCY-RISK REMEDIATION PROTOCOL");
-    const a5Idx = section.indexOf(
-      "[A.5] Verify each finding before implementing it",
-    );
-    expect(protocolIdx).toBeGreaterThan(-1);
-    expect(a5Idx).toBeGreaterThan(protocolIdx);
-  });
-
-  it("routes a verified fix through the existing [D]/[E] commit/push and thread-resolution path — no new resolution mechanism", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toMatch(/same \[D\]\/\[E\] commit\/push/);
-    expect(section.toLowerCase()).toContain("no separate mechanism");
-  });
-
-  it("a finding that fails to reproduce or has no catalog strategy falls through to [A.5] classification unchanged", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("classify it REJECT in [A.5]");
-    expect(section).toContain("classify REJECT in [A.5]");
-    // [A.5] itself must be untouched by this feature — its own heading and body survive verbatim.
-    const a5Idx = content.indexOf(
-      "[A.5] Verify each finding before implementing it",
-    );
-    expect(a5Idx).toBeGreaterThan(-1);
-    const a5Section = content.slice(a5Idx, a5Idx + 1000);
-    expect(a5Section).toContain("Reviewers can be wrong");
-    expect(a5Section).toContain("ACCEPT");
-    expect(a5Section).toContain("MODIFY");
-    expect(a5Section).toContain("REJECT");
-  });
-
-  it("does not restate the reproduce-before-fixing protocol's mechanics — points at the reference file instead", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("verification command");
-    expect(section).toContain("bounded strategy catalog");
-  });
-
-  it("a REJECTed dependency-risk finding is reported under the SHA-scoped ledger ref Step 3a.5's exclusion matches on", () => {
-    const section = getStep5bPromptSection();
-    expect(section).toContain("dependency-risk@{headRefOid}");
-    expect(section).toMatch(/rather than a free-text slug/i);
-    // The ref must be tied to the REJECT exits (protocol steps 2 and 4), not the ACCEPT one.
-    expect(section).toMatch(/step 2 or step 4 above lands on REJECT/i);
-  });
-
-  it("Step 5c carries the dependency-risk ref verbatim into the findings-ledger write", () => {
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    expect(step5cIdx).toBeGreaterThan(-1);
-    expect(step5c5Idx).toBeGreaterThan(step5cIdx);
-    const section = content.slice(step5cIdx, step5c5Idx);
-    expect(section).toContain("dependency-risk@{headRefOid}");
-    expect(section).toMatch(/carry it through verbatim/i);
-    expect(section).toMatch(
-      /Step 3a\.5's\s+already-held exclusion matches on that exact string/i,
-    );
-  });
-});
-
-describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-side origin derivation (POM-1.2)", () => {
-  it("Step 2 captures PR_TITLE/PR_HEAD_REF alongside PR_AUTHOR from the same gh pr view result (no new gh call)", () => {
-    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
-    const step2_5Idx = content.indexOf("## Step 2.5:");
-    expect(step2Idx).toBeGreaterThan(-1);
-    expect(step2_5Idx).toBeGreaterThan(step2Idx);
-    const step2Section = content.slice(step2Idx, step2_5Idx);
-
-    // Still exactly one `gh pr view {number} ...` call in this step.
-    const ghPrViewCalls =
-      step2Section.match(/gh pr view \{number\} --repo \{org\}\/\{repo\}/g) ??
-      [];
-    expect(ghPrViewCalls).toHaveLength(1);
-    expect(step2Section).toContain(
-      "--json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus,state,author",
-    );
-    expect(step2Section).toContain("PR_TITLE");
-    expect(step2Section).toContain("PR_HEAD_REF");
-    expect(step2Section).toContain("PR_AUTHOR");
-  });
-
-  for (const [label, sectionHeader, nextHeader] of [
-    [
-      "Step 4a.6",
-      "### Step 4a.6: Claim PR Record (pre-work lock)",
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    ],
-    [
-      "Step 5a.6",
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
-    ],
-    [
-      "Step 6b.5",
-      "### Step 6b.5: Claim PR Record (pre-work lock)",
-      "### Step 6b.6: Escalation Check (CFE-1.1)",
-    ],
-  ] as const) {
-    it(`${label}'s /prs/claim call threads authorLogin/headRef/title from the Step 2 captures`, () => {
-      const sectionIdx = content.indexOf(sectionHeader);
-      const nextIdx = content.indexOf(nextHeader);
-      expect(sectionIdx).toBeGreaterThan(-1);
-      expect(nextIdx).toBeGreaterThan(sectionIdx);
-      const section = content.slice(sectionIdx, nextIdx);
-
-      expect(section).toContain('--arg authorLogin "$PR_AUTHOR"');
-      expect(section).toContain('--arg headRef "$PR_HEAD_REF"');
-      expect(section).toContain('--arg title "$PR_TITLE"');
-      expect(section).toContain(
-        "authorLogin: $authorLogin, headRef: $headRef, title: $title",
-      );
-    });
-  }
-});
-
-describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)", () => {
-  it("Step 4b (conflict resolution) has run_in_background: false", () => {
-    const step4bIdx = content.indexOf(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-    );
-    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
-    expect(step4bIdx).toBeGreaterThan(-1);
-    expect(step4cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step4bIdx, step4cIdx);
-    expect(section).toContain("run_in_background: false");
-  });
-
-  it("Step 5b (fix findings) has run_in_background: false", () => {
-    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
-    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
-    expect(step5bIdx).toBeGreaterThan(-1);
-    expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5bIdx, step5cIdx);
-    expect(section).toContain("run_in_background: false");
-  });
-
-  it("Step 6c (CI fixes) has run_in_background: false", () => {
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
-    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
-    expect(step6cIdx).toBeGreaterThan(-1);
-    expect(step6dIdx).toBeGreaterThan(-1);
-    const section = content.slice(step6cIdx, step6dIdx);
-    expect(section).toContain("run_in_background: false");
-  });
-});
-
-describe("patch.md — simplified local validation: 10-minute timeout, CI fallback, record all outcomes by prId (VAR-1.2)", () => {
-  function getValidateSection(stepStartMarker, stepEndMarker) {
-    const stepStartIdx = content.indexOf(stepStartMarker);
-    const stepEndIdx = content.indexOf(stepEndMarker);
-    expect(stepStartIdx).toBeGreaterThan(-1);
-    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
-    const stepSection = content.slice(stepStartIdx, stepEndIdx);
-    const cIdx = stepSection.indexOf("[C] Validate");
-    expect(cIdx).toBeGreaterThan(-1);
-    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
-    const dIdx = stepSection.indexOf("[D] Commit");
-    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
-    expect(endIdx).toBeGreaterThan(cIdx);
-    return stepSection.slice(cIdx, endIdx);
-  }
-
-  const sites = [
-    [
-      "Step 4b",
-      () =>
-        getValidateSection(
-          "### Step 4b: Dispatch Conflict Resolution Subagent",
-          "### Step 4c: Handle Subagent Status",
-        ),
-    ],
-    [
-      "Step 5b",
-      () =>
-        getValidateSection(
-          "### Step 5b: Dispatch Fix Subagent",
-          "### Step 5c: Handle Subagent Status",
-        ),
-    ],
-    [
-      "Step 6c",
-      () =>
-        getValidateSection(
-          "### Step 6c: Dispatch Fix Subagent",
-          "### Step 6d: Handle Subagent Status",
-        ),
-    ],
-  ];
-
-  it("patch.md no longer references run-with-budget, setsid, VC_BODY, or the streak walk", () => {
-    expect(content).not.toContain("run-with-budget");
-    expect(content).not.toContain("setsid");
-    expect(content).not.toContain("VC_BODY");
-    expect(content).not.toContain("STREAK");
-  });
-
-  it("all three validate sites carry byte-identical prose", () => {
-    const [first, ...rest] = sites.map(([, get]) => get());
-    for (const other of rest) expect(other).toBe(first);
-  });
-
-  for (const [label, getSection] of sites) {
-    it(`${label} [C] Validate says verifications are crucial`, () => {
-      expect(getSection()).toContain("Verifications are crucial");
-    });
-
-    it(`${label} [C] Validate sets the Bash timeout to 600000 ms and falls back to CI past 10 minutes`, () => {
-      const section = getSection();
-      expect(section).toContain("`timeout` parameter set to `600000` ms");
-      const lower = section.toLowerCase().replace(/\s+/g, " ");
-      expect(lower).toMatch(
-        /exceeds 10 minutes, skip the local run.{0,40}rely on ci/,
-      );
-      expect(lower).toMatch(/never blocks the commit\/push/);
-    });
-
-    it(`${label} [C] Validate records every outcome via POST /verification-checks with prId`, () => {
-      const section = getSection();
-      expect(section).toContain("Record every outcome");
-      expect(section).toContain(
-        '-X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"',
-      );
-      expect(section).toContain(
-        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
-      );
-      expect(section).toContain('"prId": "{PR_RECORD_ID}"');
-      expect(section).not.toContain('"taskId"');
-      expect(section).toContain("literal value");
-    });
-
-    it(`${label} [C] Validate lists statuses, reasonCategory values, and the status/reasonCategory constraint`, () => {
-      const section = getSection();
-      for (const v of [
-        "ran_passed",
-        "ran_failed",
-        "skipped",
-        "timed_out",
-        "check_timeout",
-        "install_timeout",
-        "resource_limit",
-        "missing_tool",
-        "missing_secret",
-        "missing_dependency",
-        "not_configured",
-        "learned_skip",
-        "learnedFromCategory",
-      ]) {
-        expect(section).toContain(v);
-      }
-      expect(section).toContain("never send it with");
-    });
-
-    it(`${label} [C] Validate has a learned skip: GET history (limit=2), skip if both rows skipped/timed_out`, () => {
-      const section = getSection();
-      expect(section).toContain("Learned skip");
-      expect(section).toContain(
-        "verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2",
-      );
-      expect(section).toMatch(/both rows are `skipped` or `timed_out`/);
-    });
-  }
-});
-
-describe("patch.md — Step 2.2 dispatches the phase-methodology-configured subagent (PTM-1.2)", () => {
-  function extractStep2_2Section(md: string): string {
-    const sectionIdx = md.indexOf(
-      "## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)",
-    );
-    const step2_5Idx = md.indexOf("## Step 2.5: Handle DIRTY PRs");
-    expect(sectionIdx).toBeGreaterThan(-1);
-    expect(step2_5Idx).toBeGreaterThan(sectionIdx);
-    return md.slice(sectionIdx, step2_5Idx);
-  }
-
-  it("resolves PATCH_SUBAGENT_TYPE once, right after Step 2.1's model-tier resolution, before Step 2.5", () => {
-    const step2_1Idx = content.indexOf(
-      "## Step 2.1: Resolve Patch Model Tier (MTR-2.1)",
-    );
-    const step2_2Idx = content.indexOf(
-      "## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)",
-    );
-    const step2_5Idx = content.indexOf("## Step 2.5: Handle DIRTY PRs");
-    expect(step2_1Idx).toBeGreaterThan(-1);
-    expect(step2_2Idx).toBeGreaterThan(step2_1Idx);
-    expect(step2_5Idx).toBeGreaterThan(step2_2Idx);
-  });
-
-  it("fetches phaseMethodology.patch from GET /agents/{id}/config, same endpoint/auth as Step 1's patchAuthorAllowlist fetch", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain(
-      'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
-    );
-    expect(section).toContain(
-      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config",
-    );
-    expect(section).toContain(".phaseMethodology.patch");
-  });
-
-  it("PATCH_SUBAGENT_TYPE defaults to the built-in general-purpose when phaseMethodology.patch is absent or null", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain("PATCH_SUBAGENT_TYPE=$(curl");
-    expect(section).toContain('.phaseMethodology.patch // "general-purpose"');
-  });
-
-  it("PATCH_SUBAGENT_TYPE is fail-closed on curl failure -- shell default also falls back to general-purpose", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain("${PATCH_SUBAGENT_TYPE:-general-purpose}");
-    expect(section).toContain("Fail-closed, not fail-open");
-  });
-
-  it("documents this lookup as fail-soft/best-effort, never a hard stop, and that no-config behavior is unchanged from today", () => {
-    const section = extractStep2_2Section(content);
-    const lower = section.toLowerCase();
-    expect(lower).toMatch(/fail-soft|best-effort/);
-    expect(lower).toContain("never a hard stop");
-    expect(lower).toContain(
-      "with no config set, patch behaves identically to today",
-    );
-  });
-
-  it("all three dispatch sites (Steps 4b/5b/6c) pass subagent_type PATCH_SUBAGENT_TYPE, not a hardcoded general-purpose literal", () => {
-    expect(content).not.toContain(
-      "Dispatch a `general-purpose` subagent via the Agent tool",
-    );
-    const matches = content.match(
-      /Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool/g,
-    );
-    expect(matches).not.toBeNull();
-    expect(matches?.length).toBe(3);
-  });
-
-  it("references the PTM-1.1 methodology contract doc as the wire shape any dispatched subagent must satisfy", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain("references/methodology-contracts/patch.md");
-    expect(section).toContain("PTM-1.1");
-  });
-
-  it("documents that the commit-bump handback (POST /prs/{id}/patch) applies unchanged regardless of which subagent produced the fix", () => {
-    const section = extractStep2_2Section(content);
-    expect(section.toLowerCase()).toContain("commit-bump handback");
-    expect(section).toContain("POST /prs/{id}/patch");
-    expect(section.toLowerCase()).toContain(
-      "never reads which subagent type produced the fix",
-    );
-  });
-
-  it("documents the Unparseable or Failed Dispatch retry-then-fallback handling, mirroring review.md's RVM-1.2 shape", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain("#### Unparseable or Failed Dispatch (PTM-1.2)");
-    expect(section.toLowerCase()).toContain("dispatch itself fails");
-    expect(section.toLowerCase()).toContain("invalid/nonexistent");
-    expect(section).toContain(
-      "retry once with the same\n`PATCH_SUBAGENT_TYPE`",
-    );
-    expect(section).toContain("**Built-in default**");
-    expect(section).toContain("**Configured override**");
-    expect(section).toContain("RVM-1.2");
-  });
-
-  it("built-in-default failure after retry is treated identically to a BLOCKED report at that dispatch site", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain("treat it identically to a\n  `BLOCKED` report");
-    expect(section).toContain("no parseable status after retry");
-  });
-
-  it("configured-override failure after retry falls back to dispatching the built-in general-purpose subagent fresh, not an immediate BLOCKED", () => {
-    const section = extractStep2_2Section(content);
-    expect(section).toContain(
-      "dispatch the built-in `general-purpose` subagent\n  fresh",
-    );
-    expect(section).toContain("Print a one-line note");
-    expect(section).toContain(
-      "failed after retry and the built-in fixer was used as a fallback",
-    );
-  });
-
-  it("each of Steps 4c/5c/6d's status handling includes a No parseable STATUS branch pointing back at Step 2.2", () => {
-    const sites: Array<[string, string]> = [
-      [
-        "### Step 4c: Handle Subagent Status",
-        "### Step 4c.5: Upsert PR Record",
-      ],
-      [
-        "### Step 5c: Handle Subagent Status",
-        "### Step 5c.5: Upsert PR Record",
-      ],
-      [
-        "### Step 6d: Handle Subagent Status",
-        "### Step 6d.5: Upsert PR Record",
-      ],
-    ];
-    for (const [startMarker, endMarker] of sites) {
-      const startIdx = content.indexOf(startMarker);
-      const endIdx = content.indexOf(endMarker);
-      expect(startIdx).toBeGreaterThan(-1);
-      expect(endIdx).toBeGreaterThan(startIdx);
-      const section = content.slice(startIdx, endIdx);
-      expect(section).toContain("**No parseable STATUS**");
-      expect(section).toContain(
-        'see Step 2.2\'s "Unparseable or Failed Dispatch" handling above',
-      );
-    }
-  });
-});
-
-describe("patch.md — share bot/CI comment filter with review.md (PBD-1.1)", () => {
-  function getStep3aSection() {
-    const step3aIdx = content.indexOf(
-      "### Step 3a: Check for Unaddressed Review Findings",
-    );
-    const step3a5Idx = content.indexOf(
-      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
-    );
-    expect(step3aIdx).toBeGreaterThan(-1);
-    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
-    return content.slice(step3aIdx, step3a5Idx);
-  }
-
-  function getStep5a5Section() {
-    const step5a5Idx = content.indexOf(
-      "### Step 5a.5: Detect Project Toolchain",
-    );
-    const step5a6Idx = content.indexOf(
-      "### Step 5a.6: Claim PR Record (pre-work lock)",
-    );
-    expect(step5a5Idx).toBeGreaterThan(-1);
-    expect(step5a6Idx).toBeGreaterThan(step5a5Idx);
-    return content.slice(step5a5Idx, step5a6Idx);
-  }
-
-  it("Step 3a's GraphQL query fetches __typename alongside login on all three author blocks", () => {
-    const section = getStep3aSection();
-    const queryIdx = section.indexOf("gh api graphql -f query=");
-    expect(queryIdx).toBeGreaterThan(-1);
-    const queryEndIdx = section.indexOf("```", queryIdx);
-    expect(queryEndIdx).toBeGreaterThan(queryIdx);
-    const query = section.slice(queryIdx, queryEndIdx);
-
-    const matches = query.match(/author \{ login __typename \}/g) ?? [];
-    expect(matches.length).toBe(3);
-    expect(query).not.toContain("author { login }");
-  });
-
-  it("Step 3a's extraction bullet list mentions __typename is now fetched too, alongside login", () => {
-    const section = getStep3aSection();
-    const extractIdx = section.indexOf("From the response, extract:");
-    expect(extractIdx).toBeGreaterThan(-1);
-    const extractBlock = section.slice(extractIdx, extractIdx + 800);
-    expect(extractBlock).toContain("__typename");
-  });
-
-  it("Step 3a names the PR-level comments array COMMENTS_JSON for Step 5a.5 to reuse", () => {
-    const section = getStep3aSection();
-    expect(section).toContain("COMMENTS_JSON");
-  });
-
-  it("Step 5a.5 item 4 pipes COMMENTS_JSON through filter-bot-comments.ts instead of freehand 'include all non-bot comments' judgment", () => {
-    const section = getStep5a5Section();
-
-    expect(section).not.toContain(
-      "Include all non-bot comments as additional context.",
-    );
-    expect(section).toContain(
-      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/filter-bot-comments.ts"',
-    );
-    expect(section).toContain("COMMENTS_JSON");
-    expect(section.toLowerCase()).toContain("use its output");
-  });
-
-  it("Step 5a.5 item 4 still documents PR-level comments come from Step 3a, already fetched", () => {
-    const section = getStep5a5Section();
-    const itemIdx = section.indexOf("**PR-level comments**");
-    expect(itemIdx).toBeGreaterThan(-1);
-    const itemBlock = section.slice(itemIdx, itemIdx + 600);
-    expect(itemBlock).toContain("from Step 3a");
-    expect(itemBlock.toLowerCase()).toContain("already fetched");
-  });
-});
-
-describe("patch.md — settle-with-rejected outcome for nothing-actionable List A (PHS-2.1)", () => {
-  const stepSection = (heading: string, nextHeading: string) => {
-    const start = content.indexOf(heading);
-    const end = content.indexOf(nextHeading, start + heading.length);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    return content.slice(start, end);
-  };
-
-  it("Step 3d forbids [silent] while List A items remain unsettled and points at settle-with-rejected", () => {
-    const section = stepSection("### Step 3d: Summary", "## Step 4:");
-    expect(section).toContain("settle-with-rejected");
-    expect(section).toContain(
-      "must never exit `[silent]` while List A items remain unsettled",
-    );
-  });
-
-  it("Step 3d's genuinely-empty wording is unchanged", () => {
-    const section = stepSection("### Step 3d: Summary", "## Step 4:");
-    expect(section).toContain("If all three lists are empty:");
-    expect(section).toContain("No PRs need attention.");
-    expect(section).toContain(
+    expect(block).toContain(
       "[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]",
     );
+    expect(block).toContain("[silent]");
+    expect(block).toMatch(/settle-with-rejected/);
   });
 
-  it("Step 3a fetches commit.oid and thread totalCount so the PHS-1.2 refs can be built", () => {
-    const section = stepSection("### Step 3a:", "### Step 3a.5:");
-    expect(section).toContain("commit { oid }");
-    expect(section).toContain("totalCount");
+  it("Step 0 parses the [preclaim:...] marker once", () => {
+    expect(stepBlock("0")).toContain("[preclaim:{recordId}:{commitSha}]");
   });
 
-  it("Step 5c captures a ref for every unfixed List A item in the PHS-1.2 format", () => {
-    const section = stepSection("### Step 5c:", "### Step 5c.5:");
-    expect(section).toContain("thread:{thread.id}@{comments.totalCount}");
-    expect(section).toContain("{review.commit.oid}@{review.submittedAt}");
-    expect(section).toContain("Settle every List A item that was not fixed");
-    expect(section).toContain("no feedback to provide");
-  });
-
-  it("Step 5c.5 writes a patch-source rejected entry per unfixed List A item and states the outcome", () => {
-    const section = stepSection("### Step 5c.5:", "### Step 5d:");
-    expect(section).toContain('"disposition\\": \\"rejected\\"');
-    expect(section).toContain('\\"source\\": \\"patch\\"');
-    expect(section).toContain("Outcome: settle-with-rejected");
-    expect(section).toContain("Do **not** emit");
-    expect(section).toContain("`thread:{id}@{count}`");
-  });
-
-  it("Step 5b [D] posts the author comment for a nothing-actionable review too", () => {
-    expect(content).toContain(
-      "a List A\n    review has nothing actionable at all",
+  it("Step 2 keeps the exact (never substring) author-scope check", () => {
+    expect(spine).toMatch(/\*\*exactly\*\* equals an\s+allowlist entry/);
+    expect(spine).toContain("never a substring test");
+    expect(spine).toContain(
+      "⚠ PR {org}/{repo}#{number} not found among own open PRs.",
     );
   });
 
-  it("Step 6b.9 writes the SLS-2.1 ci ref when CI is judged out of scope (SLS-2.2)", () => {
-    const section = stepSection("### Step 6b.9:", "### Step 6c:");
-    expect(section).toContain("ci:{headSha}:{ciFailureSignature}");
-    expect(section).toContain("ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE");
-    expect(section).toContain("CI_FAILURE_SIGNATURE");
-    expect(section).toContain('\\"disposition\\": \\"rejected\\"');
-    expect(section).toContain('\\"source\\": \\"patch\\"');
-    expect(section).toContain("/findings");
-    expect(section).toContain("never exit `[silent]` without it");
+  it("dependency-risk trigger loads the reference on bot author or manifest/lockfile", () => {
+    expect(spine).toContain("Dependency-risk trigger (DBP-1.2)");
+    expect(spine).toMatch(/Renovate\/Dependabot bot/);
+    expect(spine).toMatch(/package manifest or\s+lockfile/);
+    expect(spine).toContain("../references/patch/dependency-risk.md");
+    expect(spine).toContain("dependency-risk@{headRefOid}");
   });
 
-  it("Step 6b.9 blocks main-red failures via escalation-pattern without a ledger write (MRB-1.1)", () => {
-    const section = stepSection("### Step 6b.9:", "### Step 6c:");
-    const mainRed = section
-      .slice(
-        section.indexOf("**Main-red path"),
-        section.indexOf("If it is not"),
-      )
-      .replace(/\s+/g, " ");
-    expect(mainRed).toContain("latest completed CI run");
-    expect(mainRed).toContain("CI_FAILURE_SIGNATURE");
-    expect(mainRed).toContain("escalation-pattern.md");
-    expect(mainRed).toContain("main_red:");
-    expect(mainRed).toContain("/shipwright:unblock");
-    expect(mainRed).toContain("Skip Steps 6c–6e");
-    expect(mainRed).toContain("Do NOT write the `ci:` ledger entry");
-    expect(section.indexOf("**Main-red path")).toBeLessThan(
-      section.indexOf("ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE"),
+  it("5a.6b CDH-1.2: .claude/** path escalation on the first round", () => {
+    const block = stepBlock("5a.6b");
+    expect(block).toContain("CDH-1.2");
+    expect(block).toContain("starts with `.claude/`");
+    expect(block).toContain("`claude-dir`");
+    expect(block).toMatch(/skip 5a\.7 and 5b/);
+    expect(block).toMatch(/resolve \*\*all\*\* unresolved inline threads/);
+  });
+
+  it("5a.7 RPF-1.3: printed SAME/DIFFERENT judgment, timestamp alone never escalates", () => {
+    const block = stepBlock("5a.7");
+    expect(block).toContain("RPF-1.3");
+    expect(block).toContain("`PR_AUTHOR`");
+    expect(block).toContain("`Judgment: SAME_FINDING | DIFFERENT_FINDING`");
+    expect(block).toContain("A timestamp alone never escalates.");
+    expect(block).toContain("`escalation`");
+    expect(block).toMatch(/no `reviewState` reset/);
+  });
+
+  it("6b.6 CFE-1.1: two fresh GETs, OR across tasks, release and stop", () => {
+    const block = stepBlock("6b.6");
+    expect(block).toContain("CFE-1.1");
+    expect(block).toContain("GET /prs/{id}");
+    expect(block).toContain("GET /tasks?repo={org}/{repo}&pr={pr}");
+    expect(block).toContain('`hitl == true` OR `status == "blocked"`');
+    expect(block).toContain(
+      "⏸ PR #{pr} already has an unresolved HITL escalation — skipping CI-fix dispatch.",
     );
+  });
+
+  it("6b.7 PH-1.1: bundle gate with the verbatim skip-reason marker", () => {
+    const block = stepBlock("6b.7");
+    expect(block).toContain("PH-1.1");
+    expect(block).toContain("GET /tasks?branch={branch}");
+    expect(block).toContain("`pending`/`in_progress`/`blocked`");
+    expect(block).toContain(
+      "[skip-reason:patch:deferred:bundle-incomplete:{branch}]",
+    );
+    expect(block).toContain("[silent]");
+  });
+
+  it("6b.8 PCC-1.1: rerun-first with bounded, heartbeat-renewing poll", () => {
+    const block = stepBlock("6b.8");
+    expect(block).toContain("PCC-1.1");
+    expect(block).toContain(
+      "`CI_HAS_CANCELLED=true` and `CI_HAS_FAILING` is not true",
+    );
+    expect(block).toContain('gh run rerun "$CANCELLED_RUN_ID"');
+    expect(block).toMatch(/every 15 s up to 8 times/);
+    expect(block).toMatch(/renewing the heartbeat each iteration/);
+  });
+
+  it("6b.9 SLS-2.2: out-of-scope CI ledger write, never [silent] without it", () => {
+    const block = stepBlock("6b.9");
+    expect(block).toContain("SLS-2.2");
+    expect(block).toContain("`ci:{headSha}:{ciFailureSignature}`");
+    expect(norm(block)).toContain(
+      '`source: "patch"`, `disposition: "rejected"`',
+    );
+    expect(norm(block)).toContain("Never exit `[silent]` without that entry.");
+  });
+
+  it("6b.9 MRB-1.1: main-red path blocks via escalation-pattern, no ledger write", () => {
+    expect(norm(stepBlock("6b.9"))).toContain("`main_red:` block");
+    const guard = norm(refs["guards-ci.md"]);
+    expect(guard).toContain("latest completed CI run of the base branch");
+    expect(guard).toContain("escalation-pattern.md");
+    expect(guard).toContain("`main_red:`");
+    expect(guard).toContain("/shipwright:unblock");
+    expect(guard).toContain("skip 6c–6e");
+    expect(guard).toContain("Do NOT write the `ci:` ledger entry");
+  });
+
+  it("6b computes CI_FAILURE_SIGNATURE in the spine (6b.9 and 6d.5 depend on it)", () => {
+    expect(stepBlock("6b")).toContain("CI_FAILURE_SIGNATURE");
+  });
+
+  it("6.5 verifies CI with is-ci-green.ts and one bonus subagent", () => {
+    const block = stepBlock("6.5");
+    expect(block).toContain("is-ci-green.ts");
+    expect(block).toMatch(/exactly one bonus CI-fix subagent/);
+    expect(block).toContain(
+      "⏭ No commit pushed this cycle — skipping CI verification.",
+    );
+  });
+
+  it("Step 7 prints the PATCH COMPLETE report", () => {
+    expect(stepBlock("7")).toContain("PATCH COMPLETE");
   });
 });
 
-describe("patch.md — Step 3a classifies List A via compute-unaddressed-findings.ts (PRL-1.1)", () => {
-  function getStep3aSection() {
-    const step3aIdx = content.indexOf(
-      "### Step 3a: Check for Unaddressed Review Findings",
-    );
-    const step3a5Idx = content.indexOf(
-      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
-    );
-    expect(step3aIdx).toBeGreaterThan(-1);
-    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
-    return content.slice(step3aIdx, step3a5Idx);
-  }
-
-  it("invokes compute-unaddressed-findings.ts with the full input shape", () => {
-    const section = getStep3aSection();
-    expect(section).toContain(
-      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
-    );
-    for (const field of [
-      "currentUser",
-      "prAuthor",
-      "headRefOid",
-      "reviews",
-      "reviewThreads",
-      "comments",
-      "findings",
+describe("patch.md — step ordering is behavior", () => {
+  it("lanes run 4 → 5 → 6 → 6.5 → 7", () => {
+    let last = -1;
+    for (const h of [
+      "## Step 4:",
+      "## Step 5:",
+      "## Step 6:",
+      "## Step 6.5:",
+      "## Step 7:",
     ]) {
-      expect(section).toContain(`${field}: $${field}`);
+      const idx = indexOfOrFail(spine, h);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
     }
-    expect(section).toContain('"unaddressedFindings":true|false');
   });
 
-  it("fetches ledger findings via the pre-claim record id, else by repo and PR number", () => {
-    const section = getStep3aSection();
-    expect(section).toContain("PR_FINDINGS_JSON");
-    expect(section).toContain("/prs/$PRECLAIM_RECORD_ID");
-    expect(section).toContain("/prs?repo={org}/{repo}&prNumber={pr}");
-    expect(section).toContain("echo '[]'");
+  it("lane 5: claim → 5a.6b → 5a.7 → dispatch", () => {
+    let last = -1;
+    for (const b of [
+      "- **5a.6** ",
+      "- **5a.6b** ",
+      "- **5a.7** ",
+      "- **5b** ",
+    ]) {
+      const idx = indexOfOrFail(spine, b);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
+    }
   });
 
-  it("states a clean self-APPROVE with no ledger entry IS in List A, settled by Step 5c.5", () => {
-    const section = getStep3aSection();
-    expect(section).toMatch(
-      /A clean self-APPROVE with no ledger entry IS in List A/,
-    );
-    expect(section).toContain("Step 5c.5");
+  it("lane 6: claim → 6b.6 → 6b.7 → 6b.8 → 6b.9 → dispatch", () => {
+    let last = -1;
+    for (const b of [
+      "- **6b.5** ",
+      "- **6b.6** ",
+      "- **6b.7** ",
+      "- **6b.8** ",
+      "- **6b.9** ",
+      "- **6c** ",
+    ]) {
+      const idx = indexOfOrFail(spine, b);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
+    }
   });
 
-  it("no longer carries the removed clean-APPROVE / superseded-self-review exclusion prose", () => {
-    const section = getStep3aSection();
-    expect(section).not.toContain("**Clean-APPROVE exclusion**");
-    expect(section).not.toContain("DRO-1.2");
-    expect(section).not.toContain("Self-review superseded by a later clean");
-  });
-
-  it("Step 5c's settle rule covers a review-body-only List A item", () => {
-    expect(content).toContain(
-      "a clean self-authored\n  `Verdict: APPROVE` review with no ledger entry",
-    );
-  });
-
-  it("Step 3a.5 no longer cites a Step 3a clean-APPROVE exclusion", () => {
-    expect(content).not.toContain("Step 3a's own clean-APPROVE exclusion");
+  it("lane 4: claim → dispatch → upsert", () => {
+    let last = -1;
+    for (const b of ["- **4a.6** ", "- **4b** ", "- **4c.5** "]) {
+      const idx = indexOfOrFail(spine, b);
+      expect(idx).toBeGreaterThan(last);
+      last = idx;
+    }
   });
 });
 
-describe("patch.md — pre-push verification gate in fix-subagent briefs (VRW-1.2)", () => {
-  const GATE_START = "**Required pre-push gate — verification record.**";
-  const PUSH = "git push origin {branch}";
-  const normalize = (s: string) =>
-    s
-      .split("\n")
-      .map((l) => l.trim())
-      .join("\n");
+describe("patch references — files exist and links resolve", () => {
+  const expectedFiles = [
+    "classification.md",
+    "dependency-risk.md",
+    "dropped-details.md",
+    "guards-ci.md",
+    "guards-escalation.md",
+    "lane-ci.md",
+    "lane-conflicts.md",
+    "lane-findings.md",
+    "lane-shared.md",
+    "model-resolution.md",
+    "verify-ci.md",
+  ];
 
-  const gates = () => {
-    const out: { gate: string; gateIdx: number; pushIdx: number }[] = [];
-    let from = 0;
-    for (;;) {
-      const gateIdx = content.indexOf(GATE_START, from);
-      if (gateIdx === -1) break;
-      const pushIdx = content.indexOf(PUSH, gateIdx);
-      out.push({
-        gate: normalize(content.slice(gateIdx, pushIdx)),
-        gateIdx,
-        pushIdx,
+  it("ships the proposed reference files plus dropped-details.md", () => {
+    expect(Object.keys(refs).sort()).toEqual(expectedFiles);
+  });
+
+  it("every relative link in the spine resolves", () => {
+    const links = relativeLinks(spine);
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      const target = resolve(dirname(PATCH_MD_PATH), link);
+      expect({ link, exists: existsSync(target) }).toEqual({
+        link,
+        exists: true,
       });
-      from = gateIdx + 1;
-    }
-    return out;
-  };
-
-  it("all three briefs carry the gate ahead of the push step", () => {
-    const found = gates();
-    expect(found).toHaveLength(3);
-    for (const { gateIdx, pushIdx } of found) {
-      expect(pushIdx).toBeGreaterThan(gateIdx);
-    }
-    expect(content.split(PUSH).length - 1).toBe(3);
-    // each gate is the nearest thing before its push: no other push in between
-    for (const { gateIdx, pushIdx } of found) {
-      expect(content.slice(gateIdx, pushIdx)).not.toContain(PUSH);
     }
   });
 
-  it("gate wording is identical across the three sites", () => {
-    const [a, b, c] = gates().map((g) => g.gate);
-    expect(b).toBe(a);
-    expect(c).toBe(a);
+  it("the spine links every reference file", () => {
+    const linked = new Set(
+      relativeLinks(spine).map((l) => resolve(dirname(PATCH_MD_PATH), l)),
+    );
+    for (const f of expectedFiles) {
+      expect({ f, linked: linked.has(join(REFERENCES_DIR, f)) }).toEqual({
+        f,
+        linked: true,
+      });
+    }
   });
 
-  it("gate uses prId with the literal PR record id and never blocks the push", () => {
-    const { gate } = gates()[0];
-    expect(gate).toContain("verification-checks?prId={PR_RECORD_ID}&limit=1");
-    expect(gate).toContain("`$PR_RECORD_ID` is not set in your shell");
-    expect(gate).toContain("If the result is empty, record each check");
-    expect(gate).toContain("This gate never blocks the push.");
+  it("every relative link inside the reference files resolves", () => {
+    for (const [file, content] of Object.entries(refs)) {
+      for (const link of relativeLinks(content)) {
+        const target = resolve(REFERENCES_DIR, link);
+        expect({ file, link, exists: existsSync(target) }).toEqual({
+          file,
+          link,
+          exists: true,
+        });
+      }
+    }
   });
 
-  it("adds no script or run-with-budget reference", () => {
-    expect(content).not.toContain("run-with-budget");
+  it("reuses the shared escalation-pattern.md and toolchain-patterns.md unchanged", () => {
+    expect(spine).toContain("(references/escalation-pattern.md)");
+    expect(spine).toContain("(../references/toolchain-patterns.md)");
   });
 });
 
-describe("patch.md — BEHIND PRs handled via update-branch (SBU-1.1)", () => {
-  function getStep2_5Section() {
-    const start = content.indexOf("## Step 2.5:");
-    const end = content.indexOf("## Step 3: Classify PRs into Three Lists");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    return content.slice(start, end);
-  }
+describe("patch references — load-bearing mechanics", () => {
+  // Load-bearing strings that must survive verbatim (whitespace-normalized):
+  // escalation reasons, ledger refs, prompt headers, and script invocations.
+  const verbatim = [
+    '"merge-conflict resolution blocked — automated conflict resolution could not complete"',
+    '"review-finding fix blocked — automated fix subagent could not complete"',
+    '"CI-fix blocked — automated CI-fix subagent could not complete"',
+    '"structurally unfixable — finding requires a write under .claude/**, which the Claude Code CLI blocks unconditionally — escalated to HITL"',
+    '"second-round disagreement between reviewer and automated fix — escalated to HITL"',
+    "/tmp/shipwright-patch-claude-dir-{pr}.txt",
+    "/tmp/shipwright-patch-escalation-{pr}.txt",
+    "thread:{thread.id}@{comments.totalCount}",
+    "{review.commit.oid}@{review.submittedAt}",
+    'resolveReviewThread(input: {threadId: "{thread.id}"})',
+    "DEPENDENCY-RISK REMEDIATION PROTOCOL (references/dependency-patch.md):",
+    "You are resolving merge conflicts on a pull request.",
+    "You are addressing review findings on a pull request.",
+    "You are fixing failing CI on a pull request.",
+    "NOTE — REPEATED TIMEOUT/HANG SIGNAL",
+    "compute-unaddressed-findings.ts",
+    "filter-bot-comments.ts",
+    "resolve-dependency-watched-paths.ts",
+    "is-ci-green.ts",
+    '{claimedBy: $claimedBy, repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}',
+    "Judgment: SAME_FINDING | DIFFERENT_FINDING",
+    "Deferring CI-fix dispatch until bundle-mates reach pr_open.",
+    "cancelled run {CANCELLED_RUN_ID} rerun succeeded, no fix needed — skipping CI-fix dispatch.",
+    "PATCH COMPLETE",
+  ];
 
-  function getBehindSection() {
-    const section = getStep2_5Section();
-    const start = section.indexOf("### BEHIND");
-    const end = section.indexOf("### DIRTY");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    return section.slice(start, end);
-  }
-
-  it("Step 2.5 runs `gh pr update-branch` without --rebase for BEHIND", () => {
-    const behind = getBehindSection();
-    expect(behind).toContain('mergeStateStatus == "BEHIND"');
-    expect(behind).toContain(
-      "gh pr update-branch {number} --repo {org}/{repo}",
-    );
-    expect(behind).not.toContain("--rebase {number}");
-    expect(behind).not.toMatch(/update-branch\s+--rebase/);
+  it("each load-bearing string appears in the patch corpus", () => {
+    const normCorpus = norm(corpus);
+    for (const s of verbatim) {
+      expect({ s, inCorpus: normCorpus.includes(norm(s)) }).toEqual({
+        s,
+        inCorpus: true,
+      });
+    }
   });
 
-  it("does not read branch protection or compare/behind_by", () => {
-    const behind = getBehindSection();
-    expect(behind).toContain("branch protection");
-    expect(behind).toContain("behind_by");
-    expect(behind).not.toMatch(/gh api[^\n]*(protection|compare)/);
+  it("the dependency-risk already-held exclusion is kept whole", () => {
+    const dep = refs["dependency-risk.md"];
+    expect(dep).toContain('--arg ref "dependency-risk@{headRefOid}"');
+    expect(dep).toMatch(/clear `DEPENDENCY_RISK_FINDING` back to unset/);
   });
 
-  it("re-resolves headRefOid on success before Step 3c's CI check", () => {
-    const behind = getBehindSection();
-    expect(behind).toContain("Re-resolve");
-    expect(behind).toContain("headRefOid");
-    expect(behind).toContain("Step 3c");
-  });
-
-  it("logs and continues without escalating on failure", () => {
-    const behind = getBehindSection();
-    expect(behind).toMatch(/Log it and continue without escalating/);
-    expect(behind).toContain("DIRTY");
-  });
-
-  it("leaves the DIRTY path on --rebase", () => {
-    const section = getStep2_5Section();
-    expect(section.slice(section.indexOf("### DIRTY"))).toContain(
-      "gh pr update-branch --rebase {number} --repo {org}/{repo}",
-    );
-  });
-
-  it("header note and Step 3b no longer claim BEHIND is not patch-worthy", () => {
-    expect(content).not.toContain("not patch-worthy");
-    expect(content).not.toContain("are not patch-worthy");
-  });
-
-  it("Step 3b states BEHIND never joins List C", () => {
-    const start = content.indexOf("### Step 3b:");
-    const end = content.indexOf("### Step 3c:");
-    const section = content.slice(start, end);
-    expect(section).toContain('`"BEHIND"`');
-    expect(section).toContain("never add to");
-    expect(section).toContain("**List C**");
-    expect(section).not.toMatch(
-      /mergeStateStatus.*"BEHIND".*→ add to \*\*List C/,
-    );
+  it("dropped-details.md records what was cut and why", () => {
+    const dropped = refs["dropped-details.md"];
+    expect(dropped).toContain("| Dropped | Reason |");
+    expect(dropped).toMatch(/Why this is re-derived/);
+    expect(dropped).toMatch(/Design note/);
   });
 });
 
-describe("patch.md — jq -Rs fix for headRefOid newline (JNL-1.1)", () => {
-  it("does not use jq -Rs . <<< for headRefOid anywhere", () => {
-    expect(content).not.toContain('jq -Rs . <<< "$HEAD_REF_OID"');
+describe("patch — no lean variant left behind", () => {
+  it("is absent from the coding specialty cron defaults and the loop's PHASE_COMMANDS as a lean command", () => {
+    for (const rel of [
+      "admin/src/coding/coding-specialty-defaults.ts",
+      "agent/src/coding/loop-orchestrator.ts",
+    ]) {
+      const path = join(REPO_ROOT, rel);
+      if (!existsSync(path)) continue;
+      expect({
+        rel,
+        mentions: readFileSync(path, "utf-8").includes("patch-lean"),
+      }).toEqual({ rel, mentions: false });
+    }
   });
 
-  it("uses --arg headRefOid for passing HEAD_REF_OID to jq", () => {
-    const step3aIdx = content.indexOf(
-      "### Step 3a: Check for Unaddressed Review Findings",
-    );
-    const step3bIdx = content.indexOf("### Step 3b:");
-    expect(step3aIdx).toBeGreaterThan(-1);
-    expect(step3bIdx).toBeGreaterThan(-1);
-    const section = content.slice(step3aIdx, step3bIdx);
+  it("the spine does not mention a lean variant", () => {
+    expect(spine).not.toMatch(/patch-lean|lean variant|ALT_COMMAND/);
+  });
 
-    expect(section).toContain('--arg headRefOid "$HEAD_REF_OID"');
+  it("the patch-lean command file is gone", () => {
+    expect(existsSync(join(import.meta.dir, "patch-lean.md"))).toBe(false);
   });
 });

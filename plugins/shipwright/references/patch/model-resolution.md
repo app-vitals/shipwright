@@ -1,6 +1,6 @@
-# patch-lean: model tier and subagent type resolution
+# patch: model tier and subagent type resolution
 
-Mechanics for `commands/patch-lean.md` Steps 2.1 and 2.2. Both run once, right after Step 2 resolves
+Mechanics for `commands/patch.md` Steps 2.1 and 2.2. Both run once, right after Step 2 resolves
 the target PR, independent of claim state; every dispatch (4b, 5b, 6c, 6.5b) reuses the values.
 
 ## Step 2.1: Resolve `PATCH_MODEL` (MTR-2.1)

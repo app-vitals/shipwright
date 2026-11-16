@@ -1,6 +1,6 @@
-# patch-lean: conflicts lane (Step 4, List C)
+# patch: conflicts lane (Step 4, List C)
 
-Lane-specific parts of `commands/patch-lean.md` Step 4. Setup (4a), toolchain (4a.5), claim (4a.6),
+Lane-specific parts of `commands/patch.md` Step 4. Setup (4a), toolchain (4a.5), claim (4a.6),
 status (4c), upsert (4c.5) and cleanup (4d) follow [lane-shared.md](lane-shared.md) with
 `{lane}` = conflicts. There are no pre-dispatch guards in this lane.
 

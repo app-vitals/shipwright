@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const DEV_TASK_PATH = join(import.meta.dir, "dev-task.md");
 const PATCH_PATH = join(import.meta.dir, "patch.md");
+const PATCH_REFERENCES_DIR = join(import.meta.dir, "..", "references", "patch");
 const CLAUDE_MD_PATH = join(import.meta.dir, "..", "CLAUDE.md");
 
 let devTask: string;
@@ -20,7 +21,14 @@ beforeAll(() => {
       .sort()
       .map((f) => readFileSync(join(refsDir, f), "utf-8")),
   ].join("\n\n");
-  patch = readFileSync(PATCH_PATH, "utf-8");
+  // The patch command is a spine plus mechanics files; assert over the whole corpus.
+  patch = [
+    readFileSync(PATCH_PATH, "utf-8"),
+    ...readdirSync(PATCH_REFERENCES_DIR)
+      .filter((f) => f.endsWith(".md") && f !== "dropped-details.md")
+      .sort()
+      .map((f) => readFileSync(join(PATCH_REFERENCES_DIR, f), "utf-8")),
+  ].join("\n\n");
   claudeMd = readFileSync(CLAUDE_MD_PATH, "utf-8");
 });
 
