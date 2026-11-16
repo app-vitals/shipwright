@@ -2956,10 +2956,13 @@ describe("review.md — risk rating wiring (RSK-2.1)", () => {
 });
 
 describe("review.md — Step 9.5 semantic no-finding classification (DTA-11.1)", () => {
-  const s = content.slice(
-    content.indexOf("## Step 9.5:"),
-    content.indexOf("## Step 10: Build Review JSON"),
-  );
+  let s: string;
+  beforeAll(() => {
+    s = content.slice(
+      content.indexOf("## Step 9.5:"),
+      content.indexOf("## Step 10: Build Review JSON"),
+    );
+  });
 
   it("runs the CLI with --candidates and asks one descriptive-vs-concern question", () => {
     expect(s).toContain("DTA-11.1");
