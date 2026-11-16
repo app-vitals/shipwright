@@ -307,3 +307,90 @@ is only reachable through the ALT env vars. Safe to deploy standalone: yes for e
 
 **HITL scan:** 9.5, 9.8, 9.9 are human-run steps with no code diff (9.8 needs agent-admin access for env vars).
 No `.claude/**` paths.
+
+## Addendum (2026-11-16): DTA-10.x — review prompt A/B (DTA-3.1's review outcome) and DTA-11.1 — unaddressed-findings false positive
+
+Next prompt after patch (DTA-9.x, promoted via DTA-9.10): **review**.
+
+**Pre-check before committing to the trial.** Unlike patch, where a manual transcript spot-check
+("8 of 172 task-bearing patch runs dispatched any subagent") preceded any required-steps-table
+work, review's own hypothesis was initially uncertain — Step 7's subagent dispatch is the core
+mechanism of the command, not an optional shortcut the way patch's fix-dispatch was, so there was
+a real chance the gap didn't exist. Asked warchild/doc/okwow to each read their 15 most recent
+completed `shipwright-review` runs and report Step 7 dispatch, risk-signals-script execution, and
+`reviewThreads` GraphQL-fetch presence directly from the transcripts:
+
+| Agent | Step 7 dispatch | Risk-signals script (6.1) | PR-record completion (11b) | `reviewThreads` fetch |
+|---|---|---|---|---|
+| maverick | 0/15 | 0/15 | 15/15 | 12/15 |
+| doc | 2/15 | 1/15 | 15/15 | 13/15 |
+| okwow | 3/15 (7/30 extended) | 1/15 (2/30) | — | all 15 |
+
+**Finding: the gap is real, and larger than patch's own original baseline** (~5-20% dispatch rate
+here vs. patch's ~4-5%). Every inline run had no failed-dispatch retry triggering the fallback —
+these are straight skips, not error-recovery. The risk-signals script (Step 6.1, not previously
+scoped as a measured step) is skipped even more consistently (~4% run-rate) despite being
+unconditional in review.md. okwow's same-PR evidence (one pass dispatched, a later pass on the
+identical PR went inline) rules out this being legitimately gated on PR size/triviality.
+
+**Scoping limit found while designing DTA-10.1/10.2.** Unlike Step 7 (dispatch-proof, same
+mechanism `isDispatchStep` already detects for dev-task/patch) and Step 11b (enrichment-proof via
+the task-store PR record's `reviewState`/`reviewedCommitSha`/`agentId` fields, same mechanism as
+patch's PR-record upsert), the risk-signals script and the `reviewThreads` fetch have no existing
+telemetry hook — `run-telemetry.ts` only observes Agent/Task tool dispatches, and neither value is
+ever persisted to the task-store PR record. Measuring them would need new transcript-level
+instrumentation (tracking specific Bash invocation patterns), which is out of scope here. DTA-10.1
+marks both `unmeasured: marker needed`, the same treatment patch.json already gives its own
+unmeasurable escalation-check steps — honest about what the admin report can and can't see today,
+rather than overclaiming.
+
+**Separate correctness bug found during the same conversation, not part of the trial.** Dan
+observed the unaddressed-findings hard gate (`compute-unaddressed-findings.ts`, consumed by both
+review.md's Step 9.5 and patch.md's Step 3a) tripping on a real reviewer's comment that was purely
+descriptive ("this PR does X") with no actual finding — pinning the PR at COMMENT regardless. Root
+cause: the qualifying-review check only asks "is the body non-empty and not a clean-APPROVE
+label," with no signal for "does this body raise an actual concern." The unresolved-thread check
+has the same blind spot with no bot/CI-author exclusion at all (unlike the separate
+`compute-unresolved-comment-check.ts`, which does have one). Decision (discussed with Dan,
+2026-11-16): keep the mechanical gate's structural rules (self-review handling, ledger exclusions,
+author-reply detection, supersede-by-approval) exactly as they are — add one narrow semantic
+check on top, scoped only to reviews/threads the mechanical filters have already qualified, and
+persist the result to the existing findings ledger (reusing `isResolvedByLedger`) so it is judged
+once, not re-litigated every pass. This is additive to, not a replacement for, PVD-1.1's mechanical
+design. Filed as DTA-11.1, independent of the DTA-10.x trial (fixes the same shared module patch.md
+also consumes), not hard-blocking the trial — but `review guardrails` (DTA-10.3) should note the
+confound: a PR's re-review/repeat-review rate may reflect this bug rather than a real lean-vs-default
+difference until DTA-11.1 ships.
+
+| ID | Task | Depends on | Layer | Hours | Complexity | Model | HITL |
+|---|---|---|---|---|---|---|---|
+| DTA-10.1 | feat: add review required-steps table | none | Shared | 2 | 2 | haiku | |
+| DTA-10.2 | feat: score review runs in the adherence report | 10.1, 8.1, 8.3 | Background | 6 | 4 | sonnet | |
+| DTA-10.3 | feat: add review guardrail metrics to the report | 10.2, 8.2 | Background | 3 | 3 | sonnet | |
+| DTA-10.4 | docs: audit what review-lean may drop from review.md | none | Shared | 4 | 3 | sonnet | |
+| DTA-10.5 | feat: add review-lean command | 10.1, 10.4 | Shared | 8 | 5 | opus | |
+| DTA-10.6 | Read the review baseline and confirm trial scope | 10.2 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-10.7 | Start the review trial | 10.6, 10.5, 10.3 | Shared | 2 | 2 | haiku | ⚠ HITL |
+| DTA-10.8 | Review trial readout, learnings and close DTA-3.1 | 10.7 | Shared | 3 | 2 | haiku | ⚠ HITL |
+| DTA-11.1 | feat: semantic check before the unaddressed-findings gate forces COMMENT | none | Shared | 6 | 4 | sonnet | |
+
+```
+[START]
+  ├─ DTA-10.1
+  │     └─ DTA-10.2 (needs 10.1, 8.1, 8.3) ── DTA-10.3 (needs 10.2, 8.2)
+  ├─ DTA-10.4
+  │     └─ DTA-10.5 (needs 10.1, 10.4)
+  ├─ DTA-10.6 (needs 10.2)
+  │     └─ DTA-10.7 (needs 10.6, 10.5, 10.3)
+  │           └─ DTA-10.8 (needs 10.7)
+  └─ DTA-11.1 (independent — fixes a shared module also used by patch.md)
+```
+
+**Breaking Change Safety:** all additive — new JSON table, new report fields (`command: "review"`),
+new `review-lean` command only reachable via `SHIPWRIGHT_LOOP_REVIEW_ALT_COMMAND`/`_ALT_SHARE`
+(unset/0% by default), and DTA-11.1's ledger-based exclusion only ever narrows what counts as
+unaddressed, never widens it. Safe to deploy standalone: yes for every task.
+
+**HITL scan:** 10.6, 10.7, 10.8 are human-run trial/analysis steps with no code diff (10.7 needs
+agent-admin access for env vars, same as DTA-9.8). DTA-11.1 is a real code diff, not HITL. No
+`.claude/**` paths.
