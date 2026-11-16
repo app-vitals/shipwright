@@ -1,0 +1,125 @@
+suite: preview values profile (examples/values-preview.yaml)
+# The preview profile enables every service for a throwaway CI cluster. These
+# assert the rendered manifests: all five workloads, live-mode metrics, local
+# images with pullPolicy Never, open auth, no PostgreSQL volume claim and an
+# ingress with no basic-auth gate (the preview job adds that itself).
+values:
+  - ../examples/values-preview.yaml
+tests:
+  - it: renders a Deployment for admin, metrics, task-store, chat and mcp-server
+    templates:
+      - templates/admin-deployment.yaml
+      - templates/metrics-deployment.yaml
+      - templates/task-store-deployment.yaml
+      - templates/chat-deployment.yaml
+      - templates/mcp-server-deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: runs metrics live with the task-store and admin URLs set
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_OFFLINE
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: http://shipwright-admin:3001
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: http://shipwright-task-store:3000
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-preview-metrics
+                key: METRICS_TASK_STORE_TOKEN
+
+  - it: pulls no CI-built image — pullPolicy Never on admin, metrics, task-store and mcp-server
+    templates:
+      - templates/admin-deployment.yaml
+      - templates/metrics-deployment.yaml
+      - templates/task-store-deployment.yaml
+      - templates/mcp-server-deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: ":0\\.1\\.0$"
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/"
+
+  - it: points the admin provisioner at the local agent image
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGE
+            value: shipwright-agent
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_AGENT_IMAGE_TAG
+            value: "0.1.0"
+
+  - it: turns on open auth mode for the admin
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ADMIN_DEV_AUTH
+            value: "true"
+
+  - it: seeds the task-store admin token from the pre-created Secret
+    template: templates/task-store-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_STORE_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-preview-task-store-seed
+                key: TASK_STORE_SEED_ADMIN_TOKEN
+
+  - it: reads the mcp-server tokens from the pre-created Secret
+    template: templates/mcp-server-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_MCP_SERVER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-preview-mcp
+                key: SHIPWRIGHT_MCP_SERVER_TOKEN
+
+  - it: renders no PostgreSQL volume claim
+    template: charts/postgresql/templates/primary/statefulset.yaml
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+
+  - it: leaves the Ingress without basic-auth annotations
+    template: templates/ingress.yaml
+    asserts:
+      - isKind:
+          of: Ingress
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/auth-type"]
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/auth-secret"]
