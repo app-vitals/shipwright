@@ -38,6 +38,7 @@ export const CODING_SETTINGS_NAV_ITEMS: readonly SettingsNavContribution[] = [
 export function codingSettingsNav(): SettingsNav {
   return buildSettingsNav({
     githubEnterprise: true,
+    templates: true,
     extraItems: CODING_SETTINGS_NAV_ITEMS,
   });
 }

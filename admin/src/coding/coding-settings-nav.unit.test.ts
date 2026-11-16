@@ -53,4 +53,13 @@ describe("codingAdminExtension.settingsNavItems", () => {
       "/admin/settings/notifications",
     ]);
   });
+
+  it("includes Templates in the Platform section", () => {
+    const platform = codingSettingsNav().sections.find(
+      (s) => s.label === "Platform",
+    );
+    expect(platform?.items.map((i) => i.path)).toContain(
+      "/admin/settings/templates",
+    );
+  });
 });
