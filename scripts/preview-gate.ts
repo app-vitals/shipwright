@@ -25,11 +25,19 @@ export const GATE_SECRET_KEY = "auth";
 export type SelfCheck = { user: string; password: string };
 export type GateCheck = { ok: true } | { ok: false; reason: string };
 
-/** Strip exactly one trailing newline; refuse empty / whitespace-only. */
+/** bcrypt only uses the first 72 bytes; Bun pre-hashes longer input, which crypt(3) in nginx cannot verify. */
+export const MAX_PASSWORD_BYTES = 72;
+
+/** Strip exactly one trailing newline; refuse empty, whitespace-only, or over-72-byte input. */
 export function assertUsablePassword(raw: string): string {
   const pw = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
   if (pw.trim() === "") {
     throw new Error("password is empty or whitespace-only");
+  }
+  if (Buffer.byteLength(pw, "utf8") > MAX_PASSWORD_BYTES) {
+    throw new Error(
+      `password exceeds ${MAX_PASSWORD_BYTES} bytes (bcrypt limit; nginx would reject it)`,
+    );
   }
   return pw;
 }

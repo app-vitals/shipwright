@@ -26,6 +26,13 @@ describe("assertUsablePassword", () => {
     expect(() => assertUsablePassword("   \n")).toThrow();
   });
 
+  it("refuses passwords over 72 bytes but accepts exactly 72", () => {
+    expect(assertUsablePassword("a".repeat(72))).toBe("a".repeat(72));
+    expect(() => assertUsablePassword("a".repeat(73))).toThrow(/72 bytes/);
+    // multibyte: 37 x 2-byte chars = 74 bytes though only 37 chars
+    expect(() => assertUsablePassword("é".repeat(37))).toThrow(/72 bytes/);
+  });
+
   it("strips exactly one trailing newline and keeps everything else", () => {
     expect(assertUsablePassword("p:a'ss\"\n")).toBe("p:a'ss\"");
     expect(assertUsablePassword("pw\n\n")).toBe("pw\n");
