@@ -10,11 +10,29 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.32.194] - 2026-11-16
+## [1.32.197] - 2026-11-16
 
 ### Added
 
 - `examples/values-preview.yaml`: preview values profile enabling admin, metrics, task-store, chat, mcp-server, agent provisioning and bundled PostgreSQL for throwaway CI clusters (locally built images with `pullPolicy: Never`, live-mode metrics, open auth, no persistence), with a `preview_values_test.yaml` helm-unittest suite
+
+## [1.32.196] - 2026-11-16
+
+### Changed
+
+- auto-bump to chart v1.32.196 triggered by release tag(s): `admin-v1.341.3`, `agent-v1.475.4`, `metrics-v1.185.3`, `task-store-v1.238.3`
+
+## [1.32.195] - 2026-11-16
+
+### Changed
+
+- auto-bump to chart v1.32.195 triggered by release tag(s): `admin-v1.341.2`, `agent-chat-v1.52.2`, `agent-v1.475.3`, `metrics-v1.185.2`, `task-store-v1.238.2`
+
+## [1.32.194] - 2026-11-16
+
+### Changed
+
+- auto-bump to chart v1.32.194 triggered by release tag(s): `agent-chat-v1.52.1`
 
 ## [1.32.193] - 2026-11-16
 

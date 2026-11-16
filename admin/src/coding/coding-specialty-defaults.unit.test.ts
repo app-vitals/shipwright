@@ -139,11 +139,13 @@ describe("coding specialtyDefaults hook", () => {
     const tx = {
       agentCronJob: {
         update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
         create: async ({ data }: { data: { name: string } }) => ({
           id: `new-${data.name}`,
         }),
-        delete: async ({ where }: { where: { id: string } }) => {
-          deletedIds.push(where.id);
+        deleteMany: async ({ where }: { where: { id: { in: string[] } } }) => {
+          deletedIds.push(...where.id.in);
+          return { count: where.id.in.length };
         },
       },
     };
