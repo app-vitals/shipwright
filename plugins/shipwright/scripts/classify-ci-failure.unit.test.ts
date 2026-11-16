@@ -65,7 +65,7 @@ describe("classifyCiFailure — infra-flake signatures", () => {
   });
 });
 
-describe("classifyCiFailure — vitals-os incident shape", () => {
+describe("classifyCiFailure — downstream-repo incident shape", () => {
   it("checkout + Repository not found in a scan job -> scanNeverRan", () => {
     const r = classifyCiFailure({
       conclusion: "failure",
