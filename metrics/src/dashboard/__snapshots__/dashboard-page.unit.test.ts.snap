@@ -97,6 +97,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+    .vos-page-wide { max-width: none; width: 100%; }
 
     /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
     .vos-nav-toggle { display: none; }
@@ -627,6 +628,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+    .vos-page-wide { max-width: none; width: 100%; }
 
     /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
     .vos-nav-toggle { display: none; }
@@ -1157,6 +1159,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+    .vos-page-wide { max-width: none; width: 100%; }
 
     /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
     .vos-nav-toggle { display: none; }
@@ -1687,6 +1690,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+    .vos-page-wide { max-width: none; width: 100%; }
 
     /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
     .vos-nav-toggle { display: none; }
@@ -2217,6 +2221,7 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
       margin: 0 auto;
       padding: 32px 24px 64px;
     }
+    .vos-page-wide { max-width: none; width: 100%; }
 
     /* ─── Hamburger toggle (CSS-only, no JS) ───────────── */
     .vos-nav-toggle { display: none; }
