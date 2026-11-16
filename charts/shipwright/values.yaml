@@ -1159,7 +1159,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/agent-chat
-    tag: 1.53.0
+    tag: 1.54.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.
