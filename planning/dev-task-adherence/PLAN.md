@@ -325,6 +325,12 @@ completed `shipwright-review` runs and report Step 7 dispatch, risk-signals-scri
 | maverick | 0/15 | 0/15 | 15/15 | 12/15 |
 | doc | 2/15 | 1/15 | 15/15 | 13/15 |
 | okwow | 3/15 (7/30 extended) | 1/15 (2/30) | — | all 15 |
+| warchild | 3/15 | 1/15 (same run as dispatch) | 15/15 | 10/15 confirmed, 5 unconfirmed |
+
+Combined across all four: 8 of 60 sampled runs dispatched (~13%). Risk-signals execution tracks
+with dispatch rather than varying independently (warchild and doc both found the one run that ran
+the script was the same run that dispatched) — the inline path skips both steps together as one
+shortened path, not two separate decisions, consistent with DTA-10.1 treating them as correlated.
 
 **Finding: the gap is real, and larger than patch's own original baseline** (~5-20% dispatch rate
 here vs. patch's ~4-5%). Every inline run had no failed-dispatch retry triggering the fallback —
