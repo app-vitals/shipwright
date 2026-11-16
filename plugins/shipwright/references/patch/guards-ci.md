@@ -1,6 +1,6 @@
-# patch-lean: CI-lane guards (CFE-1.1, PH-1.1, PCC-1.1, SLS-2.2)
+# patch: CI-lane guards (CFE-1.1, PH-1.1, PCC-1.1, SLS-2.2)
 
-Mechanics for `commands/patch-lean.md` Steps 6b.6 → 6b.7 → 6b.8 → 6b.9. They run in that order after
+Mechanics for `commands/patch.md` Steps 6b.6 → 6b.7 → 6b.8 → 6b.9. They run in that order after
 the 6b.5 claim and before the 6c dispatch. Each one that stops the lane releases the claim with
 [lane-shared.md](lane-shared.md)'s release snippet first.
 

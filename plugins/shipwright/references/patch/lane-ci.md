@@ -1,6 +1,6 @@
-# patch-lean: CI lane (Step 6, List D)
+# patch: CI lane (Step 6, List D)
 
-Lane-specific parts of `commands/patch-lean.md` Step 6. Setup (6a), toolchain (6a.5), claim (6b.5),
+Lane-specific parts of `commands/patch.md` Step 6. Setup (6a), toolchain (6a.5), claim (6b.5),
 status skeleton (6d), upsert (6d.5) and cleanup (6e) follow [lane-shared.md](lane-shared.md) with
 `{lane}` = ci. After the claim and **before** dispatch, run 6b.6 → 6b.7 → 6b.8 → 6b.9
 ([guards-ci.md](guards-ci.md)); any of them can end the lane (6b.7 ends the whole command).

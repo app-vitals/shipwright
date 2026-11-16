@@ -191,159 +191,24 @@ describe("patch.json — escalation guard steps", () => {
   });
 });
 
-describe("patch.json — step titles match patch.md headings", () => {
-  it("reads patch.md successfully", () => {
+describe("patch.json — every step is present in patch.md", () => {
+  it("patch.md is non-empty", () => {
     patchMdContent = loadPatchMd();
     expect(patchMdContent.length).toBeGreaterThan(0);
   });
 
-  it("step 4a.6 title matches '### Step 4a.6: ...' heading", () => {
+  it("each stepNumber appears as a '## Step N:' / '### Step N:' heading or a '- **N**' bullet", () => {
+    patchMdContent = loadPatchMd();
     patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "4a.6",
-    );
-    const heading = patchMdContent.match(/### Step 4a\.6: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(
-      headingText.split("(")[0].trim().split(":")[0],
-    );
-  });
-
-  it("step 4b title matches '### Step 4b: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "4b",
-    );
-    const heading = patchMdContent.match(/### Step 4b: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 4c.5 title matches '### Step 4c.5: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "4c.5",
-    );
-    const heading = patchMdContent.match(/### Step 4c\.5: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 5a.6 title matches '### Step 5a.6: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "5a.6",
-    );
-    const heading = patchMdContent.match(/### Step 5a\.6: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(
-      headingText.split("(")[0].trim().split(":")[0],
-    );
-  });
-
-  it("step 5a.6b title matches '### Step 5a.6b: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "5a.6b",
-    );
-    const heading = patchMdContent.match(/### Step 5a\.6b: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split("(")[0].trim());
-  });
-
-  it("step 5a.7 title matches '### Step 5a.7: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "5a.7",
-    );
-    const heading = patchMdContent.match(/### Step 5a\.7: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split("(")[0].trim());
-  });
-
-  it("step 5b title matches '### Step 5b: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "5b",
-    );
-    const heading = patchMdContent.match(/### Step 5b: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 5c.5 title matches '### Step 5c.5: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "5c.5",
-    );
-    const heading = patchMdContent.match(/### Step 5c\.5: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 6b.5 title matches '### Step 6b.5: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "6b.5",
-    );
-    const heading = patchMdContent.match(/### Step 6b\.5: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(
-      headingText.split("(")[0].trim().split(":")[0],
-    );
-  });
-
-  it("step 6b.6 title matches '### Step 6b.6: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "6b.6",
-    );
-    const heading = patchMdContent.match(/### Step 6b\.6: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split("(")[0].trim());
-  });
-
-  it("step 6c title matches '### Step 6c: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "6c",
-    );
-    const heading = patchMdContent.match(/### Step 6c: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 6d.5 title matches '### Step 6d.5: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "6d.5",
-    );
-    const heading = patchMdContent.match(/### Step 6d\.5: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
-  });
-
-  it("step 6.5 title matches '## Step 6.5: ...' heading", () => {
-    patchRequiredStepsContent = loadPatchRequiredSteps();
-    const step = patchRequiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === "6.5",
-    );
-    const heading = patchMdContent.match(/## Step 6\.5: (.+)/);
-    expect(heading).not.toBeNull();
-    const headingText = heading?.[1] || "";
-    expect(step?.title).toContain(headingText.split(":")[0]);
+    const missing = (patchRequiredStepsContent?.steps ?? [])
+      .map((step) => step.stepNumber)
+      .filter((n) => {
+        const esc = n.replace(/\./g, "\\.");
+        const heading = new RegExp(`^#{2,3} Step ${esc}:`, "m");
+        const bullet = new RegExp(`^- \\*\\*${esc}\\*\\* `, "m");
+        return !heading.test(patchMdContent) && !bullet.test(patchMdContent);
+      });
+    expect(missing).toEqual([]);
   });
 });
 

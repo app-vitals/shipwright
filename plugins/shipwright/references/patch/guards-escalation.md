@@ -1,6 +1,6 @@
-# patch-lean: findings-lane escalation guards (CDH-1.2, RPF-1.3)
+# patch: findings-lane escalation guards (CDH-1.2, RPF-1.3)
 
-Mechanics for `commands/patch-lean.md` Steps 5a.6b and 5a.7. Both run after the 5a.6 claim and before
+Mechanics for `commands/patch.md` Steps 5a.6b and 5a.7. Both run after the 5a.6 claim and before
 the 5b dispatch, in that order. The trigger checks and stop rules are in the spine; this file holds
 the matching fine print, exact strings and the thread-resolution mutation. Both escalate through
 [escalation-pattern.md](../../commands/references/escalation-pattern.md)'s shared PATCH/comment/release

@@ -1,4 +1,4 @@
-# patch-lean: verify CI after patch (Step 6.5) and report (Step 7)
+# patch: verify CI after patch (Step 6.5) and report (Step 7)
 
 Lanes 4, 5 and 6 each push independently, and a conflict resolution or review-finding fix can leave
 CI red in a way no lane re-checks (lane 6 only fires when List D flagged the PR *before* this cycle's

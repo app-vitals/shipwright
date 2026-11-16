@@ -1,6 +1,6 @@
-# patch-lean: target resolution and list classification
+# patch: target resolution and list classification
 
-Mechanics for `commands/patch-lean.md` Steps 1, 2, 2.5 and 3 (3a–3d). Moved from `commands/patch.md`
+Mechanics for `commands/patch.md` Steps 1, 2, 2.5 and 3 (3a–3d). Moved from the earlier long-form `patch.md`
 unchanged in behavior. **This command does not read `state/reviews.json`.** All data comes from GitHub
 directly.
 

@@ -1,6 +1,6 @@
-# patch-lean: dependency-risk detection (DBP-1.2)
+# patch: dependency-risk detection (DBP-1.2)
 
-Loaded by `commands/patch-lean.md` Step 3 when `PR_AUTHOR` is a Renovate/Dependabot bot, or the PR's
+Loaded by `commands/patch.md` Step 3 when `PR_AUTHOR` is a Renovate/Dependabot bot, or the PR's
 changed files include a package manifest or lockfile. That trigger is a superset of the watched-path
 test below: a false positive only costs this read, because step 1 still decides "triggered" from the
 real watched-path set. Apply this before finalizing List A.
