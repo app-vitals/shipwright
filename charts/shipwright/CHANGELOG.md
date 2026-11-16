@@ -14,7 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
-- bump chat.image.tag to agent platform 1.52.0
+- auto-bump to chart v1.32.191 triggered by release tag(s): `agent-chat-v1.52.0`
 
 ## [1.32.190] - 2026-11-15
 

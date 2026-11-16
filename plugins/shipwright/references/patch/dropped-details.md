@@ -1,10 +1,9 @@
-# Intentionally dropped from patch-lean
+# Intentionally dropped from the pre-DTA-9.10 patch command
 
-`commands/patch-lean.md` is a trimmed variant of `commands/patch.md` (2549 lines), built from the
+`commands/patch.md` is the trimmed successor to the earlier 2549-line `patch.md`, built from the
 DTA-9.6 audit (`planning/dev-task-adherence/patch-drop-audit.md`). The spine carries every step, every
 guard's trigger and stop rule, and a **Proof:** line per `required-steps/patch.json` step; mechanics
-moved to the sibling files in this directory. `patch.md` itself is unchanged and remains the default
-patch command. The items below were cut or reshaped; nothing in the audit's incident-driven guard list
+moved to the sibling files in this directory. The trial (DTA-9.8) promoted it to the default patch command. The items below were cut or reshaped; nothing in the audit's incident-driven guard list
 was dropped.
 
 ## Dropped text

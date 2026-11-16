@@ -1,6 +1,6 @@
-# patch-lean: shared lane mechanics
+# patch: shared lane mechanics
 
-Steps 4 (List C, conflicts), 5 (List A, findings) and 6 (List D, CI) of `commands/patch-lean.md` run
+Steps 4 (List C, conflicts), 5 (List A, findings) and 6 (List D, CI) of `commands/patch.md` run
 the same skeleton. Each section below is parameterized by `{lane}`:
 
 | `{lane}` | List | Setup | Toolchain | Claim | Dispatch | Status | Upsert | Cleanup | BLOCKED slug | Lane file |

@@ -1,6 +1,6 @@
-# patch-lean: findings lane (Step 5, List A)
+# patch: findings lane (Step 5, List A)
 
-Lane-specific parts of `commands/patch-lean.md` Step 5. Setup (5a), toolchain (5a.5), claim (5a.6),
+Lane-specific parts of `commands/patch.md` Step 5. Setup (5a), toolchain (5a.5), claim (5a.6),
 status skeleton (5c), upsert (5c.5) and cleanup (5d) follow [lane-shared.md](lane-shared.md) with
 `{lane}` = findings. After the claim and **before** dispatch, run 5a.6b then 5a.7
 ([guards-escalation.md](guards-escalation.md)); either can end the lane without dispatching.

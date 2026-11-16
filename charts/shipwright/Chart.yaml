@@ -30,7 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "bump chat.image.tag to agent platform 1.52.0"
+      description: "auto-bump to chart v1.32.191 triggered by release tag agent-chat-v1.52.0"
 dependencies:
   # Shared platform helpers (CHM-3.1): the agent-platform library chart owns the
   # name/label/image helpers this chart's `shipwright.*` helpers delegate to.
