@@ -149,6 +149,49 @@ const CI_FAILURE_BLOCK_THRESHOLD = 3;
  */
 const PATCH_NO_PROGRESS_REASON_PREFIX = "patch dispatch made no progress";
 
+/**
+ * Substrings (case-insensitive) identifying a patch-phase blockedReason — see
+ * the origin-phase table in plugins/shipwright/commands/unblock.md. Once a PR
+ * is merged these blocks are stale (nothing is left to patch), so update()
+ * clears them. Merge-phase reasons ("Post-merge CI failed", "Deploy stage ...")
+ * are deliberately absent: they are real post-merge signals and stay blocked.
+ */
+const PATCH_PHASE_REASON_MARKERS = [
+  PATCH_NO_PROGRESS_REASON_PREFIX,
+  "consecutive skips",
+  "consecutive patch cycles hitting the same CI failure",
+  "merge-conflict",
+  "merge conflict",
+  "superseded",
+  "second-round disagreement",
+  "structurally unfixable",
+  "review-finding fix blocked",
+  "ci-fix blocked",
+  "main_red:",
+];
+
+/** True when `reason` is a patch-phase block that a merge makes obsolete. */
+export function isPatchPhaseBlockReason(
+  reason: string | null | undefined,
+): boolean {
+  if (!reason) return false;
+  const lower = reason.toLowerCase();
+  return PATCH_PHASE_REASON_MARKERS.some((m) =>
+    lower.includes(m.toLowerCase()),
+  );
+}
+
+/** Fields that reset a block — mirrors what POST /prs/:id/unblock writes. */
+const CLEARED_BLOCK_FIELDS = {
+  blocked: false,
+  blockedReason: null,
+  blockedHeadSha: null,
+  skipCount: 0,
+  lastSkippedAt: null,
+  consecutiveCiFailureCount: 0,
+  lastCiFailureSignature: null,
+} as const;
+
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
   /**
@@ -602,6 +645,27 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.claimedAt = null;
         updateData.heartbeatAt = null;
         updateData.phase = null;
+
+        // A terminal PR's block is stale and floods unblock triage (BKH-2.1).
+        // Closed: always clear. Merged: clear only patch-phase reasons — keep
+        // merge-phase ones. A caller that sets blocked/blockedReason in the
+        // same PATCH wins.
+        if (data.blocked === undefined && data.blockedReason === undefined) {
+          if (data.state === "closed") {
+            Object.assign(updateData, CLEARED_BLOCK_FIELDS);
+          } else {
+            const existing = await this.prisma.pullRequest.findUnique({
+              where: { id },
+              select: { blocked: true, blockedReason: true },
+            });
+            if (
+              existing?.blocked &&
+              isPatchPhaseBlockReason(existing.blockedReason)
+            ) {
+              Object.assign(updateData, CLEARED_BLOCK_FIELDS);
+            }
+          }
+        }
       }
 
       return await this.prisma.pullRequest.update({
