@@ -22,10 +22,13 @@
 
 import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
 import { renderAdminPage } from "@app-vitals/agent-admin/admin-ui-layout";
-import { renderSettingsLayout } from "@app-vitals/agent-admin/admin-ui-settings-layout";
+import {
+  getSettingsNav,
+  renderSettingsLayout,
+  type SettingsNav,
+} from "@app-vitals/agent-admin/admin-ui-settings-layout";
 import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { Context, Hono, MiddlewareHandler } from "hono";
-import { codingSettingsNav } from "./coding-settings-nav.ts";
 import { validateTemplateForm } from "./system-cron-form.ts";
 import {
   formatTriggerRow,
@@ -91,6 +94,7 @@ const ERRORS: Record<string, string> = {
 
 interface PageOpts {
   userEmail: string;
+  nav: SettingsNav;
   crons: SystemCronItem[];
   /** Recent triggers keyed by cron id; a missing/null entry renders the fetch-failure note. */
   recentRuns?: Record<string, RecentRuns>;
@@ -178,7 +182,7 @@ export function renderSystemCronsPage(opts: PageOpts): string {
     body: renderSettingsLayout({
       userName: opts.userEmail,
       title: "System crons",
-      nav: codingSettingsNav(),
+      nav: opts.nav,
       active: SYSTEM_CRONS_SETTINGS_PATH,
       isAdmin: true,
       body: `${banner}${degraded}${notice}${error}${warnings}
@@ -249,6 +253,7 @@ export function registerSystemCronsRoutes(
     return deps.html(
       renderSystemCronsPage({
         userEmail: c.var.userEmail,
+        nav: getSettingsNav(c) ?? { sections: [] },
         crons,
         recentRuns,
         degraded,

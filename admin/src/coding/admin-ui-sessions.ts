@@ -22,12 +22,15 @@ import {
   registerPushTestRoute,
   renderPushTestControl,
 } from "@app-vitals/agent-admin/admin-ui-push-test";
-import { renderSettingsLayout } from "@app-vitals/agent-admin/admin-ui-settings-layout";
+import {
+  getSettingsNav,
+  renderSettingsLayout,
+  type SettingsNav,
+} from "@app-vitals/agent-admin/admin-ui-settings-layout";
 import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import { renderPushToggle } from "@app-vitals/agent-admin/push-toggle";
 import type { Hono, MiddlewareHandler } from "hono";
-import { codingSettingsNav } from "./coding-settings-nav.ts";
 import type {
   SessionFollowRow,
   SessionFollowService,
@@ -79,6 +82,7 @@ function renderFollowRow(follow: SessionFollowRow): string {
 
 function renderNotificationSettingsPage(opts: {
   userEmail: string;
+  nav: SettingsNav;
   prefs: UserNotificationPrefsRow;
   follows: SessionFollowRow[];
   pushEnabled: boolean;
@@ -113,7 +117,7 @@ function renderNotificationSettingsPage(opts: {
     body: renderSettingsLayout({
       userName: opts.userEmail,
       title: "Notification settings",
-      nav: codingSettingsNav(),
+      nav: opts.nav,
       active: NOTIFICATION_SETTINGS_PATH,
       isAdmin: true,
       body: `
@@ -210,6 +214,7 @@ export function registerSessionSettingsRoutes(
     return deps.html(
       renderNotificationSettingsPage({
         userEmail,
+        nav: getSettingsNav(c) ?? { sections: [] },
         prefs,
         follows,
         pushEnabled: deps.pushEnabled,
@@ -260,6 +265,7 @@ export function registerSessionSettingsRoutes(
     return deps.html(
       renderNotificationSettingsPage({
         userEmail,
+        nav: getSettingsNav(c) ?? { sections: [] },
         prefs,
         follows,
         pushEnabled: deps.pushEnabled,

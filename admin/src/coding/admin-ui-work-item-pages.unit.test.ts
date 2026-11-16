@@ -6178,14 +6178,12 @@ describe("unknown legacy task status", () => {
 // ─── Admin wide pages (AWT-1.1) ──────────────────────────────────────────────
 
 describe("admin wide pages (AWT-1.1)", () => {
-  const WIDE_RULE = "max-width:none;width:100%";
   const WRAPPER = /<div class="vos-page[^"]*">/;
 
   function expectWide(html: string) {
     const match = html.match(WRAPPER);
     expect(match).not.toBeNull();
-    expect(match?.[0]).toContain("admin-wide-page");
-    expect(html).toContain(`.admin-wide-page { ${WIDE_RULE} }`);
+    expect(match?.[0]).toContain("vos-page-wide");
   }
 
   const tasksArgs = (
@@ -6255,17 +6253,6 @@ describe("admin wide pages (AWT-1.1)", () => {
     );
     expectWide(html);
     expect(html).toContain(".detail-table");
-  });
-
-  test("the wide rule is defined exactly once per page", () => {
-    const html = renderPrDetailPage(
-      PR_DETAIL,
-      USER_NAME,
-      {},
-      "America/Los_Angeles",
-      [],
-    );
-    expect(html.split(WIDE_RULE).length - 1).toBe(1);
   });
 });
 

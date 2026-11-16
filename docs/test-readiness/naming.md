@@ -33,8 +33,9 @@ for per-layer timing targets.
 
 ## The reserved `.canary.` suffix
 
-No `*.canary.test.ts` files exist in the repo yet — the suffix is **reserved**, not yet
-in use. It is defined here now, ahead of any concrete canary test, so that when the
+The first `*.canary.test.ts` files live in `preview/canary/` and run via `task preview:canary`
+(which passes `--config=/dev/null` to bypass the exclusion below). The suffix was defined
+ahead of any concrete canary test, so that when the
 test-readiness pipeline's canary suite is introduced (see the `canary-execution` skill —
 [`plugins/shipwright/skills/canary-execution/SKILL.md`](../../plugins/shipwright/skills/canary-execution/SKILL.md)),
 there is no ambiguity about what filename pattern it uses and no risk of an existing
@@ -67,7 +68,7 @@ entry point (canary):
 | `**/site/**` | `site/**/*.spec.ts` | Astro marketing site's Playwright suite; run via `cd site && npm test`, not `bun test`. Bun would otherwise try to execute Playwright specs and crash. |
 | `**/metrics/e2e/**` | `metrics/e2e/*.e2e.ts` | Metrics dashboard's Playwright E2E suite; run via `task e2e` / `bunx playwright test`, not `bun test`. |
 | `**/admin/e2e/**` | `admin/e2e/*.e2e.ts` | Admin UI's Playwright E2E suite; run via `cd admin && bunx playwright test`, not `bun test`. |
-| `**/*.canary.test.ts` | any `*.canary.test.ts` file, anywhere | Reserved for the future canary suite's dedicated entry point (`canary-execution` skill contract). Canary tests must never run via the default `bun test` scan — same rationale as the e2e exclusions, added proactively even though no file currently matches this glob. |
+| `**/*.canary.test.ts` | any `*.canary.test.ts` file, anywhere | Deployed-target canary suite (`preview/canary/*.canary.test.ts`, running via `task preview:canary`). Canary tests must never run via the default `bun test` scan — same rationale as the e2e exclusions. Also reserved for the future canary-execution skill (`canary-execution` skill contract) to extend the pattern. |
 
 Unit, integration, smoke, and content suffixes have **no** `pathIgnorePatterns` entry —
 they are exactly the suffixes the root `bun test` scan is meant to discover and run.
@@ -79,8 +80,8 @@ layer's files — the doc/config sync above only covers the `bun test` side; thi
 the loop on the Playwright side too:
 
 - `bun test`'s default file listing (respecting `pathIgnorePatterns`) contains zero
-  `*.spec.ts`, `*.e2e.ts`, or `*.canary.test.ts` files, despite 15 such files existing on
-  disk (`site/tests/*.spec.ts`, `metrics/e2e/*.e2e.ts`, `admin/e2e/*.e2e.ts`).
+  `*.spec.ts`, `*.e2e.ts`, or `*.canary.test.ts` files, despite many such files existing on
+  disk (`site/tests/*.spec.ts`, `metrics/e2e/*.e2e.ts`, `admin/e2e/*.e2e.ts`, `preview/canary/*.canary.test.ts`).
 - `metrics/playwright.config.ts` and `admin/playwright.config.ts` scope `testDir: "./e2e"`
   with `testMatch: "**/*.e2e.ts"` — each `e2e/` directory contains only its own
   `*.e2e.ts` files (plus non-test helpers), so Playwright cannot pick up a
@@ -98,7 +99,7 @@ rename work landed since T-048:
 
 - `bun test`'s default scan discovered 226 files / 331 tests with zero `*.spec.ts`,
   `*.e2e.ts`, or `*.canary.test.ts` matches — confirmed via the file list Bun itself
-  reports, not just static glob inspection.
+  reports, not just static glob inspection. (Note: this count is prior to the preview canary suite being added; the scan continues to successfully exclude all three patterns.)
 - `bunx playwright test --list` against `metrics/playwright.config.ts` discovered 31
   tests in exactly 1 file (`dashboard.e2e.ts`); against `admin/playwright.config.ts`, 21
   tests in exactly 2 files (`agents-page.e2e.ts`, `login-page.e2e.ts`) — no

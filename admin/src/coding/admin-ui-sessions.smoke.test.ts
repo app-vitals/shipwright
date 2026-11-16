@@ -14,6 +14,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AdminUIEnv } from "@app-vitals/agent-admin/admin-ui";
 import { PUSH_TEST_PATH } from "@app-vitals/agent-admin/admin-ui-push-test";
+import { buildSettingsNav } from "@app-vitals/agent-admin/admin-ui-settings-layout";
 import { BadRequestError } from "@app-vitals/agent-admin/errors";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -23,6 +24,7 @@ import {
   type SessionSettingsDeps,
   type SessionSettingsFollowService,
 } from "./admin-ui-sessions.ts";
+import { CODING_SETTINGS_NAV_ITEMS } from "./coding-settings-nav.ts";
 import type {
   SessionFollowRow,
   UserNotificationPrefsRow,
@@ -119,6 +121,14 @@ function buildApp(
   overrides: Partial<SessionSettingsDeps> = {},
 ): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
+  // The platform resolves the settings nav into the request context.
+  app.use("*", async (c, next) => {
+    c.set(
+      "settingsNav",
+      buildSettingsNav({ extraItems: CODING_SETTINGS_NAV_ITEMS }),
+    );
+    await next();
+  });
   const deps: SessionSettingsDeps = {
     requireAuth: makeFakeRequireAuth(),
     sessionFollowService: makeFakeSessionFollowService(),
@@ -160,7 +170,9 @@ describe("GET /admin/settings/notifications — page width (AWT-1.1)", () => {
   it("uses the shared settings layout (vos-page-wide) and not the legacy admin-wide-page class", async () => {
     const app = buildApp();
     const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
-    expect(text).toContain('<div class="vos-page vos-page-wide vos-page-settings">');
+    expect(text).toContain(
+      '<div class="vos-page vos-page-wide vos-page-settings">',
+    );
     expect(text).not.toContain("admin-wide-page");
   });
 });

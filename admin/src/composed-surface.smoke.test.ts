@@ -206,7 +206,7 @@ describe("settings sidebar parity between platform and coding pages (SNC-1.1)", 
   function sidebarHrefs(html: string): string[] {
     const nav =
       html.match(/<nav[^>]*settings[^>]*>[\s\S]*?<\/nav>/i)?.[0] ?? "";
-    return [...nav.matchAll(/href="(\/admin\/settings\/[^"]*)"/g)]
+    return [...nav.matchAll(/href="(\/admin\/(?:settings\/|account)[^"]*)"/g)]
       .map((m) => m[1] as string)
       .sort();
   }
@@ -228,6 +228,35 @@ describe("settings sidebar parity between platform and coding pages (SNC-1.1)", 
     };
     const platform = await get("/admin/settings/templates");
     expect(platform).toContain("/admin/settings/templates");
+    expect(await get("/admin/settings/system-crons")).toEqual(platform);
+    expect(await get("/admin/settings/notifications")).toEqual(platform);
+  });
+
+  it("also shows Account/Accounts on the coding pages when self-serve is enabled", async () => {
+    const accountServices = {
+      accounts: {
+        getByMemberEmail: async () => ({ id: "acct-1" }),
+        listWithCounts: async () => [],
+      },
+    } as never;
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      templateService,
+      githubEnterpriseApi,
+      prisma,
+      selfServe: { enabled: true, defaultMaxAgents: 1, contactEmail: "a@b.c" },
+      accountServices,
+      settingsNavItems: CODING_SETTINGS_NAV_ITEMS,
+    });
+    const cookie = `admin_session=${await makeSessionCookie()}`;
+    const get = async (path: string) => {
+      const res = await app.request(path, { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      return sidebarHrefs(await res.text());
+    };
+    const platform = await get("/admin/settings/templates");
+    expect(platform).toContain("/admin/account");
+    expect(platform).toContain("/admin/accounts");
     expect(await get("/admin/settings/system-crons")).toEqual(platform);
     expect(await get("/admin/settings/notifications")).toEqual(platform);
   });

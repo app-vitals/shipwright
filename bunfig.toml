@@ -10,8 +10,8 @@
 # run via `bunx playwright test` — not via bun test. Exclude them so Bun does
 # not try to execute Playwright test files with the Bun runner.
 #
-# *.canary.test.ts is a reserved suffix (no files use it yet) for the future
-# canary suite defined by the canary-execution skill contract
+# *.canary.test.ts is the suffix for the canary suite (preview/canary/, run by
+# `task preview:canary` with --config=/dev/null) defined by the canary-execution skill contract
 # (plugins/shipwright/skills/canary-execution/SKILL.md). Canary tests run via
 # a dedicated entry point, never via default `bun test` — same rationale as
 # the e2e exclusions above, added proactively to prevent a future collision.

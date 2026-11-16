@@ -225,13 +225,16 @@ CLI: `bun run scripts/preview-env.ts --context <ctx> --chart <dir> [--host <h>] 
 ```ts
 export const GATE_USER = "preview";
 export const GATE_SECRET_NAME = "shipwright-preview-gate";
+export const GATE_SECRET_KEY = "auth";  // Secret key for ingress-nginx htpasswd content
+
 export type SelfCheck = { user: string; password: string };
 export type GateCheck = { ok: true } | { ok: false; reason: string };
 
 export function assertUsablePassword(raw: string): string;   // trims one trailing newline; throws on empty or whitespace-only
 export function buildHtpasswd(lines: string[]): string;       // "user:hash" lines, newline-terminated, rejects a line without exactly one leading "user:"
-export function gateIngressValues(): Record<string, string>;  // helm --set pairs for the basic-auth annotations
-export function verifyGate(url: string, selfCheck: SelfCheck, fetchFn: typeof fetch): Promise<GateCheck>;
+export function gateIngressValues(): [string, string][];      // array of [key, value] pairs for ingress-nginx basic-auth annotations
+export function helmSetEscape(key: string): string;           // escape dots for helm --set keys to avoid path interpretation
+export async function verifyGate(url: string, selfCheck: SelfCheck, fetchFn?: typeof fetch): Promise<GateCheck>;
 ```
 
 CLI: `bun run scripts/preview-gate.ts hash --out <file>` reads the password from stdin, hashes it in the format finding P5 says the ingress accepts, appends a second line for a freshly generated self-check user, writes the htpasswd content to `<file>` and the self-check credential to `<file>.selfcheck`. `... verify --url <u> --selfcheck <file>` runs `verifyGate` and exits non-zero on failure.
