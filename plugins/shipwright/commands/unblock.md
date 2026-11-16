@@ -108,6 +108,8 @@ path) per match — a two-task bundle where both tasks are blocked produces two 
 not one collapsed item. Only when the `/tasks?repo=&pr=` lookup returns **zero** tasks is
 the PR a genuinely PR-only record with no linked task to dedupe against.
 
+**Note on automatically-cleared blocks:** Patch-phase blocks are automatically cleared when a PR is merged (see the "Automatic block clearing on terminal PR states" section in `docs/task-store-pr-tracking.md`). Merge-phase blocks (Post-merge CI failed, Deploy stage failed, etc.) persist. So a merged PR with only a patch-phase block (merge-conflict, CI-fix blocked, etc.) will not appear in the blocked list — it was already unblocked automatically. If you expect to see a block but do not, check whether the PR was already merged and had a patch-phase reason.
+
 If both `BLOCKED_TASKS` and `BLOCKED_PRS` are empty after dedup, print and stop:
 
 ```

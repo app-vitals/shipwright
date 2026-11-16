@@ -91,6 +91,15 @@ The `POST /tasks/:id/skip` endpoint accepts an optional `reason` field (string);
 
 For PRs, a human-driven unblock is available via `POST /prs/:id/unblock` (UBL-1.2) — distinct from `POST /prs/:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched. `unblock()` atomically clears `blocked`, `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount`, and `lastCiFailureSignature`, regardless of which mechanism set the block (skip-auto-block, CI failure streak, or another reason). Resetting the CI-failure streak counter and signature means the next `POST /prs/:id/patch` starts a fresh streak instead of re-blocking — a critical unblock recovery path when genuine CI flakes have been resolved. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as `PullRequestEvent` rows for full auditability.
 
+### Automatic block clearing on terminal PR states _(BKH-2.1)_
+
+Blocks are also automatically cleared by `PullRequestService.update()` when a PR transitions to a terminal state, avoiding stale blocks from flooding the unblock triage queue:
+
+- **Closed PRs (any state → `closed`)**: All block fields are cleared unconditionally — `blocked`, `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount`, and `lastCiFailureSignature`. A closed PR cannot be retried or patched, so any block is now moot.
+- **Merged PRs (any state → `merged`)**: Only **patch-phase** blocks are cleared. Patch-phase reasons — e.g. `patch dispatch made no progress`, `merge-conflict`, `CI-fix blocked`, `main_red:` — are stale once a PR is merged (the patch phase is over). **Merge-phase blocks stay**: reasons like `Post-merge CI failed` or `Deploy stage failed` are real, actionable post-merge signals and must remain visible for triage. The logic distinguishes patch- from merge-phase reasons via substring match against a marker list (see `isPatchPhaseBlockReason()` in `task-store/src/pull-request-service.ts` for the exact markers). A caller that supplies a new block reason in the same `PATCH` wins — the automatic clearing only applies when the caller did not explicitly request a block change.
+
+This automatic clearing is independent of and complements the manual `POST /prs/:id/unblock` path — `unblock()` requires a human decision (returns `409` if the PR is not currently blocked), while the automatic clearing is a silent gate-keeping pass.
+
 ## Same-branch exclusivity guard
 
 A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.

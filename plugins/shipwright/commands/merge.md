@@ -491,11 +491,52 @@ non-green `conclusion` — `failure`, `cancelled`, `timed_out`, `action_required
 ✗ Post-merge CI failed — {name}
   Logs: gh run view {id} --log --failed
 ```
+
+**4a. Classify the failed run.** Before blocking anything, build the BKH-1.1 classifier input
+(`conclusion`, `jobs` with their `steps`, and the tail of the failed log) and run it:
+```bash
+RUN_JSON=$(gh run view {id} --json conclusion,jobs --repo "$REPO")
+FAILED_LOG=$(gh run view {id} --log-failed --repo "$REPO" 2>/dev/null | tail -n 200)
+CLASS_INPUT=$(jq -nc --argjson run "$RUN_JSON" --arg log "$FAILED_LOG" \
+  '{conclusion: $run.conclusion, jobs: [$run.jobs[] | {name, conclusion, steps: [.steps[] | {name, conclusion}]}], failedStepLog: $log}')
+CLASS=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/classify-ci-failure.ts" "$CLASS_INPUT")
+# CLASS = {"classification":"infra-flake"|"real-failure","reason":"...","scanNeverRan":true|false}
+```
+If any of these commands fails, treat the run as a real failure (fail closed).
+
+**4b. Rerun an infra flake once.** Keep a `RERUN_IDS` list (empty at the start of the watch).
+There is at most one rerun per run ID. If `classification` is `infra-flake` and `{id}` is not
+in `RERUN_IDS`:
+```bash
+gh run rerun {id} --failed --repo "$REPO"
+RERUN_IDS="$RERUN_IDS {id}"
+echo "↻ Post-merge CI infra flake ({reason}) — rerunning failed jobs of run {id} once"
+```
+Then resume the poll loop (re-poll every 30 seconds). The 10-minute cap from the start of
+the watch still applies: if it is exhausted while the rerun is pending, fall through to the
+**Pending at timeout** branch below (tasks stay `merged`). A rerun keeps the same run ID with
+a higher `run_attempt`, so seeing `{id}` in a terminal non-green state again means the rerun
+also failed.
+
+**4c. Block.** Block when the classification is `real-failure`, or when it is `infra-flake`
+and `{id}` is already in `RERUN_IDS` (rerun exhausted). Pick the reason once, then use it in
+both the task branch and the PR-record branch below, so the two never diverge:
+```bash
+BLOCK_REASON="Post-merge CI failed — run ID: {id}"   # real failure: exact, unchanged text
+# infra flake, rerun exhausted — scanNeverRan true:  scan never ran
+BLOCK_REASON="Post-merge CI failed (infra, rerun exhausted) — run ID: {id} — scan never ran (checkout/runner/startup failure before the scan executed)"
+# infra flake, rerun exhausted — scanNeverRan false: scan ran and failed
+BLOCK_REASON="Post-merge CI failed (infra, rerun exhausted) — run ID: {id} — scan ran and failed (infra signature, not a clean scan result)"
+```
+(Assign only the one that applies; the first line is the default for real failures.) Every
+variant keeps the `Post-merge CI failed` substring that `/shipwright:unblock` matches on.
+
 Block every task on `TASK_IDS` (not just the primary — bundle-mates were merged together and
 fail together). Only do so when Step 3b actually marked them merged: in merge-only mode
 (`MERGE_ONLY=true`) the tasks were never moved to `merged`, so PATCHing `blocked` onto them
 would regress their status (e.g. an already `deployed`/`done` task). In merge-only mode, or when
-no task is linked, flag the PR record instead:
+no task is linked, flag the PR record instead (both the task branch and the PR-record branch use
+the same `BLOCK_REASON` and the same rerun-once behavior above):
 ```bash
 if [ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]; then
   for tid in $TASK_IDS; do
@@ -503,14 +544,14 @@ if [ "$MERGE_ONLY" != "true" ] && [ -n "$TASK_IDS" ]; then
       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
       -H "Content-Type: application/json" \
       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
-      -d "{\"status\": \"blocked\", \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+      -d "{\"status\": \"blocked\", \"blockedReason\": \"$BLOCK_REASON\"}" | jq .
   done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"blocked\": true, \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+    -d "{\"blocked\": true, \"blockedReason\": \"$BLOCK_REASON\"}" | jq .
 fi
 ```
 Proceed to Step 5.

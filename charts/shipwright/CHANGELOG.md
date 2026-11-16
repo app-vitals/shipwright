@@ -10,11 +10,23 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.32.203] - 2026-11-16
+## [1.32.205] - 2026-11-16
 
 ### Changed
 
 - bump bundled subcharts: postgresql 18.12.4 -> 18.12.19, traefik 42.0.0 -> 42.4.0, cert-manager v1.21.2 -> v1.21.3
+
+## [1.32.204] - 2026-11-16
+
+### Changed
+
+- auto-bump to chart v1.32.204 triggered by release tag(s): `agent-v1.476.1`, `task-store-v1.239.0`
+
+## [1.32.203] - 2026-11-16
+
+### Changed
+
+- auto-bump to chart v1.32.203 triggered by release tag(s): `agent-v1.476.0`
 
 ## [1.32.202] - 2026-11-16
 

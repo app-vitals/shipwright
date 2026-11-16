@@ -14,6 +14,7 @@ import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
 import { deriveOrigin } from "./pr-origin-derivation.ts";
 import {
+  isPatchPhaseBlockReason,
   MAX_CENSUS_ENTRIES,
   PullRequestService,
 } from "./pull-request-service.ts";
@@ -2925,5 +2926,88 @@ describe("PullRequestService.unblock() (UBL-1.2)", () => {
     const svc = new PullRequestService(prisma as never, clock);
 
     await expect(svc.unblock("nope")).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("isPatchPhaseBlockReason()", () => {
+  test.each([
+    "patch dispatch made no progress (3 cycles)",
+    "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+    "Auto-blocked after 3 consecutive patch cycles hitting the same CI failure (lint)",
+    "merge-conflict resolution blocked",
+    "Unresolvable merge conflict",
+    "Superseded by #123",
+  ])("patch-phase reason %p is classified as patch-phase", (reason) => {
+    expect(isPatchPhaseBlockReason(reason)).toBe(true);
+  });
+
+  test.each([
+    "Post-merge CI failed — run ID: 42",
+    "Deploy stage canary failed",
+    "Squash merge failed",
+    "",
+    null,
+    undefined,
+  ])("non-patch reason %p is not classified as patch-phase", (reason) => {
+    expect(isPatchPhaseBlockReason(reason)).toBe(false);
+  });
+});
+
+describe("PullRequestService.update() clears stale blocks on terminal states", () => {
+  const clock = FixedClock(new Date("2026-07-10T12:00:00.000Z"));
+
+  async function run(
+    existing: Partial<PullRequest>,
+    patch: Partial<PullRequest>,
+  ) {
+    const prisma = makePrismaDouble({ id: "pr-1", ...existing });
+    const svc = new PullRequestService(prisma as never, clock);
+    await svc.update("pr-1", patch);
+    return prisma._updateCalls[0].data;
+  }
+
+  test("closed clears blocked/blockedReason and spin counters regardless of reason", async () => {
+    const data = await run(
+      { blocked: true, blockedReason: "Post-merge CI failed — run ID: 1" },
+      { state: "closed" },
+    );
+    expect(data.blocked).toBe(false);
+    expect(data.blockedReason).toBeNull();
+    expect(data.skipCount).toBe(0);
+    expect(data.consecutiveCiFailureCount).toBe(0);
+    expect(data.lastCiFailureSignature).toBeNull();
+  });
+
+  test("merged clears a patch-phase block", async () => {
+    const data = await run(
+      {
+        blocked: true,
+        blockedReason: "Auto-blocked after 3 consecutive skips (x)",
+      },
+      { state: "merged" },
+    );
+    expect(data.blocked).toBe(false);
+    expect(data.blockedReason).toBeNull();
+  });
+
+  test.each(["Post-merge CI failed — run ID: 1", "Deploy stage canary failed"])(
+    "merged keeps merge-phase block %p",
+    async (reason) => {
+      const data = await run(
+        { blocked: true, blockedReason: reason },
+        { state: "merged" },
+      );
+      expect("blocked" in data).toBe(false);
+      expect("blockedReason" in data).toBe(false);
+    },
+  );
+
+  test("non-terminal update leaves a block untouched", async () => {
+    const data = await run(
+      { blocked: true, blockedReason: "patch dispatch made no progress" },
+      { state: "open", commitSha: "abc" },
+    );
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
   });
 });
