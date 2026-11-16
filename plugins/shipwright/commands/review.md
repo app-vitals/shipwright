@@ -1234,6 +1234,35 @@ store.
 
 ---
 
+#### Semantic "no finding" classification (DTA-11.1)
+
+The mechanical gate only knows a review body is non-empty, not whether it raises a concern — a
+purely descriptive review (summarizing what the PR does, no open findings) would otherwise pin
+the PR at `COMMENT`. This runs **before the force-`COMMENT` rule above is applied** (it can only lower `unaddressedFindings`). When the Step 9.5 script prints `{"unaddressedFindings":true}`, re-run it with
+the extra `--candidates` argument (same input JSON, e.g. `bun run ".../compute-unaddressed-findings.ts" "$INPUT" --candidates`).
+It adds `unclassifiedCandidates[]` — `{kind: "review"|"thread", ref, author, body}` — listing only
+the reviews/threads that every exclusion above has **already** qualified (never anything the
+mechanical rules settled). For each candidate ask ONE question: *does this body raise an actual
+concern (a bug, a requested change, a question awaiting an answer, a risk), or is it purely
+descriptive with no findings?* Be conservative — any doubt means it is a concern. For each
+candidate judged purely descriptive, persist the determination once (same
+`POST /prs/:id/findings` pattern and non-fatal failure handling as the Findings Ledger
+Persistence subsections in Step 5.5; `ref` is the candidate's `ref` verbatim):
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
+  -d '{"ref": "{candidate.ref}", "disposition": "resolved", "source": "review", "evidence": "no finding: {one-line reason}"}' \
+  >/dev/null 2>&1 || echo "⚠ ledger POST failed for {candidate.ref} — continuing (non-fatal)"
+```
+Then append the new entries to `PR_FINDINGS_JSON` and re-run the script (without `--candidates`)
+to recompute `unaddressedFindings` — `isResolvedByLedger` now excludes them, so each is judged
+once, never re-litigated. A candidate that raises a concern gets **no** entry and keeps
+`unaddressedFindings` true. These POSTs must complete before Step 11b's `/complete` call, like
+every other ledger write. This adds a judgment only to already-qualified candidates; it never
+overrides a structural exclusion and never marks anything resolved that the script did not list.
+
 ## Step 10: Build Review JSON
 
 Follow `references/post-review-guide.md` for the full mechanics.

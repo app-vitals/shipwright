@@ -2954,3 +2954,29 @@ describe("review.md — risk rating wiring (RSK-2.1)", () => {
     expect(s).toMatch(/Verdict: APPROVE[^\n]*(remain|first|lead)/i);
   });
 });
+
+describe("review.md — Step 9.5 semantic no-finding classification (DTA-11.1)", () => {
+  const s = content.slice(
+    content.indexOf("## Step 9.5:"),
+    content.indexOf("## Step 10: Build Review JSON"),
+  );
+
+  it("runs the CLI with --candidates and asks one descriptive-vs-concern question", () => {
+    expect(s).toContain("DTA-11.1");
+    expect(s).toContain("--candidates");
+    expect(s).toContain("unclassifiedCandidates");
+    expect(s).toMatch(/purely\s+descriptive/);
+  });
+
+  it("persists the determination as a review-source resolved ledger entry and re-runs the gate", () => {
+    expect(s).toContain('"disposition": "resolved", "source": "review"');
+    expect(s).toContain("no finding:");
+    expect(s).toContain("isResolvedByLedger");
+    expect(s).toMatch(/judged\s+once/);
+  });
+
+  it("is gated to already-qualified candidates and never overrides structural exclusions", () => {
+    expect(s).toMatch(/already\*\* qualified/);
+    expect(s).toMatch(/never\s+overrides a structural exclusion/);
+  });
+});
