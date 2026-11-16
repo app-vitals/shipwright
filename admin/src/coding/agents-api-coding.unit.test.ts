@@ -27,7 +27,7 @@ describe("codingAdminOpenApi", () => {
         }
       }
     }
-    expect(operations).toBe(7);
+    expect(operations).toBe(5);
     expect(issues).toEqual([]);
   });
 

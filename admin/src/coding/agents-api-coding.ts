@@ -7,8 +7,6 @@
  * Routes:
  *   GET  /agents/{id}/phase-methodology          — list phase-methodology overrides
  *   PUT  /agents/{id}/phase-methodology/{phase}  — set/clear one phase's override
- *   GET  /agents/all/cron-runs/dev-task-adherence — fleet dev-task adherence (admin)
- *   GET  /agents/{id}/dev-task-adherence         — one agent's dev-task adherence
  *   POST /agents/{id}/work-queue                 — push a work-queue snapshot
  *   GET  /agents/{id}/work-queue                 — latest work-queue snapshot
  *   GET  /session-follows                        — the signed-in user's non-muted followed session slugs
@@ -59,11 +57,6 @@ import {
 } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import {
-  ADHERENCE_COMMANDS,
-  type AdherenceCommand,
-  type DevTaskAdherenceService,
-} from "./dev-task-adherence.ts";
-import {
   AgentPhaseMethodologySchema,
   AgentWorkQueueSnapshotSchema,
   PhaseParamSchema,
@@ -84,8 +77,6 @@ export interface CodingAdminApiDeps {
     "list" | "upsert"
   >;
   agentWorkQueueService: Pick<AgentWorkQueueService, "push" | "get">;
-  /** DTA-1.2 — optional; the adherence routes 404 when absent. */
-  devTaskAdherenceService?: Pick<DevTaskAdherenceService, "report">;
   /** SIT-1.1 — optional; GET /session-follows 404s when absent. */
   sessionFollowService?: Pick<SessionFollowService, "listByUser">;
   // Auth — the same deps the platform API's middleware is built from.
@@ -214,63 +205,6 @@ const getWorkQueueSnapshotRoute = createRoute({
   },
 });
 
-/** `from`/`to` plus the DTA-9.2 `command` selector (default dev-task). */
-const adherenceQuerySchema = cronRunStatsQuerySchema.extend({
-  command: z
-    .enum(ADHERENCE_COMMANDS as [string, ...string[]])
-    .optional()
-    .openapi({
-      example: "patch",
-      description:
-        "Command to score by phase: `dev-task` (default; output unchanged) or `patch`. Patch is scored lane-agnostically against its required-steps table.",
-    }),
-});
-
-const devTaskAdherenceRoute = createRoute({
-  method: "get",
-  path: "/agents/all/cron-runs/dev-task-adherence",
-  summary: "Get dev-task adherence report",
-  description:
-    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Each series also carries `outcomes` (DTA-8.2): PRs, mean patch/review cycles, share of tasks with 0 and 2+ patch cycles, CI first-pass rate and mean ciFixAttempts, computed over tasks whose runs all used one arm; tasks that ran in more than one commandVariant are excluded and reported as `counts.mixedTasks`. Each series also carries `cost` (DTA-9.3): mean cost per run and token totals summed from the run's model breakdown (arm series exclude mixed-arm tasks; overall keeps every run). With `command=patch`, each series also carries `patchGuardrails` — repeat-patch rate (patched again after a push), CI-green-after-patch rate (a proxy: patched PRs with no CI failure recorded) and mean patch cycles over single-arm PRs — and `counts.mixedPrs` reports PRs that ran in both arms. Optional `from`/`to` ISO datetime params bound startedAt. Optional `command` (`dev-task` default, or `patch`) selects which phase to score: patch runs are scored against the patch required-steps table (lane-agnostic first cut; fix dispatch and PR-record push proof measured, other steps unmeasured) and grouped by commandVariant, with `command` echoed in the response.",
-  request: {
-    query: adherenceQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "Dev-task adherence report",
-      content: {
-        "application/json": { schema: z.record(z.string(), z.unknown()) },
-      },
-    },
-    401: { description: "Unauthorized", ...jsonError },
-    403: { description: "Forbidden — requires admin scope", ...jsonError },
-    404: { description: "Adherence reporting not configured", ...jsonError },
-  },
-});
-
-const selfDevTaskAdherenceRoute = createRoute({
-  method: "get",
-  path: "/agents/{id}/dev-task-adherence",
-  summary: "Get this agent's dev-task adherence report",
-  description:
-    "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to`/`command` params as GET /agents/all/cron-runs/dev-task-adherence.",
-  request: {
-    params: AgentIdParamSchema,
-    query: adherenceQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "Dev-task adherence report for this agent's runs only",
-      content: {
-        "application/json": { schema: z.record(z.string(), z.unknown()) },
-      },
-    },
-    401: { description: "Unauthorized", ...jsonError },
-    403: { description: "Forbidden", ...jsonError },
-    404: { description: "Adherence reporting not configured", ...jsonError },
-  },
-});
-
 const SessionFollowsResponseSchema = z
   .object({
     sessionSlugs: z
@@ -308,7 +242,6 @@ export function createCodingAdminApiApp(
     agentService,
     agentPhaseMethodologyService,
     agentWorkQueueService,
-    devTaskAdherenceService,
     sessionFollowService,
     agentTokenService,
     agentMemberService,
@@ -339,8 +272,6 @@ export function createCodingAdminApiApp(
   // router, so a broader pattern would also run in front of platform routes.
   app.use("/agents/:id/phase-methodology", auth);
   app.use("/agents/:id/phase-methodology/:phase", auth);
-  app.use("/agents/all/cron-runs/dev-task-adherence", auth);
-  app.use("/agents/:id/dev-task-adherence", auth);
   app.use("/agents/:id/work-queue", auth);
 
   // /session-follows is user-scoped, not agent-scoped. The shared middleware
@@ -407,47 +338,6 @@ export function createCodingAdminApiApp(
       normalizeSubagentList(phase, body.subagentType),
     );
     return c.json({ phaseMethodology: serializePhaseMethodology(row) }, 200);
-  });
-
-  // ─── Dev-task adherence ────────────────────────────────────────────────────
-
-  // GET /agents/all/cron-runs/dev-task-adherence — per-step dev-task adherence
-  app.openapi(devTaskAdherenceRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
-      throw new ForbiddenError(
-        "Only admin bearers and session users can access cross-agent stats",
-      );
-    }
-    if (!devTaskAdherenceService) {
-      return c.json({ error: "Adherence reporting not configured" }, 404);
-    }
-    const { from, to, command } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(
-      from,
-      to,
-      undefined,
-      command as AdherenceCommand | undefined,
-    );
-    return c.json(report, 200);
-  });
-
-  // GET /agents/{id}/dev-task-adherence — same report scoped to one agent.
-  // No isAdmin check: the generic agent-route auth middleware already rejects
-  // a bearer whose agentId doesn't match the path. Registered after the static
-  // /agents/all/... route above.
-  app.openapi(selfDevTaskAdherenceRoute, async (c) => {
-    if (!devTaskAdherenceService) {
-      return c.json({ error: "Adherence reporting not configured" }, 404);
-    }
-    const { id: agentId } = c.req.valid("param");
-    const { from, to, command } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(
-      from,
-      to,
-      agentId,
-      command as AdherenceCommand | undefined,
-    );
-    return c.json(report, 200);
   });
 
   // ─── Work queue snapshot ───────────────────────────────────────────────────
@@ -564,10 +454,6 @@ export function codingAdminOpenApi(): AdminOpenApiContribution {
         "/agents/{id}/phase-methodology": "/agents/{id}/plugins",
         "/agents/{id}/phase-methodology/{phase}":
           "/agents/{id}/phase-methodology",
-        "/agents/all/cron-runs/dev-task-adherence":
-          "/agents/{id}/cron-runs/outcomes",
-        "/agents/{id}/dev-task-adherence":
-          "/agents/all/cron-runs/dev-task-adherence",
         "/agents/{id}/work-queue": "/agents/{id}/chat-tokens/daily",
         "/session-follows": "/agents/{id}/work-queue",
       },

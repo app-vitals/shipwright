@@ -7,8 +7,8 @@
  *   serviceIntegrations — the task-store integration (per-agent task-store
  *                         tokens minted on provision, revoked on delete)
  *   services            — the agent detail page's coding `?error=` messages
- *   apiRoutes           — work-queue snapshots, phase-methodology overrides and
- *                         dev-task adherence (coding/agents-api-coding.ts)
+ *   apiRoutes           — work-queue snapshots and phase-methodology overrides
+ *                         (coding/agents-api-coding.ts)
  *   adminUiRoutes       — Queue & Activity, tasks, sessions (+ follow, actions,
  *                         notification and system-cron settings), PRs, the phase-methodology
  *                         form and the public task board
@@ -64,7 +64,6 @@ import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
 } from "./coding-task-store-provisioning-client.ts";
-import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import { createTaskStoreOpenWorkPort } from "./reconcile-open-work.ts";
 import {
   SessionAlertSweeper,
@@ -258,11 +257,6 @@ export const codingAdminExtension: AdminExtension = {
         agentService: ctx.services.agentService,
         agentPhaseMethodologyService: phaseMethodologyService(ctx),
         agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
-        devTaskAdherenceService: new DevTaskAdherenceService(
-          ctx.prisma,
-          undefined,
-          taskStoreFetchers(ctx.env),
-        ),
         sessionFollowService: new SessionFollowService(
           ctx.prisma as unknown as SessionFollowPrismaLike,
         ),

@@ -68,8 +68,6 @@ describe("codingAdminExtension", () => {
       codingAdminExtension,
     ]);
     expect(Object.keys(paths).sort()).toEqual([
-      "/agents/all/cron-runs/dev-task-adherence",
-      "/agents/{id}/dev-task-adherence",
       "/agents/{id}/phase-methodology",
       "/agents/{id}/phase-methodology/{phase}",
       "/agents/{id}/work-queue",

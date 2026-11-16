@@ -20,7 +20,6 @@ import {
   type CodingAdminApiDeps,
   createCodingAdminApiApp,
 } from "./agents-api-coding.ts";
-import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
@@ -294,113 +293,5 @@ describeOrSkip("coding admin API (integration)", () => {
       },
     );
     expect(res.status).toBe(404);
-  });
-
-  it("GET /agents/:id/dev-task-adherence is scoped to the caller's own agent", async () => {
-    const otherId = await createAgent(prisma);
-    const seed = async (owner: string, itemId: string) => {
-      const job = await prisma.agentCronJob.create({
-        data: {
-          agentId: owner,
-          schedule: "0 9 * * *",
-          prompt: "p",
-          silent: true,
-          name: "shipwright-dev-task",
-        },
-      });
-      await prisma.agentCronRun.create({
-        data: {
-          cronId: job.id,
-          agentId: owner,
-          startedAt: new Date("2026-01-10T09:00:00Z"),
-          skipped: false,
-          phaseId: job.id,
-          itemId,
-        },
-      });
-    };
-    await seed(agentId, "A-1.1");
-    await seed(otherId, "B-1.1");
-
-    const adherenceApp = createCodingAdminApiApp({
-      ...makeDeps(prisma),
-      devTaskAdherenceService: new DevTaskAdherenceService(prisma),
-    });
-    const { rawToken: tokenA } = await new AgentTokenService(prisma).create(
-      agentId,
-    );
-
-    const own = await adherenceApp.request(
-      `/agents/${agentId}/dev-task-adherence`,
-      { headers: { Authorization: `Bearer ${tokenA}` } },
-    );
-    expect(own.status).toBe(200);
-    const ownBody = await own.json();
-    expect(ownBody.runs.map((r: { itemId: string }) => r.itemId)).toEqual([
-      "A-1.1",
-    ]);
-
-    const cross = await adherenceApp.request(
-      `/agents/${otherId}/dev-task-adherence`,
-      { headers: { Authorization: `Bearer ${tokenA}` } },
-    );
-    expect(cross.status).toBe(403);
-
-    const anon = await adherenceApp.request(
-      `/agents/${agentId}/dev-task-adherence`,
-    );
-    expect(anon.status).toBe(401);
-
-    // Fleet-wide admin route is unchanged: sees both agents' runs.
-    const fleet = await adherenceApp.request(
-      "/agents/all/cron-runs/dev-task-adherence",
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect(fleet.status).toBe(200);
-    expect((await fleet.json()).runs).toHaveLength(2);
-  });
-  it("GET /agents/all/cron-runs/dev-task-adherence?command=patch selects the patch phase (DTA-9.2)", async () => {
-    const job = await prisma.agentCronJob.create({
-      data: {
-        agentId,
-        schedule: "0 9 * * *",
-        prompt: "p",
-        silent: true,
-        name: "shipwright-patch",
-      },
-    });
-    await prisma.agentCronRun.create({
-      data: {
-        cronId: job.id,
-        agentId,
-        startedAt: new Date("2026-01-10T09:00:00Z"),
-        skipped: false,
-        phaseId: job.id,
-        itemId: "o/r#5",
-        commandVariant: "default",
-      },
-    });
-    const adherenceApp = createCodingAdminApiApp({
-      ...makeDeps(prisma),
-      devTaskAdherenceService: new DevTaskAdherenceService(prisma),
-    });
-    const patch = await adherenceApp.request(
-      "/agents/all/cron-runs/dev-task-adherence?command=patch",
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect(patch.status).toBe(200);
-    const body = await patch.json();
-    expect(body.command).toBe("patch");
-    expect(body.byCommandVariant[0].commandVariant).toBe("default");
-    const dev = await adherenceApp.request(
-      "/agents/all/cron-runs/dev-task-adherence",
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect((await dev.json()).runs).toHaveLength(0);
-    const bad = await adherenceApp.request(
-      "/agents/all/cron-runs/dev-task-adherence?command=nope",
-      { headers: { Cookie: `admin_session=${cookie}` } },
-    );
-    expect(bad.status).toBe(400);
   });
 });
