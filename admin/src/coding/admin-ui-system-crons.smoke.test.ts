@@ -9,12 +9,19 @@ import { describe, expect, it } from "bun:test";
 import { makeSessionCookie } from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
   createCodingTestApp,
-  makeCodingMockDeps,
+  makeCodingMockDeps as makeBaseCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
 import type {
   SystemCronItem,
   SystemCronsFetchers,
 } from "./admin-ui-system-crons.ts";
+import { CODING_SETTINGS_NAV_ITEMS } from "./coding-settings-nav.ts";
+
+/** Base deps plus what the platform merges in from the extension at composition time. */
+const makeCodingMockDeps = () => ({
+  ...makeBaseCodingMockDeps(),
+  settingsNavItems: CODING_SETTINGS_NAV_ITEMS,
+});
 
 const PATH = "/admin/settings/system-crons";
 
