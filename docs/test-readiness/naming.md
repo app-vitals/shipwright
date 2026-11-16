@@ -33,8 +33,9 @@ for per-layer timing targets.
 
 ## The reserved `.canary.` suffix
 
-No `*.canary.test.ts` files exist in the repo yet — the suffix is **reserved**, not yet
-in use. It is defined here now, ahead of any concrete canary test, so that when the
+The first `*.canary.test.ts` files live in `preview/canary/` and run via `task preview:canary`
+(which passes `--config=/dev/null` to bypass the exclusion below). The suffix was defined
+ahead of any concrete canary test, so that when the
 test-readiness pipeline's canary suite is introduced (see the `canary-execution` skill —
 [`plugins/shipwright/skills/canary-execution/SKILL.md`](../../plugins/shipwright/skills/canary-execution/SKILL.md)),
 there is no ambiguity about what filename pattern it uses and no risk of an existing
