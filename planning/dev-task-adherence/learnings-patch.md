@@ -57,6 +57,54 @@ sample size.
   impact from this baseline; `ciGreenAfterPatchRate` (90.2%) is a proxy only
   (patched PRs with no recorded CI failure), not a true first-pass metric.
 
+## Trial outcome and promotion (DTA-9.9, retroactive readout, 2026-11-16)
+
+The trial was cut short: Dave promoted `patch-lean` to be the default `patch`
+(PR #5201, DTA-9.10, merged 2026-11-16) after ~2 days and 44 total runs, not
+the ~100 runs/arm the plan's stop condition targeted. DTA-9.9 itself was never
+claimed before the promotion landed, so this is a readout of a decision
+already made and deployed, not a gate on it.
+
+- Prompt: `commands/patch.md` vs `commands/patch-lean.md` (lean promoted to be
+  the only `patch`; old default content deleted in #5201).
+- Hypothesis: the default prompt's optional subagent-dispatch step for fixes
+  (5b) was being skipped almost always; a trimmed spine that makes it
+  mandatory should raise adherence without raising cost or hurting CI.
+- Arms: `commandVariant=default` vs `alternate`, 70% lean share via
+  `SHIPWRIGHT_LOOP_PATCH_ALT_COMMAND`/`_ALT_SHARE` on warchild, doc, maverick
+  (DTA-9.8, started 2026-11-14T18:26:52Z).
+- n: 44 total task-bearing runs at cutover (31 lean, 10 default with cost
+  data) — well short of the ~100/arm target, especially the default arm.
+- Stop condition (as set in DTA-9.8): adherence no lower than baseline; patch
+  cycles and CI pass no worse; cost recorded beside adherence. Promotion
+  happened before this was formally checked against the target n.
+- Reference load rates: not tracked for patch (DTA-9.4's tally script covers
+  dev-task only; patch is scored via the adherence report's step dispatch
+  detection, not transcript reference reads).
+- Cost / turns: mean $0.71/run lean vs $0.61/run default (live report at
+  cutover, close to the PR body's $0.71 vs $0.72 citation — small differences
+  from a few more runs landing between the PR snapshot and this read).
+- Adherence: **90.6% lean (29/32) vs 25% default (3/12)** — the fix-dispatch
+  step (5b) alone went from ~4% ran-rate at baseline to 90.6% under lean. This
+  is the real result: a ~65-point gap on 44 runs is not plausibly noise, even
+  though the arm sizes are small.
+- CI first-pass: not available (null) for patch in either arm; don't read
+  anything into its absence.
+- Patch cycles: mean 1.00 lean vs 0.70 default; CI-green-after-patch 85.7%
+  lean vs 100% default (n=10, not a real signal at that size).
+- Decision: **adopt.** The adherence win is large and directionally exactly
+  what was hypothesized; cost/cycles/CI differences are within noise on a
+  thin control arm, not evidence of a regression. Re-running for a bigger
+  control sample wouldn't change the decision now — `patch-lean` content is
+  already the deployed default fleet-wide, not just for the 3 trial agents.
+- Caveats: default arm (n=10-12) is too small to trust the cost/cycles/CI
+  comparisons individually; only the adherence gap is large enough to stand
+  on its own at this sample size. DTA-9.10 was executed outside the normal
+  plan-session → task-store flow (no task-store record for it). Post-merge
+  cleanup done 2026-11-16: `SHIPWRIGHT_LOOP_PATCH_ALT_COMMAND`/`_ALT_SHARE`
+  deleted from warchild, doc, maverick (both env vars, confirmed removed via
+  `DELETE /agents/{id}/envs/{key}`).
+
 ## Learnings template for later prompts
 
 Copy per prompt trial (same template as `learnings-dev-task.md`).
