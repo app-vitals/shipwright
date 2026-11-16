@@ -280,6 +280,17 @@ tasks:
     cmds:
       - bun run scripts/preview-env.ts {{.CLI_ARGS}}
 
+  preview:canary:
+    desc: "Run the deployed-target canary suite (preview/canary/*.canary.test.ts) against a stack from `task preview:up`. Targets come from the env file preview:up wrote (usage: task preview:up -- ... --env-out state/preview.env, then task preview:canary ENV_FILE=state/preview.env); with no ENV_FILE the PREVIEW_* variables must already be exported. Optional: PREVIEW_KUBE_CONTEXT (default kind-preview) for the agent Deployment check. Bypasses the root bunfig.toml canary exclusion via --config=/dev/null (probe P7)."
+    vars:
+      ENV_FILE: '{{.ENV_FILE | default ""}}'
+    cmds:
+      - |
+        set -a
+        if [ -n "{{.ENV_FILE}}" ]; then . "{{.ENV_FILE}}"; fi
+        set +a
+        bun test --config=/dev/null ./preview/canary/*.canary.test.ts
+
   audit-extraction:
     desc: "Pre-publication audit of an extracted tree and its full git history (usage: task audit-extraction -- <tree> [--json] [--report <path>] [--no-history-banned] [--no-gitleaks] [--working-tree-only])"
     cmds:
