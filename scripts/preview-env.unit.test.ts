@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Command } from "./minikube.ts";
 import {
   buildPreviewCommands,
   buildTargetsEnv,
@@ -20,7 +21,6 @@ import {
   previewSecretFiles,
   withSecretFiles,
 } from "./preview-env.ts";
-import type { Command } from "./minikube.ts";
 
 const CTX = "kind-preview";
 const OPTS: PreviewOpts = { context: CTX, chartPath: "charts/shipwright" };
