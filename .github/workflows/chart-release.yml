@@ -3,8 +3,7 @@ name: Chart Release
 # Publishes the Helm chart at charts/shipwright to a GitHub Pages Helm repository
 # (the `gh-pages` branch) so it is consumable via `helm repo add`.
 #
-# Kept SEPARATE from release.yml (the app's semantic-release): this workflow only
-# concerns the Helm chart artifact. Two concerns:
+# This workflow only concerns the Helm chart artifact. Two concerns:
 #
 #   publish (push to main) — packages charts/shipwright into a `.tgz`, merges it
 #     into the existing gh-pages `index.yaml` (with the public Pages `--url`), and

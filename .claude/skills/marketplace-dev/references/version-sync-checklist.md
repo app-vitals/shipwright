@@ -6,10 +6,7 @@ release landed cleanly.
 
 ## How Versioning Works
 
-The live path is tag-driven, not the `release.yml` semantic-release job you'll see in
-`.releaserc.json` — that job is `workflow_dispatch`-only, admin-gated, and requires
-`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` secrets that aren't provisioned. It exists
-as a manual escape hatch, not the thing that runs on every merge.
+The path is tag-driven (there is no semantic-release workflow).
 
 What actually runs on every merge to `main`:
 

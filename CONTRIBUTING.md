@@ -48,16 +48,11 @@ Follow the guidance in [`CLAUDE.md`](./CLAUDE.md): no new platform coupling, loc
 
 ## Release process
 
-Releases are on-demand and driven by **semantic-release** via the `release.yml` workflow. There is no bot watching `main` — a maintainer triggers the release manually.
+Releases are tag-driven: the `build-*.yml` workflows compute the next version from conventional commits and push the tag on merge to `main`.
 
-**To cut a release:**
+A `feat:`/`fix:`/`perf:` commit is needed for a release to be cut. Nothing to trigger by hand.
 
-1. Go to **Actions → Release** and click **Run workflow**.
-2. Set `dry_run` to `true` first to preview what version and changelog would be generated — no tags or packages are published.
-3. When the preview looks right, re-run with `dry_run` unchecked (`false`).
-4. semantic-release reads the commit history since the last tag, computes the next semver, generates the changelog, and writes back a `chore(release): <version> [skip ci]` commit that updates `CHANGELOG.md` and the version files. CI is skipped on that writeback commit automatically.
-
-**Never hand-edit `CHANGELOG.md` or any version file** (`version.txt`, `package.json` version fields). Let semantic-release own those — manual edits will be overwritten or will break the automation.
+**Never hand-edit any version file** (`version.txt`, `package.json` version fields) — CI owns them and manual edits will be overwritten.
 
 ## Downstream-compatibility checking (Helm chart)
 

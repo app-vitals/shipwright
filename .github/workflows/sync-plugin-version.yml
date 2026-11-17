@@ -2,9 +2,7 @@ name: Sync Plugin Version
 
 # Keeps the git-committed plugin version (package.json / plugin.json /
 # marketplace.json / version.txt — see scripts/sync-version.ts) in step with
-# every agent release, instead of relying on the release.yml semantic-release
-# job (workflow_dispatch-only, requires RELEASE_APP_ID/RELEASE_APP_PRIVATE_KEY
-# secrets that aren't provisioned).
+# every agent release.
 #
 # Why this needs to exist at all: the shipwright Claude Code plugin is
 # installed two ways —
