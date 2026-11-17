@@ -536,6 +536,56 @@ export type PullRequest = z.infer<typeof PullRequestSchema>;
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 
+// PlanDocument is declared here (ahead of its own section below) because
+// SessionSchema embeds it.
+const PLAN_DOCUMENT_KIND_VALUES = ["spec", "plan"] as const;
+const PLAN_DOCUMENT_STATE_VALUES = [
+  "draft",
+  "pr_open",
+  "merged",
+  "abandoned",
+] as const;
+
+export const PlanDocumentSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxdoc1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    session: z.string().openapi({ example: "shipwright-may-launch" }),
+    kind: z.enum(PLAN_DOCUMENT_KIND_VALUES).openapi({ example: "spec" }),
+    number: z.number().int().openapi({
+      example: 2,
+      description: "Specs: 1, 2, 3… within the session. Plans: always 1.",
+    }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    path: z
+      .string()
+      .openapi({ example: "planning/shipwright-may-launch/SPEC-0002.md" }),
+    title: z.string().nullable().openapi({ example: "Planning documents" }),
+    owner: z.string().nullable().openapi({ example: "dev@example.com" }),
+    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    prUrl: z
+      .string()
+      .nullable()
+      .openapi({ example: "https://github.com/org/repo/pull/12" }),
+    state: z.enum(PLAN_DOCUMENT_STATE_VALUES).openapi({ example: "draft" }),
+    commitSha: z.string().nullable().openapi({ example: null }),
+    plannedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .openapi({ example: null, description: "Specs only." }),
+    originTaskId: z.string().nullable().openapi({ example: null }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
+  })
+  .openapi("PlanDocument");
+
 /**
  * A Session row's own fields flattened together with its computed
  * session-rollup (SESH-2.1's computeSessionRollup) fields — never nested
@@ -564,6 +614,18 @@ export const SessionSchema = z
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
     archivedAt: z.string().nullable().optional().openapi({ example: null }),
     archivedBy: z.string().nullable().optional().openapi({ example: null }),
+    owner: z.string().nullable().openapi({
+      example: "dev@example.com",
+      description: "Owner email, set from the session's first document.",
+    }),
+    homeRepo: z.string().nullable().openapi({
+      example: "org/repo",
+      description: "The org/repo the session's planning files live in.",
+    }),
+    documents: z.array(PlanDocumentSchema).openapi({
+      description:
+        "The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope.",
+    }),
     state: z
       .enum(["waiting", "active", "closed", "empty"])
       .openapi({ example: "active" }),
@@ -583,7 +645,11 @@ export const SessionSchema = z
       })
       .openapi({ example: { total: 3, open: 2, closed: 1 } }),
     agentIds: z.array(z.string()).openapi({ example: ["agent-1"] }),
-    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    repos: z.array(z.string()).openapi({
+      example: ["org/repo"],
+      description:
+        "Union of the session's task repos and its declared repos (PATCH `repos`).",
+    }),
     waitingTasks: z
       .array(
         z.object({
@@ -656,6 +722,10 @@ export const SessionListQuerySchema = z
       example: "launch",
       description: "Case-insensitive substring match against slug OR title.",
     }),
+    owner: z.string().optional().openapi({
+      example: "a@example.com",
+      description: "Only sessions whose owner equals this email exactly.",
+    }),
     accountId: z.string().optional().openapi({
       example: "default",
       description:
@@ -689,6 +759,22 @@ export const SessionPatchBodySchema = z
       description:
         "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
     }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+      description: "Omitted: untouched. A string: set. null: clears.",
+    }),
+    homeRepo: z.string().nullable().optional().openapi({
+      example: "org/repo",
+      description: "Omitted: untouched. A string: set. null: clears.",
+    }),
+    repos: z
+      .array(z.string())
+      .optional()
+      .openapi({
+        example: ["org/repo"],
+        description:
+          "Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list.",
+      }),
   })
   .openapi("SessionPatchBody");
 
@@ -1908,54 +1994,6 @@ export const SystemCronTriggersResponseSchema = z
   .openapi("SystemCronTriggersResponse");
 
 // ─── Planning documents (PLU-2.2) ──────────────────────────────────────────────
-
-const PLAN_DOCUMENT_KIND_VALUES = ["spec", "plan"] as const;
-const PLAN_DOCUMENT_STATE_VALUES = [
-  "draft",
-  "pr_open",
-  "merged",
-  "abandoned",
-] as const;
-
-export const PlanDocumentSchema = z
-  .object({
-    id: z.string().openapi({ example: "clxdoc1234567890" }),
-    accountId: z.string().openapi({ example: "default" }),
-    session: z.string().openapi({ example: "shipwright-may-launch" }),
-    kind: z.enum(PLAN_DOCUMENT_KIND_VALUES).openapi({ example: "spec" }),
-    number: z.number().int().openapi({
-      example: 2,
-      description: "Specs: 1, 2, 3… within the session. Plans: always 1.",
-    }),
-    repo: z.string().openapi({ example: "org/repo" }),
-    path: z
-      .string()
-      .openapi({ example: "planning/shipwright-may-launch/SPEC-0002.md" }),
-    title: z.string().nullable().openapi({ example: "Planning documents" }),
-    owner: z.string().nullable().openapi({ example: "dev@example.com" }),
-    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
-    prUrl: z
-      .string()
-      .nullable()
-      .openapi({ example: "https://github.com/org/repo/pull/12" }),
-    state: z.enum(PLAN_DOCUMENT_STATE_VALUES).openapi({ example: "draft" }),
-    commitSha: z.string().nullable().openapi({ example: null }),
-    plannedAt: z
-      .string()
-      .datetime()
-      .nullable()
-      .openapi({ example: null, description: "Specs only." }),
-    originTaskId: z.string().nullable().openapi({ example: null }),
-    createdAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
-    updatedAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
-  })
-  .openapi("PlanDocument");
 
 /** Request body for POST /documents. */
 export const RegisterPlanDocumentBodySchema = z

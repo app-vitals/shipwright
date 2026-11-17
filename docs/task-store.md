@@ -56,6 +56,10 @@ A `PlanDocument` row (PLU-2.1 schema) records one numbered spec, or the session'
 - `GET /documents` filters on `session`, `kind`, `owner` and `planned` (admin tokens may also narrow with `accountId`). `planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `planned=true` returns documents with `plannedAt` set. Unknown query parameters are a `400` via `rejectUnknownQuery()`, like `GET /tasks` and `GET /sessions`. Agent tokens only see documents in their own account whose home repo is in their repo scope.
 - `PATCH /documents/:id` sets `plannedAt` (specs only; `null` clears it), `prUrl`, `owner` and `state`. A document outside the caller's account or repo scope is `404`.
 
+Sessions carry the planning fields too (PLU-2.3). `GET /sessions` and `GET /sessions/:slug` return `owner`, `homeRepo`, the session's `documents` and `repos`, which is now the union of the session's task repos and its declared repos; the `repo` and `org` filters apply to that union, and `GET /sessions` gains an exact-match `owner` filter. `PATCH /sessions/:slug` (admin-only) accepts `owner`, `homeRepo` (both nullable) and `repos`, which is stored as `declaredRepos`.
+
+Scoped-token reads widen additively: besides the existing task-based rule, an agent token sees a document, and its session, when the document's home repo or any of its target repos is in the token's scope, so a spec registered before any task exists is readable. A session's `documents` list is filtered to the documents the token can see. Writes keep their rules (`POST /documents` needs the home repo in scope; `PATCH /documents/:id` is still home-repo only).
+
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
 #### Nightly reconciler

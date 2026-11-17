@@ -2557,7 +2557,7 @@
           "sessions"
         ],
         "summary": "List sessions",
-        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
         "parameters": [
           {
             "schema": {
@@ -2660,6 +2660,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "a@example.com",
+              "description": "Only sessions whose owner equals this email exactly."
+            },
+            "required": false,
+            "description": "Only sessions whose owner equals this email exactly.",
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "default",
               "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account."
             },
@@ -2717,7 +2728,7 @@
           "sessions"
         ],
         "summary": "Get a session by slug",
-        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
+        "description": "Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
         "parameters": [
           {
             "schema": {
@@ -2778,7 +2789,7 @@
           "sessions"
         ],
         "summary": "Rename/archive a session — admin-only",
-        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
         "parameters": [
           {
             "schema": {
@@ -5918,6 +5929,29 @@
             ],
             "example": null
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Owner email, set from the session's first document."
+          },
+          "homeRepo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo",
+            "description": "The org/repo the session's planning files live in."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanDocument"
+            },
+            "description": "The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope."
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -5982,7 +6016,8 @@
             },
             "example": [
               "org/repo"
-            ]
+            ],
+            "description": "Union of the session's task repos and its declared repos (PATCH `repos`)."
           },
           "waitingTasks": {
             "type": "array",
@@ -6023,6 +6058,9 @@
           "accountId",
           "createdAt",
           "updatedAt",
+          "owner",
+          "homeRepo",
+          "documents",
           "state",
           "waitingSince",
           "lastActivityAt",
@@ -6032,24 +6070,6 @@
           "waitingTasks",
           "archived"
         ]
-      },
-      "SessionPatchBody": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "May launch prep",
-            "description": "Omitted: title untouched. A string: set. null: clears the title."
-          },
-          "archived": {
-            "type": "boolean",
-            "example": true,
-            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
-          }
-        }
       },
       "PlanDocument": {
         "type": "object",
@@ -6180,6 +6200,50 @@
           "createdAt",
           "updatedAt"
         ]
+      },
+      "SessionPatchBody": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "May launch prep",
+            "description": "Omitted: title untouched. A string: set. null: clears the title."
+          },
+          "archived": {
+            "type": "boolean",
+            "example": true,
+            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Omitted: untouched. A string: set. null: clears."
+          },
+          "homeRepo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo",
+            "description": "Omitted: untouched. A string: set. null: clears."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ],
+            "description": "Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list."
+          }
+        }
       },
       "RegisterPlanDocumentBody": {
         "type": "object",
