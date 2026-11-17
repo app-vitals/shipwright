@@ -44,6 +44,7 @@ import {
   CostEfficiencyResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
+  CoverageResultSchema,
   MergedPrsQuerySchema,
   MergedPrsResultSchema,
   PrOutcomesResultSchema,
@@ -274,6 +275,28 @@ const mergedPrsRoute = createRoute({
     400: {
       description: "Invalid parameters",
       content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const coverageRoute = createRoute({
+  method: "get",
+  path: "/metrics/coverage",
+  summary: "Latest test coverage per repo with trend",
+  description:
+    "Returns the newest coverage snapshot per repo (with the line-coverage delta vs. the previous snapshot and a stale flag when older than 14 days) plus a trailing 30-day line-coverage trend. Takes no date-window params.",
+  responses: {
+    200: {
+      description: "Coverage per repo",
+      content: { "application/json": { schema: CoverageResultSchema } },
     },
     401: {
       description: "Unauthorized",
@@ -1146,6 +1169,72 @@ function makeMergedPrsHandler(
   };
 }
 
+// ─── /metrics/coverage (CVT-3.1) ──────────────────────────────────────────
+
+function makeCoverageHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof coverageRoute> {
+  return async (c) => {
+    const startMs = Date.now();
+    try {
+      const result = await provider.query({ kind: "coverage" });
+      const col = (name: string) => result.columns.indexOf(name);
+      const idx = {
+        kind: col("kind"),
+        repo: col("repo"),
+        commitSha: col("commitSha"),
+        measuredAt: col("measuredAt"),
+        linesPct: col("linesPct"),
+        branchesPct: col("branchesPct"),
+        functionsPct: col("functionsPct"),
+        deltaVsPrevious: col("deltaVsPrevious"),
+        stale: col("stale"),
+      };
+
+      const repos = [];
+      const trend = [];
+      for (const raw of result.results) {
+        const row = raw as unknown[];
+        const base = {
+          repo: String(row[idx.repo]),
+          commitSha: String(row[idx.commitSha]),
+          measuredAt: String(row[idx.measuredAt]),
+          linesPct: toNum(row[idx.linesPct]),
+        };
+        if (row[idx.kind] === "trend") {
+          trend.push(base);
+        } else {
+          repos.push({
+            repo: base.repo,
+            linesPct: base.linesPct,
+            branchesPct: toNumOrNull(row[idx.branchesPct]),
+            functionsPct: toNumOrNull(row[idx.functionsPct]),
+            commitSha: base.commitSha,
+            measuredAt: base.measuredAt,
+            deltaVsPrevious: toNumOrNull(row[idx.deltaVsPrevious]),
+            stale: row[idx.stale] === true,
+          });
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      return c.json(
+        wrapResponse(
+          { repos, trend },
+          {
+            dateRange: { from: nowIso, to: nowIso },
+            generatedAt: nowIso,
+            queryTimeMs: Date.now() - startMs,
+          },
+        ),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
 export function createMetricsApp(
@@ -1472,6 +1561,12 @@ export function createMetricsApp(
     mergedPrsRoute,
     metricsPolicy,
     makeMergedPrsHandler(provider),
+  );
+  registerWithAuthz(
+    app,
+    coverageRoute,
+    metricsPolicy,
+    makeCoverageHandler(provider),
   );
   registerWithAuthz(
     app,

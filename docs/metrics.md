@@ -53,6 +53,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
+| GET | `/metrics/coverage` | Latest test coverage per repo plus a 30-day line-coverage trend (CVT-3.1). Takes no date-window params. See the response shape below. |
 | GET | `/metrics/pr-outcomes` | Read-only PR outcomes per context fingerprint (PAU-1.8): `reviewState` mix, avg `reviewCycles`/`patchCycles`, median time-to-merge over the window between the fingerprint's first and last seen. Response carries `attribution: "window-correlation"` — a time-window correlation, not per-PR attribution. |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
@@ -73,6 +74,35 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/public/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/public/dashboard` | Server-rendered dashboard HTML (no session required). |
 | GET | `/public/metrics/tokens` | Not available on public routes — returns `404`. |
+
+### `/metrics/coverage` response shape
+
+Authenticated only — there is deliberately no `/public/metrics/coverage` (it returns `404`). Same bearer-token / session auth as the other `/metrics/*` routes. The data comes from the task store's `GET /coverage-snapshots/latest` and `GET /coverage-snapshots`, read with the same bearer token the `/prs` calls use; offline/fixtures mode serves canned snapshots.
+
+```jsonc
+{
+  "data": {
+    "repos": [
+      {
+        "repo": "org/repo",
+        "linesPct": 82.5,
+        "branchesPct": 75.5,      // null when the reporter sent no branch counts
+        "functionsPct": 90,       // null when the reporter sent no function counts
+        "commitSha": "f6e5d4c3b2a1",
+        "measuredAt": "2026-06-18T12:00:00.000Z",
+        "deltaVsPrevious": 1.5,   // linesPct minus the previous snapshot's; null with a single snapshot
+        "stale": false            // true when measuredAt is more than 14 days old
+      }
+    ],
+    "trend": [
+      { "repo": "org/repo", "measuredAt": "2026-06-10T12:00:00.000Z", "commitSha": "a1b2c3d4e5f6", "linesPct": 81 }
+    ]
+  },
+  "meta": { /* standard envelope */ }
+}
+```
+
+`repos` holds the newest snapshot per repo, ordered by repo. `trend` holds every snapshot from the trailing 30 days, oldest first. Staleness is judged against the service clock.
 
 ### `/metrics/merged-prs` and `/public/metrics/merged-prs` response shape
 

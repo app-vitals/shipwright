@@ -60,6 +60,14 @@ describe("public metrics surface — token usage hidden", () => {
   });
 });
 
+describe("public metrics surface — coverage hidden", () => {
+  test("GET /public/metrics/coverage → 404", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/coverage");
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("public metrics surface — no mutations", () => {
   for (const method of ["POST", "PUT", "DELETE"]) {
     test(`${method} /public/metrics/summary → 404 or 405`, async () => {

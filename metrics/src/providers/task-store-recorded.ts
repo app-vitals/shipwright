@@ -16,6 +16,7 @@ import {
   type CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
 import {
+  type CoverageSnapshotRecord,
   inWindow,
   matchesRepo,
   type PrRecord,
@@ -36,6 +37,7 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
   constructor(
     private readonly tasks: TaskRecord[],
     private readonly prs: PrRecord[],
+    private readonly coverage: CoverageSnapshotRecord[] = [],
   ) {}
 
   async listTasks(params: {
@@ -65,6 +67,35 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
       if (!matchesRepo(p.repo, params.repo)) return false;
       return inWindow(prAnchor(p), params);
     });
+  }
+
+  async listLatestCoverage(params: {
+    repo?: string;
+  }): Promise<CoverageSnapshotRecord[]> {
+    const newest = new Map<string, CoverageSnapshotRecord>();
+    for (const s of this.coverage) {
+      if (!matchesRepo(s.repo, params.repo)) continue;
+      const cur = newest.get(s.repo);
+      if (!cur || s.measuredAt > cur.measuredAt) newest.set(s.repo, s);
+    }
+    return [...newest.values()].sort((a, b) => a.repo.localeCompare(b.repo));
+  }
+
+  async listCoverageHistory(params: {
+    repo?: string;
+    since?: string;
+    limit?: number;
+  }): Promise<CoverageSnapshotRecord[]> {
+    const since =
+      params.since === undefined ? undefined : new Date(params.since).getTime();
+    const rows = this.coverage
+      .filter(
+        (s) =>
+          matchesRepo(s.repo, params.repo) &&
+          (since === undefined || new Date(s.measuredAt).getTime() >= since),
+      )
+      .sort((a, b) => b.measuredAt.localeCompare(a.measuredAt));
+    return params.limit === undefined ? rows : rows.slice(0, params.limit);
   }
 }
 
