@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -402,9 +403,18 @@ export function buildPreviewCommands(
   return cmds;
 }
 
+/** metrics.provider.basePath from the preview values profile ("" when unset). */
+export function readMetricsBasePath(valuesYaml: string): string {
+  const values = Bun.YAML.parse(valuesYaml) as {
+    metrics?: { provider?: { basePath?: string } };
+  };
+  return (values.metrics?.provider?.basePath ?? "").replace(/\/+$/, "");
+}
+
 /** Environment the deployed-target canary suite reads. */
 export function buildTargetsEnv(
   secrets: PreviewSecrets,
+  metricsBasePath = "",
 ): Record<string, string> {
   const url = (name: PortForward["name"]): string => {
     const forward = PORT_FORWARDS.find((p) => p.name === name);
@@ -412,7 +422,8 @@ export function buildTargetsEnv(
   };
   return {
     PREVIEW_ADMIN_URL: url("admin"),
-    PREVIEW_METRICS_URL: url("metrics"),
+    // The metrics app mounts every route under metrics.provider.basePath.
+    PREVIEW_METRICS_URL: `${url("metrics")}${metricsBasePath}`,
     PREVIEW_TASK_STORE_URL: url("taskStore"),
     PREVIEW_CHAT_URL: url("chat"),
     PREVIEW_MCP_URL: url("mcp"),
@@ -502,7 +513,14 @@ function main(): void {
 
   const envOut = flags["--env-out"];
   if (envOut) {
-    const body = Object.entries(buildTargetsEnv(secrets))
+    const body = Object.entries(
+      buildTargetsEnv(
+        secrets,
+        readMetricsBasePath(
+          readFileSync(`${chartPath}/${VALUES_FILE}`, "utf8"),
+        ),
+      ),
+    )
       .map(([k, v]) => `${k}=${v}\n`)
       .join("");
     appendFileSync(envOut, body);

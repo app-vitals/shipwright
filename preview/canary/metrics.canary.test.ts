@@ -17,6 +17,8 @@ afterAll(async () => {
   for (const id of created) await deleteTask(t, id);
 });
 
+// PREVIEW_METRICS_URL already carries metrics.provider.basePath (written by
+// `task preview:up --env-out` from the preview values profile).
 /**
  * The metrics read API accepts an admin bearer key or an admin_session cookie.
  * The preview profile configures no metrics API keys, so the cookie from admin
@@ -57,7 +59,9 @@ describe("metrics canary", () => {
 
   it("exposes read routes only", async () => {
     const cookie = await adminSessionCookie(t.adminUrl);
-    const res = await fetch(`${t.metricsUrl}/metrics/queue`, {
+    const read = await queueMetrics(cookie);
+    expect(read.status).toBe(200);
+    const res = await fetch(`${t.metricsUrl}/metrics/queue?preset=7d`, {
       method: "POST",
       headers: { Cookie: cookie, "Content-Type": "application/json" },
       body: "{}",

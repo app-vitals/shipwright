@@ -20,6 +20,7 @@ import {
   type PreviewOpts,
   type PreviewSecrets,
   previewSecretFiles,
+  readMetricsBasePath,
   withSecretFiles,
 } from "./preview-env.ts";
 import { gateIngressValues, helmSetEscape } from "./preview-gate.ts";
@@ -237,6 +238,29 @@ describe("buildTargetsEnv", () => {
       PREVIEW_TASK_STORE_TOKEN: s.taskStoreToken,
       PREVIEW_MCP_TOKEN: s.mcpServerToken,
     });
+  });
+});
+
+describe("metrics base path", () => {
+  it("appends the base path to PREVIEW_METRICS_URL", () => {
+    expect(buildTargetsEnv(secrets(), "/dashboard").PREVIEW_METRICS_URL).toBe(
+      "http://127.0.0.1:13460/dashboard",
+    );
+  });
+
+  it("reads basePath from the values profile", () => {
+    expect(
+      readMetricsBasePath("metrics:\n  provider:\n    basePath: /dashboard/\n"),
+    ).toBe("/dashboard");
+    expect(readMetricsBasePath("metrics:\n  provider: {}\n")).toBe("");
+  });
+
+  it("matches the committed preview values profile", () => {
+    const yaml = readFileSync(
+      "charts/shipwright/examples/values-preview.yaml",
+      "utf8",
+    );
+    expect(readMetricsBasePath(yaml)).toBe("/dashboard");
   });
 });
 
