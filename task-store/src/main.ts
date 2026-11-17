@@ -21,15 +21,15 @@ import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
 import { DocumentService } from "./document-service.ts";
 import {
-  createPrismaClientWithPool,
-  enablePoolObservability,
-} from "./prisma-client.ts";
-import { PullRequestService } from "./pull-request-service.ts";
-import {
   createGitHubPlanClient,
   githubTokenFromEnv,
 } from "./github-plan-client.ts";
 import { PlanDocumentReconciler } from "./plan-document-reconciler.ts";
+import {
+  createPrismaClientWithPool,
+  enablePoolObservability,
+} from "./prisma-client.ts";
+import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
