@@ -327,6 +327,8 @@ For each remaining candidate, build a task object. Reuse the `repo` and
   "id": "consolidation-{fingerprint-or-slug}-{repo-slug}-{YYYY-Www}",
   "title": "Consolidation: {pattern description}",
   "source": "consolidation-fix",
+  "originKind": "skill",
+  "originRef": "consolidation-fix",
   "repo": "<repo, as detected in Step 5>",
   "branch": "feat/consolidation-{fingerprint-or-slug}-{short-description}",
   "layer": "Shared",

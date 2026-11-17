@@ -62,6 +62,18 @@ Scoped-token reads widen additively: besides the existing task-based rule, an ag
 
 Planning lock and scope preflight (PLU-2.4). `POST /sessions/:slug/lock` takes a self-expiring (15 minute) planning lock before a pass reads the plan; `DELETE /sessions/:slug/lock` releases it once tasks are written and the plan is pushed. The holder is the optional body `holder`, else the token's agent id (`admin` for admin tokens). Acquiring a held, unexpired lock returns `409` with `error`, `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the holder re-acquiring extends it. Releasing a live lock as a non-holder returns `403`; releasing a free or expired lock is a no-op. `GET /sessions/preflight/scope?repo=a&repo=b` is a read-only credential check (not a permission model): it returns `{ covered, uncovered }` for the calling token, where admin tokens cover everything and an agent token covers the repos in its resolved scope.
 
+#### Registering existing planning sessions
+
+Operators register sessions that predate document registration with `task register-planning-sessions` (`scripts/register-planning-sessions.ts`). It walks `planning/*/` in the current checkout and applies the shared PLU-3.1 rules from `plugins/shipwright/scripts/register-planning-documents.ts` (the same module the commands use for lazy registration): `PLAN.md` is plan 1, `PRODUCT-SPEC.md` is spec 1, `SPEC-{NNNN}.md` is spec NNNN, and tasks whose `source` is the plan path gain `planDocumentId` and nothing else. Any other file is listed in the report and never registered; `owner` is never set.
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL=... SHIPWRIGHT_TASK_STORE_TOKEN=...
+task register-planning-sessions -- --dry-run   # print what would happen, write nothing
+task register-planning-sessions                # apply
+```
+
+Flags: `--dry-run`, `--root <dir>` (checkout root, default the current directory) and `--repo <org/repo>` (home repo; default: parsed from `git remote get-url origin`). The script is re-runnable: a second run over an unchanged tree reports zero creates and zero updates. The report lists documents created and updated, tasks linked, non-standard files and any errors; the exit code is non-zero when there are errors. A document already registered keeps its home repo.
+
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
 #### Nightly reconciler
@@ -123,7 +135,7 @@ Filter on it with `?kind=dev` / `?kind=prd` / `?kind=initiative` / `?kind=idea`;
 candidates with `?kind=prd&status=pending`. A PRD task is deliberately excluded from `?ready=true` —
 it has no dependency graph to resolve and must not be picked up as dev work. Initiative and idea tasks
 are also excluded from `?ready=true` as they are not yet planned work.
-An initiative or idea task can be closed out by the plan that fulfils it: `/shipwright:plan-session {repo} {session} --initiative {id}` PATCHes it to `done` (with `source: planning/{session}/PLAN.md`) after the bulk task write succeeds. `/shipwright:prd {session} --initiative {id}` does the same after PRODUCT-SPEC.md is finalized (with `source: planning/{session}/PRODUCT-SPEC.md`). Wrong kind, already-closed, missing, or failed PATCH only warns — it never fails the session.
+An initiative or idea task can be closed out by the plan that fulfils it: `/shipwright:plan-session {repo} {session} --initiative {id}` PATCHes it to `done` (with `source: planning/{session}/PLAN.md` and `planDocumentId` set to the plan document) after the bulk task write succeeds. When the initiative is already closed (for example `/prd` closed it first), plan-session leaves `status` and `source` alone and still sets `planDocumentId`. `/shipwright:prd {session} --initiative {id}` does the same after the spec is finalized (with `source: planning/{session}/SPEC-{NNNN}.md`, or `planning/{session}/PRODUCT-SPEC.md` for spec 1, and `specDocumentId` linking the registered spec document). Wrong kind, already-closed, missing, or failed PATCH only warns — it never fails the session.
 
 `autonomousPlanSession` was a boolean predecessor to `kind` (TKD-1.1 introduced `kind` alongside it
 for a transition window; TKD-1.3 dropped the legacy column, field, and query filter once every

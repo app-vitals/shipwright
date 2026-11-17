@@ -21,7 +21,13 @@ The prd phase does not have a single bounded input payload the way review, patch
 plan-session do. Instead, it is a continuous interactive multi-turn session:
 
 - **Session folder name** (`{session}`) — passed to `/shipwright:prd {session}` by the human
-  invoking the command. Used to derive the output path `planning/{session}/PRODUCT-SPEC.md`.
+  invoking the command.
+- **`specPath`** — the output path the caller resolved: `planning/{session}/SPEC-{NNNN}.md`
+  (a legacy `PRODUCT-SPEC.md` is spec 1 and keeps its name; the next spec is `SPEC-0002.md`).
+- **`specNumber`** — the spec's number within the session (1 for the legacy file).
+- **`repos`** — the `org/repo` list the spec covers; the home repo is always first.
+- **`owner`** — the requester's email, supplied for the caller's task-store registration only.
+  The subagent must never write it into the file.
 - **Human answers** — supplied one question at a time throughout the session. There is no
   pre-assembled input JSON; discovery is live and conversational. The subagent asks
   questions, probes vague answers, and gathers requirements through direct dialogue.
@@ -32,10 +38,12 @@ payload. The only "input" is the session name and the human's live interaction.
 
 ## Output
 
-A single durable artifact: `planning/{session}/PRODUCT-SPEC.md`
+A single durable artifact: the spec file at `specPath` (`planning/{session}/SPEC-{NNNN}.md`,
+or `planning/{session}/PRODUCT-SPEC.md` for legacy spec 1).
 
-**Location**: The file is written to `planning/{session}/PRODUCT-SPEC.md`, where `{session}`
-is the folder-name argument the subagent was invoked with.
+**Location**: The file is written to `specPath`, under `planning/{session}/`, where
+`{session}` is the folder-name argument the subagent was invoked with. A new file begins with
+a header line giving session, repos and spec number — never the owner.
 
 **Shape**: Must conform to the template structure defined in
 `plugins/shipwright/references/product-spec-template.md`. The file is the bridge between
@@ -44,6 +52,8 @@ directly via its `specContent` parameter.
 
 **Required sections** (per the template):
 
+- **Repos** — a required `**Repos**` line listing every `org/repo` the spec covers; each
+  Source Map entry names one of them
 - **Overview** — 2-3 sentences: what this is, why it matters, who it's for
 - **Problem Statement** — the specific problem being solved (concrete, not vague)
 - **Users & Context** — who uses this, in what workflow, and their goal
@@ -82,7 +92,7 @@ directly via its `specContent` parameter.
   choice was made, or (if a default was chosen on the subagent's recommendation) noting that
   it can be revisited before plan-session.
 
-**Downstream integration**: `/shipwright:plan-session` reads `planning/{session}/PRODUCT-SPEC.md`
+**Downstream integration**: `/shipwright:plan-session` reads the spec at `specPath`
 directly — it is the sole downstream consumer of prd's output. The plan-session command will
 fail or produce poor task breakdowns if the spec is missing required sections, contains
 unresolved questions, or lacks specific acceptance criteria.
@@ -90,7 +100,7 @@ unresolved questions, or lacks specific acceptance criteria.
 ## Scope
 
 This contract covers only the shape and content of the durable output artifact —
-`PRODUCT-SPEC.md` — and the requirement that every output must conform to the template
+the spec file — and the requirement that every output must conform to the template
 structure and quality bar. It says nothing about:
 
 - How the subagent conducts the interactive discovery session (question flow, probing strategy,
@@ -103,8 +113,9 @@ structure and quality bar. It says nothing about:
 **Why this is the lightest contract of the six:**
 
 1. **No task-store writes.** Unlike plan-session (`POST /tasks/bulk`), review, patch, and
-   merge (which all write/update task-store PR records), prd never touches the task store
-   at all. Its only durable output is the PRODUCT-SPEC.md file on disk. There is no queue
+   merge (which all write/update task-store PR records), the prd subagent never touches the
+   task store. Its only durable output is the spec file on disk; document registration and
+   the docs PR are done by the calling `/shipwright:prd` command after the file is validated. There is no queue
    state, no PR tracking record, no completion marker in an external service.
 
 2. **Not loop-dispatched.** Per the Shipwright plugin's Design Constitution

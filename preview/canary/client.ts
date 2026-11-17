@@ -47,6 +47,23 @@ export async function adminSessionCookie(adminUrl: string): Promise<string> {
   return cookie;
 }
 
+/**
+ * Metrics read routes answer with a `{ data, meta }` envelope (`wrapResponse`
+ * in metrics/src/formatters.ts), so the queue count lives at
+ * `data.tasksBlocked`. Throws on any other shape so a contract drift fails
+ * loudly instead of reading as "count never rose".
+ */
+export function parseQueueTasksBlocked(body: unknown): number {
+  const value = (body as { data?: { tasksBlocked?: unknown } } | null)?.data
+    ?.tasksBlocked;
+  if (typeof value !== "number") {
+    throw new Error(
+      `metrics queue body has no numeric data.tasksBlocked: ${JSON.stringify(body)}`,
+    );
+  }
+  return value;
+}
+
 export type CanaryTask = { id: string; title: string; session: string };
 
 export async function createTask(

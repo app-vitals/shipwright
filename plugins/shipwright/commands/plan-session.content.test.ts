@@ -235,12 +235,13 @@ describe("plan-session.md — repo auto-detect preserves org/repo format (PRF-1.
     );
   });
 
-  it("Step 6b task JSON template still writes the full org/repo value into repo", () => {
+  it("Step 6b task JSON template writes the full org/repo value of the task's target repo into repo", () => {
     const section = extractStep6bSection(content);
     const codeBlockMatch = section.match(/```json[\s\S]*?```/);
     expect(codeBlockMatch).not.toBeNull();
     const codeBlock = codeBlockMatch?.[0] ?? "";
-    expect(codeBlock).toContain('"repo": "{repo}"');
+    expect(codeBlock).toContain('"repo": "{target-repo}"');
+    expect(codeBlock).not.toContain('"repo": "{repo}"');
   });
 });
 
@@ -474,7 +475,8 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
 
   it("force-adds only the session's planning files, since planning/ is commonly gitignored", () => {
     const section = step6d();
-    expect(section).toContain('add -f "planning/$SESSION/PLAN.md"');
+    expect(section).toContain('git -C "$WT" add -f "$f"');
+    expect(section).toContain("PLAN.md");
     expect(section).toContain("never -A");
   });
 
@@ -486,10 +488,13 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
     expect(section).toContain("gh pr create --head");
   });
 
-  it("is idempotent — an existing PR for the branch counts as done", () => {
+  it("does not skip when a PR for the branch exists — it commits the updated plan on a second pass (PLU-4.3)", () => {
     const section = step6d();
     expect(section).toContain("--state all");
-    expect(section.toLowerCase()).toContain("do not open a second one");
+    expect(section).not.toContain("Plan PR already exists");
+    expect(section).not.toContain("counts as done");
+    expect(section.toLowerCase()).toContain("commits the updated `plan.md` instead of skipping");
+    expect(section).toContain("docs/plan-$SESSION-$N");
   });
 
   it("never blocks the plan and surfaces the PR in the confirmation", () => {
@@ -501,13 +506,12 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
 
   it("guards the jq existing-PR lookup against an empty array printing the literal string 'null'", () => {
     const section = step6d();
-    // `.[0].url` on `[]` raw-outputs the literal text "null" (a non-empty string
-    // that would otherwise satisfy `grep -q .`) — `// empty` must be present on
-    // every `.[0].url` lookup so the branch only matches a genuine URL.
-    const jqLookups = section.match(/-q '\.\[0\]\.url[^']*'/g) ?? [];
+    // `.[0]` on `[]` raw-outputs the literal text "null" (a non-empty string) —
+    // the lookup must `select(.)` so an empty list prints nothing.
+    const jqLookups = section.match(/-q '\.\[0\][^']*'/g) ?? [];
     expect(jqLookups.length).toBeGreaterThan(0);
     for (const lookup of jqLookups) {
-      expect(lookup).toContain("// empty");
+      expect(lookup).toContain("select(.)");
     }
   });
 
@@ -755,8 +759,9 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
     const inputs = extractInputsSubsection(content);
     const declared = [...inputs.matchAll(/^- \*\*`([^`]+)`\*\*/gm)].map((m) => m[1]);
     expect(declared).toEqual([
-      "specContent",
-      "repo",
+      "specs",
+      "homeRepo",
+      "repos",
       "session",
       "existingSessionTaskIds",
       "openCrossSessionTasks",
@@ -797,18 +802,26 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
   });
 
   /**
-   * `specContent` is a required contract input with no omission rule, but Step 1 explicitly
-   * allows an interactive session with no PRODUCT-SPEC.md ("What are we building?"). Without a
-   * rule for that path a human running this command against a configured methodology in a
-   * spec-less repo would dispatch with `specContent` undefined.
+   * `specs[]` is a required contract input with no omission rule, but Step 1 explicitly
+   * allows an interactive session with no registered spec ("What are we building?"). Without a
+   * rule for that path a human running this command against a configured methodology would
+   * dispatch with `specs` empty.
    */
-  it("says what specContent carries on Step 1's interactive no-spec-file path", () => {
-    const specContent = extractInputBullet(content, "specContent");
-    const lower = prose(specContent);
+  it("says what specs carries on the interactive no-spec path and that it replaces specContent", () => {
+    const specs = extractInputBullet(content, "specs");
+    const lower = prose(specs);
     expect(lower).toContain("what are we building?");
     expect(lower).toMatch(/required/);
-    expect(lower).toMatch(/never (omitted|dispatched with `?speccontent`? missing)/);
-    expect(lower).toMatch(/pass the description collected|passed as `?speccontent/);
+    expect(lower).toMatch(/never (omitted|dispatched with `?specs`? (missing|empty))/);
+    expect(lower).toMatch(/\{number, path, content\}/);
+    expect(lower).toContain("no longer exists");
+  });
+
+  it("passes homeRepo and repos to the subagent, with homeRepo always in repos", () => {
+    expect(prose(extractInputBullet(content, "homeRepo"))).toMatch(/home repo/);
+    const repos = prose(extractInputBullet(content, "repos"));
+    expect(repos).toContain("homerepo");
+    expect(repos).toMatch(/union/);
   });
 
   it("requires exactly the contract's inputs — no more, no less — and passes autonomous as {taskId}", () => {
@@ -929,25 +942,32 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
   });
 
   /**
-   * The PSM-1.1 contract specifies `repo` as "the `repo` passed in, unchanged" — a value
-   * contract, not key-presence. `validateRepo` in task-store/src/routes/tasks.ts returns early
-   * on a literal `null`, so a `null` repo is written through and leaves the task undispatchable
-   * (dev-task derives its worktree paths from `task.repo`), while a wrong/hallucinated
-   * `org/repo` 400s the whole batch after Step 6a already wrote PLAN.md.
+   * Every task's `repo` must be one of the session's target repos (PLU-4.2) — a membership
+   * check, not equality with one argument. A `null` repo is still written through silently by
+   * the bulk endpoint, and an out-of-scope `org/repo` 400s the batch after PLAN.md is on disk.
    */
-  it("value-checks repo against the repo input rather than merely asserting key presence", () => {
+  it("checks repo for membership in the repos input: accepts a listed repo, rejects one outside it", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     const repoIdx = sub.indexOf("**`repo`**");
     expect(repoIdx).toBeGreaterThan(-1);
     const check = prose(sub.slice(repoIdx));
-    expect(check).toMatch(/equals the `?repo`? value passed in as an input, exactly/);
+    expect(check).toMatch(/is one of the `?repos`? entries passed in as an input/);
+    expect(check).toMatch(/accepted/);
+    expect(check).toMatch(/outside (that|the) (list|`?repos`?)[^.]*rejected/);
+    expect(check).not.toMatch(/equals the `?repo`? value passed in/);
     expect(check).toMatch(/value contract, not just key-presence/);
-    expect(check).toMatch(/key-presence alone is not enough/);
     expect(check).toMatch(/`?"?repo"?: null`?/);
     expect(check).toMatch(/undispatchable/);
     expect(check).toMatch(/validaterepo/);
     // Mirrors check 11's session value-equality standard.
     expect(check).toMatch(/check 11/);
+  });
+
+  it("checks specNumber against the specs input", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const idx = sub.indexOf("**`specNumber`**");
+    expect(idx).toBeGreaterThan(-1);
+    expect(prose(sub.slice(idx))).toMatch(/matches the `?number`? of an entry in the `?specs`? input/);
   });
 
   it("rejects the WHOLE batch on any failing task — all-or-nothing, do not POST anything", () => {
@@ -1570,5 +1590,190 @@ describe("plan-session.md — --initiative close-out (ICO-1.1)", () => {
     expect(s).toContain("Configured Methodology Dispatch");
     expect(s).toMatch(/built-in/);
     expect(s).toContain("Step 6b");
+  });
+});
+
+describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
+  function extractStep0Section(md: string): string {
+    const match = md.match(/## Step 0: Resolve Session, Specs and Repos[\s\S]*?(?=\n## Step 1: Load Context)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  function extractArgsSection(md: string): string {
+    const match = md.match(/^---[\s\S]*?Wait for user confirmation before continuing to Step 1\./);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("documents the new form with --repos, --owner and --initiative", () => {
+    const args = extractArgsSection(content);
+    expect(args).toContain("/shipwright:plan-session {session} [--repos a,b] [--owner email] [--initiative id]");
+    expect(args).toContain("--repos");
+    expect(args).toContain("--owner");
+  });
+
+  it("specifies the two-argument {repo} {session} form for a new and an existing session (AC1)", () => {
+    const args = prose(extractArgsSection(content));
+    expect(args).toContain("`{repo} {session}`");
+    expect(args).toMatch(/new session[^.]*that repo is (the )?home and (the )?sole target/);
+    expect(args).toMatch(/existing session[^.]*stored home repo wins[^.]*named repo is added as a target/);
+    expect(args).toContain("autonomous dispatcher");
+  });
+
+  it("plans the session's unplanned specs and asks what to add when there are none and a human is present", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toContain("kind=spec&planned=false");
+    expect(step0).toMatch(/no unplanned specs[^.]*human is present[^.]*ask/);
+  });
+
+  it("defines target repos as the union of the specs' repos and --repos, each explored from its SHIPWRIGHT_REPO_DIR checkout", () => {
+    const step0 = extractStep0Section(content);
+    expect(prose(step0)).toMatch(/union of the (unplanned )?specs'? `?repos`? and `?--repos`?/);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted plan-session doc text, not JS interpolation
+    expect(step0).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
+    expect(prose(step0)).toMatch(/missing checkout[^.]*stop[^.]*naming the repo/);
+  });
+
+  it("runs the scope preflight in Step 0, before Step 6a writes anything, and stops naming uncovered repos (AC2)", () => {
+    const step0 = extractStep0Section(content);
+    expect(step0).toContain("/sessions/preflight/scope");
+    expect(prose(step0)).toMatch(/uncovered[^.]*stop[^.]*naming/);
+    expect(prose(step0)).toContain("before step 6a writes anything");
+    expect(content.indexOf("/sessions/preflight/scope")).toBeLessThan(
+      content.indexOf("**Step 6a — Save the plan to disk:**"),
+    );
+    expect(prose(step0)).toContain("credential check, not a permission model");
+  });
+
+  it("makes an uncovered repo a hard contradiction under --autonomous", () => {
+    const step0 = extractStep0Section(content);
+    expect(step0).toContain("plan_session_autonomous_hard_contradiction");
+  });
+
+  it("warns, best-effort and never blocking, when no agent has a target repo in scope", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toMatch(/no agent has[^.]*target repo[^.]*in scope/);
+    expect(step0).toMatch(/best-effort/);
+    expect(step0).toMatch(/never blocks/);
+  });
+
+  it("warns once and keeps today's behaviour when the store lacks the document endpoints", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toContain("docs_api=off");
+    expect(step0).toMatch(/warn once/);
+    expect(step0).toMatch(/today's behaviour/);
+  });
+
+  it("keeps the existing task prefix and continues the milestone number, derived from the session's task ids", () => {
+    const step5 = content.slice(content.indexOf("## Step 5: Task Breakdown"));
+    const idLine = step5.split("\n").find((l) => l.startsWith("- **ID**")) ?? "";
+    const lower = prose(idLine);
+    expect(lower).toMatch(/existing task prefix/);
+    expect(lower).toMatch(/continue the milestone number/);
+    expect(lower).toMatch(/highest/);
+  });
+
+  it("resolves owner by --owner, initiative, spec/plan inheritance and never writes it to a file", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toMatch(/`?--owner`?[^.]*overrides/);
+    expect(step0).toContain("initiative");
+    expect(step0).toMatch(/inherit/);
+    expect(step0).toMatch(/never written (in)?to (a|any) committed file/);
+    expect(step0).toMatch(/decision log/);
+  });
+
+  it("Step 6b tasks carry planDocumentId, specDocumentId, owner, originKind document and originRef = plan document id (AC4)", () => {
+    const section = extractStep6bSection(content);
+    const block = section.match(/```json[\s\S]*?```/)?.[0] ?? "";
+    expect(block).toContain('"source": "planning/{session}/PLAN.md"');
+    expect(block).toContain('"planDocumentId": "{PLAN_DOC_ID}"');
+    expect(block).toContain('"specDocumentId": "{SPEC_DOC_ID}"');
+    expect(block).toContain('"owner": "{owner}"');
+    expect(block).toContain('"originKind": "document"');
+    expect(block).toContain('"originRef": "{PLAN_DOC_ID}"');
+    const lower = prose(section);
+    expect(lower).toMatch(/spec's owner|owner of the spec/);
+    expect(lower).toMatch(/omit `?owner`? when (empty|none|unset)/);
+  });
+
+  it("marks planned specs with plannedAt and widens the session's declared repos after the bulk POST", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain("plannedAt");
+    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}");
+    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}");
+    expect(prose(section)).toMatch(/widen/);
+  });
+
+  it("no longer ties the input to a single PRODUCT-SPEC.md: Step 1 reads specs[] with the legacy file as spec 1", () => {
+    const step1 = prose(content.slice(content.indexOf("## Step 1: Load Context"), content.indexOf("### `--autonomous` Mode")));
+    expect(step1).toContain("specs[]");
+    expect(step1).toMatch(/`?product-spec\.md`? is spec 1/);
+  });
+});
+
+describe("plan-session.md — planning lock, append-only passes and docs PR (PLU-4.3)", () => {
+  const lower = () => content.toLowerCase();
+
+  function step0(): string {
+    const m = content.match(/## Step 0: Resolve Session, Specs and Repos[\s\S]*?(?=\n## Step 1: Load Context)/);
+    expect(m).not.toBeNull();
+    return m?.[0] ?? "";
+  }
+
+  it("takes the session planning lock before reading the plan and reports the holder and time when held", () => {
+    const sec = step0();
+    expect(sec).toContain("**0.7 Planning lock.**");
+    expect(sec).toContain("/sessions/$SESSION/lock");
+    expect(sec).toMatch(/409\)/);
+    expect(sec).toContain("is already being planned by");
+    expect(sec).toContain("acquiredAt");
+    expect(sec.toLowerCase()).toContain("write nothing");
+    expect(content.indexOf("**0.7 Planning lock.**")).toBeLessThan(content.indexOf("## Step 1: Load Context"));
+  });
+
+  it("releases the lock after the plan is pushed and on every failure or stop path", () => {
+    expect(content).toContain("**Step 6e — Release the planning lock**");
+    expect(content.indexOf("**Step 6e")).toBeGreaterThan(content.indexOf("**Step 6d"));
+    expect(lower()).toContain("every exit from this pass releases the lock");
+    expect(lower()).toContain("every failure or stop path");
+  });
+
+  it("makes passes append-only and forbids rewriting earlier sections", () => {
+    expect(content).toContain("**Append-only passes.**");
+    expect(content).toContain("## Pass {PASS_NUMBER} — {YYYY-MM-DD} — specs {spec numbers planned}");
+    expect(lower()).toContain("never rewrites, reorders, reformats or deletes");
+    expect(lower()).toContain("earlier section");
+  });
+
+  it("treats a legacy PLAN.md as plan 1 and reads existing content from git (docs branch, default branch, local)", () => {
+    expect(content).toMatch(/legacy plan and counts as \*\*plan 1\*\*/);
+    const idx = content.indexOf("6. Read the session's existing plan");
+    expect(idx).toBeGreaterThan(-1);
+    const item = content.slice(idx, content.indexOf("\n", idx));
+    expect(item.indexOf("open docs branch")).toBeLessThan(item.indexOf("default branch"));
+    expect(item.indexOf("default branch")).toBeLessThan(item.indexOf("local checkout"));
+  });
+
+  it("writes an autonomous prd-task spec as the session's next spec, registered with the origin task id", () => {
+    expect(content).toContain("the session's next spec file");
+    expect(content).toContain("SPEC-{NNNN}.md");
+    expect(content).toContain('"originTaskId": "{task-id}"');
+  });
+
+  it("notes a missing owner in the Decision Log without blocking", () => {
+    expect(content).toContain("owner: left empty");
+    expect(lower()).toContain("a missing owner never blocks");
+  });
+
+  it("blocks the task with a named reason when a target repo is uncovered", () => {
+    expect(content).toContain("plan_session_autonomous_hard_contradiction: uncovered repos");
+  });
+
+  it("--initiative also sets planDocumentId, even when the initiative is already closed", () => {
+    const start = content.indexOf("**Step 6c.2");
+    const sec = content.slice(start, content.indexOf("**Step 6d", start));
+    expect(sec).toContain("planDocumentId");
+    expect(sec).toMatch(/already closed[\s\S]*still link the plan/);
   });
 });

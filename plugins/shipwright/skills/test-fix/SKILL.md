@@ -305,6 +305,8 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
   "id": "test-{t-nnn}-{repo-slug}",
   "title": "Test readiness: {outcome} (T-NNN)",
   "source": "test-fix",
+  "originKind": "skill",
+  "originRef": "test-fix",
   "repo": "<repo, as detected in Step 3>",
   "branch": "feat/test-{t-nnn-lower}-{slug}",
   "layer": "<test-layer from the row: unit | integration | smoke | e2e | infra>",

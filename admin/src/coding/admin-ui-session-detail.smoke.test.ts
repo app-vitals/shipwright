@@ -7,7 +7,7 @@
  * Uses app.request() — no real server, no real DB.
  */
 
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import {
   AGENT_ID,
   makeSessionCookie,
@@ -910,7 +910,7 @@ describe("admin UI — session detail page", () => {
       }),
     );
     const listRes = await app.request(
-      "/admin/tasks?status=in_progress&page=2",
+      "/admin/tasks?status=in_progress&owner=all&page=2",
       {
         headers: { Cookie: `admin_session=${cookie}` },
       },
@@ -929,7 +929,7 @@ describe("admin UI — session detail page", () => {
     expect(sessionRes.status).toBe(200);
     const sessionHtml = await sessionRes.text();
     expect(sessionHtml).toContain(
-      `<a href="/admin/tasks?status=in_progress&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks?status=in_progress&amp;owner=all&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -1158,5 +1158,151 @@ describe("admin UI — session detail page", () => {
     const afterUnfollowHtml = await afterUnfollow.text();
     expect(afterUnfollowHtml).toContain('data-following="false"');
     expect(afterUnfollowHtml).toContain(">Follow<");
+  });
+});
+
+// ─── Documents, owner and repos (PLU-5.1) ───────────────────────────────────
+
+describe("admin UI — session detail documents block", () => {
+  let cookie: string;
+  const realFetch = globalThis.fetch;
+  const fetched: string[] = [];
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    fetched.length = 0;
+  });
+
+  const baseDoc = {
+    kind: "spec" as const,
+    number: 1,
+    repo: "org/home",
+    path: "planning/s/SPEC-0001.md",
+    owner: "dev@example.com",
+    prUrl: null,
+    state: "merged" as const,
+    commitSha: null,
+    plannedAt: null,
+  };
+
+  function appWithSession(session: Record<string, unknown> | null) {
+    return createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+        fetchTaskStoreSession: async () => session as never,
+      }),
+    );
+  }
+
+  it("renders owner, repos and a working link per merged and unmerged document, without calling GitHub", async () => {
+    globalThis.fetch = ((input: unknown, init?: unknown) => {
+      fetched.push(String(input));
+      return realFetch(input as never, init as never);
+    }) as typeof fetch;
+    const app = appWithSession({
+      agentIds: [],
+      repos: ["org/target"],
+      owner: "dev@example.com",
+      homeRepo: "org/home",
+      documents: [
+        { ...baseDoc, commitSha: "abc123" },
+        {
+          ...baseDoc,
+          number: 2,
+          path: "planning/s/SPEC-0002.md",
+          state: "pr_open",
+          prUrl: "https://github.com/org/home/pull/9",
+        },
+        {
+          ...baseDoc,
+          kind: "plan",
+          path: "planning/s/PLAN.md",
+          plannedAt: null,
+          state: "draft",
+        },
+      ],
+    });
+    const res = await app.request("/admin/sessions/s", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('id="session-documents"');
+    expect(html).toContain(
+      'href="https://github.com/org/home/blob/abc123/planning/s/SPEC-0001.md"',
+    );
+    expect(html).toContain('href="https://github.com/org/home/pull/9"');
+    expect(html).toContain("Owner: <strong>dev@example.com</strong>");
+    expect(html).toContain("org/target");
+    expect(html).toContain("org/home");
+    expect(fetched.filter((u) => u.includes("github.com"))).toEqual([]);
+  });
+
+  it("escapes document fields", async () => {
+    const app = appWithSession({
+      agentIds: [],
+      repos: [],
+      owner: "<b>x</b>@example.com",
+      homeRepo: null,
+      documents: [{ ...baseDoc, path: "a/<script>.md" }],
+    });
+    const res = await app.request("/admin/sessions/s", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).not.toContain("<script>.md");
+    expect(html).not.toContain("<b>x</b>");
+  });
+
+  it("renders without a Documents block when the session has none", async () => {
+    const app = appWithSession({
+      agentIds: [],
+      repos: [],
+      owner: null,
+      homeRepo: null,
+      documents: [],
+    });
+    const res = await app.request("/admin/sessions/s", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("session-documents");
+    expect(html).not.toContain("session-ownership");
+  });
+
+  it("renders without a Documents block when the session record is missing or fails", async () => {
+    for (const fetcher of [
+      async () => null,
+      async () => {
+        throw new Error("boom");
+      },
+    ]) {
+      const app = createCodingTestApp(
+        makeCodingMockDeps({
+          fetchTaskStoreTasks: async () => ({
+            tasks: [],
+            total: 0,
+            limit: 500,
+            offset: 0,
+          }),
+          fetchTaskStoreSession: fetcher as never,
+        }),
+      );
+      const res = await app.request("/admin/sessions/s", {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      expect(await res.text()).not.toContain("session-documents");
+    }
   });
 });

@@ -18,6 +18,11 @@
 #                                       SHIPWRIGHT_TASK_STORE_TOKEN
 #   shipwright-preview-task-store-seed  TASK_STORE_SEED_ADMIN_TOKEN
 #   shipwright-preview-metrics          METRICS_TASK_STORE_TOKEN
+#   shipwright-preview-admin-keys       SHIPWRIGHT_SESSION_SECRET,
+#                                       SHIPWRIGHT_ENCRYPTION_KEY
+# admin and metrics both read SHIPWRIGHT_SESSION_SECRET from shipwright-preview-admin-keys:
+# the canary's admin_session cookie is signed by admin and verified by metrics, so
+# the two must share one secret or metrics answers 401.
 # The task-store seed token, the mcp-server's SHIPWRIGHT_TASK_STORE_TOKEN and the
 # metrics token are the same value, so the seeded admin token authenticates both
 # downstream callers.
@@ -60,6 +65,8 @@ postgresql:
 
 admin:
   enabled: true
+  encryptionKeys:
+    existingSecret: shipwright-preview-admin-keys
   appBaseUrl: http://preview.localhost
   image:
     repository: shipwright-admin
@@ -75,6 +82,8 @@ admin:
 
 metrics:
   enabled: true
+  sessionSecret:
+    existingSecret: shipwright-preview-admin-keys
   image:
     repository: shipwright-metrics
     tag: 0.1.0

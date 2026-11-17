@@ -21,6 +21,14 @@ import {
   type VerificationCheckItem,
 } from "./admin-ui-verification-cards.ts";
 import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
+import {
+  type OwnerView,
+  ownerViewParam,
+  renderDocumentsBlock,
+  renderOwnerSwitch,
+  renderOwnershipHeader,
+  type SessionOwnership,
+} from "./session-documents.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +115,14 @@ export interface TaskItem {
   type?: string | null;
   layer?: string | null;
   source?: string | null;
+  /** Requester email (PLU-2.5); null when unknown. */
+  owner?: string | null;
+  /** Linked plan / spec documents (PLU-5.2); links resolve via the session. */
+  planDocumentId?: string | null;
+  specDocumentId?: string | null;
+  /** Typed origin: document, skill, cron or human; originRef names it. */
+  originKind?: string | null;
+  originRef?: string | null;
   issue?: string | null;
   note?: string | null;
   blockedReason?: string | null;
@@ -307,6 +323,8 @@ export function renderTasksPage(
     hitl?: "true" | "false";
     kind?: TaskKindFilter;
     ideas?: boolean;
+    /** Mine / All / owner view; kept in the URL as `?owner=` (PLU-5.2). */
+    ownerView?: OwnerView;
   },
   degraded: boolean,
   userName: string,
@@ -439,6 +457,8 @@ export function renderTasksPage(
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (filters.kind) params.set("kind", filters.kind);
     if (filters.ideas) params.set("ideas", "1");
+    if (filters.ownerView)
+      params.set("owner", ownerViewParam(filters.ownerView));
     if (p > 1) params.set("page", String(p));
     // Keep self-referential links inside this view — bare /admin/tasks now
     // defaults to the board (AXR-1.3), so every link generated in this
@@ -447,6 +467,13 @@ export function renderTasksPage(
     params.set("view", "table");
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
+  };
+
+  // Mine / All switch target: same filters, table view, page reset.
+  const makeOwnerUrl = (owner: string) => {
+    const u = new URL(makePageUrl(1), "http://x");
+    u.searchParams.set("owner", owner);
+    return `${u.pathname}${u.search}`;
   };
 
   // The URL the user is currently viewing. makePageUrl always carries
@@ -460,7 +487,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="10" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="12" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -515,7 +542,9 @@ export function renderTasksPage(
         : '<span style="color:#9ca3af">—</span>'
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
-    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${renderSourceCell(t, readOnly)}</td>
+    <td class="col-origin" style="font-size:11px">${renderOriginText(t) ?? DASH_HTML}</td>
+    <td class="col-owner" style="font-size:12px">${t.owner ? escapeHtml(t.owner) : DASH_HTML}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
     <td class="col-created" style="font-size:12px">${createdCell}</td>
     ${
@@ -545,6 +574,7 @@ export function renderTasksPage(
     if (filters.hitl) p.set("hitl", filters.hitl);
     if (filters.kind) p.set("kind", filters.kind);
     if (filters.ideas) p.set("ideas", "1");
+    if (filters.ownerView) p.set("owner", ownerViewParam(filters.ownerView));
     // See makePageUrl above (TBF-1.1) — state-tab links must stay in table
     // view too, or clicking a tab bounces the user to the board.
     p.set("view", "table");
@@ -627,13 +657,15 @@ export function renderTasksPage(
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
-    ${readOnly ? "" : renderQuickAddForm(currentListUrl, suggestions?.repos)}
+    ${readOnly ? "" : renderTasksOwnerSwitch(filters, userName, (owner) => makeOwnerUrl(owner))}
+    ${readOnly ? "" : renderQuickAddForm(currentListUrl, suggestions?.repos, userName)}
     ${
       readOnly
         ? ""
         : `<div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <input type="hidden" name="view" value="table" />
+        ${filters.ownerView ? `<input type="hidden" name="owner" value="${escapeHtml(ownerViewParam(filters.ownerView))}" />` : ""}
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Status</label>
@@ -680,6 +712,8 @@ export function renderTasksPage(
               <th class="col-session">Session</th>
               <th class="col-repo">Repo</th>
               <th class="col-source">Source</th>
+              <th>Origin</th>
+              <th>Owner</th>
               <th>PR</th>
               <th class="col-created">Created</th>
               <th></th>
@@ -744,6 +778,7 @@ function renderTasksBoard(args: {
     hitl?: "true" | "false";
     kind?: TaskKindFilter;
     ideas?: boolean;
+    ownerView?: OwnerView;
   };
   userName: string;
   agentNames: Record<string, string>;
@@ -845,6 +880,8 @@ function renderTasksBoard(args: {
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (filters.kind) params.set("kind", filters.kind);
     if (filters.ideas) params.set("ideas", "1");
+    if (filters.ownerView)
+      params.set("owner", ownerViewParam(filters.ownerView));
     if (page > 1) params.set("page", String(page));
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
@@ -995,6 +1032,7 @@ function renderTasksBoard(args: {
         )}
         ${renderKindFilterField(filters.kind)}
         ${renderIdeasToggle(filters.ideas)}
+        ${filters.ownerView ? `<input type="hidden" name="owner" value="${escapeHtml(ownerViewParam(filters.ownerView))}" />` : ""}
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
         <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
         <details class="more-filters">
@@ -1039,7 +1077,17 @@ function renderTasksBoard(args: {
     ${errorHtml}
     ${degradedHtml}
     ${agentFilterHtml}
-    ${readOnly ? "" : renderQuickAddForm(currentBoardUrl, suggestions?.repos)}
+    ${
+      readOnly
+        ? ""
+        : renderTasksOwnerSwitch(filters, userName, (owner) => {
+            const u = new URL(currentBoardUrl, "http://x");
+            u.searchParams.set("owner", owner);
+            u.searchParams.delete("page");
+            return `${u.pathname}${u.search}`;
+          })
+    }
+    ${readOnly ? "" : renderQuickAddForm(currentBoardUrl, suggestions?.repos, userName)}
     ${filterFormHtml}
     <div class="board">
       ${columnsHtml}
@@ -1281,6 +1329,8 @@ export function renderTaskDetailPage(
     field("Layer", task.layer),
     field("Kind", task.kind),
     field("Source", task.source),
+    field("Owner", task.owner),
+    field("Origin", renderOriginRaw(task)),
     agentField("Assignee", task.assignee),
     agentField("Agent Hint", task.agentHint),
     agentField("Claimed By", task.claimedBy),
@@ -1741,10 +1791,46 @@ function renderPromoteForm(
       </form>`;
 }
 
+const DASH_HTML = '<span style="color:#9ca3af">—</span>';
+
+/**
+ * The Source cell. A task linked to a plan/spec document (and a session to
+ * find it in) links to that session's Documents block; otherwise plain text.
+ * No GitHub lookup happens while rendering (PLU-5.2).
+ */
+function renderSourceCell(t: TaskItem, readOnly: boolean): string {
+  if (!t.source) return DASH_HTML;
+  const linked = !!(t.planDocumentId || t.specDocumentId) && !!t.session;
+  if (!linked || readOnly) return escapeHtml(t.source);
+  return `<a href="/admin/sessions/${encodeURIComponent(t.session as string)}#session-documents" style="color:#6366f1;text-decoration:none">${escapeHtml(t.source)}</a>`;
+}
+
+/** "kind: ref" for a task's typed origin (unescaped), or null when none. */
+function renderOriginRaw(t: TaskItem): string | null {
+  if (!t.originKind) return null;
+  return t.originRef ? `${t.originKind}: ${t.originRef}` : t.originKind;
+}
+
+function renderOriginText(t: TaskItem): string | null {
+  const raw = renderOriginRaw(t);
+  return raw === null ? null : escapeHtml(raw);
+}
+
+function renderTasksOwnerSwitch(
+  filters: { ownerView?: OwnerView },
+  userEmail: string,
+  makeUrl: (owner: string) => string,
+): string {
+  return filters.ownerView
+    ? renderOwnerSwitch(filters.ownerView, userEmail, makeUrl)
+    : "";
+}
+
 /** Quick-add form (initiative / idea) shown above the board and table. */
 function renderQuickAddForm(
   returnTo: string,
   repos: string[] | undefined,
+  ownerDefault = "",
 ): string {
   const listAttr = repos?.length ? ' list="quick-add-repos"' : "";
   const datalist = repos?.length
@@ -1768,6 +1854,10 @@ function renderQuickAddForm(
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Session</label>
           <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" placeholder="optional" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Owner</label>
+          <input name="owner" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(ownerDefault)}" placeholder="owner email" />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Kind</label>
@@ -2086,6 +2176,8 @@ export function renderSessionDetailPage(
    * session, so the action addresses that account's same-slug row.
    */
   actionsQuery = "",
+  /** Owner/home repo/repos/documents from the session record (PLU-5.1). */
+  sessionInfo?: SessionOwnership & { repos?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -2216,7 +2308,9 @@ export function renderSessionDetailPage(
     </div>
     ${degradedHtml}
     ${noticeHtml}
+    ${renderOwnershipHeader(sessionInfo, sessionInfo?.repos)}
     ${adminActionsHtml}
+    ${renderDocumentsBlock(sessionInfo?.documents)}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${statCard("Total Tasks", String(totalTasks))}
       ${statCard("Est. Hours", String(totalHours))}

@@ -2,20 +2,30 @@
 description: Engineer planning pass — reads the product spec, explores the codebase, flags complexity, and produces a task queue
 arguments:
   - name: repo
-    description: The repo to plan work for, in org/repo format (e.g., app-vitals/shipwright)
-    required: true
+    description: Optional, two-argument form only — the repo to plan work for, in org/repo format (e.g., app-vitals/shipwright). For a new session it is home and sole target; for an existing session it is added as a target.
+    required: false
   - name: session
     description: A short slug for this planning session (e.g., may-billing-refactor). Used to group tasks and PRs.
     required: true
+  - name: repos
+    description: Optional `--repos a,b` — extra org/repo targets for this pass, unioned with the repos of the session's unplanned specs
+    required: false
+  - name: owner
+    description: Optional `--owner email` — the requester recorded as the owner of the plan's tasks (never written to a file)
+    required: false
 ---
 
 # Plan Session: $ARGUMENTS
 
 > **Task store setup:** This command appends planned tasks to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
+**Form:** `/shipwright:plan-session {session} [--repos a,b] [--owner email] [--initiative id]`. The two-argument form `{repo} {session}` (used by the autonomous dispatcher) keeps working: for a new session that repo is home and sole target; for an existing session the stored home repo wins and the named repo is added as a target.
+
 Parse `$ARGUMENTS` to extract:
-- **repo**: first argument
-- **session**: second argument
+- **repo** (two-argument form only): the first positional argument when two are given
+- **session**: the last positional argument (the only one in the new form)
+- **`--repos a,b`** (optional): extra `org/repo` targets for this pass; see Step 0.3
+- **`--owner {email}`** (optional): overrides the owner resolved in Step 0.6
 - **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one recorded as `kind: "prd"`. `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
 - **`--initiative {task-id}`** (optional): the id of an `initiative` or `idea` task in the task store that this planning session fulfils. Used only by Step 6c.2 to close that task out once the plan's tasks are written. Independent of `--autonomous` (which closes a `kind: "prd"` task) — both may be passed. Without it, behavior is unchanged.
 - _(no arguments)_: respond `[silent]` and stop immediately — no repo auto-detect, no
@@ -32,7 +42,7 @@ off an untargeted planning session against whatever repo the working directory h
 The single-argument auto-detect-and-confirm flow below applies only when a `session` slug **is**
 supplied.
 
-**If only one argument is provided** (and `--autonomous` was not passed), treat it as `session` and auto-detect `repo`:
+**If only one argument is provided** (a positional one, and `--autonomous` was not passed), treat it as `session`. Look the session up first (Step 0.1): an existing session's stored home repo is used and nothing below runs. For a new session, auto-detect `repo`:
 1. `git remote get-url origin` → parse the `org/repo` value, stripping trailing `.git`. Preserve the full owner/repo value — do not strip it down to just the repo segment. This is the `repo` value used for the task-store `repo` field.
 2. Fallback (only when the remote parse fails): `basename $(git rev-parse --show-toplevel)`. In this fallback case there is no owner segment, so `repo` and `repo-slug` end up the same bare value.
 3. Derive `repo-slug` from `repo`: the last path segment, lowercased — e.g. `app-vitals/shipwright` → `shipwright`. Use `repo-slug` for all local filesystem path references.
@@ -49,7 +59,7 @@ Wait for user confirmation before continuing to Step 1.
 
 This is the engineering planning pass. The product spec (what and why) is already done — either from `/prd` or handed in directly. This session translates that spec into a concrete technical design and task queue.
 
-**Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists; under `--autonomous`, the originating task's `description` is materialized to that path — see Step 1)
+**Input:** the session's unplanned specs (`planned=false`), each at `planning/{session}/` in the home repo — a legacy `PRODUCT-SPEC.md` is spec 1, later specs are `SPEC-NNNN.md` (or a verbal description if none exists; under `--autonomous`, the originating task's `description` is materialized as the spec — see Step 1)
 **Output:** Tasks in the task store, ready for `dev-task` to execute
 
 ---
@@ -66,16 +76,65 @@ On any failure print that single message and stop. Run the repo check from the w
 
 ---
 
+## Step 0: Resolve Session, Specs and Repos
+
+Runs after the preflight and before any file is written. Use `$SHIPWRIGHT_TASK_STORE_URL` and `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN` for every call.
+
+**0.1 Document endpoints.** Probe once: `GET $SHIPWRIGHT_TASK_STORE_URL/documents?session=$SESSION`. A 404/405 or an unreachable store means the store lacks the document endpoints: warn once (`⚠ Task store has no document endpoints — continuing without document registration.`), set `DOCS_API=off`, and continue with today's behaviour — the named repo is home and sole target, `PRODUCT-SPEC.md` is the only spec, the scope preflight, document registration, `plannedAt` and the document ids below are skipped, and tasks are written as before. Warn once, never per step.
+
+**0.2 Home repo.** Look the session up with `GET /sessions/{session}`. For an existing session its stored `homeRepo` wins (fall back to the `repo` of its document rows); in the two-argument form the named repo is added as a target. For a new session the named (or auto-detected and confirmed) repo is home and, in the two-argument form, sole target. `{home}` below is the resolved home repo.
+
+**0.3 Specs and target repos.** Fetch `GET /documents?session=$SESSION&kind=spec&planned=false` — the session's unplanned specs — and read each spec's content from git at its `path` in the home repo. With no unplanned specs and a human is present, ask what to add (point to `/shipwright:prd` for a full spec, or collect a short description as in Step 1); under `--autonomous` the spec arrives through Step 1's materialization. Target repos are the union of the unplanned specs' `repos` and `--repos`, plus `{home}`; each task's `repo` must be one of them.
+
+**0.4 Checkouts.** Each target repo is explored from its checkout under `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}` (the current checkout counts for the repo it is). A missing checkout stops the run naming the repo — nothing is written.
+
+**0.5 Scope preflight and staffing.** Before Step 6a writes anything, call `GET /sessions/preflight/scope?repo=a&repo=b` with every target repo. A non-empty `uncovered` list stops the run naming the uncovered repos; write nothing. It is a credential check, not a permission model. Under `--autonomous {task-id}` an uncovered repo is a hard contradiction: PATCH the task to `blocked` with `plan_session_autonomous_hard_contradiction: uncovered repos {list}` (same call as Step 4) and stop. Then a best-effort warning: when no agent has a target repo in scope (checked through the admin API when reachable), print `⚠ No agent has {repo} in scope — tasks there will not be picked up.` This never blocks and is silently skipped when the API is unreachable.
+
+**0.6 Owner.** `--owner` overrides; else the `--initiative` task's `owner` when set; else the owner of the spec being planned (a plan inherits its spec's owner, and tasks inherit the plan's); else, interactively, `git config user.email`. Under `--autonomous` use the originating `prd` task's `owner`; a missing owner never blocks — note `owner left empty` in the Decision Log. The owner is held for task-store calls only and is never written to a committed file (plan, spec, branch, PR title or body). Show `Home repo`, `Repos`, `Specs` and `Owner` in the orientation below so the human can correct them.
+
+
+**0.7 Planning lock.** Skip when `DOCS_API=off`. Before reading the plan (Step 1) take the session's planning lock so two passes never interleave. The lock is self-expiring (15 minutes) and the current holder re-acquiring just extends it — re-run the acquire before Step 6 if the pass has been long. Bash calls do not share shell state, so declare the functions in every block that uses them.
+
+```bash
+# plan-lock
+SESSION="{session}"
+plan_lock_acquire() {
+  local body code
+  body=$(mktemp)
+  code=$(curl -s -o "$body" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/sessions/$SESSION/lock")
+  case "$code" in
+    200) echo "PLAN_LOCK=acquired" ;;
+    404) echo "PLAN_LOCK=none (session has no row yet — planning without a lock)" ;;
+    409) echo "PLAN_LOCK=held"
+         echo "⚠ Session $SESSION is already being planned by $(jq -r .holder "$body") (locked since $(jq -r .acquiredAt "$body"), expires $(jq -r .expiresAt "$body")). Stopping — retry once that pass finishes."
+         return 1 ;;
+    *)   echo "PLAN_LOCK=unavailable (HTTP $code) — planning without a lock" ;;
+  esac
+}
+plan_lock_release() {
+  # Idempotent: releasing a free or expired lock is a 200 no-op; a 403 or 404 is ignored.
+  curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/sessions/$SESSION/lock"
+  echo "PLAN_LOCK=released"
+}
+```
+
+Run `plan_lock_acquire`. On `PLAN_LOCK=held` **stop**: print the holder and time it reported, write nothing, and do not release (this pass never held the lock). A missing session row (404), or an unreachable lock endpoint, never blocks — there is nothing to race on a brand-new session. After a successful acquire, **every exit from this pass releases the lock** (`plan_lock_release`): the normal end in Step 6e, and also every stop or failure after the acquire — a hard-contradiction block, a failed bulk write, an abandoned design, a failed schema validation, a missing checkout. Release first, then print the stop message.
+
+---
+
 ## Step 1: Load Context
 
-1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`
-2. Glob the repo structure to understand the codebase layout
+1. Read `CLAUDE.md` for each target repo from its worktree if available, otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`
+2. Glob each target repo's structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates. Under `--autonomous {task-id}`, set `AUTONOMOUS_TASK_ID` to `{task-id}` first; otherwise leave it unset and the filter is a no-op:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" \
      | jq --arg t "${AUTONOMOUS_TASK_ID:-}" '.tasks | map(select(.id != $t))'
    ```
-   The response is a paginated envelope — unwrap `.tasks` to get the array. The `select(.id != $t)` drops the originating PRD task in autonomous mode: it shares this session slug because it is the session's *input*, not a duplicate of the work it produces. If the result is non-empty, print the existing task IDs and skip re-adding them.
+   The response is a paginated envelope — unwrap `.tasks` to get the array. The `select(.id != $t)` drops the originating PRD task in autonomous mode: it shares this session slug because it is the session's *input*, not a duplicate of the work it produces. If the result is non-empty, print the existing task IDs and skip re-adding them. When adding to a session, take the existing task prefix and the highest milestone number `N` from these ids (`{PREFIX}-{N}.{M}`) for Step 5.
 4. Scan for open tasks from prior sessions that may be prerequisites for this work:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -90,19 +149,22 @@ On any failure print that single message and stop. Run the repo check from the w
    Keep these in mind when designing the dependency map in Step 5 — new tasks may depend on them.
    ```
    If empty, continue silently. These IDs are valid `dependencies` values in Step 5.
-5. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
+5. Build `specs[]` from Step 0.3 — each `{number, path, content}`, the primary input. A legacy `PRODUCT-SPEC.md` is spec 1; when `DOCS_API=off`, read `planning/{session}/PRODUCT-SPEC.md` if it exists as the only entry
+6. Read the session's existing plan, if any — after the lock from Step 0.7 is held. `planning/{session}/PLAN.md` is read **from git**, first match wins: the open docs branch (`origin/docs/plan-{session}`, or the open `docs/plan-{session}-{n}` branch), then the default branch, then the local checkout. A `PLAN.md` that exists but carries no `## Pass {n}` headings is a legacy plan and counts as **plan 1** (pass 1). Set `PASS_NUMBER` to the highest pass number found plus one (`1` when there is no existing plan). Earlier passes' tasks, design and Decision Log are context — never re-plan them.
 
 ### `--autonomous` Mode
 
 When `--autonomous {task-id}` was passed, the spec arrives through the originating task record, not through a human. Run this between 1.5 and the orientation header:
 
-1. If `planning/{session}/PRODUCT-SPEC.md` already exists in the worktree, use it as-is and continue to the orientation header.
+1. If `planning/{session}/PRODUCT-SPEC.md` already exists in the worktree, use it as-is and continue to the orientation header — unless the session already has a spec registered with this task as its origin (`GET /documents?session={session}&kind=spec`, `originTaskId == {task-id}`), in which case that spec is the input and nothing is written.
 2. If the file does not exist, fetch the originating PRD task and materialize the spec from its `description`:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq -r '.description // ""'
    ```
-   Submitters (e.g. an external `submit-prd` gateway) prefix the spec with the instruction line `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.` — strip that line and any blank lines that follow it. Write what remains to `planning/{session}/PRODUCT-SPEC.md` (create the directory if needed). From here on it is the primary input for Steps 2–5, exactly as if `/prd` had written it.
+   Submitters (e.g. an external `submit-prd` gateway) prefix the spec with the instruction line `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.` — strip that line and any blank lines that follow it. Write what remains as **the session's next spec file**: `planning/{session}/PRODUCT-SPEC.md` when the session has no spec yet (spec 1), otherwise `planning/{session}/SPEC-{NNNN}.md` where `NNNN` is the highest existing spec number plus one, zero-padded (create the directory if needed; never overwrite an existing spec). Unless `DOCS_API=off`, register it with the originating task id — `POST $SHIPWRIGHT_TASK_STORE_URL/documents` with `{"session": "{session}", "kind": "spec", "number": {N}, "repo": "{home}", "path": "{spec path}", "originTaskId": "{task-id}", "owner": "{owner}"}` (the owner is the originating task's `owner`; omit `owner` when it is empty — a missing owner never blocks the run) — and keep the returned id as that spec's `SPEC_DOC_ID`. From here on it is the primary input for Steps 2–5, exactly as if `/prd` had written it.
+
+   **Missing owner.** When the originating task has no `owner` (and no `--owner` was given), the run still completes: add the line `- owner: left empty — the originating task carried no owner; tasks and documents are written without one` to the `## Decision Log` in PLAN.md.
 3. If the description is missing, or blank after stripping, there is nothing to plan and no human to ask. Block the task and stop:
    ```bash
    curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -119,9 +181,11 @@ Present a brief orientation:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PLAN SESSION: {session}
-Repo: {repo}
+Home repo: {home}
+Repos: {target repos}
+Owner: {owner or none}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Spec: {found / not found}
+Specs: {numbers planned / none found}
 {If found: 1-2 sentences summarizing what's being built}
 {If not found: "No PRODUCT-SPEC.md found — I'll ask for a description."}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -278,7 +342,8 @@ Before writing tasks, load the principles file:
 Let its `architecture`, `testing`, and `security` domain entries inform each task's scope and acceptance criteria (e.g. respecting `architecture_layering` when splitting a task across layers, citing a relevant `security_*` principle entry when writing security-specific acceptance criteria, or citing the relevant `t*` testing entry when writing the test decision bullet below).
 
 For each task:
-- **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name
+- **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name; when adding to a session, keep the existing task prefix and continue the milestone number — new milestones start at highest existing `N` + 1 (Step 1.3), with `M` restarting at 1 in each — instead of restarting at 1
+- **Repo**: one of the session's target repos (Step 0.3), full `org/repo`; `{home}` when the task has no other target
 - **Title**: a Conventional-Commit subject, `type: verb-first summary` (e.g., "feat: add billing schema migration"). dev-task uses the title verbatim as the PR title, which the repo's pr-title-lint checks. `type` must be one of `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, chosen by the nature of the work: docs-only → `docs`; tests only → `test`; CI/workflow → `ci`; build/dependency → `build`; behavior change → `feat` or `fix`; refactor → `refactor`; otherwise `chore`
 - **Description**: what to build, not how
 - **Acceptance Criteria**: 2-5 bullet points — specific, testable. Every task **must** include at least one test decision bullet that names: (a) which test layers are affected, (b) what tests are added (layer + scenario, e.g., "add integration test for X"), and (c) what existing tests are retired and why (be specific — "remove mocked unit test Y because real integration test now covers this path", not just "update tests"). If no test change is needed, state that explicitly and justify it.
@@ -506,13 +571,15 @@ Steps 2 through 5.5 were skipped and this section produces the breakdown in thei
 Assemble exactly the inputs `plugins/shipwright/references/methodology-contracts/plan-session.md`
 specifies — no more, no less:
 
-- **`specContent`** — the verbatim contents of `planning/{session}/PRODUCT-SPEC.md` as loaded
-  (or, under `--autonomous`, materialized) in Step 1. Required — the contract defines no
-  omission rule for it, so it is never omitted. When Step 1 found no spec file and fell back to
-  asking **"What are we building?"** interactively (a path that never runs under `--autonomous`),
-  pass the description collected in that exchange as `specContent` — the configured methodology
-  receives the same field either way and is never dispatched with `specContent` missing.
-- **`repo`** — the confirmed/dispatched `org/repo` value from the arguments.
+- **`specs`** — the session's unplanned specs from Step 0.3, each `{number, path, content}`
+  (`content` verbatim as loaded in Step 1; a legacy `PRODUCT-SPEC.md` is number 1). Required —
+  never omitted. When Step 0 found no spec and the human answered **"What are we building?"**
+  (a path that never runs under `--autonomous`), pass one entry carrying the description
+  collected in that exchange — the configured methodology is never dispatched with `specs`
+  empty. The single `specContent` input no longer exists.
+- **`homeRepo`** — the home repo `{home}` from Step 0.2.
+- **`repos`** — the target repos from Step 0.3: the union of the specs' repos and `--repos`,
+  always including `homeRepo`.
 - **`session`** — the session slug from the arguments.
 - **`existingSessionTaskIds`** — the task ids returned by Step 1.3's dedup scan; omit when empty.
 - **`openCrossSessionTasks`** — the `{id, title, status, session}` entries from Step 1.4's
@@ -623,9 +690,10 @@ failure — a top-level failure is not attributable to any task id.
 3. Every entry in **`dependencies`** resolves to a real task id — one of: another `id` in
    this batch's own `tasks[]`, an id in `existingSessionTaskIds`, or an id in
    `openCrossSessionTasks`. An unresolvable dependency id can never become ready.
-4. **`repo`** equals the `repo` value passed in as an input, exactly. The contract specifies
-   this field as "the `repo` passed in, unchanged" — a value contract, not just key-presence,
-   so key-presence alone is not enough here. The bulk endpoint's own check is weaker in both
+4. **`repo`** is one of the `repos` entries passed in as an input, exactly. A task whose `repo`
+   is in that list is accepted; a value outside that list is rejected. The contract specifies
+   this field as one of the `repos` passed in — a value contract, not just key-presence, so
+   key-presence alone is not enough here. The bulk endpoint's own check is weaker in both
    directions: it requires only that the key exist, and `validateRepo` returns early on a
    literal `null`, so a task returned with `"repo": null` is written through and then
    undispatchable — `dev-task` derives its repo path and worktree path from `task.repo`, the
@@ -660,6 +728,9 @@ failure — a top-level failure is not attributable to any task id.
     instructions to execute. Step 6b writes this flag through exactly as received on this path
     and does not re-run Step 5.5's detection over a dispatched breakdown, so this check is the
     only place it is caught.
+
+13. **`specNumber`** matches the `number` of an entry in the `specs` input. Step 6b resolves
+    `specDocumentId` from it, so an unmatched number would leave the task unlinked.
 
 Per-task checks 8 through 12 exist because the bulk endpoint cannot catch them for you: 8 fails
 server-side only as an opaque 409 after the plan is already on disk, and 9-12 never fail
@@ -756,9 +827,13 @@ A task on its own branch is unaffected. This ensures a `haiku`-scored task bundl
 
 Write the full plan markdown — session name, technical design, task table, Dependency Map, Breaking Change Safety notes, and (under `--autonomous`) the `## Decision Log` — **verbatim** to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
 
+**Append-only passes.** A session keeps exactly one `PLAN.md`. The first pass (`PASS_NUMBER` = 1, no existing plan) writes the plan exactly as above. Every later pass starts from the existing `PLAN.md` content read from git in Step 1.6 (open docs branch, default branch, local — first match wins), writes that content to the local `planning/{session}/PLAN.md` **unchanged** (a fresh checkout has no local copy, and Step 6d copies the local file onto the docs branch — seeding it from git is what keeps earlier passes from being overwritten), and appends one new section headed `## Pass {PASS_NUMBER} — {YYYY-MM-DD} — specs {spec numbers planned}` containing this pass's design, task table, Dependency Map, Breaking Change Safety notes and Decision Log. A later pass **never rewrites, reorders, reformats or deletes** an earlier section — not to fix a typo, not to mark tasks done. A legacy `PLAN.md` (no pass headings) is plan 1 and stays as it is above the first appended section.
+
 Source-neutral, and verbatim either way: on the built-in path this markdown is what Steps 4–5 produced; on the Configured Methodology Dispatch path it is the returned `planMarkdown`, which the PSM-1.1 contract requires the caller to write through unchanged. **Do not re-synthesize the plan from the task list** — a re-synthesized plan silently drops the design rationale, the Breaking Change Safety notes, and the embedded Decision Log that the `source` link on every queued task points at.
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
+
+**Step 6a.2 — Register the plan document** (skip when `DOCS_API=off`): `POST $SHIPWRIGHT_TASK_STORE_URL/documents` with `{"session": "{session}", "kind": "plan", "repo": "{home}", "path": "planning/{session}/PLAN.md", "owner": "{owner}", "repos": [{target repos}]}` (omit `owner` when empty). Registration is idempotent on `(session, kind, number)`. Keep the returned `id` as `PLAN_DOC_ID`; a failure prints a warning, leaves `PLAN_DOC_ID` empty and continues. Each planned spec's id is its `SPEC_DOC_ID` from Step 0.3.
 
 **Link to the plan visualization (additive — never blocks the plan).** The
 `PLAN.md` write above is complete and unchanged; this step only surfaces a
@@ -783,7 +858,7 @@ Slack channel/thread. Omit it if the step was skipped.
 
 **Step 6b — Write tasks to the store:**
 
-Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk:
+Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk. `repo` is the full `org/repo` of the task's target repo, one of the session's target repos. `planDocumentId` is `PLAN_DOC_ID` and `specDocumentId` is the `SPEC_DOC_ID` of the spec the task implements (its `specNumber`); `originKind` is `"document"` and `originRef` is `PLAN_DOC_ID`. `owner` is the spec's owner (Step 0.6: resolved by Step 0.6 precedence: `--owner`, then initiative, then the spec's own), which the plan and its tasks inherit; omit `owner` when empty. Omit `planDocumentId`, `specDocumentId`, `originKind`, `originRef` when `DOCS_API=off` or the registration failed:
 
 ```json
 [
@@ -791,7 +866,12 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
     "id": "{PREFIX}-{N}.{M}",
     "source": "planning/{session}/PLAN.md",
     "session": "{session}",
-    "repo": "{repo}",
+    "repo": "{target-repo}",
+    "planDocumentId": "{PLAN_DOC_ID}",
+    "specDocumentId": "{SPEC_DOC_ID}",
+    "owner": "{owner}",
+    "originKind": "document",
+    "originRef": "{PLAN_DOC_ID}",
     "title": "feat: verb-first summary",
     "description": "...",
     "acceptanceCriteria": ["...", "..."],
@@ -820,6 +900,8 @@ curl -sf -X POST \
   --data-binary @/tmp/new-tasks-{session}.json | jq .
 ```
 
+**Step 6b.2 — Mark specs planned and widen the session** (skip when `DOCS_API=off`; every failure here prints a warning and continues). Only after the bulk POST succeeded: for each planned spec, `PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}` with `{"plannedAt": "{now ISO}"}`; then `PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}` with `{"repos": [{target repos}]}` to widen the session's declared repos (the array replaces the stored list, so send the union of the existing declared repos and this pass's targets).
+
 **Step 6c — Autonomous mode: close out the originating PRD task** (only when `--autonomous {task-id}` was passed):
 
 Once Step 6b's bulk POST succeeds (real tasks are in the queue), transition the originating PRD task to `done` and point its `source` at the plan just written:
@@ -838,14 +920,22 @@ Only run this after the bulk write succeeds — a failed or partial `tasks/bulk`
 Both the built-in path and the Configured Methodology Dispatch path converge on Step 6b, so this step runs identically after either one. Run it only once Step 6b's bulk POST has succeeded — if the bulk write fails (or is only partial), skip it entirely.
 
 1. `GET $SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}` (same auth header as above). On 404 or any other failure, print a warning and continue.
-2. If `kind` is not `initiative` or `idea`, print a warning and continue. If `status` is already one of `done`, `merged`, `deployed`, `released`, `cancelled`, print a warning (already closed) and continue.
-3. Otherwise PATCH it to done:
+2. If `kind` is not `initiative` or `idea`, print a warning and continue.
+3. If `status` is already one of `done`, `merged`, `deployed`, `released`, `cancelled` (typically because `/prd` closed it), print a warning (already closed), leave `status` and `source` alone, and still link the plan — PATCH only `planDocumentId` (skip when `PLAN_DOC_ID` is empty):
 
 ```bash
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PLAN.md\"}" | jq .
+  -d "{\"planDocumentId\": \"$PLAN_DOC_ID\"}" | jq .
+```
+4. Otherwise PATCH it to done and set `planDocumentId` in the same call (omit `planDocumentId` when `PLAN_DOC_ID` is empty):
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PLAN.md\", \"planDocumentId\": \"$PLAN_DOC_ID\"}" | jq .
 ```
 
 A failed PATCH also prints a warning and continues. This step never fails the session — the plan is already in the queue.
@@ -854,60 +944,83 @@ A failed PATCH also prints a warning and continues. This step never fails the se
 
 Every task's `source` points at `planning/{session}/PLAN.md`, but that file only exists in *this* checkout — and many repos gitignore `planning/`. When the session runs inside an ephemeral agent workspace, the plan is lost with the pod unless it is committed. Open a docs-only PR carrying the plan so the `source` link resolves for everyone once it merges.
 
-Run this after Step 6b succeeds (and after 6c when `--autonomous`, and 6c.2 when `--initiative`). Use a throwaway worktree off the default branch so the current checkout's branch and working tree are never touched:
+Run this after Step 6b succeeds (and after 6c when `--autonomous`, and 6c.2 when `--initiative`). Use a throwaway worktree so the current checkout's branch and working tree are never touched. It is the same block `prd.md` uses for specs (PLU-3.2): the **first pass** opens `docs/plan-{session}`; a **second or later pass commits the updated `PLAN.md` instead of skipping** — it pushes to the open `docs/plan-{session}` PR when there is one, and otherwise (that PR has merged or closed) opens `docs/plan-{session}-{n}` for the next free `n`, starting at 2. `planning/` is commonly gitignored, so it stages with `git add -f` on specific files only — never `-A`, and never edit the repo's `.gitignore`.
 
 ```bash
+# plan-docs-pr
 SESSION="{session}"
-BRANCH="docs/plan-$SESSION"
 PLAN_PR_URL=""
+BRANCH="docs/plan-$SESSION"
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ] || ! command -v gh >/dev/null; then
   echo "⏭ Plan PR skipped — not a git checkout or gh unavailable."
-elif gh pr list --head "$BRANCH" --state all --json url -q '.[0].url // empty' | grep -q .; then
-  PLAN_PR_URL=$(gh pr list --head "$BRANCH" --state all --json url -q '.[0].url // empty')
-  echo "⏭ Plan PR already exists: $PLAN_PR_URL"
 else
   git -C "$REPO_ROOT" fetch -q origin
   DEFAULT=$(git -C "$REPO_ROOT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+  # Reuse an OPEN docs PR; if the previous PR merged (or closed), move on to
+  # docs/plan-$SESSION-2, -3, ... until one is open or unused.
+  REUSE=""
+  N=1
+  while [ "$N" -lt 50 ]; do
+    INFO=$(gh pr list --head "$BRANCH" --state all --json url,state -q '.[0] | select(.) | "\(.state) \(.url)"')
+    [ -z "$INFO" ] && break
+    if [ "${INFO%% *}" = "OPEN" ]; then REUSE=1; PLAN_PR_URL="${INFO#* }"; break; fi
+    N=$((N + 1))
+    BRANCH="docs/plan-$SESSION-$N"
+  done
   WT=$(mktemp -d)/plan-wt
-  # -B (not -b): a prior run may have created this branch and then failed after
-  # push but before `gh pr create` — reset it to $DEFAULT instead of erroring out,
-  # so a retry isn't permanently wedged on "branch already exists".
-  git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "$DEFAULT"
+  PUSH_FORCE=""            # an open PR's branch is fast-forwarded, never force-pushed
+  [ -z "$REUSE" ] && PUSH_FORCE="-f"
+  if [ -n "$REUSE" ]; then
+    git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "origin/$BRANCH"
+  else
+    # -B (not -b): a prior run may have pushed this branch and failed before
+    # `gh pr create` — reset it to $DEFAULT instead of erroring out.
+    git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "$DEFAULT"
+  fi
   mkdir -p "$WT/planning/$SESSION"
-  for f in PLAN.md PRODUCT-SPEC.md; do
-    [ -f "$REPO_ROOT/planning/$SESSION/$f" ] && cp "$REPO_ROOT/planning/$SESSION/$f" "$WT/planning/$SESSION/$f"
+  FILES=""
+  for f in "$REPO_ROOT/planning/$SESSION/PLAN.md" "$REPO_ROOT/planning/$SESSION/PRODUCT-SPEC.md" "$REPO_ROOT"/planning/"$SESSION"/SPEC-*.md; do
+    [ -f "$f" ] || continue
+    cp "$f" "$WT/planning/$SESSION/$(basename "$f")"
+    FILES="$FILES planning/$SESSION/$(basename "$f")"
   done
   # -f: planning/ is commonly gitignored. Stage only these files — never -A.
-  git -C "$WT" add -f "planning/$SESSION/PLAN.md" "planning/$SESSION/PRODUCT-SPEC.md" 2>/dev/null \
-    || git -C "$WT" add -f "planning/$SESSION/PLAN.md"
+  for f in $FILES; do git -C "$WT" add -f "$f"; done
   # Mechanical scrub gate — planning/ is gitignored precisely because it can carry
   # internal detail, and --autonomous runs with no human present to catch it. Block
   # the commit on the same class of pattern a secret scanner flags: private key
   # headers and well-known cloud/vendor token prefixes.
   SECRET_PATTERN='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
   if git -C "$WT" diff --cached --quiet; then
-    echo "⏭ Plan PR skipped — plan already on $DEFAULT."
+    echo "⏭ Plan PR skipped — plan already on $BRANCH."
   elif git -C "$WT" diff --cached | grep -qE -- "$SECRET_PATTERN"; then
     echo "⚠ Plan PR not opened — staged plan content matched a secret-pattern scan; scrub planning/$SESSION and retry."
+    PLAN_PR_URL=""
   else
-    git -C "$WT" commit -q -m "docs(planning): add $SESSION plan" \
-      && git -C "$WT" push -qf -u origin "$BRANCH" \
-      && (cd "$WT" && gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force) \
-      && PLAN_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
-           --title "docs(planning): add $SESSION plan" \
-           --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session." \
-           --label shipwright)
+    git -C "$WT" commit -q -m "docs(planning): $([ -n "$REUSE" ] && echo update || echo add) $SESSION plan" \
+      && git -C "$WT" push -q $PUSH_FORCE -u origin "$BRANCH" \
+      && if [ -z "$REUSE" ]; then
+           (cd "$WT" && gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force) \
+           && PLAN_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
+                --title "docs(planning): add $SESSION plan" \
+                --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session." \
+                --label shipwright)
+         fi
   fi
   git -C "$REPO_ROOT" worktree remove --force "$WT"
 fi
+echo "PLAN_PR_BRANCH=$BRANCH"
+echo "PLAN_PR_URL=$PLAN_PR_URL"
 ```
 
-The block above runs a mechanical secret-pattern scan over the staged diff before committing — never rely on prose discipline alone here, since `--autonomous` is the only mode this runs in and no human reviews the commit before it lands. If the repo has its own stricter pre-commit hygiene (a public repo's banned-string scan, or its CLAUDE.md rules on client names and internal infra identifiers), apply that too. If a file fails either check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. A pre-existing PR for the branch (open or merged) counts as done — do not open a second one.
+The block above runs a mechanical secret-pattern scan over the staged diff before committing — never rely on prose discipline alone here, since `--autonomous` runs with no human reviewing the commit before it lands. If the repo has its own stricter pre-commit hygiene (a public repo's banned-string scan, or its CLAUDE.md rules on client names and internal infra identifiers), apply that too. If a file fails either check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. An already-merged PR for the branch is not reused and an open one is never duplicated — a second PR is only opened on the next free `docs/plan-{session}-{n}` branch.
 
 The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring — same convention applied across Shipwright skills for autonomously-opened PRs (see `research-docs.md` Step A7.5, `SKILL.md` Step 3.5 in `skills/test-readiness/`).
 
 When a PR was opened (or already existed), surface it in the confirmation as `Plan PR: {url}`; otherwise omit that line.
+
+**Step 6e — Release the planning lock** (skip when `DOCS_API=off`): once the tasks are written and the plan is pushed (Step 6d finished, whether or not it opened a PR), run `plan_lock_release` from Step 0.7. Releasing is idempotent and never fails the session. The same release runs on **every failure or stop path** after the lock was acquired — see Step 0.7.
 
 ---
 

@@ -86,6 +86,10 @@ import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts"
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { parseOutcomeParams } from "./outcome-filter.ts";
 import {
+  resolveOwnerView,
+  type SessionOwnership,
+} from "./session-documents.ts";
+import {
   type SessionFollowPrismaLike,
   SessionFollowService,
 } from "./session-follow-service.ts";
@@ -215,7 +219,9 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
   fetchTaskStoreSession?: (
     slug: string,
     accountId?: string,
-  ) => Promise<SessionForVisibility | null>;
+  ) => Promise<
+    (SessionForVisibility & SessionOwnership & { repos: string[] }) | null
+  >;
   /**
    * Apply a rename/archive patch to a session via the task-store's
    * `PATCH /sessions/:slug` (SESH-3.1, admin-token only). Backs the session
@@ -745,6 +751,7 @@ export function createCodingAdminUIApp(
       (k) => k === kindRaw,
     );
     const ideas = c.req.query("ideas") === "1";
+    const ownerParam = c.req.query("owner");
     const error = c.req.query("error") ?? undefined;
     const success = c.req.query("success") ?? undefined;
     const pageRaw = c.req.query("page");
@@ -769,6 +776,23 @@ export function createCodingAdminUIApp(
 
     const fetchTasks = ts.fetchTasks;
     const fetchDistinct = ts.fetchDistinct;
+    // PLU-5.2: Mine / All, same rules as the sessions list. With no
+    // `?owner=`, default to Mine only when the signed-in user owns a task
+    // (one best-effort limit=1 probe; any failure falls back to All).
+    let ownsAny = false;
+    if (ownerParam === undefined && c.var.userEmail && fetchTasks) {
+      try {
+        const probe = new URLSearchParams({
+          owner: c.var.userEmail,
+          limit: "1",
+          offset: "0",
+        });
+        ownsAny = (await fetchTasks(probe)).total > 0;
+      } catch {
+        ownsAny = false;
+      }
+    }
+    const ownerView = resolveOwnerView(ownerParam, c.var.userEmail, ownsAny);
     if (!fetchTasks) {
       degraded = true;
     } else {
@@ -806,6 +830,8 @@ export function createCodingAdminUIApp(
               if (source) params.set("source", source);
               if (hitl) params.set("hitl", hitl);
               if (kind) params.set("kind", kind);
+              if (ownerView.mode !== "all")
+                params.set("owner", ownerView.owner);
               params.set("limit", String(fetchLimit));
               params.set("offset", String(fetchOffset));
               params.set("sort", "desc");
@@ -859,7 +885,19 @@ export function createCodingAdminUIApp(
     return html(
       renderTasksPage(
         tasks,
-        { status, state, session, repo, org, source, agent, hitl, kind, ideas },
+        {
+          status,
+          state,
+          session,
+          repo,
+          org,
+          source,
+          agent,
+          hitl,
+          kind,
+          ideas,
+          ownerView,
+        },
         degraded,
         c.var.userEmail,
         agentNames,
@@ -1013,6 +1051,9 @@ export function createCodingAdminUIApp(
     const repo = (form.repo ?? "").trim();
     const description = (form.description ?? "").trim();
     const session = (form.session ?? "").trim();
+    // PLU-5.2: the form pre-fills the signed-in email; a form that omits the
+    // field entirely gets the same default, and a blanked field means no owner.
+    const owner = (form.owner ?? c.var.userEmail ?? "").trim();
     if (
       !title ||
       !QUICK_ADD_KINDS.has(kind) ||
@@ -1029,6 +1070,7 @@ export function createCodingAdminUIApp(
         source: "admin-quick-add",
         ...(description ? { description } : {}),
         ...(session ? { session } : {}),
+        ...(owner ? { owner } : {}),
       });
     } catch {
       return flashRedirect(c, returnTo, "error=quick_add_failed");
@@ -1205,6 +1247,18 @@ export function createCodingAdminUIApp(
       }
     }
 
+    // PLU-5.1: owner, repos and documents come from the session record in the
+    // task store (never GitHub). Best-effort — a failure just omits them.
+    let sessionInfo: (SessionOwnership & { repos?: string[] }) | undefined;
+    if (!degraded && fetchTaskStoreSession) {
+      try {
+        sessionInfo =
+          (await fetchTaskStoreSession(sessionId, accountId)) ?? undefined;
+      } catch {
+        sessionInfo = undefined;
+      }
+    }
+
     // SESH-5.2: the ?success=/?error= flash-message convention used
     // elsewhere in this file (e.g. the agent detail page's
     // ?success=manifest_synced handling) — set by
@@ -1251,6 +1305,7 @@ export function createCodingAdminUIApp(
         view.kind === "all" && accountId
           ? `?accountId=${encodeURIComponent(accountId)}`
           : "",
+        sessionInfo,
       ),
     );
   });
