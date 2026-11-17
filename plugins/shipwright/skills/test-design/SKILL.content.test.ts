@@ -199,3 +199,27 @@ describe("speed-budgets/SKILL.md — cross-references test-design Step 6 rule in
     expect(hasDuplicatedOverheadProse).toBe(false);
   });
 });
+
+describe("test-design — Step 6 records the coverage report path and upload step", () => {
+  it("records the native report path and the shipwright-coverage upload step", () => {
+    const step6 = content.slice(
+      content.indexOf("### Step 6"),
+      content.indexOf("### Step 7"),
+    );
+    expect(step6).toContain("Coverage report path and upload step");
+    expect(step6).toContain("shipwright-coverage");
+    expect(step6).toContain("references/coverage-output.md");
+  });
+});
+
+describe("test-system.md.tmpl — coverage fields", () => {
+  const template = readFileSync(
+    join(import.meta.dir, "..", "..", "assets", "templates", "test-system.md.tmpl"),
+    "utf-8",
+  );
+
+  it("has a **Coverage toolchain:** field and a report-path field", () => {
+    expect(template).toContain("**Coverage toolchain:**");
+    expect(template).toContain("**Coverage report path:**");
+  });
+});

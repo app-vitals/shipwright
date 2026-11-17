@@ -26,7 +26,7 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -77,6 +77,7 @@ import {
   NotFoundError,
 } from "../errors.ts";
 import type { Prisma, TaskKind } from "../index.ts";
+import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   BulkInsertBodySchema,
   BulkInsertResponseSchema,
@@ -97,6 +98,11 @@ import {
   UnblockBodySchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
+import {
+  isOriginKind,
+  ORIGIN_KINDS,
+  type OriginKind,
+} from "../origin-kinds.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import {
   MAX_BULK_TASKS,
@@ -213,6 +219,11 @@ export const TASK_PATCH_FIELDS: ReadonlySet<string> = new Set([
   "complexity",
   "hitl",
   "kind",
+  "owner",
+  "planDocumentId",
+  "specDocumentId",
+  "originKind",
+  "originRef",
   "skipCount",
   "lastSkippedAt",
   "lastSkipReason",
@@ -272,7 +283,14 @@ const TASK_STRING_ARRAY_FIELDS = [
   "dependencies",
 ] as const;
 
-function assertTaskFieldTypes(body: Record<string, unknown>): void {
+const TASK_PROVENANCE_STRING_FIELDS = [
+  "owner",
+  "planDocumentId",
+  "specDocumentId",
+  "originRef",
+] as const;
+
+export function assertTaskFieldTypes(body: Record<string, unknown>): void {
   const bad = (field: string, expected: string): never => {
     throw new BadRequestError(`'${field}' must be ${expected}`);
   };
@@ -296,6 +314,17 @@ function assertTaskFieldTypes(body: Record<string, unknown>): void {
   }
   if (body.hitl != null && typeof body.hitl !== "boolean") {
     bad("hitl", "a boolean or null");
+  }
+  // PLU-2.5 provenance: plain strings (or null), with originKind constrained
+  // to the one registered list the ?originKind= filter also reads.
+  for (const f of TASK_PROVENANCE_STRING_FIELDS) {
+    const v = body[f];
+    if (v != null && typeof v !== "string") bad(f, "a string or null");
+  }
+  if (body.originKind != null && !isOriginKind(body.originKind)) {
+    throw new BadRequestError(
+      `invalid originKind: '${String(body.originKind)}' (accepted: ${ORIGIN_KINDS.join(", ")})`,
+    );
   }
   for (const f of TASK_STRING_ARRAY_FIELDS) {
     const v = body[f];
@@ -975,6 +1004,8 @@ export function createTasksRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
+    // PLU-1.1: a filter we don't recognise must 400, never silently widen.
+    rejectUnknownQuery(c, TaskListQuerySchema);
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const scopeDegraded = c.get("scopeDegraded");
@@ -990,6 +1021,9 @@ export function createTasksRoutes(
     // TKD-1.1. The zod query schema already rejects anything outside the enum
     // with a 400, so a present value is always a TaskKind here.
     const kind = c.req.query("kind") as TaskKind | undefined;
+    // PLU-2.5: same registered-list guarantee for originKind.
+    const owner = c.req.query("owner");
+    const originKind = c.req.query("originKind") as OriginKind | undefined;
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
@@ -1014,6 +1048,8 @@ export function createTasksRoutes(
           pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
+          owner,
+          originKind,
           hitl,
           kind,
         },
@@ -1037,6 +1073,8 @@ export function createTasksRoutes(
           pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
+          owner,
+          originKind,
           hitl,
           kind,
         },
@@ -1073,6 +1111,8 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
+      owner,
+      originKind,
       hitl,
       kind,
       limit:

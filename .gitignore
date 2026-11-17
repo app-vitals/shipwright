@@ -47,6 +47,7 @@ brand/out/
 
 # --- Test & coverage artifacts ---
 coverage/
+!plugins/shipwright/scripts/coverage/
 test-results/
 playwright-report/
 playwright/.cache/

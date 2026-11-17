@@ -77,3 +77,71 @@ export function validateTemplateForm(
     ? { ok: false, errors }
     : { ok: true, value, warnings };
 }
+
+// ─── Repo scope (CRS-1.3) ─────────────────────────────────────────────────────
+
+/** Mirrors the task-store's cap on a 'selected' repos list. */
+export const MAX_SCOPE_REPOS = 500;
+
+export type RepoScope = "all" | "selected";
+
+export interface ScopeFormInput {
+  repoScope: RepoScope;
+  repos: string[];
+}
+
+export type ScopeFormResult =
+  | {
+      ok: true;
+      /** `undefined` when the form carried no scope: leave the definition as-is. */
+      value: ScopeFormInput | undefined;
+    }
+  | { ok: false; errors: string[] };
+
+const REPO_SLUG = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+/**
+ * Validate the scope control: 'all' (clears repos) or 'selected' with at least
+ * one org/repo. The task-store enforces the same rules (400) as a backstop.
+ */
+export function validateScopeForm(raw: {
+  repoScope?: unknown;
+  repos?: unknown;
+}): ScopeFormResult {
+  if (raw.repoScope === undefined) return { ok: true, value: undefined };
+  if (raw.repoScope === "all") {
+    return { ok: true, value: { repoScope: "all", repos: [] } };
+  }
+  if (raw.repoScope !== "selected") {
+    return { ok: false, errors: ["Repository scope must be all or selected."] };
+  }
+  const submitted = Array.isArray(raw.repos) ? raw.repos : [];
+  const repos = [
+    ...new Set(
+      submitted
+        .filter((r): r is string => typeof r === "string")
+        .map((r) => r.trim())
+        .filter((r) => r !== ""),
+    ),
+  ];
+  if (repos.length === 0) {
+    return {
+      ok: false,
+      errors: ["Select at least one repository, or choose All repositories."],
+    };
+  }
+  const malformed = repos.filter((r) => !REPO_SLUG.test(r));
+  if (malformed.length > 0) {
+    return {
+      ok: false,
+      errors: [`Not an org/repo name: ${malformed.join(", ")}.`],
+    };
+  }
+  if (repos.length > MAX_SCOPE_REPOS) {
+    return {
+      ok: false,
+      errors: [`Select at most ${MAX_SCOPE_REPOS} repositories.`],
+    };
+  }
+  return { ok: true, value: { repoScope: "selected", repos } };
+}

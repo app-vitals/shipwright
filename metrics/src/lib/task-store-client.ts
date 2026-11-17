@@ -109,6 +109,21 @@ export type PrRecord = Pick<PullRequestSchema, "mergedAt"> &
       >
   >;
 
+/**
+ * Slim coverage snapshot record (CVT-3.1) — only the fields the metrics
+ * coverage query reads from GET /coverage-snapshots[/latest]. The percentages
+ * are computed server-side; `branchesPct`/`functionsPct` are null when the
+ * reporter supplied no branch/function counts.
+ */
+export interface CoverageSnapshotRecord {
+  repo: string;
+  commitSha: string;
+  linesPct: number;
+  branchesPct: number | null;
+  functionsPct: number | null;
+  measuredAt: string;
+}
+
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 export class TaskStoreClientError extends Error {
@@ -137,6 +152,19 @@ export interface TaskStoreClient {
     repo?: string;
     state?: string;
   }): Promise<PrRecord[]>;
+  /** Newest snapshot per repo (GET /coverage-snapshots/latest). */
+  listLatestCoverage(params: {
+    repo?: string;
+  }): Promise<CoverageSnapshotRecord[]>;
+  /**
+   * Snapshot history, newest first (GET /coverage-snapshots). With `limit`
+   * only that many are returned (one page); without it every page is walked.
+   */
+  listCoverageHistory(params: {
+    repo?: string;
+    since?: string;
+    limit?: number;
+  }): Promise<CoverageSnapshotRecord[]>;
 }
 
 // ─── Window filtering ─────────────────────────────────────────────────────────
@@ -211,6 +239,7 @@ type PageEnvelope<T> = Partial<
 > & {
   tasks?: T[];
   prs?: T[];
+  snapshots?: T[];
 };
 
 /** Minimal `fetch` shape — injectable so the client is testable without
@@ -278,7 +307,7 @@ export class HttpTaskStoreClient implements TaskStoreClient {
    */
   private async fetchAllPages<T>(
     path: string,
-    dataKey: "tasks" | "prs",
+    dataKey: "tasks" | "prs" | "snapshots",
     baseParams: Record<string, string | undefined>,
   ): Promise<T[]> {
     const all: T[] = [];
@@ -352,6 +381,40 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     });
     return prs.filter(
       (p) => matchesRepo(p.repo, params.repo) && inWindow(prAnchor(p), params),
+    );
+  }
+
+  async listLatestCoverage(params: {
+    repo?: string;
+  }): Promise<CoverageSnapshotRecord[]> {
+    // The latest route takes no repo filter, so scope client-side.
+    const res = await this.fetch<{ snapshots?: CoverageSnapshotRecord[] }>(
+      "/coverage-snapshots/latest",
+    );
+    return (res.snapshots ?? []).filter((s) =>
+      matchesRepo(s.repo, params.repo),
+    );
+  }
+
+  async listCoverageHistory(params: {
+    repo?: string;
+    since?: string;
+    limit?: number;
+  }): Promise<CoverageSnapshotRecord[]> {
+    const baseParams = { repo: params.repo, since: params.since };
+    if (params.limit !== undefined) {
+      const res = await this.fetch<PageEnvelope<CoverageSnapshotRecord>>(
+        `/coverage-snapshots${HttpTaskStoreClient.query({
+          ...baseParams,
+          limit: String(params.limit),
+        })}`,
+      );
+      return res.snapshots ?? [];
+    }
+    return this.fetchAllPages<CoverageSnapshotRecord>(
+      "/coverage-snapshots",
+      "snapshots",
+      baseParams,
     );
   }
 }

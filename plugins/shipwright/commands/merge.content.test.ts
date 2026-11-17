@@ -468,6 +468,51 @@ describe("merge.md — Step 4: post-merge CI watch", () => {
   });
 });
 
+describe("merge.md — Step 4 infra-flake rerun-once (BKH-1.2)", () => {
+  let section = "";
+  beforeAll(() => {
+    section = content.match(/## Step 4: Post-Merge CI Watch[\s\S]*?(?=\n## Step 5)/)?.[0] ?? "";
+  });
+
+  it("classifies the failed run with classify-ci-failure.ts before blocking", () => {
+    expect(section).toContain("classify-ci-failure.ts");
+    expect(section).toContain("gh run view");
+    expect(section).toContain("--log-failed");
+    expect(section).toContain("scanNeverRan");
+  });
+
+  it("reruns an infra-flake once per run ID with gh run rerun --failed", () => {
+    expect(section).toContain("gh run rerun");
+    expect(section).toContain("--failed");
+    expect(section).toContain("RERUN_IDS");
+    expect(section).toMatch(/one rerun per run ID/i);
+  });
+
+  it("uses the exhausted-infra reason and distinguishes scan-never-ran from ran-and-failed", () => {
+    expect(section).toContain("Post-merge CI failed (infra, rerun exhausted) — run ID: {id}");
+    expect(section).toMatch(/scan never ran/i);
+    expect(section).toMatch(/scan ran and failed/i);
+  });
+
+  it("keeps the exact real-failure reason and applies the rerun to both branches", () => {
+    expect(section).toContain('BLOCK_REASON="Post-merge CI failed — run ID: {id}"');
+    expect(section).toContain('\\"blockedReason\\": \\"$BLOCK_REASON\\"');
+    expect(section).toContain("/tasks/$tid");
+    expect(section).toContain("/prs/$PR_RECORD_ID");
+    expect(section).toMatch(/both (the )?(task|branches)/i);
+    expect(section).toContain("BLOCK_REASON");
+  });
+
+  it("exhausted reason still matches unblock.md's 'Post-merge CI failed' pattern", () => {
+    const unblock = readFileSync(join(import.meta.dir, "unblock.md"), "utf-8");
+    expect(unblock).toContain("Post-merge CI failed");
+    expect("Post-merge CI failed (infra, rerun exhausted) — run ID: 1").toContain(
+      "Post-merge CI failed",
+    );
+    expect(section).toContain("Post-merge CI failed (infra, rerun exhausted)");
+  });
+});
+
 describe("merge.md — out of scope: no revert PR, no deployed writes", () => {
   it("does not port the canary-failure revert PR or the 'Post-merge CI failed' sweep", () => {
     expect(content).not.toContain("gh pr create");

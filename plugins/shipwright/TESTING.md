@@ -70,6 +70,7 @@ Manual test scenarios for each command across different project types.
 | 57 | `/prompt-eval --finding <fp> --kind trigger --max-cost-usd 2` | Calibration file missing or unsigned | No calibration record | Refuses any quality result and says why; nothing runs, nothing written |
 | 49 | `prompt-audit-maintenance` cron preCheck | Any | `check-prompt-audit.ts` gating | Missing ledger or `lastRun` 7+ days old exits 0; fresh ledger with no `proposed` findings exits 1 |
 | 58 | `/plan-session` Step 5 | Any (spec with `Success Criteria` and `Priorities & Sequence`) | Spec-level carry-through | Every Success Criteria statement appears in a task's acceptance criteria and every ordering/gating statement in a `dependencies` edge or a task; anything left out is listed under `Not carried:` with a reason (in the `## Decision Log` under `--autonomous`); a spec with neither section plans as before |
+| 59 | `/review-lean org/repo#N` | Any (open PR; `/review` run on the same PR for comparison) | Lean variant parity | Same outcome as `/review`: one posted review whose body leads with the same `Verdict:` label, the same `[skip-reason:review:deferred:...]` stops, `/prs/{id}/complete` after every ledger POST; prints the Step 5.5, 6.1, 9.5 and 10.5 proof lines; with no argument it answers `[silent]` and queries nothing |
 
 ---
 

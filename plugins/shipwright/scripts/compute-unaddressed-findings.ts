@@ -85,6 +85,14 @@
 //     inline threads: a human reply in a thread leaves no ledger entry.
 //     Tests: the URT-1.1 thread cases and "thread-level exclusion is per thread".
 //
+// DTA-11.1 semantic seam: isResolvedByLedger (also applied to a thread's
+// threadRef) additionally honors a "no finding" determination — a review-source
+// `resolved` entry the command prose writes for a candidate listed by
+// unclassifiedFindingCandidates (the CLI's `--candidates` flag) after asking the
+// one question "does this body raise an actual concern, or is it purely
+// descriptive?". The script stays deterministic; the judgment lives in
+// review.md Step 9.5 / patch.md Step 3 and is persisted so it is made once.
+//
 // Duplicated copies reviewed and kept: agent/src/coding/check-patch.ts's
 // hasMergeOnlyStaleFindings (a different question — stale-commit findings — that
 // shares only isSelfCleanApprove/isAddressedByAuthorReply, imported from here, not
@@ -542,6 +550,19 @@ export function isRejectedByPatchLedger(
 }
 
 /**
+ * Thread-ref counterpart to isResolvedByLedger for a null-able `threadRef`
+ * (DTA-11.1): a `source: "review"` resolved/superseded entry at the thread's
+ * ref is the durable "no finding" determination. Reuses isResolvedByLedger so
+ * the matching rule stays in one place; a thread with no node id never matches.
+ */
+function isResolvedByThreadLedger(
+  ref: string | null,
+  findings: PrFinding[],
+): boolean {
+  return ref !== null && isResolvedByLedger(ref, findings);
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -609,6 +630,19 @@ export function unaddressedFindingRefs(
   data: PrReviewData,
   currentUser: string,
 ): string[] {
+  const { threadRefs, reviewRefs } = openFindingRefs(data, currentUser);
+  return threadRefs.length > 0 ? threadRefs : reviewRefs;
+}
+
+/**
+ * Both kinds of open finding, computed independently of the thread-first
+ * short-circuit `unaddressedFindingRefs` applies. `reviewRefs` is the set of
+ * qualifying review bodies that would count if no thread were open.
+ */
+function openFindingRefs(
+  data: PrReviewData,
+  currentUser: string,
+): { threadRefs: string[]; reviewRefs: string[] } {
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const findings = data.findings ?? [];
   const prAuthor = data.prAuthor ?? currentUser;
@@ -626,7 +660,7 @@ export function unaddressedFindingRefs(
       !isRejectedByPatchLedger(reviewRef(r), findings),
   );
 
-  if (qualifyingReviews.length === 0) return [];
+  if (qualifyingReviews.length === 0) return { threadRefs: [], reviewRefs: [] };
 
   // Check for unresolved threads, excluding ones the PR author has already
   // replied to and addressed within the thread itself (URT-1.1).
@@ -635,21 +669,79 @@ export function unaddressedFindingRefs(
       (t) =>
         !t.isResolved &&
         !isThreadAddressedByAuthorReply(t, prAuthor) &&
-        !isRejectedByPatchLedger(threadRef(t), findings),
+        !isRejectedByPatchLedger(threadRef(t), findings) &&
+        // DTA-11.1: a "no finding" determination persisted at the thread's ref.
+        !isResolvedByThreadLedger(threadRef(t), findings),
     )
     .map((t) => threadRef(t) ?? `thread:${reviewThreads.nodes.indexOf(t)}`);
 
-  if (unresolvedThreadRefs.length > 0) return unresolvedThreadRefs;
-
-  // No unresolved threads — check if any qualifying review has a non-empty
-  // body that hasn't been addressed by a subsequent author reply.
-  return qualifyingReviews
+  // Any qualifying review with a non-empty body that hasn't been addressed by
+  // a subsequent author reply.
+  const reviewRefs = qualifyingReviews
     .filter(
       (r) =>
         r.body.trim().length > 0 &&
         !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
     )
     .map((r) => reviewRef(r));
+
+  return { threadRefs: unresolvedThreadRefs, reviewRefs };
+}
+
+/**
+ * A review body or thread that every mechanical exclusion has already
+ * qualified as an unaddressed finding, offered for the single semantic
+ * question of DTA-11.1: does it raise an actual concern, or is it purely
+ * descriptive? The script never answers it — the command prose (review.md
+ * Step 9.5 / patch.md Step 3) does, and records a "no finding" determination
+ * as a `source: "review"`, `disposition: "resolved"` ledger entry at `ref`,
+ * which `isResolvedByLedger` then honors so it is judged once.
+ */
+export interface UnclassifiedCandidate {
+  kind: "review" | "thread";
+  /** reviewRef(review) or threadRef(thread) — the ledger `ref` to write. */
+  ref: string;
+  /** Login of the review author / the thread's first commenter. */
+  author: string;
+  /** The review body, or every thread comment body joined by a rule. */
+  body: string;
+}
+
+/**
+ * The qualified-but-unclassified candidates (DTA-11.1): every open thread and
+ * every open review body (both kinds, not just the ones
+ * `unaddressedFindingRefs` counts after its thread-first short-circuit), so every structural/deterministic exclusion
+ * (state/head, ledger, author reply, supersede) has already been applied —
+ * nothing here widens what qualifies. Threads without a node id are skipped:
+ * no ledger ref can be derived for them, so a determination could not persist.
+ */
+export function unclassifiedFindingCandidates(
+  data: PrReviewData,
+  currentUser: string,
+): UnclassifiedCandidate[] {
+  // Offer thread AND review-body candidates together: the thread-first
+  // short-circuit in unaddressedFindingRefs must not hide a review body until
+  // its sibling threads are ledgered, or one classification pass never clears
+  // the gate.
+  const open = openFindingRefs(data, currentUser);
+  const refs = new Set([...open.threadRefs, ...open.reviewRefs]);
+  const out: UnclassifiedCandidate[] = [];
+  for (const t of data.reviewThreads.nodes) {
+    const ref = threadRef(t);
+    if (ref === null || !refs.has(ref)) continue;
+    out.push({
+      kind: "thread",
+      ref,
+      author: t.comments.nodes[0]?.author.login ?? "",
+      body: t.comments.nodes.map((c) => c.body).join("\n\n---\n\n"),
+    });
+  }
+  for (const r of data.reviews.nodes) {
+    const ref = reviewRef(r);
+    if (!refs.has(ref)) continue;
+    out.push({ kind: "review", ref, author: r.author.login, body: r.body });
+  }
+  return out;
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -722,22 +814,39 @@ export function parseCliInput(raw: string): CliInput {
 }
 
 if (import.meta.main) {
-  const arg = process.argv[2];
+  // `--candidates` (DTA-11.1) additionally emits `unclassifiedCandidates`;
+  // without it the output is byte-for-byte the pre-existing shape.
+  const args = process.argv.slice(2);
+  const withCandidates = args.includes("--candidates");
+  const arg = args.find((a) => a !== "--candidates");
   const raw = arg && arg.length > 0 ? arg : await Bun.stdin.text();
   const input = parseCliInput(raw);
 
+  const reviewData: PrReviewData = {
+    headRefOid: input.headRefOid,
+    reviews: input.reviews,
+    reviewThreads: input.reviewThreads,
+    comments: input.comments,
+    priorFindingsStatus: input.priorFindingsStatus,
+    findings: input.findings,
+    prAuthor: input.prAuthor,
+  };
   const unaddressedFindings = hasUnaddressedFindings(
-    {
-      headRefOid: input.headRefOid,
-      reviews: input.reviews,
-      reviewThreads: input.reviewThreads,
-      comments: input.comments,
-      priorFindingsStatus: input.priorFindingsStatus,
-      findings: input.findings,
-      prAuthor: input.prAuthor,
-    },
+    reviewData,
     input.currentUser,
   );
 
-  console.log(JSON.stringify({ unaddressedFindings }));
+  console.log(
+    JSON.stringify(
+      withCandidates
+        ? {
+            unaddressedFindings,
+            unclassifiedCandidates: unclassifiedFindingCandidates(
+              reviewData,
+              input.currentUser,
+            ),
+          }
+        : { unaddressedFindings },
+    ),
+  );
 }

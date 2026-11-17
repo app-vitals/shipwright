@@ -9,12 +9,19 @@ import { describe, expect, it } from "bun:test";
 import { makeSessionCookie } from "@app-vitals/agent-admin/admin-ui.fixtures";
 import {
   createCodingTestApp,
-  makeCodingMockDeps,
+  makeCodingMockDeps as makeBaseCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
 import type {
   SystemCronItem,
   SystemCronsFetchers,
 } from "./admin-ui-system-crons.ts";
+import { CODING_SETTINGS_NAV_ITEMS } from "./coding-settings-nav.ts";
+
+/** Base deps plus what the platform merges in from the extension at composition time. */
+const makeCodingMockDeps = () => ({
+  ...makeBaseCodingMockDeps(),
+  settingsNavItems: CODING_SETTINGS_NAV_ITEMS,
+});
 
 const PATH = "/admin/settings/system-crons";
 
@@ -40,7 +47,12 @@ function makeStore(seed: SystemCronItem[] = [makeCron()]) {
     fetchSystemCrons: async () => ({ systemCrons: crons }),
     patchSystemCron: async (
       id: string,
-      patch: { titleTemplate?: string; descriptionTemplate?: string },
+      patch: {
+        titleTemplate?: string;
+        descriptionTemplate?: string;
+        repoScope?: "all" | "selected";
+        repos?: string[];
+      },
     ) => {
       calls.push(`patch ${id} ${JSON.stringify(patch)}`);
       const c = crons.find((x) => x.id === id);
@@ -320,5 +332,177 @@ describe("Recent runs (SCR-1.10)", () => {
     expect(html).toContain("Recent runs are unavailable");
     expect(html).toContain("2026-11-08 09:00 UTC — 2 tasks created");
     expect(html).toContain("Docs sweep");
+  });
+});
+
+describe("Repo selection (CRS-1.3)", () => {
+  const lookup = (
+    repos = [
+      { fullName: "acme/web", archived: false },
+      { fullName: "acme/old", archived: true },
+    ],
+    configured = true,
+  ) => ({ listRepositories: async () => ({ configured, repos }) });
+  const post = async (
+    app: ReturnType<typeof createCodingTestApp>,
+    fields: URLSearchParams,
+  ) =>
+    app.request(`${PATH}/dep-audit`, {
+      method: "POST",
+      headers: {
+        Cookie: await adminCookie(),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: fields.toString(),
+    });
+  const base = {
+    titleTemplate: "T {repo}",
+    descriptionTemplate: "D {repo}",
+  };
+
+  it("renders radios, a searchable checklist and an 'All' default summary", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore(),
+      githubLookup: lookup(),
+      githubEnterpriseApi: gheApi({ slug: "l" }),
+    });
+    const html = await (
+      await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+    ).text();
+    expect(html).toContain('name="repoScope" value="all" checked');
+    expect(html).toContain('name="repoScope" value="selected"');
+    expect(html).toContain("data-repo-search");
+    expect(html).toContain('value="acme/web"');
+    expect(html).toContain("archived");
+    expect(html).toContain(">All repositories</span>");
+  });
+
+  it("shows the N-repos summary, and flags selected repos missing from the listing", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([
+        makeCron({
+          repoScope: "selected",
+          repos: ["acme/web", "acme/gone<x>"],
+        }),
+      ]),
+      githubLookup: lookup(),
+    });
+    const html = await (
+      await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+    ).text();
+    expect(html).toContain(">2 repos</span>");
+    expect(html).toContain('value="selected" checked');
+    expect(html).toContain('value="acme/gone&lt;x&gt;" checked');
+    expect(html).not.toContain("acme/gone<x>");
+    expect(html).toContain('data-repo-flag="missing"');
+    expect(html).toContain('value="acme/web" checked');
+  });
+
+  it("degrades gracefully when the lookup App is unconfigured", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([makeCron({ repoScope: "selected", repos: ["acme/web"] })]),
+      githubLookup: lookup([], false),
+      githubEnterpriseApi: gheApi(null),
+    });
+    const res = await app.request(PATH, {
+      headers: { Cookie: await adminCookie() },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("lookup-app-missing");
+    expect(html).toContain('data-repo-list="unavailable"');
+    expect(html).toContain('value="acme/web" checked');
+    expect(html).not.toContain('data-repo-flag="missing"');
+  });
+
+  it("saves 'selected' with the checked repos and 'all' clearing them", async () => {
+    const store = makeStore();
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...store,
+      githubLookup: lookup(),
+    });
+    const sel = new URLSearchParams(base);
+    sel.set("repoScope", "selected");
+    sel.append("repos", "acme/web");
+    sel.append("repos", "acme/old");
+    const r1 = await post(app, sel);
+    expect(r1.status).toBe(302);
+    expect(store.crons[0]?.repoScope).toBe("selected");
+    expect(store.crons[0]?.repos).toEqual(["acme/web", "acme/old"]);
+    const all = new URLSearchParams(base);
+    all.set("repoScope", "all");
+    all.append("repos", "acme/web");
+    expect((await post(app, all)).status).toBe(302);
+    expect(store.crons[0]?.repoScope).toBe("all");
+    expect(store.crons[0]?.repos).toEqual([]);
+  });
+
+  it("rejects 'selected' with nothing checked (400) without calling the store, keeping the draft", async () => {
+    const store = makeStore();
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...store,
+      githubLookup: lookup(),
+    });
+    const f = new URLSearchParams(base);
+    f.set("repoScope", "selected");
+    const res = await post(app, f);
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("Select at least one repository");
+    expect(html).toContain('value="selected" checked');
+    expect(store.calls).toEqual([]);
+  });
+
+  it("leaves scope untouched when the form carries no scope field", async () => {
+    const store = makeStore([
+      makeCron({ repoScope: "selected", repos: ["acme/web"] }),
+    ]);
+    const app = createCodingTestApp({ ...makeCodingMockDeps(), ...store });
+    expect((await post(app, new URLSearchParams(base))).status).toBe(302);
+    expect(store.calls[0]).not.toContain("repoScope");
+    expect(store.crons[0]?.repos).toEqual(["acme/web"]);
+  });
+
+  it("renders each cron's checklist from its own account's listing, one call per account", async () => {
+    const calls: (string | null | undefined)[] = [];
+    const byAccount: Record<string, string> = {
+      a1: "acme/a1-repo",
+      a2: "acme/a2-repo",
+    };
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([
+        makeCron({ id: "dep-audit", name: "Dep audit", accountId: "a1" }),
+        makeCron({ id: "docs-sweep", name: "Docs sweep", accountId: "a2" }),
+        makeCron({ id: "third", name: "Third", accountId: "a1" }),
+      ]),
+      githubLookup: {
+        listRepositories: async (accountId?: string | null) => {
+          calls.push(accountId);
+          return {
+            configured: true,
+            repos: [{ fullName: byAccount[accountId ?? ""], archived: false }],
+          };
+        },
+      },
+    });
+    const html = await (
+      await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+    ).text();
+    expect(calls.sort()).toEqual(["a1", "a2"]);
+    const card = (id: string) => {
+      const start = html.indexOf(`data-system-cron="${id}"`);
+      return html.slice(start, html.indexOf("Recent runs", start));
+    };
+    expect(card("dep-audit")).toContain("acme/a1-repo");
+    expect(card("dep-audit")).not.toContain("acme/a2-repo");
+    expect(card("docs-sweep")).toContain("acme/a2-repo");
+    expect(card("docs-sweep")).not.toContain("acme/a1-repo");
+    expect(card("third")).toContain("acme/a1-repo");
   });
 });

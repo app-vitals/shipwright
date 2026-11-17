@@ -48,6 +48,34 @@ The task store can notify a downstream service of task writes via a generic `{ t
 
 A `Session` row is upserted automatically whenever a task write sets a non-blank `session` field — only `/shipwright:plan-session` does this; the `*-fix` patrol skills and externally-opened PRs never carry one. See `GET /sessions` / `GET /sessions/:slug` in the OpenAPI spec for the rollup shape and query params, and [`docs/agent-web-ui.md`](./agent-web-ui.md) for the admin UI's Sessions tab.
 
+### Planning documents
+
+A `PlanDocument` row (PLU-2.1 schema) records one numbered spec, or the session's single plan, living as a file in the session's home repo. The document service (`task-store/src/document-service.ts`) and routes (`task-store/src/routes/documents.ts`) expose three endpoints:
+
+- `POST /documents` registers a document. It is idempotent on the unique key `(accountId, session, kind, number)` (plans are always number 1): registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row, and fields omitted from the later request are left as they were. Registering also ensures the `Session` row exists (until now sessions were only created as a side effect of task writes), sets the session's `owner` from the first document that carries one (a later document never overwrites it) and sets `homeRepo` when it is empty. The document's home `repo` must be in the caller's repo scope: an agent token registering outside its scope gets `403`; admin tokens are unrestricted.
+- `GET /documents` filters on `session`, `kind`, `owner` and `planned` (admin tokens may also narrow with `accountId`). `planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `planned=true` returns documents with `plannedAt` set. Unknown query parameters are a `400` via `rejectUnknownQuery()`, like `GET /tasks` and `GET /sessions`. Agent tokens only see documents in their own account whose home repo is in their repo scope.
+- `PATCH /documents/:id` sets `plannedAt` (specs only; `null` clears it), `prUrl`, `owner` and `state`. A document outside the caller's account or repo scope is `404`.
+
+Sessions carry the planning fields too (PLU-2.3). `GET /sessions` and `GET /sessions/:slug` return `owner`, `homeRepo`, the session's `documents` and `repos`, which is now the union of the session's task repos and its declared repos; the `repo` and `org` filters apply to that union, and `GET /sessions` gains an exact-match `owner` filter. `PATCH /sessions/:slug` (admin-only) accepts `owner`, `homeRepo` (both nullable) and `repos`, which is stored as `declaredRepos`.
+
+Scoped-token reads widen additively: besides the existing task-based rule, an agent token sees a document, and its session, when the document's home repo or any of its target repos is in the token's scope, so a spec registered before any task exists is readable. A session's `documents` list is filtered to the documents the token can see. Writes keep their rules (`POST /documents` needs the home repo in scope; `PATCH /documents/:id` is still home-repo only).
+
+Planning lock and scope preflight (PLU-2.4). `POST /sessions/:slug/lock` takes a self-expiring (15 minute) planning lock before a pass reads the plan; `DELETE /sessions/:slug/lock` releases it once tasks are written and the plan is pushed. The holder is the optional body `holder`, else the token's agent id (`admin` for admin tokens). Acquiring a held, unexpired lock returns `409` with `error`, `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the holder re-acquiring extends it. Releasing a live lock as a non-holder returns `403`; releasing a free or expired lock is a no-op. `GET /sessions/preflight/scope?repo=a&repo=b` is a read-only credential check (not a permission model): it returns `{ covered, uncovered }` for the calling token, where admin tokens cover everything and an agent token covers the repos in its resolved scope.
+
+The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
+
+#### Nightly reconciler
+
+`PlanDocumentReconciler` (`task-store/src/plan-document-reconciler.ts`, PLU-2.6) runs every 24 hours (a `setInterval` in `task-store/src/main.ts`, like the other reapers) and settles `PlanDocument` rows that are still `draft` or `pr_open` against GitHub. `merged` and `abandoned` rows are never examined.
+
+- `merged`: the document's file exists on its home repo's default branch. `commitSha` is set to the latest default-branch commit touching the file, and `prUrl` is filled from that commit's merged PR when the row had none.
+- `abandoned`: the row's `prUrl` PR was closed without merging **and** the file is not on the default branch.
+- Otherwise (PR still open, no PR, or a merged PR whose file was later deleted) the row is left alone.
+
+Only `state`, `prUrl` and `commitSha` are ever changed, via a conditional update that skips a row a concurrent `PATCH` already moved. A GitHub error on one row is logged and the sweep continues.
+
+**Credential:** the task-store process needs a GitHub token in `GH_TOKEN` (or `GITHUB_TOKEN`) with read access to the documents' home repos (contents and pull requests). Without one the sweep does nothing and logs `no GitHub credential` once per process. The decision logic is the pure `decideDocumentState()`; GitHub access goes through the injectable `PlanDocumentGitHubClient` (`task-store/src/github-plan-client.ts` takes an injectable `fetch`), so tests replay recorded responses from `task-store/src/fixtures/plan-reconciler-github.json`.
+
 ### Task `pr` field
 
 `Task.pr` is an integer column. `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` normalize a supplied `pr` (`normalizePr` in `task-store/src/validate.ts`) to a positive integer: a positive integer, an integer string, or a `https://github.com/<owner>/<repo>/pull/<n>` URL are all accepted (`null` clears it). Anything else, or a value above the INT4 maximum, is a `400` naming the accepted forms rather than a Prisma `500`.
@@ -57,6 +85,14 @@ A `Session` row is upserted automatically whenever a task write sets a non-blank
 `PATCH /tasks/:id` rejects any body key that is not a valid Task column with a `400` error, naming the unknown field(s). This prevents typos (e.g., `notes` instead of `note`) and malformed requests from reaching Prisma's validation layer, which would otherwise surface as a `500` error. The set of valid fields (`TASK_PATCH_FIELDS` in `task-store/src/routes/tasks.ts`) is kept in sync with `Prisma.TaskScalarFieldEnum` via a unit test — mismatch is a build-time failure, not a deployment surprise.
 
 `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` also type-check the non-string columns that the passthrough body schemas leave untyped (`assertTaskFieldTypes` in `task-store/src/routes/tasks.ts`): integer fields such as `complexity`, `skipCount` and the token counters must be an integer or `null`; `hours`, `coverageDelta` and `costUsd` a finite number or `null`; `hitl` a boolean or `null`; `acceptanceCriteria` and `dependencies` an array of strings. A mistyped value (e.g. `complexity: "S"`) is a `400` naming the field — there is no string-to-number coercion — rather than a Prisma `500`.
+
+### GET list query parameter validation
+
+`GET /tasks`, `GET /sessions` and `GET /documents` reject any query parameter the endpoint does not document with a `400` error, naming every unknown parameter and listing the accepted ones. This prevents typos (e.g., `?sesion=x` for `?session=x`) and stray parameters from silently widening results to the whole store. The accepted parameter set is derived from the same zod schema that generates the OpenAPI spec (`TaskListQuerySchema`, `SessionListQuerySchema`, `PlanDocumentListQuerySchema`), so the documented and validated sets cannot drift. The check is shared via the `rejectUnknownQuery()` helper in `task-store/src/lib/reject-unknown-query.ts`.
+
+Error body example: `{"error":"unknown query parameter: sesion (accepted: status, state, source, session, ...)"}`
+
+A documented parameter with a bad value still returns `400` from schema validation — this validation gate catches *unknown* parameters only, before schema coercion.
 
 ### Task status lifecycle
 
@@ -130,18 +166,40 @@ The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to fin
 
 ### System crons
 
-`/system-crons` (admin-only; agent tokens get `403`) stores system-cron definitions — `id` (lowercase slug), `name`, `schedule` (5-field cron), `timezone` (IANA, default `UTC`), `enabled`, `enabledAt` (stamped on each disabled→enabled flip, `null` while disabled), `titleTemplate`, `descriptionTemplate` — managed with `GET /system-crons`, `POST /system-crons`, `PATCH /system-crons/:id`, and `POST /system-crons/:id/enable` / `/disable`. The task store does not schedule anything itself: an external scheduler calls `POST /system-crons/:id/fire` with `{ "scheduledFor": "<ISO with Z or offset>", "repos": ["org/repo", ...] }`.
+`/system-crons` (admin-only; agent tokens get `403`) stores system-cron definitions — `id` (lowercase slug), `name`, `schedule` (5-field cron), `timezone` (IANA, default `UTC`), `enabled`, `enabledAt` (stamped on each disabled→enabled flip, `null` while disabled), `titleTemplate`, `descriptionTemplate`, `repoScope` (`"all"` or `"selected"`, default `"all"`), `repos` (array of `org/repo` entries, only meaningful when `repoScope` is `"selected"`) — managed with `GET /system-crons`, `POST /system-crons`, `PATCH /system-crons/:id`, and `POST /system-crons/:id/enable` / `/disable`. The task store does not schedule anything itself: an external scheduler calls `POST /system-crons/:id/fire` with `{ "scheduledFor": "<ISO with Z or offset>", "repos": ["org/repo", ...] }`.
 
 - Each `(id, scheduledFor)` slot is claimed exactly once via a `SystemCronTrigger` row (unique on `cronId` + `scheduledFor`). `scheduledFor` is normalized to whole-second UTC.
-- The claiming call creates, in the same transaction, one `pending` task per distinct repo: kind `dev`, `hitl: false`, no assignee, `source: "system-cron"`, the definition's account, and id `SC-{id}-{slot}-{owner}-{repo}`. The slot is the compact UTC form `YYYYMMDDTHHMMSSZ` (e.g. `2026-11-14T09:00:00Z` → `20261114T090000Z`).
+- The claiming call creates, in the same transaction, one `pending` task per distinct repo: kind `dev`, `hitl: false`, no assignee, `source: "system-cron"`, the definition's account, id `SC-{id}-{slot}-{owner}-{repo}`, and branch `feat/{id}` (the task id lowercased). The slot is the compact UTC form `YYYYMMDDTHHMMSSZ` (e.g. `2026-11-14T09:00:00Z` → `20261114T090000Z`).
 - Title and description come from the templates by plain `{repo}` substitution (the full `org/repo`). Nothing else is evaluated, so `${x}`, `{{x}}` and `{other}` stay literal.
 - Response: `201 { "claimed": true, "taskIds": [...] }` for the winner; `200 { "claimed": false, "taskIds": [] }` when the slot was already claimed or a concurrent call won. A failed fire rolls back the claim along with the tasks, so retrying is always safe. A disabled definition is `409`.
 - `GET /system-crons/:id/last-trigger` returns `{ "scheduledFor": <max claimed slot> | null }`.
 - At boot the task store seeds two definitions, **disabled**, in the `default` account, inserting only missing ids (edits and enable state are never overwritten): `docs-freshness` (`0 7 * * *`, `/shipwright:research-docs --auto --repo {repo}`) and `test-readiness` (`0 6 * * *`, `/shipwright:test-readiness --repo {repo} --full --publish`).
 
-The scheduler is the admin's `system-cron-scheduler` background pass (`admin/src/coding/system-cron-scheduler.ts`, every 60s; registered when the task store is configured). Each tick it lists enabled definitions and computes every due slot strictly after `max(last-trigger, enabledAt)` and up to now, evaluated in the definition's timezone (`system-cron-schedule.ts`; standard 5-field cron, Vixie day-of-month/day-of-week OR rule). So a never-fired or re-enabled definition fires no backlog, while slots missed during downtime are caught up, oldest first, with no cap. Only when a slot is due does it list repositories once through the GitHub lookup App (archived repos dropped); with no lookup App configured the tick is skipped and nothing is recorded, and a listing error fires nothing. It then fires each slot in order; the claim makes N admin replicas safe, and a failed fire stops that definition's later slots until the next tick.
+The scheduler is the admin's `system-cron-scheduler` background pass (`admin/src/coding/system-cron-scheduler.ts`, every 60s; registered when the task store is configured). Each tick it lists enabled definitions and computes every due slot strictly after `max(last-trigger, enabledAt)` and up to now, evaluated in the definition's timezone (`system-cron-schedule.ts`; standard 5-field cron, Vixie day-of-month/day-of-week OR rule). So a never-fired or re-enabled definition fires no backlog, while slots missed during downtime are caught up, oldest first, with no cap. Only when a slot is due does it list repositories, once per owning account, through the GitHub lookup App (archived repos dropped). A `repoScope: "selected"` definition fires only for its `repos` that appear in that listing (`"all"` uses every unarchived repo; a selection with none visible is skipped). An account with no lookup App configured is skipped and nothing is recorded for it, and a listing error fires nothing. It then fires each slot in order; the claim makes N admin replicas safe, and a failed fire stops that definition's later slots until the next tick.
 
 To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (admin-only; returns `{ triggers: [...] }`). Triggers are sorted newest first by `scheduledFor` (tie-break: `createdAt` desc), capped at `limit` (1–50, default 5). Each trigger object contains `scheduledFor` (ISO timestamp of the slot), `claimedAt` (when the slot was claimed), and `taskCount` (number of tasks created for that slot). This is read-only and does not record skipped ticks.
+
+### Coverage snapshots
+
+`CoverageSnapshot` stores one measured test-coverage reading per commit: `id`, `accountId`, `repo`, `branch`, `commitSha`, `linesCovered` / `linesTotal` / `linesPct`, optional `branchesCovered` / `branchesTotal` / `branchesPct` and `functionsCovered` / `functionsTotal` / `functionsPct`, `tool`, optional `runUrl`, `measuredAt`, `createdAt`. It is unique on `(accountId, repo, commitSha)` and indexed on `(repo, measuredAt)`. A snapshot has no parent task or PR, so its account comes from the caller.
+
+- `POST /coverage-snapshots` takes counts only; the server computes each pct as `covered / total * 100` (a branches/functions pair with `total` 0 gets a `null` pct). It upserts on `(accountId, repo, commitSha)`: `201` when the row is new, `200` when a repeat POST for the same commit replaced it (still one row per commit). `measuredAt` defaults to now.
+- `400` when `linesTotal` is not > 0, any covered exceeds its total, a branches/functions pair is only half supplied, a count is negative or non-integer, `commitSha`/`branch`/`tool` is empty, or `repo` is not `owner/repo`.
+- `GET /coverage-snapshots?repo=&since=&limit=&offset=` returns `{ snapshots, total, limit, offset }`, newest `measuredAt` first (default `limit=50`). `since` is an ISO timestamp (`400` if unparseable).
+- `GET /coverage-snapshots/latest` returns `{ snapshots }` with exactly one row per repo, the newest by `measuredAt`.
+- Scope: agent tokens may write only repos in their scope (`403` otherwise), always write to and read from their own account (a client-supplied `accountId` is ignored); admin tokens are unrestricted and may pass `accountId` (body on POST, query on GET; default `default` on POST).
+
+### Planning documents (schema)
+
+`PlanDocument` (PLU-2.1) records one planning file per row: `id`, `accountId`, `session` (slug), `kind` (`spec` | `plan`), `number` (specs 1, 2, 3… per session; plans always 1), `repo` (home repo), `path`, optional `title` and `owner` (email), `repos` (target `org/repo` list, default empty), optional `prUrl`, `state` (`draft` | `pr_open` | `merged` | `abandoned`, default `draft`), optional `commitSha`, `plannedAt` and `originTaskId`, `createdAt`, `updatedAt`. It is unique on `(accountId, session, kind, number)`.
+
+The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The document service and routes ([Planning documents](#planning-documents)) and the session routes (including the [planning lock](#planning-documents)) read and write the `Session` and `PlanDocument` columns; the task fields are described in [Task provenance](#task-provenance).
+
+### Task provenance
+
+`POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` accept, and every task response returns, `owner` (the requester's email), `planDocumentId`, `specDocumentId`, `originKind` and `originRef` (each a string or `null`). They never reuse `assignee` or `claimedBy`, which identify agents, and `source` is unchanged and still written. `GET /tasks` filters on `owner` (exact match) and `originKind`.
+
+`originKind` comes from one registered list, `ORIGIN_KINDS` in `task-store/src/origin-kinds.ts` (`document`, `skill`, `cron`, `human`). The write validator and the `?originKind=` filter schema both read it, so any value a row can hold is a value the filter accepts, and anything else is a `400` on both. Adding a kind means adding it to that one list (the column is a plain string, so no migration). Tasks filed by a system cron write `originKind: "cron"` with `originRef` set to the cron's name and no `owner`. Existing rows are not backfilled and read `null`.
 
 ### Token management
 

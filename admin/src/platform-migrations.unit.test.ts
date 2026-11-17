@@ -135,10 +135,15 @@ function hashOf(name: string): string {
  * DEFAULT 'specialist', no row rewrites. POST /admin/agents, the admin UI and
  * self-serve all require/force specialty, and seed-dev-agent sets it
  * explicitly, so no create path relies on the column default.
+ * 20261116000000 (LKP-1.2, app-vitals/agent#241) swaps GitHubEnterpriseApp's
+ * primary key from role to a surrogate id, allowing rows per-account (DROP
+ * pkey, id backfill 'ghe_' || role, SET NOT NULL, FK on accountId); existing
+ * rows keep deterministic ids, no data loss.
  */
 const REVIEWED_REMOVALS = new Set([
   "20261030000000_drop_agent_type_name",
   "20261030100000_set_agent_specialty_default_specialist",
+  "20261116000000_github_enterprise_app_account_id",
 ]);
 
 const shipped = readdirSync(MIGRATIONS_DIR)

@@ -13,7 +13,9 @@
  *   * /*               — bearer auth middleware (everything else)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
+ *   * /documents/* — register/list/patch planning documents (PLU-2.2)
  *   * /verification-checks/* — record/list structured per-check verification outcomes
+ *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
  *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
@@ -40,8 +42,12 @@ import {
   type ScopeResolver,
   type TaskStoreAuthEnv,
 } from "./auth.ts";
-import { ApiError } from "./errors.ts";
+import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
+import type { DocumentServiceLike } from "./document-service.ts";
+import { ApiError, ConflictError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
+import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -128,6 +134,32 @@ const noopVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+/** Disabled DocumentService used when the feature is not wired up in a test context. */
+const unwiredDocumentService: DocumentServiceLike = {
+  async register() {
+    throw new Error("documents are not configured");
+  },
+  async list() {
+    return { documents: [], total: 0 };
+  },
+  async patch() {
+    throw new Error("documents are not configured");
+  },
+};
+
+/** No-op CoverageSnapshotService used when the feature is not wired up in a test context. */
+const noopCoverageSnapshotService: CoverageSnapshotServiceLike = {
+  async record(_data) {
+    return {} as never;
+  },
+  async list(_opts?) {
+    return { snapshots: [], total: 0 };
+  },
+  async latest() {
+    return [];
+  },
+};
+
 /** Disabled SystemCronService used when the feature is not wired up in a test context. */
 const unwiredSystemCronService: SystemCronServiceLike = {
   async list() {
@@ -159,6 +191,8 @@ export interface TaskStoreDeps {
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
+  documentService?: DocumentServiceLike;
+  coverageSnapshotService?: CoverageSnapshotServiceLike;
   systemCronService?: SystemCronServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: ScopeResolver;
@@ -231,7 +265,8 @@ export function createTaskStoreApp(
   // Map typed errors to responses; everything else is a 500.
   app.onError((err, c) => {
     if (err instanceof ApiError) {
-      return c.json({ error: err.message }, err.statusCode as 400);
+      const details = err instanceof ConflictError ? err.details : undefined;
+      return c.json({ ...details, error: err.message }, err.statusCode as 400);
     }
     // hono/@hono/zod-openapi throws a bare HTTPException (not an ApiError)
     // when the request body isn't valid JSON at all — e.g.
@@ -283,9 +318,19 @@ export function createTaskStoreApp(
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
   app.route("/sessions", createSessionsRoutes(deps.sessionService));
   app.route(
+    "/documents",
+    createDocumentsRoutes(deps.documentService ?? unwiredDocumentService),
+  );
+  app.route(
     "/verification-checks",
     createVerificationChecksRoutes(
       deps.verificationCheckService ?? noopVerificationCheckService,
+    ),
+  );
+  app.route(
+    "/coverage-snapshots",
+    createCoverageSnapshotsRoutes(
+      deps.coverageSnapshotService ?? noopCoverageSnapshotService,
     ),
   );
   app.route(

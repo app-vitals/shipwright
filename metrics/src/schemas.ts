@@ -202,6 +202,43 @@ export const MergedPrsResultSchema = z
   })
   .openapi("MergedPrsResult");
 
+// ─── Coverage schemas (CVT-3.1) ──────────────────────────────────────────────
+
+const CoverageRepoSchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    linesPct: z.number().openapi({ example: 82.5 }),
+    branchesPct: z.number().nullable().openapi({ example: 78 }),
+    functionsPct: z.number().nullable().openapi({ example: 90 }),
+    commitSha: z.string().openapi({ example: "9fceb02d0ae5" }),
+    measuredAt: z.string().openapi({ example: "2026-06-07T12:00:00.000Z" }),
+    deltaVsPrevious: z.number().nullable().openapi({
+      example: 1.5,
+      description:
+        "linesPct minus the previous snapshot's linesPct; null when there is no previous snapshot.",
+    }),
+    stale: z.boolean().openapi({
+      description: "True when measuredAt is more than 14 days old.",
+    }),
+  })
+  .openapi("CoverageRepo");
+
+const CoverageTrendPointSchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    measuredAt: z.string().openapi({ example: "2026-06-01T12:00:00.000Z" }),
+    commitSha: z.string().openapi({ example: "9fceb02d0ae5" }),
+    linesPct: z.number().openapi({ example: 81 }),
+  })
+  .openapi("CoverageTrendPoint");
+
+export const CoverageResultSchema = z
+  .object({
+    repos: z.array(CoverageRepoSchema),
+    trend: z.array(CoverageTrendPointSchema),
+  })
+  .openapi("CoverageResult");
+
 // ─── PR outcomes schemas (PAU-1.8) ───────────────────────────────────────────
 
 const PrOutcomesSeriesSchema = z

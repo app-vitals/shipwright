@@ -1,0 +1,56 @@
+{
+  "_comment": "Recorded (trimmed) GitHub REST responses keyed by request path. status defaults to 200.",
+  "/repos/acme/home/contents/planning/s1/SPEC-0001.md": {
+    "body": {
+      "type": "file",
+      "name": "SPEC-0001.md",
+      "path": "planning/s1/SPEC-0001.md",
+      "sha": "b1a0f1",
+      "size": 812
+    }
+  },
+  "/repos/acme/home/commits?path=planning%2Fs1%2FSPEC-0001.md&per_page=1": {
+    "body": [{ "sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a099887766" }]
+  },
+  "/repos/acme/home/commits/9f8e7d6c5b4a39281706f5e4d3c2b1a099887766/pulls": {
+    "body": [
+      {
+        "html_url": "https://github.com/acme/home/pull/12",
+        "state": "closed",
+        "merged_at": "2026-11-10T09:30:00Z"
+      }
+    ]
+  },
+  "/repos/acme/home/pulls/12": {
+    "body": {
+      "number": 12,
+      "state": "closed",
+      "merged": true,
+      "merged_at": "2026-11-10T09:30:00Z"
+    }
+  },
+  "/repos/acme/home/contents/planning/s1/SPEC-0002.md": {
+    "status": 404,
+    "body": { "message": "Not Found", "status": "404" }
+  },
+  "/repos/acme/home/pulls/13": {
+    "body": {
+      "number": 13,
+      "state": "closed",
+      "merged": false,
+      "merged_at": null
+    }
+  },
+  "/repos/acme/home/contents/planning/s1/SPEC-0003.md": {
+    "status": 404,
+    "body": { "message": "Not Found", "status": "404" }
+  },
+  "/repos/acme/home/pulls/14": {
+    "body": {
+      "number": 14,
+      "state": "open",
+      "merged": false,
+      "merged_at": null
+    }
+  }
+}

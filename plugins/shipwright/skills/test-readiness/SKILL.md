@@ -152,6 +152,20 @@ clone under `repos/`. Commit each repo's phase results (in its own worktree,
 on its own branch) before moving to the next repo — one repo's work must not
 block or be blocked by another's.
 
+### Step 1.5: Record coverage
+
+Before the phase loop, in the repo's worktree, run:
+
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo} --record
+```
+
+This runs on every invocation, regardless of phase staleness, including when
+every phase artifact is fresh and Step 2 would otherwise run nothing. It never
+blocks the phases: a non-zero exit, a `not_reporting` result or any other
+failure is logged and the run continues to Step 2. The artifact contract is in
+`plugins/shipwright/references/coverage-output.md`.
+
 ### Step 2: Determine the starting phase
 
 If `--full` is set, start at phase 1. Otherwise check mtime of each phase

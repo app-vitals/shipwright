@@ -70,6 +70,13 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * `tasks_skip`/`tasks_reset` above — it's a claim/skip-state mutation via a
  * dedicated atomic route, not the "ordinary field edit" shape the public
  * surface is scoped to.
+ *
+ * PLU-2.2 added `/documents` (planning documents). `documents_list` (a
+ * read-only GET, scoped to the caller's account and repos) stays public.
+ * `documents_create` (register) and `documents_update` (PATCH) are excluded:
+ * they are write ops in the same "outside the agreed edit surface" category
+ * as `sessions_update` / `prs_census` — document registration is driven by
+ * the planning skills over HTTP, not by ad hoc MCP callers.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -106,6 +113,9 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   // prs: census batch-upsert write op (POM-1.1) — prs_cursor (the read-only
   // cursor GET) stays public, see the doc comment above.
   "prs_census",
+  // documents: planning-document write ops (PLU-2.2) — documents_list stays public.
+  "documents_create",
+  "documents_update",
 ] as const;
 
 /**

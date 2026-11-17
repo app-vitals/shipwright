@@ -260,4 +260,61 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
     expect("command" in dev).toBe(false);
     expect(dev.runs.map((r) => r.itemId)).toEqual(["DT-1"]);
   });
+
+  it("scores review runs by phase: shipwright-review cron only, grouped by commandVariant (DTA-10.2)", async () => {
+    const agent = await prisma.agent.create({ data: { name: "A" } });
+    const mk = (name: string) =>
+      cronJobService.create(agent.id, {
+        schedule: "0 9 * * *",
+        prompt: "p",
+        silent: true,
+        name,
+      });
+    const loop = await mk("shipwright-loop");
+    const review = await mk("shipwright-review");
+    const patch = await mk("shipwright-patch");
+
+    // 20 review runs, 2 with a reviewer dispatch (10%).
+    for (let i = 0; i < 20; i++) {
+      await seedRun(agent.id, loop.id, review.id, {
+        itemId: `o/r#${i + 1}`,
+        commandVariant: i % 2 ? "alternate" : "default",
+        startedAt: `2026-01-10T${String(i).padStart(2, "0")}:00:00Z`,
+        usage:
+          i === 3 || i === 8
+            ? [{ name: "shipwright:code-reviewer", invocations: 1 }]
+            : [],
+      });
+    }
+    await seedRun(agent.id, loop.id, review.id, {
+      itemId: null,
+      startedAt: "2026-01-11T03:00:00Z",
+      usage: [],
+    });
+    await seedRun(agent.id, loop.id, patch.id, {
+      itemId: "o/r#50",
+      startedAt: "2026-01-11T04:00:00Z",
+      usage: [{ name: "general-purpose", invocations: 1 }],
+    });
+
+    const report = await service.report(
+      "2026-01-01T00:00:00Z",
+      "2026-02-01T00:00:00Z",
+      undefined,
+      "review",
+    );
+    expect(report.command).toBe("review");
+    expect(report.counts).toMatchObject({
+      totalRuns: 21,
+      taskBearingRuns: 20,
+      silentTicks: 1,
+    });
+    expect(
+      report.overall.steps.find((x) => x.stepNumber === "7"),
+    ).toMatchObject({ ran: 2, skipped: 18 });
+    expect(report.byCommandVariant.map((c) => c.commandVariant)).toEqual([
+      "alternate",
+      "default",
+    ]);
+  });
 });

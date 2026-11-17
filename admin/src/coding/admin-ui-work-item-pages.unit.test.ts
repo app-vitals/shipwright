@@ -6178,14 +6178,12 @@ describe("unknown legacy task status", () => {
 // ─── Admin wide pages (AWT-1.1) ──────────────────────────────────────────────
 
 describe("admin wide pages (AWT-1.1)", () => {
-  const WIDE_RULE = "max-width:none;width:100%";
   const WRAPPER = /<div class="vos-page[^"]*">/;
 
   function expectWide(html: string) {
     const match = html.match(WRAPPER);
     expect(match).not.toBeNull();
-    expect(match?.[0]).toContain("admin-wide-page");
-    expect(html).toContain(`.admin-wide-page { ${WIDE_RULE} }`);
+    expect(match?.[0]).toContain("vos-page-wide");
   }
 
   const tasksArgs = (
@@ -6255,17 +6253,6 @@ describe("admin wide pages (AWT-1.1)", () => {
     );
     expectWide(html);
     expect(html).toContain(".detail-table");
-  });
-
-  test("the wide rule is defined exactly once per page", () => {
-    const html = renderPrDetailPage(
-      PR_DETAIL,
-      USER_NAME,
-      {},
-      "America/Los_Angeles",
-      [],
-    );
-    expect(html.split(WIDE_RULE).length - 1).toBe(1);
   });
 });
 
@@ -6528,8 +6515,8 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
       const html = page([idea, initiative, dev, prd], { view });
       expect(html).toContain('action="/admin/tasks/T-IDEA/promote');
       expect(html).toContain("Promote to initiative");
-      expect(html).toContain('action="/admin/tasks/T-INI/promote');
-      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).not.toContain("Promote to PRD");
       expect(html).not.toContain('action="/admin/tasks/T-DEV/promote');
       expect(html).not.toContain('action="/admin/tasks/T-PRD/promote');
     });
@@ -6549,9 +6536,9 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
   });
 
-  test("promoteTargetKind maps idea->initiative, initiative->prd, else null", () => {
+  test("promoteTargetKind maps idea->initiative, else null", () => {
     expect(promoteTargetKind("idea")).toBe("initiative");
-    expect(promoteTargetKind("initiative")).toBe("prd");
+    expect(promoteTargetKind("initiative")).toBeNull();
     expect(promoteTargetKind("dev")).toBeNull();
     expect(promoteTargetKind("prd")).toBeNull();
     expect(promoteTargetKind(undefined)).toBeNull();
@@ -6573,13 +6560,15 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
         notice,
       );
 
-    test("initiative shows copyable plan-session hint and promote to PRD", () => {
+    test("initiative shows copyable prd and plan-session --initiative hints, no promote", () => {
       const html = render({ ...initiative, session: "my-sess" });
+      expect(html).toContain("/shipwright:prd");
       expect(html).toContain("/shipwright:plan-session");
+      expect(html).toContain("--initiative T-INI");
       expect(html).toContain("<code");
-      expect(html).toContain("T-INI");
-      expect(html).toContain('action="/admin/tasks/T-INI/promote');
-      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain("promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).not.toContain("Promote to PRD");
     });
 
     test("idea shows promote to initiative but no plan-session hint", () => {

@@ -1,13 +1,13 @@
 # Metrics Dashboard
 
-> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Seven read-only JSON endpoints served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Two modes: **fixtures** (offline) and **taskstore** (live task-store + admin APIs).
+> Hono service (artifact **B**) that turns Shipwright's pipeline events into analytics. Nine read-only JSON endpoints (under `/metrics/*`) served by a backend-agnostic `MetricsProvider`, plus a session-gated server-rendered dashboard. Two modes: **fixtures** (offline) and **taskstore** (live task-store + admin APIs).
 
 ## Overview
 
 The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
-2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
+2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`, tasks + PRs + coverage snapshots) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
 3. Otherwise (default) → **taskstore** mode (server will error if URLs are missing).
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
@@ -36,7 +36,7 @@ export METRICS_INTERNAL_API_KEY=<admin-internal-key>
 bun metrics/src/server.ts          # serves on :3460 (override with METRICS_API_PORT)
 ```
 
-In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStoreClient` (tasks + PRs) and an `HttpAdminMetricsClient` (token-aggregation stats). Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
+In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStoreClient` (tasks + PRs + coverage snapshots) and an `HttpAdminMetricsClient` (token-aggregation stats). Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
 
 ## API Endpoints
 
@@ -53,6 +53,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
+| GET | `/metrics/coverage` | Latest test coverage per repo plus a 30-day line-coverage trend (CVT-3.1). Takes no date-window params. See the response shape below. |
 | GET | `/metrics/pr-outcomes` | Read-only PR outcomes per context fingerprint (PAU-1.8): `reviewState` mix, avg `reviewCycles`/`patchCycles`, median time-to-merge over the window between the fingerprint's first and last seen. Response carries `attribution: "window-correlation"` — a time-window correlation, not per-PR attribution. |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
@@ -73,6 +74,35 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/public/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/public/dashboard` | Server-rendered dashboard HTML (no session required). |
 | GET | `/public/metrics/tokens` | Not available on public routes — returns `404`. |
+
+### `/metrics/coverage` response shape
+
+Authenticated only — there is deliberately no `/public/metrics/coverage` (it returns `404`). Same bearer-token / session auth as the other `/metrics/*` routes. The data comes from the task store's `GET /coverage-snapshots/latest` and `GET /coverage-snapshots`, read with the same bearer token the `/prs` calls use; offline/fixtures mode serves canned snapshots.
+
+```jsonc
+{
+  "data": {
+    "repos": [
+      {
+        "repo": "org/repo",
+        "linesPct": 82.5,
+        "branchesPct": 75.5,      // null when the reporter sent no branch counts
+        "functionsPct": 90,       // null when the reporter sent no function counts
+        "commitSha": "f6e5d4c3b2a1",
+        "measuredAt": "2026-06-18T12:00:00.000Z",
+        "deltaVsPrevious": 1.5,   // linesPct minus the previous snapshot's; null with a single snapshot
+        "stale": false            // true when measuredAt is more than 14 days old
+      }
+    ],
+    "trend": [
+      { "repo": "org/repo", "measuredAt": "2026-06-10T12:00:00.000Z", "commitSha": "a1b2c3d4e5f6", "linesPct": 81 }
+    ]
+  },
+  "meta": { /* standard envelope */ }
+}
+```
+
+`repos` holds the newest snapshot per repo, ordered by repo. `trend` holds every snapshot from the trailing 30 days, oldest first. Staleness is judged against the service clock.
 
 ### `/metrics/merged-prs` and `/public/metrics/merged-prs` response shape
 
@@ -120,6 +150,8 @@ The dashboard renders commit data in two panels:
 
 - **"PR Commits"** — fleet-wide weighted-average commits per Shipwright PR (weighted by shipwright PR count per repo), broken down by pipeline phase (docs refresh, review patch, CI fix, implementation). Repos with no shipwright PRs or null `avgCommitCount` are excluded from the calculation.
 - **"Merged PRs by repo"** — breakdown of merged PRs by repo and origin (shipwright, ci, dependency_bot, human, unknown) as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
+
+- **"Coverage by repo"** (CVT-3.2) — reads `/metrics/coverage`. A table with one row per repo (lines %, change vs. the previous snapshot in percentage points, last measured date; rows flagged `stale` are dimmed and badged), plus a line trend chart with one point per snapshot and a repo picker (all repos, or one) that restricts the chart to that repo's series. When no snapshots exist, the section shows an empty state explaining that a repo starts reporting when its CI posts a coverage report to the task store (`POST /coverage-snapshots`). The section is authenticated-only and is omitted entirely from the public read-only dashboard (the page does not fetch `/metrics/coverage` there). The existing per-task "Coverage" panel in Pipeline Quality (reports count and avg delta from `/metrics/summary`) is unchanged.
 
 ### Origin classification rules
 
@@ -198,8 +230,8 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
 | `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "taskstore"` based on `METRICS_OFFLINE` and task-store URL configuration. |
-| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
-| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks + PRs from the task-store HTTP API. |
+| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs + coverage snapshots) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
+| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks, PRs, and coverage snapshots from the task-store HTTP API. |
 | `metrics/src/lib/admin-metrics-client.ts` | `AdminMetricsClient` interface + `HttpAdminMetricsClient` impl (and `AdminMetricsClientError`) — reads token-aggregation stats from the admin service. |
 | `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. Also includes faulting doubles (`FaultingCronAdminMetricsClient`, `FaultingChatAdminMetricsClient`, `FaultingBothAdminMetricsClient`) for testing graceful degradation when admin stats endpoints fail. |
 | `metrics/src/fixtures/task-store-fixtures.ts` | `createFixtureTaskStoreProvider()` — offline `TaskStoreProvider` over recorded cassettes with a fixed clock; used in offline mode and integration tests. |

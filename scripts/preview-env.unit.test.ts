@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Command } from "./minikube.ts";
 import {
+  buildPortForwardArgv,
   buildPreviewCommands,
   buildTargetsEnv,
   generatePreviewSecrets,
@@ -19,8 +20,10 @@ import {
   type PreviewOpts,
   type PreviewSecrets,
   previewSecretFiles,
+  readMetricsBasePath,
   withSecretFiles,
 } from "./preview-env.ts";
+import { gateIngressValues, helmSetEscape } from "./preview-gate.ts";
 
 const CTX = "kind-preview";
 const OPTS: PreviewOpts = { context: CTX, chartPath: "charts/shipwright" };
@@ -128,9 +131,56 @@ describe("buildPreviewCommands", () => {
   });
 
   it("emits no gate resources and no auth annotation without a gate", () => {
-    const all = lines(buildPreviewCommands(OPTS, secrets())).join("\n");
+    const cmds = buildPreviewCommands(OPTS, secrets());
+    const all = lines(cmds).join("\n");
     expect(all).not.toContain("shipwright-preview-gate");
-    expect(all).not.toContain("auth-type");
+    for (const { argv } of cmds) {
+      for (const a of argv) {
+        expect(a).not.toContain("auth-");
+        expect(a).not.toContain("configuration-snippet");
+        expect(a).not.toContain("allow-snippet-annotations");
+      }
+    }
+  });
+
+  describe("with a gate", () => {
+    const gated = (): Command[] =>
+      buildPreviewCommands(
+        { ...OPTS, gate: { htpasswdFile: "/tmp/htpasswd" } },
+        secrets(),
+      );
+
+    it("creates the gate Secret from the htpasswd file before the install", () => {
+      const cmds = gated();
+      const i = indexOf(
+        cmds,
+        /create secret generic shipwright-preview-gate .*--from-file=auth=\/tmp\/htpasswd/,
+      );
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(lines(cmds)[i]).toContain("--namespace shipwright");
+      expect(i).toBeLessThan(indexOf(cmds, /helm .*upgrade --install/));
+    });
+
+    it("installs with every gateIngressValues pair as an escaped --set", () => {
+      const cmds = gated();
+      const { argv } = cmds[indexOf(cmds, /helm .*upgrade --install/)];
+      for (const [k, v] of gateIngressValues()) {
+        const arg = `networking.ingress.annotations.${helmSetEscape(k)}=${v}`;
+        const at = argv.indexOf(arg);
+        expect(at).toBeGreaterThan(0);
+        expect(argv[at - 1]).toBe("--set");
+      }
+    });
+
+    it("enables snippet annotations on the controller before it is awaited", () => {
+      const cmds = gated();
+      const patch = indexOf(cmds, /patch configmap ingress-nginx-controller/);
+      expect(patch).toBeGreaterThanOrEqual(0);
+      expect(lines(cmds)[patch]).toContain("allow-snippet-annotations");
+      expect(patch).toBeLessThan(
+        indexOf(cmds, /rollout status deployment\/ingress-nginx-controller/),
+      );
+    });
   });
 
   it("ends by waiting for every preview Deployment", () => {
@@ -191,6 +241,29 @@ describe("buildTargetsEnv", () => {
   });
 });
 
+describe("metrics base path", () => {
+  it("appends the base path to PREVIEW_METRICS_URL", () => {
+    expect(buildTargetsEnv(secrets(), "/dashboard").PREVIEW_METRICS_URL).toBe(
+      "http://127.0.0.1:13460/dashboard",
+    );
+  });
+
+  it("reads basePath from the values profile", () => {
+    expect(
+      readMetricsBasePath("metrics:\n  provider:\n    basePath: /dashboard/\n"),
+    ).toBe("/dashboard");
+    expect(readMetricsBasePath("metrics:\n  provider: {}\n")).toBe("");
+  });
+
+  it("matches the committed preview values profile", () => {
+    const yaml = readFileSync(
+      "charts/shipwright/examples/values-preview.yaml",
+      "utf8",
+    );
+    expect(readMetricsBasePath(yaml)).toBe("/dashboard");
+  });
+});
+
 describe("PORT_FORWARDS", () => {
   it("uses the fixed local ports", () => {
     const locals = Object.fromEntries(
@@ -247,6 +320,23 @@ describe("secret files", () => {
       expect(existsSync(seenDir)).toBe(false);
     } finally {
       rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildPortForwardArgv", () => {
+  it("builds a kubectl port-forward argv for each forward", () => {
+    for (const p of PORT_FORWARDS) {
+      expect(buildPortForwardArgv("ctx", p)).toEqual([
+        "kubectl",
+        "--context",
+        "ctx",
+        "port-forward",
+        "--namespace",
+        p.namespace,
+        `svc/${p.service}`,
+        `${p.local}:${p.remote}`,
+      ]);
     }
   });
 });

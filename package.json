@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.475.5",
+  "version": "1.488.0",
   "private": true,
   "workspaces": [
     "plugins/shipwright",
@@ -25,22 +25,14 @@
     "@biomejs/biome": "^2.5.13",
     "openapi-fetch": "^0.17.0",
     "openapi-typescript": "^7",
-    "@semantic-release/changelog": "^7.0.0",
-    "@semantic-release/commit-analyzer": "^13.0.1",
-    "@semantic-release/exec": "^7.1.0",
-    "@semantic-release/git": "^11.0.0",
-    "@semantic-release/github": "^12.0.9",
-    "@semantic-release/release-notes-generator": "^14.1.1",
-    "conventional-changelog-conventionalcommits": "^10.0.0",
     "prisma": "^7.0.0",
-    "semantic-release": "^26.0.0",
     "typescript": "^7.0.0"
   },
   "dependencies": {
     "@shipwright/admin": "workspace:*",
-    "@app-vitals/agent-admin": "1.53.0",
-    "@app-vitals/agent-lib": "1.53.0",
-    "@app-vitals/agent-runtime": "1.53.0",
+    "@app-vitals/agent-admin": "1.65.0",
+    "@app-vitals/agent-lib": "1.65.0",
+    "@app-vitals/agent-runtime": "1.65.0",
     "@prisma/client": "^7.0.0"
   },
   "overrides": {

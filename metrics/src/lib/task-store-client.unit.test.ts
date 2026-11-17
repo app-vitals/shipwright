@@ -22,7 +22,7 @@ const SERVER_MAX_PAGE = 50;
  * asks for more — so the client must loop on `offset` to read everything.
  * Reports a `total` and records each requested URL for assertions. */
 function pagingFetch<T>(
-  key: "tasks" | "prs",
+  key: "tasks" | "prs" | "snapshots",
   rows: T[],
 ): { fetch: FetchLike; calls: string[] } {
   const calls: string[] = [];
@@ -244,5 +244,53 @@ describe("HttpTaskStoreClient repo filtering", () => {
 
     const got = await client.listTasks({ repo: "org/alpha" });
     expect(got.map((t) => t.id)).toEqual(["A-1"]);
+  });
+});
+
+describe("HttpTaskStoreClient coverage snapshots (CVT-3.1)", () => {
+  const snap = (repo: string, sha: string) => ({
+    repo,
+    commitSha: sha,
+    linesPct: 80,
+    branchesPct: null,
+    functionsPct: null,
+    measuredAt: "2026-06-10T00:00:00.000Z",
+  });
+
+  test("listLatestCoverage reads /coverage-snapshots/latest and scopes by repo", async () => {
+    const calls: string[] = [];
+    const client = new HttpTaskStoreClient(
+      "http://store/",
+      "tok",
+      async (input) => {
+        calls.push(input);
+        return {
+          ok: true,
+          status: 200,
+          text: async () => "",
+          json: async () => ({
+            snapshots: [snap("org/a", "1"), snap("org/b", "2")],
+          }),
+        };
+      },
+    );
+    const got = await client.listCoverageHistory({ limit: 2, repo: "org/a" });
+    expect(calls[0]).toBe(
+      "http://store/coverage-snapshots?repo=org%2Fa&limit=2",
+    );
+    expect(got).toHaveLength(2);
+    const latest = await client.listLatestCoverage({ repo: "org/b" });
+    expect(calls[1]).toBe("http://store/coverage-snapshots/latest");
+    expect(latest.map((s) => s.commitSha)).toEqual(["2"]);
+  });
+
+  test("listCoverageHistory without limit pages past the server cap", async () => {
+    const rows = Array.from({ length: 130 }, (_, i) => snap("org/a", `c${i}`));
+    const { fetch, calls } = pagingFetch("snapshots", rows);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+    const got = await client.listCoverageHistory({ since: "2026-06-01" });
+    expect(got).toHaveLength(130);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls[0]).toContain("since=2026-06-01");
   });
 });

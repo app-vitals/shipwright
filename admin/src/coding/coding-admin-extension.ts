@@ -302,6 +302,9 @@ export const codingAdminExtension: AdminExtension = {
         // the system-crons page reaches /github-enterprise/apps over loopback
         // (it forwards the caller's session cookie, so the API's own admin
         // check applies).
+        ...(ctx.services.githubLookup
+          ? { githubLookup: ctx.services.githubLookup }
+          : {}),
         githubEnterpriseApi: (path, init) =>
           fetch(
             `http://127.0.0.1:${Number(ctx.env.PORT ?? DEFAULT_PORT)}${path}`,

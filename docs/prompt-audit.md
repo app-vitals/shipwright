@@ -135,7 +135,7 @@ The exit gate for the feature: `prompt-scan --dry-run` on this repo (commit `17c
 | 1 | `c/orphaned-auto-section`, "Shipwright Learned Facts" in root `CLAUDE.md` | **Reproduced after a fix.** Missed at first: the section's heading was mentioned in `docs/` and a design spec, which counted as a writer. Docs are no longer writers. |
 | 2 | `c/retired-model-id`, `claude-sonnet-4-5` | `docs/agent.md` reproduced. `admin/prisma/schema/` is not scanned: it is not a prompt file and never enters model context. The design spec itself now also matches. |
 | 3 | `a/claude-md-over-200-lines` | Reproduced for root `CLAUDE.md` (local-dev) and `agent/workspace/CLAUDE.md.template` (agent-runtime). |
-| 4 | `b/on-invoke-heavy` for `commands/patch.md` | Reproduced (9 on-invoke-heavy findings in total). |
+| 4 | `b/on-invoke-heavy` for `commands/patch.md` | Reproduced at that commit (9 on-invoke-heavy findings in total). `commands/patch.md` has since been replaced by the former `patch-lean` spine, with detail split into `plugins/shipwright/references/patch/`, so a fresh scan no longer expects this finding; `commands/review-lean.md` is a separate lean review command with its own `references/review-lean/` files. |
 | 5 | `e/frontmatter-missing-name` for commands | **Reproduced after a fix.** The rule only looked at skills and agents. Commands are listed too, so it now covers them (22 findings). |
 | 6 | `e/description-multiline` | Reproduced: 21 findings (the spec said 18; more files have since gained block scalars). |
 | 7 | `e/duplicate-listing-entry` | **Not reproduced, by design.** The command stubs no longer share a description with their skill, so there is nothing to flag. The rule now also compares commands, with a regression test. |

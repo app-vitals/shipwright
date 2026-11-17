@@ -43,7 +43,7 @@ The marketing site is **not** part of the root `bun test` scan — run its Playw
 cd site && npm test                  # playwright (*.spec.ts)
 ```
 
-> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, `admin/e2e/**`, and `**/*.canary.test.ts` from the root runner. Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash. Canary tests are reserved for the canary-execution skill and run via their own entry point.
+> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, `admin/e2e/**`, and `**/*.canary.test.ts` from the root runner (and preloads `scripts/test-env-preload.ts` to force `NODE_ENV=test`). Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash. Canary tests (`preview/canary/*.canary.test.ts`) run via their own entry point, `task preview:canary`, which bypasses the exclusion with `--config=/dev/null`.
 
 ### Per-component layers
 
@@ -52,12 +52,12 @@ cd site && npm test                  # playwright (*.spec.ts)
 | Plugin (`plugins/shipwright`) | unit, integration (real subprocess/filesystem I/O), content | `cd plugins/shipwright && bun test` |
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `cd metrics && bun test` (unit/integration/smoke); `task e2e` (e2e) |
 | Agent (`agent`) | unit, integration (real I/O), smoke | `cd agent && bun test` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
-| Admin (`admin`) | unit, integration, smoke, e2e | `cd admin && bun test` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
+| Admin (`admin`) | unit, integration, smoke, e2e | `cd admin && bun test` (unit/integration/smoke); `task e2e:admin` (e2e) |
 | Chat (`chat`) | unit, integration, smoke | `cd chat && bun test` |
 | Task Store (`task-store`) | unit, integration, smoke | `cd task-store && bun test` |
 | MCP Server (`mcp-server`) | unit, integration, smoke | `cd mcp-server && bun test` |
 
-The plugin has **no smoke/e2e layer** (no HTTP surface, no browser surface). The plugin has no integration test; everything in it is unit or content. Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-redirect.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
+The plugin has **no smoke/e2e layer** (no HTTP surface, no browser surface). The plugin has no integration test; everything in it is unit or content. Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-redirect.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`; each e2e suite boots its own `e2e/test-server.ts`).
 
 ## Speed budgets
 
@@ -85,6 +85,8 @@ GitHub CI gates run: **lint → check-strings → typecheck → check-config-doc
 The coverage gate is an absolute threshold:
 
 **Absolute threshold** (`scripts/check-coverage.ts`): enforced by the main `ci` job on the coverage report produced by `task test:coverage`, requiring 90% lines + 89% functions on an aggregate basis. The script automatically detects the repo's coverage toolchain by reading a `**Coverage toolchain:**` field (if declared in the repo's test-system documentation) and dispatches to the appropriate parser (`lcov`, `jacoco`, `coverage.py`, `c8`/`nyc`, `go-cover`); if no toolchain is declared, it defaults to `lcov`.
+
+**Coverage artifact:** the `ci` job uploads `coverage/lcov.info` as the `shipwright-coverage` workflow artifact (`if: always()`, so it is published even when the gate fails), see the "Upload coverage artifact" step in `.github/workflows/ci.yml`. The metrics dashboard's "Coverage by repo" section reads the coverage snapshots stored in the task store (see [metrics.md](./metrics.md)).
 
 ## References
 

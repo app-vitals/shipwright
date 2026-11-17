@@ -122,21 +122,19 @@ actually breaches the Tier 2 trigger.
 
 #### Step 4c — pull real coverage percentages (always)
 
-Mirrors Step 4a's mechanism exactly, applied to coverage instead of wall-clock: locate the
-most recent green CI run of the `lint / typecheck / test` job via the same `gh run list` /
-`gh run view --log` pull, but scope the log read to that run's `Test` step specifically —
-per `.github/workflows/ci.yml`, that step is named `Test`; `task test:coverage` is just the
-shell command it runs, not the step label to grep the log by. That step runs
-`scripts/check-coverage.ts`, which prints a summary block in this exact shape:
+Read coverage from the reader, never from CI logs. From the target repo's worktree run:
 
-```
-Lines:     88.84% (12345/13897) — threshold: 80%
-Functions: 88.00% (2200/2500) — threshold: 80%
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}
 ```
 
-Grep the step's log for these `Lines:` / `Functions:` lines and parse `line_coverage_pct` and
-`function_coverage_pct` from them. No local coverage run is needed — like Step 4a, this is
-always obtainable from CI history alone. This step is mandatory and runs on every
+The reader consumes the coverage artifact the repo's CI publishes (contract in
+`references/coverage-output.md`) and prints JSON: one result per commit, each with raw
+`lines` counts and, when the report carries them, `functions` and `branches` counts, plus
+`commitSha` and `runUrl`. Compute `line_coverage_pct` as `lines.covered / lines.total`, and
+`function_coverage_pct` / `branch_coverage_pct` the same way when `functions` / `branches`
+are present; use the most recent result. No local coverage run is needed — like Step 4a,
+this is always obtainable from CI history alone. This step is mandatory and runs on every
 `/test-migration` invocation.
 
 Carry `feature_coverage_pct` forward rather than recomputing it: read it from
@@ -144,15 +142,16 @@ Carry `feature_coverage_pct` forward rather than recomputing it: read it from
 this run (Phase 1's `test-inventory` skill computes and writes it).
 
 **Cite sources explicitly, every time:**
-- `line_coverage_pct` / `function_coverage_pct` — cite the CI run URL and the commit SHA it
-  ran against (both available from `gh run view`).
+- `line_coverage_pct` / `function_coverage_pct` / `branch_coverage_pct` — cite the CI run URL
+  (`runUrl`) and the commit SHA (`commitSha`) from the reader's result.
 - `feature_coverage_pct` — cite that the value was carried forward from
   `docs/test-readiness/test-inventory.md`.
 
-**Never guess.** If no green CI run can be found, the run has no `Test` step, or
-`docs/test-readiness/test-inventory.md` is missing or lacks the field, the corresponding
-percentage is `null` — never a guessed or estimated value. This mirrors Step 4a's
-verify-before-cite rule: a percentage without a citable CI run URL + commit (or, for
+**Never guess.** If the reader returns `not_reporting` (or exits nonzero), the line,
+function and branch percentages are `null`; a result without `functions` or `branches` counts
+leaves that percentage `null` too. If `docs/test-readiness/test-inventory.md` is missing or
+lacks the field, `feature_coverage_pct` is `null` — never a guessed or estimated value. This
+mirrors Step 4a's verify-before-cite rule: a percentage without a citable CI run URL + commit (or, for
 `feature_coverage_pct`, a citable test-inventory.md reference) does not get reported as a
 number.
 

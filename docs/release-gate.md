@@ -19,7 +19,7 @@ Insert a RELEASE GATE between the **Expand** (step 1) and **Migrate** (step 2) t
 ## The release chain the gate waits on
 
 1. The producer PR merges in `app-vitals/agent` (the task reaches `merged`/`deployed`).
-2. The agent `Release` workflow runs semantic-release and cuts `vX.Y.Z` (this needs a `feat:`/`fix:`/`perf:` commit — otherwise **no release is cut**), publishes the three npm packages and three images, then runs `Consumer smoke`.
+2. The agent `build-agent` workflow cuts `vX.Y.Z` (this needs a `feat:`/`fix:`/`perf:` commit — otherwise **no release is cut**), publishes the three npm packages and three images, then runs `Consumer smoke`.
 3. The agent release dispatches `platform-release` in `app-vitals/shipwright`.
 4. `platform-release` opens or updates the bump PR (branch `chore/platform-release`), waits for required checks (rerunning failed ones up to 3x), and admin-merges it.
 5. **Done** when shipwright `main` pins `@app-vitals/agent-*` >= `X.Y.Z`.

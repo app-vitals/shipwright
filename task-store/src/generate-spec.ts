@@ -13,7 +13,11 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
+import type { DocumentServiceLike } from "./document-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
+import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -171,6 +175,24 @@ const stubSessionService: SessionServiceLike = {
   async update() {
     throw new Error("not implemented");
   },
+  async acquirePlanningLock() {
+    throw new Error("not implemented");
+  },
+  async releasePlanningLock() {
+    throw new Error("not implemented");
+  },
+};
+
+const stubDocumentService: DocumentServiceLike = {
+  async register() {
+    return {} as never;
+  },
+  async list() {
+    return { documents: [], total: 0 };
+  },
+  async patch() {
+    return {} as never;
+  },
 };
 
 const stubVerificationCheckService: VerificationCheckServiceLike = {
@@ -185,6 +207,18 @@ const stubVerificationCheckService: VerificationCheckServiceLike = {
   },
   async listByRepoAndCheck() {
     return { checks: [], total: 0 };
+  },
+};
+
+const stubCoverageSnapshotService: CoverageSnapshotServiceLike = {
+  async record() {
+    return {} as never;
+  },
+  async list() {
+    return { snapshots: [], total: 0 };
+  },
+  async latest() {
+    return [];
   },
 };
 
@@ -235,8 +269,12 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensApp = createTokensRoutes(stubTokenService);
   const prsApp = createPrsRoutes(stubPrService);
   const sessionsApp = createSessionsRoutes(stubSessionService);
+  const documentsApp = createDocumentsRoutes(stubDocumentService);
   const verificationChecksApp = createVerificationChecksRoutes(
     stubVerificationCheckService,
+  );
+  const coverageSnapshotsApp = createCoverageSnapshotsRoutes(
+    stubCoverageSnapshotService,
   );
   const systemCronsApp = createSystemCronsRoutes(stubSystemCronService);
 
@@ -249,8 +287,11 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensSpec = tokensApp.getOpenAPI31Document(innerDocInfo);
   const prsSpec = prsApp.getOpenAPI31Document(innerDocInfo);
   const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
+  const documentsSpec = documentsApp.getOpenAPI31Document(innerDocInfo);
   const verificationChecksSpec =
     verificationChecksApp.getOpenAPI31Document(innerDocInfo);
+  const coverageSnapshotsSpec =
+    coverageSnapshotsApp.getOpenAPI31Document(innerDocInfo);
   const systemCronsSpec = systemCronsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
@@ -271,11 +312,22 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       "/sessions",
     ),
     ...prefixPaths(
+      (documentsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
+      "/documents",
+    ),
+    ...prefixPaths(
       (verificationChecksSpec.paths ?? {}) as Record<
         string,
         Record<string, unknown>
       >,
       "/verification-checks",
+    ),
+    ...prefixPaths(
+      (coverageSnapshotsSpec.paths ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >,
+      "/coverage-snapshots",
     ),
     ...prefixPaths(
       (systemCronsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
@@ -299,7 +351,9 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(tokensSpec.components?.schemas ?? {}),
         ...(prsSpec.components?.schemas ?? {}),
         ...(sessionsSpec.components?.schemas ?? {}),
+        ...(documentsSpec.components?.schemas ?? {}),
         ...(verificationChecksSpec.components?.schemas ?? {}),
+        ...(coverageSnapshotsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),
       },
     },

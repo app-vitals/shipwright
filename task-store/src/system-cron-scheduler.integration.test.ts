@@ -36,6 +36,8 @@ const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 const CRON_ID = "scr-sched-it";
+const CRON_ID_2 = "scr-sched-it-acct2";
+const ACCOUNT_2 = "scr-sched-it-account-2";
 
 const lookup: LookupRepositoryLister = {
   listRepositories: async () => ({
@@ -49,11 +51,12 @@ const lookup: LookupRepositoryLister = {
 };
 
 async function cleanup(prisma: PrismaClient): Promise<void> {
-  await prisma.systemCronTrigger.deleteMany({ where: { cronId: CRON_ID } });
+  const ids = [CRON_ID, CRON_ID_2];
+  await prisma.systemCronTrigger.deleteMany({ where: { cronId: { in: ids } } });
   await prisma.task.deleteMany({
-    where: { id: { startsWith: `SC-${CRON_ID}-` } },
+    where: { OR: ids.map((id) => ({ id: { startsWith: `SC-${id}-` } })) },
   });
-  await prisma.systemCronDefinition.deleteMany({ where: { id: CRON_ID } });
+  await prisma.systemCronDefinition.deleteMany({ where: { id: { in: ids } } });
 }
 
 describeOrSkip("system-cron scheduler × task-store (integration)", () => {
@@ -188,5 +191,129 @@ describeOrSkip("system-cron scheduler × task-store (integration)", () => {
     expect(
       await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID } }),
     ).toBe(0);
+  });
+
+  it("a 'selected' definition fires only for its selected, visible, unarchived repos", async () => {
+    await prisma.systemCronDefinition.update({
+      where: { id: CRON_ID },
+      data: {
+        repoScope: "selected",
+        repos: ["acme/widgets", "acme/retired", "acme/gone"],
+      },
+    });
+    const r = await schedulers[0].tick();
+    expect(r.errors).toEqual([]);
+    const tasks = await prisma.task.findMany({
+      where: { id: { startsWith: `SC-${CRON_ID}-` } },
+    });
+    expect(tasks.length).toBe(3);
+    expect(tasks.every((t) => t.id.endsWith("-acme-widgets"))).toBe(true);
+  });
+
+  it("a 'selected' definition with an empty intersection records nothing", async () => {
+    await prisma.systemCronDefinition.update({
+      where: { id: CRON_ID },
+      data: { repoScope: "selected", repos: ["acme/retired"] },
+    });
+    await schedulers[0].tick();
+    expect(
+      await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID } }),
+    ).toBe(0);
+  });
+
+  it("a multi-account tick lists once per account and fires each definition against its own listing", async () => {
+    await prisma.systemCronDefinition.create({
+      data: {
+        id: CRON_ID_2,
+        accountId: ACCOUNT_2,
+        name: "Scheduler IT 2",
+        schedule: "0 7 * * *",
+        timezone: "UTC",
+        enabled: true,
+        enabledAt: new Date("2026-11-13T08:00:00Z"),
+        titleTemplate: "IT2: {repo}",
+        descriptionTemplate: "/x --repo {repo}",
+      },
+    });
+    const asked: (string | null | undefined)[] = [];
+    const multi = new SystemCronScheduler({
+      store,
+      lookup: {
+        listRepositories: async (accountId) => {
+          asked.push(accountId);
+          return accountId === ACCOUNT_2
+            ? {
+                configured: true,
+                repos: [{ fullName: "two/only", archived: false }],
+              }
+            : {
+                configured: true,
+                repos: [{ fullName: "acme/widgets", archived: false }],
+              };
+        },
+      },
+      clock: { now: () => now },
+      log: () => {},
+      error: () => {},
+    });
+    const r = await multi.tick();
+    expect(r.errors).toEqual([]);
+    expect(asked.sort()).toEqual(["default", ACCOUNT_2].sort());
+    const t2 = await prisma.task.findMany({
+      where: { id: { startsWith: `SC-${CRON_ID_2}-` } },
+    });
+    expect(t2.map((t) => t.id)).toEqual([
+      `SC-${CRON_ID_2}-20261114T070000Z-two-only`,
+    ]);
+    expect(t2[0].accountId).toBe(ACCOUNT_2);
+    // CRON_ID_2 extends CRON_ID, so its tasks share the prefix; exclude them.
+    const t1 = await prisma.task.findMany({
+      where: {
+        id: {
+          startsWith: `SC-${CRON_ID}-`,
+          not: { startsWith: `SC-${CRON_ID_2}-` },
+        },
+      },
+    });
+    expect(t1.length).toBe(3);
+    expect(t1.every((t) => t.id.endsWith("-acme-widgets"))).toBe(true);
+  });
+
+  it("an unconfigured account skips only its own definitions", async () => {
+    await prisma.systemCronDefinition.create({
+      data: {
+        id: CRON_ID_2,
+        accountId: ACCOUNT_2,
+        name: "Scheduler IT 2",
+        schedule: "0 7 * * *",
+        timezone: "UTC",
+        enabled: true,
+        enabledAt: new Date("2026-11-13T08:00:00Z"),
+        titleTemplate: "IT2: {repo}",
+        descriptionTemplate: "/x --repo {repo}",
+      },
+    });
+    const partial = new SystemCronScheduler({
+      store,
+      lookup: {
+        listRepositories: async (accountId) =>
+          accountId === ACCOUNT_2
+            ? { configured: false, repos: [] }
+            : {
+                configured: true,
+                repos: [{ fullName: "acme/widgets", archived: false }],
+              },
+      },
+      clock: { now: () => now },
+      log: () => {},
+      error: () => {},
+    });
+    expect((await partial.tick()).status).toBe("fired");
+    expect(
+      await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID_2 } }),
+    ).toBe(0);
+    expect(
+      await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID } }),
+    ).toBe(3);
   });
 });

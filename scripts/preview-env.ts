@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -12,6 +13,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 import { type Command, type ExecFn, runCommands } from "./minikube.ts";
+import {
+  GATE_SECRET_KEY,
+  GATE_SECRET_NAME,
+  gateIngressValues,
+  helmSetEscape,
+} from "./preview-gate.ts";
 
 /**
  * scripts/preview-env.ts — install the full Shipwright preview profile onto an
@@ -28,6 +35,10 @@ import { type Command, type ExecFn, runCommands } from "./minikube.ts";
  *   2. The ingress controller must be Ready BEFORE the install, or its
  *      admission webhook refuses the chart's Ingress.
  *   3. `helm dependency build` must run BEFORE the install.
+ *
+ * With `opts.gate` the htpasswd Secret `shipwright-preview-gate` is created
+ * before the install and the release carries the basic-auth annotations
+ * (see scripts/preview-gate.ts).
  *
  * Secret values never appear in an argv, label or log line: the driver writes
  * them to files in a private temp directory, the commands reference those
@@ -81,7 +92,11 @@ export type PreviewOpts = {
   chartPath: string;
   /** Ingress host. When set, also sets admin.appBaseUrl. The values file defaults to preview.localhost. */
   host?: string;
-  /** Present only in the preview job. Not yet acted on by the builder. */
+  /**
+   * Present only in the preview job. Creates the basic-auth Secret
+   * (shipwright-preview-gate) before the install and sets the ingress-nginx
+   * auth annotations on the release. Without it the preview is ungated.
+   */
   gate?: PreviewGate;
   /** helm --timeout. Default "600s". */
   timeout?: string;
@@ -224,6 +239,7 @@ export function buildPreviewCommands(
     context,
     chartPath,
     host,
+    gate,
     timeout = DEFAULT_TIMEOUT,
     secretsDir = "preview-secrets",
   } = opts;
@@ -254,6 +270,21 @@ export function buildPreviewCommands(
     flags.push(`--from-file=${file.key}=${secretsDir}/${name}`);
     bySecret.set(file.secret, flags);
   }
+  if (gate) {
+    cmds.push({
+      kind: "kubectl",
+      label: `create secret ${GATE_SECRET_NAME}`,
+      argv: kubectl(
+        "create",
+        "secret",
+        "generic",
+        GATE_SECRET_NAME,
+        "--namespace",
+        NAMESPACE,
+        `--from-file=${GATE_SECRET_KEY}=${gate.htpasswdFile}`,
+      ),
+    });
+  }
   for (const [secret, flags] of bySecret) {
     cmds.push({
       kind: "kubectl",
@@ -276,6 +307,26 @@ export function buildPreviewCommands(
     label: "install the ingress-nginx controller",
     argv: kubectl("apply", "-f", INGRESS_MANIFEST_URL),
   });
+  if (gate) {
+    // The gate's configuration-snippet annotation (strips the forwarded
+    // Authorization header) is rejected by ingress-nginx v1.12.1 by default:
+    // allow-snippet-annotations is false and snippets are Critical risk.
+    cmds.push({
+      kind: "kubectl",
+      label: "allow snippet annotations on the ingress controller",
+      argv: kubectl(
+        "patch",
+        "configmap",
+        INGRESS_DEPLOYMENT,
+        "--namespace",
+        INGRESS_NAMESPACE,
+        "--type",
+        "merge",
+        "-p",
+        '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}',
+      ),
+    });
+  }
   cmds.push({
     kind: "kubectl",
     label: "wait for the ingress controller",
@@ -306,6 +357,12 @@ export function buildPreviewCommands(
         `admin.appBaseUrl=https://${host}`,
       ]
     : [];
+  const gateSets = gate
+    ? gateIngressValues().flatMap(([k, v]) => [
+        "--set",
+        `networking.ingress.annotations.${helmSetEscape(k)}=${v}`,
+      ])
+    : [];
   cmds.push({
     kind: "helm",
     label: `install/upgrade release "${RELEASE}"`,
@@ -320,6 +377,7 @@ export function buildPreviewCommands(
       "--values",
       `${chartPath}/${VALUES_FILE}`,
       ...hostSets,
+      ...gateSets,
       "--wait",
       "--timeout",
       timeout,
@@ -345,9 +403,18 @@ export function buildPreviewCommands(
   return cmds;
 }
 
+/** metrics.provider.basePath from the preview values profile ("" when unset). */
+export function readMetricsBasePath(valuesYaml: string): string {
+  const values = Bun.YAML.parse(valuesYaml) as {
+    metrics?: { provider?: { basePath?: string } };
+  };
+  return (values.metrics?.provider?.basePath ?? "").replace(/\/+$/, "");
+}
+
 /** Environment the deployed-target canary suite reads. */
 export function buildTargetsEnv(
   secrets: PreviewSecrets,
+  metricsBasePath = "",
 ): Record<string, string> {
   const url = (name: PortForward["name"]): string => {
     const forward = PORT_FORWARDS.find((p) => p.name === name);
@@ -355,7 +422,8 @@ export function buildTargetsEnv(
   };
   return {
     PREVIEW_ADMIN_URL: url("admin"),
-    PREVIEW_METRICS_URL: url("metrics"),
+    // The metrics app mounts every route under metrics.provider.basePath.
+    PREVIEW_METRICS_URL: `${url("metrics")}${metricsBasePath}`,
     PREVIEW_TASK_STORE_URL: url("taskStore"),
     PREVIEW_CHAT_URL: url("chat"),
     PREVIEW_MCP_URL: url("mcp"),
@@ -365,7 +433,10 @@ export function buildTargetsEnv(
 }
 
 /** Argv for one background `kubectl port-forward`. */
-function buildPortForwardArgv(context: string, p: PortForward): string[] {
+export function buildPortForwardArgv(
+  context: string,
+  p: PortForward,
+): string[] {
   return [
     "kubectl",
     "--context",
@@ -442,7 +513,14 @@ function main(): void {
 
   const envOut = flags["--env-out"];
   if (envOut) {
-    const body = Object.entries(buildTargetsEnv(secrets))
+    const body = Object.entries(
+      buildTargetsEnv(
+        secrets,
+        readMetricsBasePath(
+          readFileSync(`${chartPath}/${VALUES_FILE}`, "utf8"),
+        ),
+      ),
+    )
       .map(([k, v]) => `${k}=${v}\n`)
       .join("");
     appendFileSync(envOut, body);

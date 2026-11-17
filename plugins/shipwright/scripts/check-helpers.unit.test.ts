@@ -20,10 +20,14 @@ import {
   createTaskStoreClient,
   getCurrentUser,
   ghGraphql,
+  ghJson,
+  ghRun,
+  isMergeOnlyUpdate,
   resolveAllRepos,
   resolveRepoDirs,
   resolveRepos,
   resolveScopedRepos,
+  resolveWorkspacePath,
 } from "./check-helpers.ts";
 
 // ---------------------------------------------------------------------------
@@ -712,5 +716,126 @@ describe("ghGraphql owner hint", () => {
     expect(ghGraphql<{ owner: string }>("query { x }").owner).toBe("");
     process.env.SHIPWRIGHT_GH_OWNER = "inherited";
     expect(ghGraphql<{ owner: string }>("query { x }").owner).toBe("inherited");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveWorkspacePath
+// ---------------------------------------------------------------------------
+
+describe("resolveWorkspacePath", () => {
+  let savedWs: string | undefined;
+  let savedHome: string | undefined;
+
+  beforeEach(() => {
+    savedWs = process.env.WORKSPACE_PATH;
+    savedHome = process.env.AGENT_HOME;
+  });
+
+  afterEach(() => {
+    if (savedWs === undefined) delete process.env.WORKSPACE_PATH;
+    else process.env.WORKSPACE_PATH = savedWs;
+    if (savedHome === undefined) delete process.env.AGENT_HOME;
+    else process.env.AGENT_HOME = savedHome;
+  });
+
+  test("WORKSPACE_PATH wins over AGENT_HOME", () => {
+    process.env.WORKSPACE_PATH = " /explicit/ws ";
+    process.env.AGENT_HOME = "/home/agent";
+    expect(resolveWorkspacePath()).toBe("/explicit/ws");
+  });
+
+  test("falls back to AGENT_HOME/workspace", () => {
+    delete process.env.WORKSPACE_PATH;
+    process.env.AGENT_HOME = "/home/agent";
+    expect(resolveWorkspacePath()).toBe("/home/agent/workspace");
+  });
+
+  test("throws when neither is set", () => {
+    delete process.env.WORKSPACE_PATH;
+    delete process.env.AGENT_HOME;
+    expect(() => resolveWorkspacePath()).toThrow(/AGENT_HOME is not set/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isMergeOnlyUpdate
+// ---------------------------------------------------------------------------
+
+describe("isMergeOnlyUpdate", () => {
+  const plain = (sha: string) => ({ sha, parents: [{ sha: "p" }] });
+  const merge = (sha: string) => ({
+    sha,
+    parents: [{ sha: "p1" }, { sha: "p2" }],
+  });
+  const withCommits = (commits: ReturnType<typeof plain>[]) => ({
+    listPrCommits: async () => commits,
+  });
+
+  test("true when every commit after the anchor is a merge", async () => {
+    const deps = withCommits([plain("a"), merge("b"), merge("c")]);
+    expect(await isMergeOnlyUpdate(1, "a", deps)).toBe(true);
+  });
+
+  test("false when a non-merge commit follows the anchor", async () => {
+    const deps = withCommits([plain("a"), merge("b"), plain("c")]);
+    expect(await isMergeOnlyUpdate(1, "a", deps)).toBe(false);
+  });
+
+  test("false when the anchor is missing or last", async () => {
+    const deps = withCommits([plain("a"), merge("b")]);
+    expect(await isMergeOnlyUpdate(1, "zzz", deps)).toBe(false);
+    expect(await isMergeOnlyUpdate(1, "b", deps)).toBe(false);
+  });
+
+  test("false when listing throws, and forwards the repo argument", async () => {
+    const seen: Array<string | undefined> = [];
+    const deps = {
+      listPrCommits: async (_n: number, repo?: string) => {
+        seen.push(repo);
+        throw new Error("boom");
+      },
+    };
+    expect(await isMergeOnlyUpdate(1, "a", deps, "o/r")).toBe(false);
+    expect(seen).toEqual(["o/r"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ghJson / ghRun
+// ---------------------------------------------------------------------------
+
+describe("ghJson and ghRun", () => {
+  let tmpDir: string;
+  let savedPath: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "gh-json-run-test-"));
+    savedPath = process.env.PATH;
+    // Fake gh: "fail" as first arg exits 3 with stderr; otherwise echoes JSON of args.
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh\nif [ "$1" = "fail" ]; then echo nope >&2; exit 3; fi\nprintf '{"first":"%s"}\\n' "$1"\n`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+    process.env.PATH = `${tmpDir}:${savedPath}`;
+  });
+
+  afterEach(() => {
+    process.env.PATH = savedPath;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("ghJson parses stdout JSON", () => {
+    expect(ghJson<{ first: string }>(["pr", "list"]).first).toBe("pr");
+  });
+
+  test("ghJson throws with exit code and stderr on failure", () => {
+    expect(() => ghJson(["fail"])).toThrow(/exit 3\): nope/);
+  });
+
+  test("ghRun returns undefined on success and throws on failure", () => {
+    expect(ghRun(["pr", "view"])).toBeUndefined();
+    expect(() => ghRun(["fail", "x"])).toThrow(/gh fail x failed \(exit 3\)/);
   });
 });

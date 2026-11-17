@@ -28,6 +28,7 @@ import type {
   TaskKind,
 } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
+import type { OriginKind } from "./origin-kinds.ts";
 import {
   type PrOriginStamper,
   PullRequestService,
@@ -334,6 +335,12 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
     return false;
   if (filters.assignee !== undefined && task.assignee !== filters.assignee)
     return false;
+  if (filters.owner !== undefined && task.owner !== filters.owner) return false;
+  if (
+    filters.originKind !== undefined &&
+    task.originKind !== filters.originKind
+  )
+    return false;
   if (filters.hitl !== undefined && task.hitl !== filters.hitl) return false;
   if (filters.kind !== undefined && task.kind !== filters.kind) return false;
   if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
@@ -431,6 +438,10 @@ interface TaskListPostFilters {
   pr?: number;
   branch?: string;
   assignee?: string;
+  /** PLU-2.5: exact match on Task.owner (requester email). */
+  owner?: string;
+  /** PLU-2.5: exact match on Task.originKind (a registered OriginKind). */
+  originKind?: OriginKind;
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1). Note `kind: "prd"` always yields an empty
    * ready set — ready.ts excludes that slice structurally. */
@@ -461,6 +472,8 @@ export interface TaskListFilters {
   claimedBy?: string;
   pr?: number;
   branch?: string;
+  owner?: string;
+  originKind?: OriginKind;
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1) — `?kind=dev` / `?kind=prd`. */
   kind?: TaskKind;
@@ -605,6 +618,8 @@ export class TaskService implements TaskServiceLike {
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.hitl !== undefined) where.hitl = filters.hitl;
     if (filters.kind !== undefined) where.kind = filters.kind;
+    if (filters.owner !== undefined) where.owner = filters.owner;
+    if (filters.originKind !== undefined) where.originKind = filters.originKind;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }

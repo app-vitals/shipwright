@@ -27,6 +27,10 @@ export interface paths {
                     /** @description Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter. */
                     org?: string | string[];
                     assignee?: string;
+                    /** @description Only tasks whose owner (requester email) equals this exactly. */
+                    owner?: string;
+                    /** @description Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400. */
+                    originKind?: "document" | "skill" | "cron" | "human";
                     claimedBy?: string;
                     branch?: string;
                     pr?: string;
@@ -2315,7 +2319,7 @@ export interface paths {
         };
         /**
          * List sessions
-         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.
+         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.
          */
         get: {
             parameters: {
@@ -2332,6 +2336,8 @@ export interface paths {
                     org?: string | string[];
                     /** @description Case-insensitive substring match against slug OR title. */
                     q?: string;
+                    /** @description Only sessions whose owner equals this email exactly. */
+                    owner?: string;
                     /** @description Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account. */
                     accountId?: string;
                     limit?: string;
@@ -2380,7 +2386,7 @@ export interface paths {
         };
         /**
          * Get a session by slug
-         * @description Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).
+         * @description Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).
          */
         get: {
             parameters: {
@@ -2432,7 +2438,7 @@ export interface paths {
         head?: never;
         /**
          * Rename/archive a session — admin-only
-         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
+         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
          */
         patch: {
             parameters: {
@@ -2472,6 +2478,391 @@ export interface paths {
                 };
                 /** @description Forbidden — admin tokens only */
                 403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/sessions/preflight/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scope preflight for a list of repos
+         * @description Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description A repo (org/repo) to check. Repeatable (?repo=a&repo=b). */
+                    repo: string | string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Covered and uncovered repos */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScopePreflightResponse"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{slug}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acquire the session planning lock
+         * @description Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SessionLockBody"];
+                };
+            };
+            responses: {
+                /** @description Lock acquired */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLock"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Lock held and unexpired */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLockConflict"];
+                    };
+                };
+            };
+        };
+        /**
+         * Release the session planning lock
+         * @description Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.
+         */
+        delete: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SessionLockBody"];
+                };
+            };
+            responses: {
+                /** @description Lock released */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLockRelease"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Lock held by someone else */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List planning documents
+         * @description Returns `{ documents, total }`. `?planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `?planned=true` returns documents with `plannedAt` set. Any query parameter not documented here is rejected with `400`. Agent tokens only see documents in their account whose home repo is in the token's repo scope.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    session?: string;
+                    kind?: "spec" | "plan";
+                    owner?: string;
+                    /** @description `false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set. */
+                    planned?: "true" | "false";
+                    /** @description Admin tokens only: narrow to one account. Ignored for agent tokens. */
+                    accountId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Matching documents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanDocumentListResponse"];
+                    };
+                };
+                /** @description Bad request — unknown query parameter */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Register a planning document
+         * @description Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterPlanDocumentBody"];
+                };
+            };
+            responses: {
+                /** @description Registered (or re-registered) document */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanDocument"];
+                    };
+                };
+                /** @description Bad request — missing/invalid fields */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a planning document
+         * @description Sets any of `plannedAt` (specs only; null clears), `prUrl`, `owner`, `state`. Omitted fields are untouched. `404` when the document does not exist or is outside the caller's scope.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PatchPlanDocumentBody"];
+                };
+            };
+            responses: {
+                /** @description Updated document */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanDocument"];
+                    };
+                };
+                /** @description Bad request — invalid field */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2615,6 +3006,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coverage-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List coverage snapshots, newest first
+         * @description Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only snapshots for this repo. */
+                    repo?: string;
+                    /** @description ISO timestamp; only snapshots measured at or after it. */
+                    since?: string;
+                    /** @description Max records to return */
+                    limit?: string;
+                    /** @description Pagination offset */
+                    offset?: string;
+                    /** @description Admin tokens only: narrow to one account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Coverage snapshot history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoverageSnapshotListResponse"];
+                    };
+                };
+                /** @description Bad request — `since` is not a valid ISO timestamp */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Record (upsert) a coverage snapshot for a commit
+         * @description Records the measured coverage for one commit. The body carries covered/total counts; the server computes `linesPct` (and `branchesPct`/`functionsPct` when those pairs are supplied). The row is unique on (account, `repo`, `commitSha`): the first POST returns `201`, a repeat POST for the same commit replaces the measurements and returns `200`. `400` when `linesTotal` is not > 0, any covered exceeds its total, `commitSha` is empty, or `repo` is not `owner/repo`. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateCoverageSnapshotBody"];
+                };
+            };
+            responses: {
+                /** @description Existing snapshot for this commit, updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoverageSnapshot"];
+                    };
+                };
+                /** @description Created coverage snapshot */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoverageSnapshot"];
+                    };
+                };
+                /** @description Bad request — missing/invalid fields or counts */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — `repo` is not in the agent token's scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coverage-snapshots/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest coverage snapshot per repo
+         * @description Returns `{ snapshots }` with exactly one row per repo — the newest by `measuredAt` — across the repos visible to the caller. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: narrow to one account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Newest snapshot per repo */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoverageSnapshotLatestResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system-crons": {
         parameters: {
             query?: never;
@@ -2663,7 +3209,7 @@ export interface paths {
         put?: never;
         /**
          * Create a system-cron definition — admin-only
-         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.
+         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.
          */
         post: {
             parameters: {
@@ -2740,7 +3286,7 @@ export interface paths {
         head?: never;
         /**
          * Update a system-cron definition — admin-only
-         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
+         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
          */
         patch: {
             parameters: {
@@ -3247,6 +3793,32 @@ export interface components {
             /** @example true */
             hitl?: boolean | null;
             /**
+             * @description Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.
+             * @example dev@example.com
+             */
+            owner?: string | null;
+            /**
+             * @description Id of the plan document this task came from.
+             * @example doc-plan-1
+             */
+            planDocumentId?: string | null;
+            /**
+             * @description Id of the spec document this task implements.
+             * @example doc-spec-1
+             */
+            specDocumentId?: string | null;
+            /**
+             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+             * @example skill
+             * @enum {string|null}
+             */
+            originKind?: "document" | "skill" | "cron" | "human" | null;
+            /**
+             * @description Names the origin: a document id, skill name, cron name, etc.
+             * @example plan-session
+             */
+            originRef?: string | null;
+            /**
              * @description What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.
              * @default dev
              * @example dev
@@ -3355,6 +3927,20 @@ export interface components {
             type?: string;
             /** @example manual */
             source?: string;
+            /** @example dev@example.com */
+            owner?: string | null;
+            /** @example doc-plan-1 */
+            planDocumentId?: string | null;
+            /** @example doc-spec-1 */
+            specDocumentId?: string | null;
+            /**
+             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+             * @example skill
+             * @enum {string|null}
+             */
+            originKind?: "document" | "skill" | "cron" | "human" | null;
+            /** @example plan-session */
+            originRef?: string | null;
             /**
              * @description What the task is (TKD-1.1). Defaults to `dev`.
              * @example dev
@@ -3986,6 +4572,18 @@ export interface components {
             /** @example null */
             archivedBy?: string | null;
             /**
+             * @description Owner email, set from the session's first document.
+             * @example dev@example.com
+             */
+            owner: string | null;
+            /**
+             * @description The org/repo the session's planning files live in.
+             * @example org/repo
+             */
+            homeRepo: string | null;
+            /** @description The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope. */
+            documents: components["schemas"]["PlanDocument"][];
+            /**
              * @example active
              * @enum {string}
              */
@@ -4013,6 +4611,7 @@ export interface components {
              */
             agentIds: string[];
             /**
+             * @description Union of the session's task repos and its declared repos (PATCH `repos`).
              * @example [
              *       "org/repo"
              *     ]
@@ -4034,6 +4633,65 @@ export interface components {
             /** @example false */
             archived: boolean;
         };
+        PlanDocument: {
+            /** @example clxdoc1234567890 */
+            id: string;
+            /** @example default */
+            accountId: string;
+            /** @example shipwright-may-launch */
+            session: string;
+            /**
+             * @example spec
+             * @enum {string}
+             */
+            kind: "spec" | "plan";
+            /**
+             * @description Specs: 1, 2, 3… within the session. Plans: always 1.
+             * @example 2
+             */
+            number: number;
+            /** @example org/repo */
+            repo: string;
+            /** @example planning/shipwright-may-launch/SPEC-0002.md */
+            path: string;
+            /** @example Planning documents */
+            title: string | null;
+            /** @example dev@example.com */
+            owner: string | null;
+            /**
+             * @example [
+             *       "org/repo"
+             *     ]
+             */
+            repos: string[];
+            /** @example https://github.com/org/repo/pull/12 */
+            prUrl: string | null;
+            /**
+             * @example draft
+             * @enum {string}
+             */
+            state: "draft" | "pr_open" | "merged" | "abandoned";
+            /** @example null */
+            commitSha: string | null;
+            /**
+             * Format: date-time
+             * @description Specs only.
+             * @example null
+             */
+            plannedAt: string | null;
+            /** @example null */
+            originTaskId: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-11-17T12:00:00.000Z
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-17T12:00:00.000Z
+             */
+            updatedAt: string;
+        };
         SessionPatchBody: {
             /**
              * @description Omitted: title untouched. A string: set. null: clears the title.
@@ -4045,6 +4703,132 @@ export interface components {
              * @example true
              */
             archived?: boolean;
+            /**
+             * @description Omitted: untouched. A string: set. null: clears.
+             * @example dev@example.com
+             */
+            owner?: string | null;
+            /**
+             * @description Omitted: untouched. A string: set. null: clears.
+             * @example org/repo
+             */
+            homeRepo?: string | null;
+            /**
+             * @description Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list.
+             * @example [
+             *       "org/repo"
+             *     ]
+             */
+            repos?: string[];
+        };
+        ScopePreflightResponse: {
+            /**
+             * @example [
+             *       "org/a"
+             *     ]
+             */
+            covered: string[];
+            /**
+             * @example [
+             *       "org/b"
+             *     ]
+             */
+            uncovered: string[];
+        };
+        SessionLock: {
+            /** @example agent-1 */
+            holder: string;
+            /** @example 2026-11-17T10:00:00.000Z */
+            acquiredAt: string;
+            /** @example 2026-11-17T10:15:00.000Z */
+            expiresAt: string;
+        };
+        SessionLockConflict: {
+            /** @example planning lock held by agent-1 since 2026-11-17T10:00:00.000Z */
+            error: string;
+            /** @example agent-1 */
+            holder: string;
+            /** @example 2026-11-17T10:00:00.000Z */
+            acquiredAt: string;
+            /** @example 2026-11-17T10:15:00.000Z */
+            expiresAt: string;
+        };
+        SessionLockBody: {
+            /**
+             * @description Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.
+             * @example agent-1
+             */
+            holder?: string;
+        };
+        SessionLockRelease: {
+            /** @enum {boolean} */
+            released: true;
+        };
+        RegisterPlanDocumentBody: {
+            /** @example shipwright-may-launch */
+            session: string;
+            /**
+             * @example spec
+             * @enum {string}
+             */
+            kind: "spec" | "plan";
+            /**
+             * @description Required for specs; plans are always number 1 (omit it or send 1).
+             * @example 2
+             */
+            number?: number;
+            /**
+             * @description Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403).
+             * @example org/repo
+             */
+            repo: string;
+            /** @example planning/shipwright-may-launch/SPEC-0002.md */
+            path: string;
+            /** @example Spec title */
+            title?: string | null;
+            /** @example dev@example.com */
+            owner?: string | null;
+            /**
+             * @example [
+             *       "org/repo",
+             *       "org/other"
+             *     ]
+             */
+            repos?: string[];
+            /** @example https://github.com/org/repo/pull/12 */
+            prUrl?: string | null;
+            /**
+             * @description Defaults to draft on first registration.
+             * @example pr_open
+             * @enum {string}
+             */
+            state?: "draft" | "pr_open" | "merged" | "abandoned";
+            /** @example null */
+            commitSha?: string | null;
+            /** @example null */
+            originTaskId?: string | null;
+        };
+        PlanDocumentListResponse: {
+            documents: components["schemas"]["PlanDocument"][];
+            /** @example 1 */
+            total: number;
+        };
+        PatchPlanDocumentBody: {
+            /**
+             * Format: date-time
+             * @description ISO timestamp a planning pass consumed this spec; null clears it. Specs only.
+             * @example 2026-11-17T12:00:00.000Z
+             */
+            plannedAt?: string | null;
+            /** @example null */
+            prUrl?: string | null;
+            /** @example null */
+            owner?: string | null;
+            /**
+             * @example merged
+             * @enum {string}
+             */
+            state?: "draft" | "pr_open" | "merged" | "abandoned";
         };
         VerificationCheck: {
             /** @example clxvcheck1234567 */
@@ -4135,6 +4919,122 @@ export interface components {
             /** @example 0 */
             offset: number;
         };
+        CoverageSnapshot: {
+            /** @example clxcov1234567890 */
+            id: string;
+            /** @example default */
+            accountId: string;
+            /** @example org/repo */
+            repo: string;
+            /** @example main */
+            branch: string;
+            /** @example 9fceb02d0ae598e95dc970b74767f19372d61af8 */
+            commitSha: string;
+            /** @example 820 */
+            linesCovered: number;
+            /** @example 1000 */
+            linesTotal: number;
+            /**
+             * @description Computed server-side: linesCovered / linesTotal * 100.
+             * @example 82
+             */
+            linesPct: number;
+            /** @example 40 */
+            branchesCovered: number | null;
+            /** @example 50 */
+            branchesTotal: number | null;
+            /** @example 80 */
+            branchesPct: number | null;
+            /** @example 90 */
+            functionsCovered: number | null;
+            /** @example 100 */
+            functionsTotal: number | null;
+            /** @example 90 */
+            functionsPct: number | null;
+            /** @example bun */
+            tool: string;
+            /** @example https://github.com/org/repo/actions/runs/1 */
+            runUrl: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-11-17T12:00:00.000Z
+             */
+            measuredAt: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-17T12:00:05.000Z
+             */
+            createdAt: string;
+        };
+        CreateCoverageSnapshotBody: {
+            /**
+             * @description Repository in `owner/repo` form — anything else is 400.
+             * @example org/repo
+             */
+            repo: string;
+            /** @example main */
+            branch: string;
+            /**
+             * @description Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row.
+             * @example 9fceb02d0ae598e95dc970b74767f19372d61af8
+             */
+            commitSha: string;
+            /**
+             * @description Must be >= 0 and <= linesTotal.
+             * @example 820
+             */
+            linesCovered: number;
+            /**
+             * @description Must be > 0.
+             * @example 1000
+             */
+            linesTotal: number;
+            /** @example 40 */
+            branchesCovered?: number;
+            /**
+             * @description Optional; branchesCovered/branchesTotal must be given together with covered <= total.
+             * @example 50
+             */
+            branchesTotal?: number;
+            /** @example 90 */
+            functionsCovered?: number;
+            /**
+             * @description Optional; functionsCovered/functionsTotal must be given together with covered <= total.
+             * @example 100
+             */
+            functionsTotal?: number;
+            /**
+             * @description Tool that produced the measurement (bun, c8, nyc, ...).
+             * @example bun
+             */
+            tool: string;
+            /** @example https://github.com/org/repo/actions/runs/1 */
+            runUrl?: string;
+            /**
+             * @description ISO timestamp of the measurement. Defaults to the current time.
+             * @example 2026-11-17T12:00:00.000Z
+             */
+            measuredAt?: string;
+            /**
+             * @description Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account.
+             * @example default
+             */
+            accountId?: string;
+        };
+        CoverageSnapshotListResponse: {
+            /** @description Snapshots ordered by `measuredAt` descending (newest first). */
+            snapshots: components["schemas"]["CoverageSnapshot"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+        };
+        CoverageSnapshotLatestResponse: {
+            /** @description Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo. */
+            snapshots: components["schemas"]["CoverageSnapshot"][];
+        };
         SystemCronListResponse: {
             systemCrons: components["schemas"]["SystemCronDefinition"][];
         };
@@ -4180,6 +5080,19 @@ export interface components {
              */
             descriptionTemplate: string;
             /**
+             * @description Which repos the cron fans out to: every repo ('all') or only `repos` ('selected').
+             * @example all
+             * @enum {string}
+             */
+            repoScope: "all" | "selected";
+            /**
+             * @description org/repo list used when repoScope is 'selected'; always [] when 'all'.
+             * @example [
+             *       "acme/widgets"
+             *     ]
+             */
+            repos: string[];
+            /**
              * Format: date-time
              * @example 2026-11-14T00:00:00.000Z
              */
@@ -4211,6 +5124,19 @@ export interface components {
             titleTemplate: string;
             /** @example Audit {repo}'s dependencies. */
             descriptionTemplate: string;
+            /**
+             * @description Defaults to 'all'.
+             * @example all
+             * @enum {string}
+             */
+            repoScope?: "all" | "selected";
+            /**
+             * @description org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500.
+             * @example [
+             *       "acme/widgets"
+             *     ]
+             */
+            repos?: string[];
         };
         PatchSystemCronBody: {
             name?: string;
@@ -4218,6 +5144,9 @@ export interface components {
             timezone?: string;
             titleTemplate?: string;
             descriptionTemplate?: string;
+            /** @enum {string} */
+            repoScope?: "all" | "selected";
+            repos?: string[];
         };
         FireSystemCronResponse: {
             /**

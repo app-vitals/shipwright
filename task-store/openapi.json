@@ -117,6 +117,34 @@
           {
             "schema": {
               "type": "string",
+              "example": "dev@example.com",
+              "description": "Only tasks whose owner (requester email) equals this exactly."
+            },
+            "required": false,
+            "description": "Only tasks whose owner (requester email) equals this exactly.",
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "document",
+                "skill",
+                "cron",
+                "human"
+              ],
+              "example": "cron",
+              "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+            },
+            "required": false,
+            "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.",
+            "name": "originKind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "agent-id-123"
             },
             "required": false,
@@ -2557,7 +2585,7 @@
           "sessions"
         ],
         "summary": "List sessions",
-        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
         "parameters": [
           {
             "schema": {
@@ -2660,6 +2688,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "a@example.com",
+              "description": "Only sessions whose owner equals this email exactly."
+            },
+            "required": false,
+            "description": "Only sessions whose owner equals this email exactly.",
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "default",
               "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account."
             },
@@ -2717,7 +2756,7 @@
           "sessions"
         ],
         "summary": "Get a session by slug",
-        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
+        "description": "Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
         "parameters": [
           {
             "schema": {
@@ -2778,7 +2817,7 @@
           "sessions"
         ],
         "summary": "Rename/archive a session — admin-only",
-        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
         "parameters": [
           {
             "schema": {
@@ -2833,6 +2872,465 @@
           },
           "403": {
             "description": "Forbidden — admin tokens only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/preflight/scope": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Scope preflight for a list of repos",
+        "description": "Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.",
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "example": "org/repo",
+              "description": "A repo (org/repo) to check. Repeatable (?repo=a&repo=b)."
+            },
+            "required": true,
+            "description": "A repo (org/repo) to check. Repeatable (?repo=a&repo=b).",
+            "name": "repo",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Covered and uncovered repos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePreflightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{slug}/lock": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Acquire the session planning lock",
+        "description": "Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLockBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock acquired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLock"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lock held and unexpired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLockConflict"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Release the session planning lock",
+        "description": "Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLockBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLockRelease"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Lock held by someone else",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Register a planning document",
+        "description": "Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPlanDocumentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registered (or re-registered) document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "List planning documents",
+        "description": "Returns `{ documents, total }`. `?planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `?planned=true` returns documents with `plannedAt` set. Any query parameter not documented here is rejected with `400`. Agent tokens only see documents in their account whose home repo is in the token's repo scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": false,
+            "name": "session",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spec",
+                "plan"
+              ],
+              "example": "spec"
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dev@example.com"
+            },
+            "required": false,
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "example": "false",
+              "description": "`false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set."
+            },
+            "required": false,
+            "description": "`false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set.",
+            "name": "planned",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account. Ignored for agent tokens."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account. Ignored for agent tokens.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocumentListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — unknown query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{id}": {
+      "patch": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Update a planning document",
+        "description": "Sets any of `plannedAt` (specs only; null clears), `prUrl`, `owner`, `state`. Omitted fields are untouched. `404` when the document does not exist or is outside the caller's scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxdoc1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchPlanDocumentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -3020,6 +3518,187 @@
         }
       }
     },
+    "/coverage-snapshots": {
+      "post": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "Record (upsert) a coverage snapshot for a commit",
+        "description": "Records the measured coverage for one commit. The body carries covered/total counts; the server computes `linesPct` (and `branchesPct`/`functionsPct` when those pairs are supplied). The row is unique on (account, `repo`, `commitSha`): the first POST returns `201`, a repeat POST for the same commit replaces the measurements and returns `200`. `400` when `linesTotal` is not > 0, any covered exceeds its total, `commitSha` is empty, or `repo` is not `owner/repo`. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCoverageSnapshotBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing snapshot for this commit, updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshot"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created coverage snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields or counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "List coverage snapshots, newest first",
+        "description": "Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo",
+              "description": "Only snapshots for this repo."
+            },
+            "required": false,
+            "description": "Only snapshots for this repo.",
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2026-11-01T00:00:00.000Z",
+              "description": "ISO timestamp; only snapshots measured at or after it."
+            },
+            "required": false,
+            "description": "ISO timestamp; only snapshots measured at or after it.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50",
+              "description": "Max records to return"
+            },
+            "required": false,
+            "description": "Max records to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0",
+              "description": "Pagination offset"
+            },
+            "required": false,
+            "description": "Pagination offset",
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage snapshot history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshotListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — `since` is not a valid ISO timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coverage-snapshots/latest": {
+      "get": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "Latest coverage snapshot per repo",
+        "description": "Returns `{ snapshots }` with exactly one row per repo — the newest by `measuredAt` — across the repos visible to the caller. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest snapshot per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshotLatestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system-crons": {
       "get": {
         "tags": [
@@ -3083,7 +3762,7 @@
           "System Crons"
         ],
         "summary": "Create a system-cron definition — admin-only",
-        "description": "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.",
+        "description": "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.",
         "parameters": [
           {
             "schema": {
@@ -3157,7 +3836,7 @@
           "System Crons"
         ],
         "summary": "Update a system-cron definition — admin-only",
-        "description": "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
+        "description": "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
         "parameters": [
           {
             "schema": {
@@ -3884,6 +4563,53 @@
             ],
             "example": true
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents."
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1",
+            "description": "Id of the plan document this task came from."
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1",
+            "description": "Id of the spec document this task implements."
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session",
+            "description": "Names the origin: a document id, skill name, cron name, etc."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -4146,6 +4872,49 @@
           "source": {
             "type": "string",
             "example": "manual"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1"
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1"
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session"
           },
           "kind": {
             "type": "string",
@@ -5506,6 +6275,29 @@
             ],
             "example": null
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Owner email, set from the session's first document."
+          },
+          "homeRepo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo",
+            "description": "The org/repo the session's planning files live in."
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanDocument"
+            },
+            "description": "The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope."
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -5570,7 +6362,8 @@
             },
             "example": [
               "org/repo"
-            ]
+            ],
+            "description": "Union of the session's task repos and its declared repos (PATCH `repos`)."
           },
           "waitingTasks": {
             "type": "array",
@@ -5611,6 +6404,9 @@
           "accountId",
           "createdAt",
           "updatedAt",
+          "owner",
+          "homeRepo",
+          "documents",
           "state",
           "waitingSince",
           "lastActivityAt",
@@ -5619,6 +6415,136 @@
           "repos",
           "waitingTasks",
           "archived"
+        ]
+      },
+      "PlanDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxdoc1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "session": {
+            "type": "string",
+            "example": "shipwright-may-launch"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "example": "spec"
+          },
+          "number": {
+            "type": "integer",
+            "example": 2,
+            "description": "Specs: 1, 2, 3… within the session. Plans: always 1."
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "path": {
+            "type": "string",
+            "example": "planning/shipwright-may-launch/SPEC-0002.md"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Planning documents"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/pull/12"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "draft"
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "plannedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null,
+            "description": "Specs only."
+          },
+          "originTaskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "session",
+          "kind",
+          "number",
+          "repo",
+          "path",
+          "title",
+          "owner",
+          "repos",
+          "prUrl",
+          "state",
+          "commitSha",
+          "plannedAt",
+          "originTaskId",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "SessionPatchBody": {
@@ -5636,6 +6562,284 @@
             "type": "boolean",
             "example": true,
             "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Omitted: untouched. A string: set. null: clears."
+          },
+          "homeRepo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "org/repo",
+            "description": "Omitted: untouched. A string: set. null: clears."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ],
+            "description": "Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list."
+          }
+        }
+      },
+      "ScopePreflightResponse": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/a"
+            ]
+          },
+          "uncovered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/b"
+            ]
+          }
+        },
+        "required": [
+          "covered",
+          "uncovered"
+        ]
+      },
+      "SessionLock": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "example": "agent-1"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "example": "2026-11-17T10:00:00.000Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-11-17T10:15:00.000Z"
+          }
+        },
+        "required": [
+          "holder",
+          "acquiredAt",
+          "expiresAt"
+        ]
+      },
+      "SessionLockConflict": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "planning lock held by agent-1 since 2026-11-17T10:00:00.000Z"
+          },
+          "holder": {
+            "type": "string",
+            "example": "agent-1"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "example": "2026-11-17T10:00:00.000Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-11-17T10:15:00.000Z"
+          }
+        },
+        "required": [
+          "error",
+          "holder",
+          "acquiredAt",
+          "expiresAt"
+        ]
+      },
+      "SessionLockBody": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "minLength": 1,
+            "example": "agent-1",
+            "description": "Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder."
+          }
+        }
+      },
+      "SessionLockRelease": {
+        "type": "object",
+        "properties": {
+          "released": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "released"
+        ]
+      },
+      "RegisterPlanDocumentBody": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "example": "shipwright-may-launch"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "example": "spec"
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 2,
+            "description": "Required for specs; plans are always number 1 (omit it or send 1)."
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403)."
+          },
+          "path": {
+            "type": "string",
+            "example": "planning/shipwright-may-launch/SPEC-0002.md"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Spec title"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo",
+              "org/other"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/pull/12"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "pr_open",
+            "description": "Defaults to draft on first registration."
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "originTaskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          }
+        },
+        "required": [
+          "session",
+          "kind",
+          "repo",
+          "path"
+        ]
+      },
+      "PlanDocumentListResponse": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanDocument"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "documents",
+          "total"
+        ]
+      },
+      "PatchPlanDocumentBody": {
+        "type": "object",
+        "properties": {
+          "plannedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z",
+            "description": "ISO timestamp a planning pass consumed this spec; null clears it. Specs only."
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "merged"
           }
         }
       },
@@ -5855,6 +7059,246 @@
           "offset"
         ]
       },
+      "CoverageSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxcov1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "branch": {
+            "type": "string",
+            "example": "main"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          "linesCovered": {
+            "type": "integer",
+            "example": 820
+          },
+          "linesTotal": {
+            "type": "integer",
+            "example": 1000
+          },
+          "linesPct": {
+            "type": "number",
+            "example": 82,
+            "description": "Computed server-side: linesCovered / linesTotal * 100."
+          },
+          "branchesCovered": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 40
+          },
+          "branchesTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 50
+          },
+          "branchesPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 80
+          },
+          "functionsCovered": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 90
+          },
+          "functionsTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 100
+          },
+          "functionsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 90
+          },
+          "tool": {
+            "type": "string",
+            "example": "bun"
+          },
+          "runUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/actions/runs/1"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:05.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "repo",
+          "branch",
+          "commitSha",
+          "linesCovered",
+          "linesTotal",
+          "linesPct",
+          "branchesCovered",
+          "branchesTotal",
+          "branchesPct",
+          "functionsCovered",
+          "functionsTotal",
+          "functionsPct",
+          "tool",
+          "runUrl",
+          "measuredAt",
+          "createdAt"
+        ]
+      },
+      "CreateCoverageSnapshotBody": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Repository in `owner/repo` form — anything else is 400."
+          },
+          "branch": {
+            "type": "string",
+            "example": "main"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+            "description": "Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row."
+          },
+          "linesCovered": {
+            "type": "integer",
+            "example": 820,
+            "description": "Must be >= 0 and <= linesTotal."
+          },
+          "linesTotal": {
+            "type": "integer",
+            "example": 1000,
+            "description": "Must be > 0."
+          },
+          "branchesCovered": {
+            "type": "integer",
+            "example": 40
+          },
+          "branchesTotal": {
+            "type": "integer",
+            "example": 50,
+            "description": "Optional; branchesCovered/branchesTotal must be given together with covered <= total."
+          },
+          "functionsCovered": {
+            "type": "integer",
+            "example": 90
+          },
+          "functionsTotal": {
+            "type": "integer",
+            "example": 100,
+            "description": "Optional; functionsCovered/functionsTotal must be given together with covered <= total."
+          },
+          "tool": {
+            "type": "string",
+            "example": "bun",
+            "description": "Tool that produced the measurement (bun, c8, nyc, ...)."
+          },
+          "runUrl": {
+            "type": "string",
+            "example": "https://github.com/org/repo/actions/runs/1"
+          },
+          "measuredAt": {
+            "type": "string",
+            "example": "2026-11-17T12:00:00.000Z",
+            "description": "ISO timestamp of the measurement. Defaults to the current time."
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account."
+          }
+        },
+        "required": [
+          "repo",
+          "branch",
+          "commitSha",
+          "linesCovered",
+          "linesTotal",
+          "tool"
+        ]
+      },
+      "CoverageSnapshotListResponse": {
+        "type": "object",
+        "properties": {
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSnapshot"
+            },
+            "description": "Snapshots ordered by `measuredAt` descending (newest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "snapshots",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CoverageSnapshotLatestResponse": {
+        "type": "object",
+        "properties": {
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSnapshot"
+            },
+            "description": "Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo."
+          }
+        },
+        "required": [
+          "snapshots"
+        ]
+      },
       "SystemCronListResponse": {
         "type": "object",
         "properties": {
@@ -5919,6 +7363,25 @@
             "example": "Audit {repo}'s dependencies and open a PR for safe bumps.",
             "description": "Task description template — same `{repo}`-only plain substitution as titleTemplate."
           },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "example": "all",
+            "description": "Which repos the cron fans out to: every repo ('all') or only `repos` ('selected')."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "acme/widgets"
+            ],
+            "description": "org/repo list used when repoScope is 'selected'; always [] when 'all'."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -5940,6 +7403,8 @@
           "enabledAt",
           "titleTemplate",
           "descriptionTemplate",
+          "repoScope",
+          "repos",
           "createdAt",
           "updatedAt"
         ]
@@ -5976,6 +7441,25 @@
           "descriptionTemplate": {
             "type": "string",
             "example": "Audit {repo}'s dependencies."
+          },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "example": "all",
+            "description": "Defaults to 'all'."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "acme/widgets"
+            ],
+            "description": "org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500."
           }
         },
         "required": [
@@ -6003,6 +7487,19 @@
           },
           "descriptionTemplate": {
             "type": "string"
+          },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ]
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

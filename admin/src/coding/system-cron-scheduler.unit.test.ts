@@ -60,11 +60,13 @@ function lister(
   result:
     | { configured: boolean; repos: { fullName: string; archived: boolean }[] }
     | Error,
-): LookupRepositoryLister & { calls: number } {
+): LookupRepositoryLister & { calls: number; accounts: (string | null)[] } {
   const l = {
     calls: 0,
-    async listRepositories() {
+    accounts: [] as (string | null)[],
+    async listRepositories(accountId?: string | null) {
       l.calls++;
+      l.accounts.push(accountId ?? null);
       if (result instanceof Error) throw result;
       return result;
     },
@@ -336,6 +338,75 @@ describe("SystemCronScheduler — lookup App and errors", () => {
   });
 });
 
+describe("SystemCronScheduler — per-definition repo selection (CRS-1.2)", () => {
+  const NOW = "2026-11-14T07:00:05Z";
+  const fresh = { enabledAt: "2026-11-13T08:00:00.000Z" };
+
+  it("'all' fires for every unarchived repo, as before", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [def({ ...fresh, repoScope: "all", repos: [] })];
+    await scheduler.tick();
+    expect(store.fires.map((f) => f.repos)).toEqual([
+      ["acme/widgets", "acme/gadgets"],
+    ]);
+  });
+
+  it("'selected' fires only for selected repos still present and unarchived", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [
+      def({
+        ...fresh,
+        repoScope: "selected",
+        repos: ["acme/gadgets", "acme/old", "acme/gone"],
+      }),
+    ];
+    await scheduler.tick();
+    expect(store.fires.map((f) => f.repos)).toEqual([["acme/gadgets"]]);
+  });
+
+  it("an empty intersection skips that definition only, logging and recording nothing", async () => {
+    const { store, scheduler, logs } = setup(NOW);
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/old"] }),
+      def({ id: "other", schedule: "0 6 * * *", ...fresh }),
+    ];
+    const result = await scheduler.tick();
+    expect(result.status).toBe("fired");
+    expect(result.errors).toEqual([]);
+    expect(store.fires.map((f) => f.id)).toEqual(["other"]);
+    expect(logs.some((l) => l.includes("docs-freshness: none of its"))).toBe(
+      true,
+    );
+  });
+
+  it("mixed definitions each get their own repo list", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/widgets"] }),
+      def({ id: "everyone", schedule: "0 6 * * *", ...fresh }),
+    ];
+    await scheduler.tick();
+    expect(store.fires.map((f) => [f.id, f.repos])).toEqual([
+      ["docs-freshness", ["acme/widgets"]],
+      ["everyone", ["acme/widgets", "acme/gadgets"]],
+    ]);
+  });
+
+  it("skipped-no-repos still wins when the listing has no unarchived repos", async () => {
+    const { store, scheduler } = setup(
+      NOW,
+      lister({
+        configured: true,
+        repos: [{ fullName: "acme/old", archived: true }],
+      }),
+    );
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/old"] }),
+    ];
+    expect((await scheduler.tick()).status).toBe("skipped-no-repos");
+  });
+});
+
 describe("createHttpSystemCronStore", () => {
   function recorder(responses: Response[]) {
     const calls: { url: string; init?: RequestInit }[] = [];
@@ -416,5 +487,97 @@ describe("createHttpSystemCronStore", () => {
     await expect(
       store.fire("x", "2026-11-14T07:00:00Z", ["a/b"]),
     ).rejects.toThrow("409");
+  });
+});
+
+describe("SystemCronScheduler — per-account listing (CRS-2.2)", () => {
+  type Listing = {
+    configured: boolean;
+    repos: { fullName: string; archived: boolean }[];
+  };
+  const perAccount = (map: Record<string, Listing>) => {
+    const l = {
+      accounts: [] as (string | null)[],
+      async listRepositories(accountId?: string | null) {
+        l.accounts.push(accountId ?? null);
+        return map[accountId ?? ""] ?? { configured: false, repos: [] };
+      },
+    };
+    return l;
+  };
+  const repo = (fullName: string) => ({ fullName, archived: false });
+  const due = { enabledAt: "2026-11-13T08:00:00.000Z" };
+
+  it("fires each definition against its own account's listing, one call per account", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+      a2: { configured: true, repos: [repo("two/y"), repo("two/z")] },
+    });
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+      def({ id: "c3", accountId: "a1", ...due }),
+    ];
+    const result = await scheduler.tick();
+    expect(result.status).toBe("fired");
+    expect(lookup.accounts.sort()).toEqual(["a1", "a2"]);
+    const reposOf = (id: string) => store.fires.find((f) => f.id === id)?.repos;
+    expect(reposOf("c1")).toEqual(["one/x"]);
+    expect(reposOf("c2")).toEqual(["two/y", "two/z"]);
+    expect(reposOf("c3")).toEqual(["one/x"]);
+  });
+
+  it("an unconfigured account skips only its own definitions", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+    });
+    const { store, scheduler, logs } = setup(
+      "2026-11-14T07:00:05Z",
+      lookup as never,
+    );
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["c1"]);
+    expect(logs.some((l) => l.includes("account a2"))).toBe(true);
+  });
+
+  it("an account with no unarchived repos skips only its own definitions", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+      a2: {
+        configured: true,
+        repos: [{ fullName: "two/old", archived: true }],
+      },
+    });
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["c1"]);
+  });
+
+  it("is skipped-* only when every due definition was skipped", async () => {
+    const lookup = perAccount({});
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("skipped-unconfigured");
+    expect(store.fires).toEqual([]);
+  });
+
+  it("passes a null account (deployment-wide) when the definition has none", async () => {
+    const lookup = lister(REPOS);
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup);
+    store.defs = [def(due)];
+    await scheduler.tick();
+    expect(lookup.accounts).toEqual([null]);
   });
 });

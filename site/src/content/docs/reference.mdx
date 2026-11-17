@@ -60,6 +60,8 @@ Configuration for the Shipwright agent runtime (`agent/` and `admin/`). All opti
 
 All Slack vars are env-var-only (secrets). The agent does not function as a Slack bot without them.
 
+The Slack App Configuration Token (`xoxe.xoxp-` / `xoxe-1-`) used for provisioning is not an env var: save it once at `/admin/settings/slack-config-token` (default or per-account, owners and platform admins only) or paste it on the provision form as a fallback.
+
 <ConfigTable vars={agentSlackVars} />
 
 ### GitHub

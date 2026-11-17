@@ -9,6 +9,7 @@ import {
   type ModelBreakdownRow,
   mergeRunRows,
   PATCH_REQUIRED_STEPS,
+  REVIEW_REQUIRED_STEPS,
   parsePrRef,
   REQUIRED_STEPS,
   type RequiredStep,
@@ -1059,5 +1060,137 @@ describe("cost and patch guardrail metrics (DTA-9.3)", () => {
         meanPatchCycles: null,
       });
     });
+  });
+});
+
+describe("review adherence (DTA-10.2)", () => {
+  const review = (usage: SkillUsageRow[], e?: RunEnrichment) =>
+    buildRunAdherence(
+      REVIEW_REQUIRED_STEPS,
+      {
+        id: "1",
+        itemId: "o/r#1",
+        contextFingerprint: null,
+        commandVariant: null,
+      },
+      usage,
+      e,
+      "review",
+    );
+  const status = (r: { steps: { stepNumber: string; status: string }[] }, n: string) =>
+    r.steps.find((s) => s.stepNumber === n)?.status;
+  const base = {
+    task: { startedAt: null, pr: null, prCreatedAt: null },
+    checks: [],
+  };
+
+  it("scores Step 7 as ran when ANY configured reviewer was dispatched", () => {
+    for (const name of ["shipwright:code-reviewer", "x:security-reviewer"]) {
+      expect(status(review([agent(name)]), "7")).toBe("ran");
+    }
+    const none = review([
+      { kind: "skill", name: "shipwright:review", invocations: 1 },
+    ]);
+    expect(status(none, "7")).toBe("skipped");
+    expect(none.missingSteps).toContain("7");
+  });
+
+  it("proves Step 11b from the PR record, else unmeasured", () => {
+    const done = {
+      commitsCiFix: null,
+      reviewState: "commented",
+      reviewedCommitSha: "abc",
+      agentId: "a1",
+    };
+    expect(status(review([agent("a")]), "11b")).toBe("unmeasured");
+    expect(status(review([agent("a")], { ...base, pr: done }), "11b")).toBe("ran");
+    expect(
+      status(review([agent("a")], { ...base, pr: { ...done, reviewedCommitSha: null } }), "11b"),
+    ).toBe("skipped");
+    expect(
+      status(review([agent("a")], { ...base, pr: { ...done, reviewState: "pending" } }), "11b"),
+    ).toBe("skipped");
+    expect(status(review([agent("a")], { ...base, pr: null }), "11b")).toBe("unmeasured");
+  });
+
+  it("leaves marker-only steps unmeasured", () => {
+    const r = review([agent("a")]);
+    for (const n of ["5", "6.1", "9.5", "10.5"]) {
+      expect(status(r, n)).toBe("unmeasured");
+    }
+  });
+});
+
+describe("review guardrail metrics (DTA-10.3)", () => {
+  const row = (id: string, cv: string, itemId: string): CronRunRow => ({
+    id,
+    itemId,
+    contextFingerprint: null,
+    commandVariant: cv,
+    skillUsage: [agent("shipwright:code-reviewer")],
+  });
+  const prEnr = (reviewCycles: number, reviewState: string): RunEnrichment => ({
+    task: { startedAt: null, pr: 1, prCreatedAt: null },
+    checks: [],
+    pr: { commitsCiFix: null, reviewCycles, reviewState },
+  });
+  const gr = (rep: ReturnType<typeof buildReport>, v: string) =>
+    rep.byCommandVariant.find((s) => s.commandVariant === v)?.reviewGuardrails;
+  const mk = (rows: CronRunRow[], e?: Map<string, RunEnrichment | undefined>) =>
+    buildReport(
+      REVIEW_REQUIRED_STEPS,
+      mergeRunRows(rows).map((r) =>
+        buildRunAdherence(REVIEW_REQUIRED_STEPS, r, r.skillUsage, e?.get(r.itemId ?? ""), "review"),
+      ),
+      e,
+      "review",
+      rows,
+    );
+
+  it("computes repeat-review, clean-first-pass and mean cycles per arm; mixed PRs apart", () => {
+    const rows = [
+      row("a", "default", "o/r#1"),
+      row("b", "default", "o/r#2"),
+      row("c", "default", "o/r#3"),
+      row("d", "alternate", "o/r#4"),
+      row("e1", "default", "o/r#5"),
+      row("e2", "alternate", "o/r#5"),
+    ];
+    const e = new Map<string, RunEnrichment | undefined>([
+      ["o/r#1", prEnr(1, "approved")],
+      ["o/r#2", prEnr(3, "approved")],
+      ["o/r#3", prEnr(1, "posted")],
+      ["o/r#4", prEnr(2, "posted")],
+      ["o/r#5", prEnr(9, "approved")],
+    ]);
+    const rep = mk(rows, e);
+    expect(gr(rep, "default")).toEqual({
+      prs: 3,
+      repeatReviewRate: 1 / 3,
+      cleanFirstPassApproveRate: 1 / 3,
+      meanReviewCycles: 5 / 3,
+    });
+    expect(gr(rep, "alternate")).toEqual({
+      prs: 1,
+      repeatReviewRate: 1,
+      cleanFirstPassApproveRate: 0,
+      meanReviewCycles: 2,
+    });
+    expect(rep.counts.mixedPrs).toBe(1);
+  });
+
+  it("skips unreviewed PRs, is null without records, and is absent for other commands", () => {
+    const rows = [row("a", "default", "o/r#1")];
+    const unreviewed = mk(rows, new Map([["o/r#1", prEnr(0, "pending")]]));
+    expect(gr(unreviewed, "default")).toEqual({
+      prs: 0,
+      repeatReviewRate: null,
+      cleanFirstPassApproveRate: null,
+      meanReviewCycles: null,
+    });
+    expect(mk(rows).overall.reviewGuardrails?.prs).toBe(0);
+    const dev = buildReport(REQUIRED_STEPS, []);
+    expect(dev.overall.reviewGuardrails).toBeUndefined();
+    expect(dev.counts.mixedPrs).toBeUndefined();
   });
 });

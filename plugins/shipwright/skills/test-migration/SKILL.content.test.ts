@@ -146,24 +146,37 @@ describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
     expect(/cite/i.test(section)).toBe(true);
   });
 
-  it("references the test:coverage CI step and its Lines/Functions summary output", () => {
+  it("sources coverage from coverage-summary.ts, not CI logs", () => {
     const section = step4cSection();
-    expect(section).toContain("test:coverage");
-    expect(/Lines:/.test(section)).toBe(true);
-    expect(/Functions:/.test(section)).toBe(true);
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
+    expect(section).toContain("references/coverage-output.md");
+    expect(section).not.toContain("lint / typecheck / test");
+    expect(section).not.toContain("`Test` step");
+    expect(section).not.toContain("gh run view --log");
   });
 
-  it("scopes the log read to the actual `Test` Actions step, not a literal `test:coverage` step", () => {
+  it("derives line, function and branch percentages from the reader's counts", () => {
     const section = step4cSection();
-    expect(section).toContain("`Test` step");
-    expect(section).toContain("task test:coverage");
-    expect(/not the step label/i.test(section)).toBe(true);
+    expect(section).toContain("lines.covered / lines.total");
+    expect(section).toContain("functions");
+    expect(section).toContain("branches");
   });
 
-  it("keeps the never-guess null-fallback condition consistent with the `Test` step name", () => {
+  it("cites runUrl and commitSha from the reader result", () => {
     const section = step4cSection();
-    expect(section).toContain("no `Test` step");
-    expect(section).not.toContain("no `test:coverage` step");
+    expect(section).toContain("runUrl");
+    expect(section).toContain("commitSha");
+  });
+
+  it("yields null on not_reporting", () => {
+    const section = step4cSection();
+    expect(section).toContain("not_reporting");
+    expect(section).toMatch(/`null`/);
   });
 
   it("contains the never-guess idiom", () => {

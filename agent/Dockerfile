@@ -8,7 +8,7 @@
 # sources all come from the platform image (the Claude Code pin and its Renovate
 # bump live there now).
 #
-# build-agent.yml builds and tags this file as ghcr.io/app-vitals/shipwright-agent
+# release.yml builds and tags this file as ghcr.io/app-vitals/shipwright-agent
 # (agent-vX.Y.Z); the specialists image derives FROM it. ci.yml builds it as
 # shipwright-agent:ci and runs the contract checks against it.
 #
@@ -23,7 +23,7 @@
 # Platform release to build on. Keep equal to the @app-vitals/agent-lib pin in
 # agent/package.json (guarded by agent-platform-image.content.test.ts): the
 # coding extension is compiled against that package set.
-ARG PLATFORM_VERSION=1.53.0
+ARG PLATFORM_VERSION=1.65.0
 
 # ─── Version stamp stage ──────────────────────────────────────────────────────
 # Stamps AGENT_VERSION into the plugin version files inside the image only (no

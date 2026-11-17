@@ -6,14 +6,11 @@ release landed cleanly.
 
 ## How Versioning Works
 
-The live path is tag-driven, not the `release.yml` semantic-release job you'll see in
-`.releaserc.json` — that job is `workflow_dispatch`-only, admin-gated, and requires
-`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` secrets that aren't provisioned. It exists
-as a manual escape hatch, not the thing that runs on every merge.
+The path is tag-driven (there is no semantic-release workflow).
 
 What actually runs on every merge to `main`:
 
-1. **`.github/workflows/build-agent.yml`** fires once the `CI` workflow succeeds on
+1. **`.github/workflows/release.yml`** fires once the `CI` workflow succeeds on
    `main` and the merge touched a relevant path (`agent/**`, `plugins/**`,
    `.claude-plugin/**`, `package.json`, `bun.lock`). It uses
    `mathieudutour/github-tag-action` to compute the next version from conventional
@@ -54,7 +51,7 @@ What actually runs on every merge to `main`:
 
 If you intended a release but none fired, confirm that at least one commit in the
 batch uses a release-triggering prefix (`fix:`, `feat:`, `perf:`, `revert:`), and that
-the merge actually touched one of `build-agent.yml`'s trigger paths — a docs-only PR to
+the merge actually touched one of the agent service's trigger paths in `release.yml` — a docs-only PR to
 an unrelated path never fires a release regardless of commit prefix.
 
 ## Post-Release Verification
@@ -90,5 +87,5 @@ If a file shows the wrong version after a release:
 Do not edit `"version"` in any `package.json`, `plugin.json`, or `marketplace.json` by
 hand — the automation owns these and a manual edit just conflicts with (or gets
 overwritten by) the next tag-triggered sync. Write correct conventional commits and let
-`build-agent.yml` / `sync-plugin-version.yml` do the job. Confirmed the hard way in PR
+`release.yml` / `sync-plugin-version.yml` do the job. Confirmed the hard way in PR
 #1296, where a manual patch bump had to be reverted.

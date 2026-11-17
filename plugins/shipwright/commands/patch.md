@@ -34,7 +34,8 @@ and continue. DIRTY → `gh pr update-branch --rebase {number} --repo {org}/{rep
 ## Step 3: Classify into Lists A / C / D
 
 One GraphQL query (reviews, reviewThreads, comments) plus the PR record's findings ledger feed `compute-unaddressed-findings.ts`;
-`unaddressedFindings: true` → List A. Never override the script by judgment (a clean self-APPROVE with no ledger entry IS in List A).
+`unaddressedFindings: true` → List A. Never override the script by judgment (a clean self-APPROVE with no ledger entry IS in List A); the only
+semantic step is the narrow `--candidates` "no finding" classification (DTA-11.1) that persists to the ledger, then re-runs the script.
 `mergeStateStatus == "DIRTY"` → List C. For a PR not in List C, a latest-run-per-workflow `failure`/`timed_out` → List D with
 `CI_HAS_FAILING=true`; a latest run `cancelled` → List D with `CI_HAS_CANCELLED=true` and `CANCELLED_RUN_ID`. Queries and scripts:
 [classification.md](../references/patch/classification.md).

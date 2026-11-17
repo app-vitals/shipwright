@@ -67,7 +67,7 @@ if any repo is malformed), and redirects to the new agent's detail page.
 
 The main management surface for a single agent. The header shows the agent name, its Slack ID (if
 any), and — for Slack-provisioned agents — a **Sync Manifest** control that re-pushes the current
-Slack app manifest given a fresh `xoxe.xoxp-` configuration token (`POST
+Slack app manifest using the stored Slack App Configuration Token, or a freshly pasted `xoxe.xoxp-` token if none is stored (`POST
 /admin/agents/:id/sync-manifest`), optionally re-triggering the Slack OAuth reinstall flow. Below the
 header, in order:
 
@@ -165,11 +165,26 @@ three fieldsets:
   "GitHub App" (App ID, Installation ID, and a PEM private key textarea).
 - **AI Credentials (optional)** — an Anthropic API Key field and a Claude Code OAuth Token field.
 
-Below the fieldsets, a required **Slack App Configuration Token** field (`xoxe.xoxp-...`) is used once
-to create the Slack app manifest via the Slack API and is never stored. Submitting creates the agent
+Below the fieldsets, the **Slack App Configuration Token** is used to create the Slack app manifest via
+the Slack API. If a token is stored for your account (or a deployment-wide default exists), the form uses
+it and the field is not required; otherwise paste an `xoxe.xoxp-...` token, which is used once and not
+stored. See [Slack configuration token settings](#slack-configuration-token-settings). Submitting creates the agent
 (if "new" mode) — rolling it back if provisioning fails — then calls Slack to create the app, storing
 the returned Slack credentials into the agent's env vars, and either shows an **Authorize Slack App →**
 link (OAuth redirect) or, if OAuth client credentials weren't returned, moves straight to completion.
+
+### Slack configuration token settings — `GET /admin/settings/slack-config-token`
+
+Store a Slack App Configuration Token once so provisioning and **Sync Manifest** no longer ask for it
+each time. Paste the `xoxe-1-` refresh token; Shipwright validates it by rotating it once and stores the
+rotated pair, encrypted (the page refuses to save if `SHIPWRIGHT_ENCRYPTION_KEY` is unset). The page shows
+only whether a token is configured, when it was last rotated, the last error, and the Slack team and user
+— never the token itself. Actions: **Save**, **Clear**, and **Rotate now**.
+
+Scope follows the Templates page (`?accountId=`): platform admins manage the deployment-wide default and
+any account's token; account owners manage only their own account's token; members and other accounts get
+403. An account token takes precedence over the default. Pasting a token on the provision form remains
+available as a fallback. The `xapp-` Socket Mode app-level token is separate and stays a manual step.
 
 ### Provision complete — `GET /admin/provision/complete`
 

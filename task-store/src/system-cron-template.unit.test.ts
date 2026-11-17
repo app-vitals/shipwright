@@ -14,6 +14,7 @@ import {
   isValidSystemCronRepo,
   parseScheduledFor,
   renderRepoTemplate,
+  systemCronTaskBranch,
   systemCronTaskId,
 } from "./system-cron-template.ts";
 
@@ -130,6 +131,23 @@ describe("systemCronTaskId", () => {
     const a = systemCronTaskId("c", "20261114T090000Z", "o/r");
     const b = systemCronTaskId("c", "20261114T090000Z", "o/r");
     expect(a).toBe(b);
+  });
+});
+
+describe("systemCronTaskBranch", () => {
+  it("lowercases the task id under feat/", () => {
+    expect(systemCronTaskBranch("SC-Foo-1")).toBe("feat/sc-foo-1");
+  });
+
+  it("matches the SC-{cron}-{slot}-{owner}-{repo} production shape", () => {
+    const id = systemCronTaskId(
+      "dep-audit",
+      "20261114T090000Z",
+      "Acme/Widgets",
+    );
+    expect(systemCronTaskBranch(id)).toBe(
+      "feat/sc-dep-audit-20261114t090000z-acme-widgets",
+    );
   });
 });
 

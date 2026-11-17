@@ -32,8 +32,8 @@
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
-import { NotFoundError } from "./errors.ts";
-import type { Prisma, PrismaClient, Task } from "./index.ts";
+import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
+import type { PlanDocument, Prisma, PrismaClient, Task } from "./index.ts";
 import {
   computeSessionRollup,
   type SessionRollupCounts,
@@ -80,6 +80,8 @@ export interface SessionListFilters {
   org?: string | string[];
   /** Case-insensitive substring match against slug OR title. */
   q?: string;
+  /** Exact match on the session's owner (email). */
+  owner?: string;
   limit?: number;
   offset?: number;
   /**
@@ -87,7 +89,10 @@ export interface SessionListFilters {
    * When set, a session is visible only if at least one of its tasks
    * satisfies `task.assignee === agentScope.agentId OR (task.repo !== null &&
    * agentScope.repos.includes(task.repo))`. Undefined (admin tokens) sees
-   * every session unconditionally.
+   * every session unconditionally. PLU-2.3: a session is ALSO visible when
+   * one of its documents has its home repo or any target repo in `repos`
+   * (so a spec registered before any task exists is readable); only
+   * documents the token can see are returned in `documents`.
    */
   agentScope?: { agentId: string; repos: string[] };
   /**
@@ -112,6 +117,12 @@ export interface SessionListItem {
   updatedAt: Date;
   archivedAt: Date | null;
   archivedBy: string | null;
+  /** PLU-2.3: owner email, null until set. */
+  owner: string | null;
+  /** PLU-2.3: org/repo the planning files live in, null until set. */
+  homeRepo: string | null;
+  /** PLU-2.3: the session's planning documents (scope-filtered for agent tokens). */
+  documents: PlanDocument[];
   state: SessionRollupState;
   waitingSince: string | null;
   lastActivityAt: string | null;
@@ -140,7 +151,33 @@ export interface SessionListResult {
 export interface SessionUpdatePatch {
   title?: string | null;
   archived?: boolean;
+  /** PLU-2.3: owner email; null clears. */
+  owner?: string | null;
+  /** PLU-2.3: home repo (org/repo); null clears. */
+  homeRepo?: string | null;
+  /** PLU-2.3: declared target repos (stored as `declaredRepos`). */
+  repos?: string[];
 }
+
+/**
+ * How long a planning lock lives before it expires on its own (PLU-2.4). The
+ * schema stores only the expiry, so "time taken" is derived as expiry - TTL.
+ */
+export const PLANNING_LOCK_TTL_MS = 15 * 60 * 1000;
+
+/** A held planning lock as returned by acquirePlanningLock(). */
+export interface PlanningLock {
+  holder: string;
+  acquiredAt: Date;
+  expiresAt: Date;
+}
+
+/** Structured detail carried by the 409 when a lock is already held. */
+export type PlanningLockHeldDetails = {
+  holder: string;
+  acquiredAt: string;
+  expiresAt: string;
+};
 
 /** The subset of SessionService the routes depend on. */
 export interface SessionServiceLike {
@@ -156,6 +193,18 @@ export interface SessionServiceLike {
     actor: string,
     accountId?: string,
   ): Promise<SessionListItem>;
+  /** PLU-2.4: take the session's planning lock; 409 when held and unexpired. */
+  acquirePlanningLock(
+    slug: string,
+    holder: string,
+    accountId?: string,
+  ): Promise<PlanningLock>;
+  /** PLU-2.4: release the lock; 403 when held (unexpired) by someone else. */
+  releasePlanningLock(
+    slug: string,
+    holder: string,
+    accountId?: string,
+  ): Promise<void>;
 }
 
 /** Map key joining a Session row to its tasks: same account AND same slug. */
@@ -175,6 +224,23 @@ function hasQualifyingTask(
       t.assignee === agentScope.agentId ||
       (t.repo !== null && agentScope.repos.includes(t.repo)),
   );
+}
+
+/** True when a document is visible to an agent scope: its home repo or any
+ * target repo is in the token's repo scope (PLU-2.3). */
+function documentVisible(
+  doc: Pick<PlanDocument, "repo" | "repos">,
+  agentScope: { agentId: string; repos: string[] },
+): boolean {
+  return (
+    agentScope.repos.includes(doc.repo) ||
+    doc.repos.some((r) => agentScope.repos.includes(r))
+  );
+}
+
+/** Union of task repos and declared repos, first-seen order, no duplicates. */
+function unionRepos(taskRepos: string[], declared: string[] | null): string[] {
+  return [...new Set([...taskRepos, ...(declared ?? [])])];
 }
 
 /** -Infinity for null (sorts last in a descending sort); otherwise epoch ms. */
@@ -295,6 +361,7 @@ export class SessionService implements SessionServiceLike {
   async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
     const where: Prisma.SessionWhereInput = {};
     if (filters.accountId != null) where.accountId = filters.accountId;
+    if (filters.owner !== undefined) where.owner = filters.owner;
     if (filters.q) {
       where.OR = [
         { slug: { contains: filters.q, mode: "insensitive" } },
@@ -329,6 +396,24 @@ export class SessionService implements SessionServiceLike {
       else tasksBySession.set(key, [task]);
     }
 
+    const documentRows = slugs.length
+      ? await this.prisma.planDocument.findMany({
+          where: { session: { in: slugs }, accountId: { in: accountIds } },
+          orderBy: [{ kind: "asc" }, { number: "asc" }],
+        })
+      : [];
+    const documentsBySession = new Map<string, PlanDocument[]>();
+    for (const doc of documentRows) {
+      const key = sessionKey(doc.accountId, doc.session);
+      if (!sessionKeys.has(key)) continue;
+      if (filters.agentScope && !documentVisible(doc, filters.agentScope)) {
+        continue;
+      }
+      const bucket = documentsBySession.get(key);
+      if (bucket) bucket.push(doc);
+      else documentsBySession.set(key, [doc]);
+    }
+
     const prBlockedSet = await this.lookupBlockedPrNumbers(
       toBlockedLookupKeys(tasks),
     );
@@ -354,16 +439,25 @@ export class SessionService implements SessionServiceLike {
         { archivedAt: session.archivedAt },
         resolveExternalTasks(sessionTasks, knownById),
       );
-      return { ...session, ...rollup };
+      return {
+        ...session,
+        ...rollup,
+        repos: unionRepos(rollup.repos, session.declaredRepos),
+        documents:
+          documentsBySession.get(sessionKey(session.accountId, session.slug)) ??
+          [],
+      };
     });
 
     if (filters.agentScope) {
       const agentScope = filters.agentScope;
-      items = items.filter((item) =>
-        hasQualifyingTask(
-          tasksBySession.get(sessionKey(item.accountId, item.slug)) ?? [],
-          agentScope,
-        ),
+      items = items.filter(
+        (item) =>
+          item.documents.length > 0 ||
+          hasQualifyingTask(
+            tasksBySession.get(sessionKey(item.accountId, item.slug)) ?? [],
+            agentScope,
+          ),
       );
     }
 
@@ -446,7 +540,19 @@ export class SessionService implements SessionServiceLike {
       where: { session: slug, accountId },
     });
 
-    if (agentScope && !hasQualifyingTask(tasks, agentScope)) {
+    const allDocuments = await this.prisma.planDocument.findMany({
+      where: { session: slug, accountId },
+      orderBy: [{ kind: "asc" }, { number: "asc" }],
+    });
+    const documents = agentScope
+      ? allDocuments.filter((d) => documentVisible(d, agentScope))
+      : allDocuments;
+
+    if (
+      agentScope &&
+      documents.length === 0 &&
+      !hasQualifyingTask(tasks, agentScope)
+    ) {
       return null;
     }
 
@@ -467,7 +573,12 @@ export class SessionService implements SessionServiceLike {
       externalByAccount.get(accountId) ?? [],
     );
 
-    return { ...session, ...rollup };
+    return {
+      ...session,
+      ...rollup,
+      repos: unionRepos(rollup.repos, session.declaredRepos),
+      documents,
+    };
   }
 
   /**
@@ -570,6 +681,11 @@ export class SessionService implements SessionServiceLike {
     if ("title" in patch) {
       data.title = patch.title ?? null;
     }
+    if ("owner" in patch) data.owner = patch.owner ?? null;
+    if ("homeRepo" in patch) data.homeRepo = patch.homeRepo ?? null;
+    if (patch.repos !== undefined) {
+      data.declaredRepos = [...new Set(patch.repos)];
+    }
     if (patch.archived === true) {
       data.archivedAt = this.clock.now();
       data.archivedBy = actor;
@@ -599,6 +715,88 @@ export class SessionService implements SessionServiceLike {
     );
 
     return updated;
+  }
+
+  // ─── Planning lock (PLU-2.4) ─────────────────────────────────────────────────
+
+  /**
+   * Take the planning lock. One conditional UPDATE (free = no holder, expired,
+   * or already held by the same holder, which just extends it) so two racing
+   * acquirers cannot both win. When nothing matched, a read distinguishes a
+   * missing session (NotFoundError) from a live lock held by someone else
+   * (ConflictError naming the holder and the time it was taken).
+   */
+  async acquirePlanningLock(
+    slug: string,
+    holder: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<PlanningLock> {
+    const now = this.clock.now();
+    const expiresAt = new Date(now.getTime() + PLANNING_LOCK_TTL_MS);
+    const { count } = await this.prisma.session.updateMany({
+      where: {
+        accountId,
+        slug,
+        OR: [
+          { planningLockHolder: null },
+          { planningLockExpiresAt: null },
+          { planningLockExpiresAt: { lte: now } },
+          { planningLockHolder: holder },
+        ],
+      },
+      data: { planningLockHolder: holder, planningLockExpiresAt: expiresAt },
+    });
+    if (count > 0) return { holder, acquiredAt: now, expiresAt };
+
+    const row = await this.prisma.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
+    if (!row) throw new NotFoundError("session not found");
+    const heldExpiry = row.planningLockExpiresAt as Date;
+    const acquiredAt = new Date(heldExpiry.getTime() - PLANNING_LOCK_TTL_MS);
+    const details: PlanningLockHeldDetails = {
+      holder: row.planningLockHolder as string,
+      acquiredAt: acquiredAt.toISOString(),
+      expiresAt: heldExpiry.toISOString(),
+    };
+    throw new ConflictError(
+      `planning lock held by ${details.holder} since ${details.acquiredAt}`,
+      details,
+    );
+  }
+
+  /**
+   * Release the lock. Only the holder may release a live lock (ForbiddenError
+   * otherwise). Releasing a free or expired lock is a no-op, so a pass that
+   * overran its TTL can still clean up. Missing session: NotFoundError.
+   */
+  async releasePlanningLock(
+    slug: string,
+    holder: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<void> {
+    const now = this.clock.now();
+    const { count } = await this.prisma.session.updateMany({
+      where: {
+        accountId,
+        slug,
+        OR: [
+          { planningLockHolder: holder },
+          { planningLockHolder: null },
+          { planningLockExpiresAt: null },
+          { planningLockExpiresAt: { lte: now } },
+        ],
+      },
+      data: { planningLockHolder: null, planningLockExpiresAt: null },
+    });
+    if (count > 0) return;
+    const row = await this.prisma.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
+    if (!row) throw new NotFoundError("session not found");
+    throw new ForbiddenError(
+      `planning lock is held by ${row.planningLockHolder}, not ${holder}`,
+    );
   }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */

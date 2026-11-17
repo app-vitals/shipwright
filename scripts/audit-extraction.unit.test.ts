@@ -6,6 +6,7 @@ import {
   createPatchScanner,
   type Finding,
   findSecrets,
+  formatReport,
   makeExcerpt,
   matchArtifactPath,
   matchBannedStrings,
@@ -368,5 +369,32 @@ describe("parseArgs", () => {
     expect(() => parseArgs([])).toThrow("<tree>");
     expect(() => parseArgs(["/t", "--nope"])).toThrow("unknown argument");
     expect(() => parseArgs(["/t", "--report"])).toThrow("needs a value");
+  });
+});
+
+describe("formatReport", () => {
+  test("a clean result prints notices then the pass line", () => {
+    expect(formatReport({ findings: [], notices: ["n1"] })).toBe(
+      "NOTICE: n1\nAUDIT PASSED: no findings",
+    );
+  });
+
+  test("failures are tallied per rule and shown with short shas and lines", () => {
+    const sha = "0123456789abcdef0123";
+    const out = formatReport({
+      notices: [],
+      findings: [
+        { rule: "b-rule", file: "a.ts", commit: sha, line: 7, excerpt: "e1" },
+        { rule: "a-rule", file: "b.ts", commit: "working-tree", excerpt: "e2" },
+        { rule: "b-rule", file: "c.ts", commit: sha, excerpt: "e3" },
+      ],
+    });
+    expect(out).toContain("AUDIT FAILED: 3 finding(s)");
+    expect(out.indexOf("   1  a-rule")).toBeLessThan(
+      out.indexOf("   2  b-rule"),
+    );
+    expect(out).toContain("[b-rule] a.ts:7 @ 0123456789ab\n    e1");
+    expect(out).toContain("[a-rule] b.ts @ working-tree\n    e2");
+    expect(out).toContain("[b-rule] c.ts @ 0123456789ab");
   });
 });

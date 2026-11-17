@@ -22,9 +22,12 @@
  * or DEFAULT_ACCOUNT_ID when omitted.
  *
  * Routes:
- *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?limit, ?offset, ?accountId)
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?owner, ?limit, ?offset, ?accountId)
  *                          returns { sessions, total, limit, offset }
  *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
+ *   POST   /sessions/:slug/lock    acquire the planning lock (PLU-2.4; 409 when held)
+ *   DELETE /sessions/:slug/lock    release it (403 for a non-holder)
+ *   GET    /sessions/preflight/scope  which repos the token may write to (PLU-2.4)
  *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
  *                          agent tokens regardless of ownership; unlike the
  *                          GET routes above, there is no agent-scoped
@@ -38,9 +41,16 @@ import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   ErrorSchema,
+  ScopePreflightQuerySchema,
+  ScopePreflightResponseSchema,
   SessionAccountQuerySchema,
+  SessionLockBodySchema,
+  SessionLockConflictSchema,
+  SessionLockReleaseSchema,
+  SessionLockSchema,
   SessionListQuerySchema,
   SessionListResponseSchema,
   SessionPatchBodySchema,
@@ -61,7 +71,7 @@ const listRoute = createRoute({
   tags: ["sessions"],
   summary: "List sessions",
   description:
-    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -83,7 +93,7 @@ const getOneRoute = createRoute({
   tags: ["sessions"],
   summary: "Get a session by slug",
   description:
-    "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
+    "Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -110,7 +120,7 @@ const patchRoute = createRoute({
   tags: ["sessions"],
   summary: "Rename/archive a session — admin-only",
   description:
-    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -138,6 +148,100 @@ const patchRoute = createRoute({
   },
 });
 
+const acquireLockRoute = createRoute({
+  method: "post",
+  path: "/:slug/lock",
+  tags: ["sessions"],
+  summary: "Acquire the session planning lock",
+  description:
+    "Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.",
+  request: {
+    params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
+    body: {
+      content: { "application/json": { schema: SessionLockBodySchema } },
+      required: false,
+    },
+  },
+  responses: {
+    200: {
+      description: "Lock acquired",
+      content: { "application/json": { schema: SessionLockSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Lock held and unexpired",
+      content: { "application/json": { schema: SessionLockConflictSchema } },
+    },
+  },
+});
+
+const releaseLockRoute = createRoute({
+  method: "delete",
+  path: "/:slug/lock",
+  tags: ["sessions"],
+  summary: "Release the session planning lock",
+  description:
+    "Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.",
+  request: {
+    params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
+    body: {
+      content: { "application/json": { schema: SessionLockBodySchema } },
+      required: false,
+    },
+  },
+  responses: {
+    200: {
+      description: "Lock released",
+      content: { "application/json": { schema: SessionLockReleaseSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Lock held by someone else",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const scopePreflightRoute = createRoute({
+  method: "get",
+  path: "/preflight/scope",
+  tags: ["sessions"],
+  summary: "Scope preflight for a list of repos",
+  description:
+    "Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.",
+  request: { query: ScopePreflightQuerySchema },
+  responses: {
+    200: {
+      description: "Covered and uncovered repos",
+      content: { "application/json": { schema: ScopePreflightResponseSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -147,6 +251,46 @@ const patchRoute = createRoute({
  */
 function slugAccountId(c: Context<TaskStoreAuthEnv>): string {
   return resolveAccountScope(c) ?? DEFAULT_ACCOUNT_ID;
+}
+
+/** Lock holder: explicit body `holder`, else the token's agent id, else "admin". */
+async function lockHolder(c: Context<TaskStoreAuthEnv>): Promise<string> {
+  const raw = await c.req.text();
+  let holder: unknown;
+  if (raw.trim() !== "") {
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      throw new BadRequestError("body must be valid JSON");
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      throw new BadRequestError("body must be a JSON object");
+    }
+    holder = (body as Record<string, unknown>).holder;
+  }
+  if (holder !== undefined) {
+    if (typeof holder !== "string" || holder.length === 0) {
+      throw new BadRequestError("holder must be a non-empty string");
+    }
+    return holder;
+  }
+  return c.get("agentId") ?? "admin";
+}
+
+/** Agent tokens must be able to see the session (same rule as GET /:slug). */
+async function assertSessionVisible(
+  sessionService: SessionServiceLike,
+  c: Context<TaskStoreAuthEnv>,
+): Promise<void> {
+  const agentId = c.get("agentId");
+  if (agentId === null) return;
+  const visible = await sessionService.get(
+    c.req.param("slug") as string,
+    { agentId, repos: c.get("repos") ?? [] },
+    slugAccountId(c),
+  );
+  if (!visible) throw new NotFoundError("session not found");
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -159,6 +303,8 @@ export function createSessionsRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
+    // PLU-1.1: a filter we don't recognise must 400, never silently widen.
+    rejectUnknownQuery(c, SessionListQuerySchema);
     const agentId = c.get("agentId");
     const repos = c.get("repos");
 
@@ -177,6 +323,7 @@ export function createSessionsRoutes(
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       q: c.req.query("q"),
+      owner: c.req.query("owner"),
       accountId: resolveAccountScope(c),
       limit:
         limitRaw !== undefined
@@ -238,6 +385,25 @@ export function createSessionsRoutes(
       }
       patch.archived = body.archived;
     }
+    for (const field of ["owner", "homeRepo"] as const) {
+      if (field in body) {
+        if (body[field] !== null && typeof body[field] !== "string") {
+          throw new BadRequestError(`${field} must be a string or null`);
+        }
+        patch[field] = body[field] as string | null;
+      }
+    }
+    if ("repos" in body) {
+      if (
+        !Array.isArray(body.repos) ||
+        !body.repos.every((r) => typeof r === "string" && r.length > 0)
+      ) {
+        throw new BadRequestError(
+          "repos must be an array of non-empty strings",
+        );
+      }
+      patch.repos = body.repos as string[];
+    }
 
     const updated = await sessionService.update(
       c.req.param("slug"),
@@ -246,6 +412,61 @@ export function createSessionsRoutes(
       slugAccountId(c),
     );
     return c.json(updated, 200);
+  });
+
+  // ─── Scope preflight (PLU-2.4) ─────────────────────────────────────────────
+  // The two-segment path can never
+  // match `/:slug`.
+  app.openapi(scopePreflightRoute, async (c) => {
+    rejectUnknownQuery(c, ScopePreflightQuerySchema);
+    const asked = [...new Set(c.req.queries("repo") ?? [])];
+    if (asked.length === 0 || asked.some((r) => r.length === 0)) {
+      throw new BadRequestError("repo is required (one or more non-empty)");
+    }
+    const scope = c.get("repos");
+    // Admin tokens (repos null) are unrestricted. An agent token with an empty
+    // or degraded scope covers nothing.
+    const isCovered = (r: string) =>
+      c.get("agentId") === null || (scope ?? []).includes(r);
+    return c.json(
+      {
+        covered: asked.filter(isCovered),
+        uncovered: asked.filter((r) => !isCovered(r)),
+      },
+      200,
+    );
+  });
+
+  // ─── Planning lock (PLU-2.4) ───────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: Date→string handled by JSON serialization
+  app.openapi(acquireLockRoute, async (c): Promise<any> => {
+    await assertSessionVisible(sessionService, c);
+    const holder = await lockHolder(c);
+    const lock = await sessionService.acquirePlanningLock(
+      c.req.param("slug"),
+      holder,
+      slugAccountId(c),
+    );
+    return c.json(
+      {
+        holder: lock.holder,
+        acquiredAt: lock.acquiredAt.toISOString(),
+        expiresAt: lock.expiresAt.toISOString(),
+      },
+      200,
+    );
+  });
+
+  // biome-ignore lint/suspicious/noExplicitAny: matches sibling handlers
+  app.openapi(releaseLockRoute, async (c): Promise<any> => {
+    await assertSessionVisible(sessionService, c);
+    const holder = await lockHolder(c);
+    await sessionService.releasePlanningLock(
+      c.req.param("slug"),
+      holder,
+      slugAccountId(c),
+    );
+    return c.json({ released: true }, 200);
   });
 
   return app;

@@ -3,8 +3,7 @@ name: Chart Release
 # Publishes the Helm chart at charts/shipwright to a GitHub Pages Helm repository
 # (the `gh-pages` branch) so it is consumable via `helm repo add`.
 #
-# Kept SEPARATE from release.yml (the app's semantic-release): this workflow only
-# concerns the Helm chart artifact. Two concerns:
+# This workflow only concerns the Helm chart artifact. Two concerns:
 #
 #   publish (push to main) — packages charts/shipwright into a `.tgz`, merges it
 #     into the existing gh-pages `index.yaml` (with the public Pages `--url`), and
@@ -81,9 +80,9 @@ jobs:
           git config --global user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
       - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
-          version: v4.3.1
+          version: v4.3.2
 
       - name: Add Helm chart repos
         uses: ./.github/actions/helm-repos
@@ -148,9 +147,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
-          version: v4.3.1
+          version: v4.3.2
 
       - name: Add Helm chart repos
         uses: ./.github/actions/helm-repos

@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/agent",
-  "version": "1.475.5",
+  "version": "1.488.0",
   "private": true,
   "description": "Shipwright agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
@@ -10,15 +10,15 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@sentry/bun": "^10.63.0",
-    "@app-vitals/agent-admin": "1.53.0",
-    "@app-vitals/agent-lib": "1.53.0",
-    "@app-vitals/agent-runtime": "1.53.0",
+    "@app-vitals/agent-admin": "1.65.0",
+    "@app-vitals/agent-lib": "1.65.0",
+    "@app-vitals/agent-runtime": "1.65.0",
     "@slack/bolt": "^5.0.0",
     "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",
     "node-cron": "^4.6.0",
     "openapi-fetch": "^0.17.0",
-    "playwright": "1.64.1"
+    "playwright": "1.65.1"
   },
   "devDependencies": {
     "@prisma/adapter-pg": "^7.10.0",

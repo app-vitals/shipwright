@@ -14,17 +14,13 @@ rules:
 
   # workflow_run always trips this audit (zizmor has no exception for it,
   # unlike its labeler carve-out for pull_request_target — see
-  # dangerous_triggers.rs upstream). Each of these six build-*.yml workflows
-  # gates its jobs on `github.event.workflow_run.head_branch == 'main'`, so
-  # they only ever act on a completed CI run that itself ran on main —
+  # dangerous_triggers.rs upstream). release.yml gates every workflow_run job
+  # on `github.event.workflow_run.head_branch == 'main'`, so
+  # it only ever acts on a completed CI run that itself ran on main —
   # equivalent to a push-to-main trigger, not attacker-controlled PR state.
   # A workflow_run-free redesign (e.g. driving builds from CI's own final
   # step via workflow_dispatch) is a larger architectural change tracked as
-  # a follow-up, not a mechanical lint fix.
+  # a follow-up, not a mechanical lint fix. The line is release.yml's `on:`.
   dangerous-triggers:
     ignore:
-      - build-admin.yml:3
-      - build-agent.yml:3
-      - build-mcp-server.yml:3
-      - build-metrics.yml:3
-      - build-task-store.yml:3
+      - release.yml:27

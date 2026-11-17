@@ -19,6 +19,7 @@
       "!**/dist",
       "!**/build",
       "!**/coverage",
+      "plugins/shipwright/scripts/coverage",
       "!**/agent/prisma/client",
       "!**/admin/prisma/client",
       "!**/task-store/prisma/client",
