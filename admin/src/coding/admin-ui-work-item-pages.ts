@@ -21,6 +21,11 @@ import {
   type VerificationCheckItem,
 } from "./admin-ui-verification-cards.ts";
 import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
+import {
+  renderDocumentsBlock,
+  renderOwnershipHeader,
+  type SessionOwnership,
+} from "./session-documents.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2086,6 +2091,8 @@ export function renderSessionDetailPage(
    * session, so the action addresses that account's same-slug row.
    */
   actionsQuery = "",
+  /** Owner/home repo/repos/documents from the session record (PLU-5.1). */
+  sessionInfo?: SessionOwnership & { repos?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -2216,7 +2223,9 @@ export function renderSessionDetailPage(
     </div>
     ${degradedHtml}
     ${noticeHtml}
+    ${renderOwnershipHeader(sessionInfo, sessionInfo?.repos)}
     ${adminActionsHtml}
+    ${renderDocumentsBlock(sessionInfo?.documents)}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${statCard("Total Tasks", String(totalTasks))}
       ${statCard("Est. Hours", String(totalHours))}
