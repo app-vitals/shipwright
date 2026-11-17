@@ -92,7 +92,7 @@ describe("prd.md — no config set behaves identically to today (acceptance crit
     expect(content).toContain(
       "## Phase 2b: Complexity Review (PO Decision Gate)",
     );
-    expect(content).toContain("## Phase 3: Draft PRODUCT-SPEC.md");
+    expect(content).toContain("## Phase 3: Draft the spec");
     expect(content).toContain("## Phase 4: User Review and Finalize");
     expect(content).toContain(
       "### Q1 — Session Name (skip if $ARGUMENTS is already descriptive)",
@@ -148,9 +148,10 @@ describe("prd.md — Configured Methodology Dispatch section (PRM-1.2)", () => {
     expect(section).toContain("references/product-spec-template.md");
   });
 
-  it("instructs the subagent to write output at planning/$ARGUMENTS/PRODUCT-SPEC.md", () => {
+  it("instructs the subagent to write output at the resolved {SPEC_PATH} (numbered, legacy-aware)", () => {
     const section = extractDispatchSection(content);
-    expect(section).toContain("planning/$ARGUMENTS/PRODUCT-SPEC.md");
+    expect(section).toContain("`{SPEC_PATH}`");
+    expect(section).toContain("`specPath`, `specNumber`, `repos`, `owner`");
   });
 
   it("states this command does not relay questions/answers -- the subagent conducts its own live turn-by-turn session", () => {
@@ -277,7 +278,7 @@ describe("prd.md — Phase 5 is path-agnostic (PRM-1.2)", () => {
 
 describe("prd.md — Phase 3 acceptance criteria require automated verification", () => {
   it("requires at least one criterion per feature that maps to automated verification", () => {
-    const phase3Idx = content.indexOf("## Phase 3: Draft PRODUCT-SPEC.md");
+    const phase3Idx = content.indexOf("## Phase 3: Draft the spec");
     const phase4Idx = content.indexOf("## Phase 4: User Review and Finalize");
     expect(phase3Idx).toBeGreaterThan(-1);
     expect(phase4Idx).toBeGreaterThan(phase3Idx);
@@ -302,8 +303,9 @@ describe("prd.md — --initiative close-out (ICO-1.2)", () => {
   it("documents --initiative {task-id} and folder-name parsing before Phase 0", () => {
     const head = content.slice(0, content.indexOf("## Phase 0"));
     expect(head).toContain("`--initiative {task-id}`");
-    expect(head).toMatch(/first token is the folder name/);
-    expect(head).toMatch(/behavior is unchanged/);
+    expect(head).toMatch(/first token is the session/);
+    expect(head).toContain("`--repos a,b`");
+    expect(head).toContain("`--owner email`");
     expect(head).toContain("name: --initiative");
   });
 
@@ -329,10 +331,11 @@ describe("prd.md — --initiative close-out (ICO-1.2)", () => {
     }
   });
 
-  it("PATCHes to done with source pointing at PRODUCT-SPEC.md", () => {
+  it("PATCHes to done with source pointing at the spec path and sets specDocumentId", () => {
     const s = extractCloseout();
     expect(s).toContain("PATCH");
-    expect(s).toContain("planning/{session}/PRODUCT-SPEC.md");
+    expect(s).toContain("{SPEC_PATH}");
+    expect(s).toContain("specDocumentId");
     expect(s).toMatch(/\\"status\\": \\"done\\"/);
   });
 
@@ -348,5 +351,108 @@ describe("prd.md — --initiative close-out (ICO-1.2)", () => {
     expect(s).toContain("path-agnostic");
     expect(s).toContain("Configured Methodology Dispatch");
     expect(s).toMatch(/built-in/);
+  });
+});
+
+describe("prd.md — numbered specs, repos, owner (PLU-3.2)", () => {
+  const step2c = () =>
+    content.slice(
+      content.indexOf("2c. **Resolve session documents"),
+      content.indexOf("3. **Read project documentation**"),
+    );
+
+  it("documents the form with --repos, --owner and --initiative", () => {
+    expect(content).toContain(
+      "/shipwright:prd {session} [--repos a,b] [--owner email] [--initiative id]",
+    );
+  });
+
+  it("specifies the next-number rule including the legacy PRODUCT-SPEC.md case", () => {
+    const s = step2c();
+    expect(s).toContain("`SPEC-{NNNN}.md`");
+    expect(s).toMatch(/`PRODUCT-SPEC\.md` counts as spec 1/);
+    expect(s).toContain("keeps its name");
+    expect(s).toContain("`SPEC-0002.md`");
+    expect(s).toMatch(/never rename or overwrite the legacy file/);
+  });
+
+  it("writes spec 1 as PRODUCT-SPEC.md until plan-session reads numbered specs", () => {
+    const s = step2c();
+    expect(s).toContain("**Interim spec-1 filename (until PLU-4.2).**");
+    expect(s).toMatch(
+      /spec 1 of a session that has no specs yet is written as `PRODUCT-SPEC\.md`/,
+    );
+    expect(s).toContain("Specs 2 and up use `SPEC-{NNNN}.md`");
+  });
+
+  it("specifies the read order for existing content: open docs branch, default branch, local", () => {
+    const s = step2c();
+    const a = s.indexOf("open docs branch");
+    const b = s.indexOf("default branch", a);
+    const c = s.indexOf("local checkout", b);
+    expect(a).toBeGreaterThan(-1);
+    expect(b).toBeGreaterThan(a);
+    expect(c).toBeGreaterThan(b);
+  });
+
+  it("specifies lazy registration through the PLU-3.1 module before numbering", () => {
+    const s = step2c();
+    expect(s).toContain("**Lazy registration.**");
+    expect(s).toContain("scripts/register-planning-documents.ts");
+    expect(s).toContain("zero document rows");
+    expect(s).toContain("before numbering");
+  });
+
+  it("stops and says where the documents live when the home repo differs", () => {
+    const s = step2c();
+    expect(s).toContain("**stop**");
+    expect(s).toContain("already lives in {home repo}");
+  });
+
+  it("defaults owner to git config user.email, with --owner and initiative owner overriding, and never writes it to a file", () => {
+    const s = step2c();
+    expect(s).toContain("git config user.email");
+    expect(s).toContain("`--owner`");
+    expect(s).toMatch(/Never write the owner/);
+    expect(s).toContain("Owner: {owner}");
+  });
+
+  it("warns once and continues when the store lacks document endpoints", () => {
+    const s = step2c();
+    expect(s).toContain("Warn once");
+    expect(s).toContain("DOCS_API=off");
+    expect(s).toContain("today's behaviour");
+  });
+
+  it("starts each new file with a header line without the owner", () => {
+    expect(content).toContain(
+      "<!-- shipwright: session={session} repos={repos} spec={NNNN} -->",
+    );
+    expect(content).toMatch(/never the owner/);
+  });
+
+  it("registers the document, opens the docs PR, and records prUrl and state", () => {
+    expect(content).toContain("4a. **Register the document**");
+    expect(content).toContain("/documents");
+    expect(content).toContain("4c. **Record the PR**");
+    expect(content).toContain('"state": "pr_open"');
+  });
+
+  it("keeps git add -f on the specific file, never edits .gitignore, and keeps the scrub gate", () => {
+    expect(content).toContain('git -C "$WT" add -f "planning/$SESSION/$SPEC_FILE"');
+    expect(content).toMatch(/never edit the repo's `\.gitignore`/);
+    expect(content).toContain("SECRET_PATTERN=");
+  });
+
+  it("hands off with the two-argument form plan-session accepts today", () => {
+    expect(content).toContain("NEXT: /plan-session {repo} $ARGUMENTS");
+    expect(content).not.toMatch(/^NEXT: \/plan-session \$ARGUMENTS$/m);
+    expect(content).toContain("The handoff line must contain two arguments");
+  });
+
+  it("warns that plan-session does not read SPEC-NNNN.md specs yet", () => {
+    expect(content).toContain(
+      "⚠ plan-session does not read SPEC-{NNNN}.md files yet (PLU-4.2)",
+    );
   });
 });
