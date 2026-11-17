@@ -23,7 +23,7 @@ References load in only single-digit to twenty-percent of runs (figure supplied 
 | Step 10.5 hard-gate validation | 1409-1432 | Keep in spine (call + hard abort) | Only enforcement that the posted body carries the right label |
 | Step 5 Unresolved Comment Check (UCC-1.1) | 479-580 | Keep in spine (head-moved bypass, script call, settle-and-stop); caveat and bot-detection prose to reference | Without the write-back the PR is re-selected every tick |
 | Step 14 Live-Review Pre-Check (RVD-1.2) | 1623-1808 | Keep in spine (query, terminal rule, fresh-comment exception, settle-and-stop); mirror prose to reference | Only cross-task-store dedup layer; runs before any claim |
-| Step 14 Pre-Claim Fast Path (CBD-1.4) | 1810-1831 | Keep in spine (6 lines) | Avoids a self-409 against the orchestrator's own claim |
+| Step 14 Pre-Claim Fast Path (CBD-1.4) | 1810-1831 | Keep in spine (about 3 lines) | Avoids a self-409 against the orchestrator's own claim |
 | Step 5.8 dependency-manifest detection (DBR-3.2) | 594-676 | Keep detection in spine (script + 3 match rules + "any author"); analysis already in `references/dependency-risk-analysis.md`; script exposition dropped | Trigger is a file match, not an author; the reference loads only on a match |
 | Step 6.1 risk signals (RSK-2.1) | 695-710 | Keep in spine (one script call, non-fatal) | Newest feature (2026-11-13); with no spine call there is no Risk line at all |
 | Step 11 self-review ledger write (PFL-5.2) | 1495-1524 | Keep in spine (the `if` + POST, ordered before 11b) | Silent failure makes patch spin on a clean self-approved PR forever |
@@ -49,14 +49,14 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 
 - **Purpose.** Compute `selfReview`, take `unaddressedFindings` (9.5) and `currentPassHasBlockingFindings` (Step 8, lines 975-981), call `compute-review-verdict.ts`, and use `event` and `verdictLabel` verbatim. The `body` must lead with the literal `Verdict: APPROVE` or `Verdict: COMMENT`, even when `event` is forced to `COMMENT` (self-review).
 - **Incident.** Two. (1) `41476a142` (#1292, 2026-07-09): free-form approval prose never matched `check-patch.ts`'s `isSelfCleanApprove` regex, so a clean self-approve was treated as an unaddressed finding forever; it required the literal label. (2) `ddfd6e607` (#2515, 2026-08-09, DRO-1.1): prose guidance "alone let the same mislabeling bug recur days after it was first documented", across two PRs (one self-authored); it made the decision mechanical, and the review of that PR added the current-pass severity input (Case 3). Source: those commit bodies and lines 1288-1335 of the file.
-- **Verdict: keep script call and label rule in spine; drop the worked example and 8-row table.** Spine keeps: the three inputs, the call, "use output verbatim", the literal-label rule with the self-review exception stated in one line, the JSON shape reference. The Case 1-3 narrative (1288-1335) and the 8-row table (1337-1346) restate `compute-review-verdict.ts`'s `computeVerdict` and `compute-review-verdict.unit.test.ts`; they are dropped (rationale below). The Risk and dependency fold-in formats (1369-1400) move to `verdict-folding.md` with a 3-line spine rule ("append after the `Verdict:` lead-in; Risk only when `verdictLabel` is APPROVE").
+- **Verdict: keep script call and label rule in spine; drop the worked example and 8-row table.** Spine keeps: the three inputs, the call, "use output verbatim", the literal-label rule with the self-review exception stated in one line, the JSON shape reference. The Case 1-3 narrative (1288-1335) and the 8-row table (1337-1346) restate `compute-review-verdict.ts`'s `computeVerdict` and `compute-review-verdict.unit.test.ts`; they are dropped (rationale below). The Risk and dependency fold-in formats (1369-1400) move to `verdict-folding.md` with a 2-line spine rule ("append after the `Verdict:` lead-in; Risk only when `verdictLabel` is APPROVE").
 - **Why.** The failure was the model deciding the label itself; the script removed that, so the spine must keep the call. The truth table cannot be re-decided by a model that is told to use the script's output.
 
 ### Step 10.5: hard-gate validation (lines 1409-1432)
 
 - **Purpose.** Re-invoke `compute-review-verdict.ts` in validation mode with the built `BODY`; `valid: false` means hard abort, fix the body to the right `Verdict:` phrase and re-validate before Step 11.
 - **Incident.** Added with `ddfd6e607` (#2515) for the same recurrence as Step 10; the text calls it "the enforcement gate that the recurring mislabeling incidents above prove prose guidance alone did not provide" (lines 1430-1432).
-- **Verdict: keep in spine** (about 5 lines). Step 10 and 10.5 are two calls to one script; merging them into one invocation would be a behavior change and is not part of "lean" (follow-up, see Risks).
+- **Verdict: keep in spine** (about 2 lines: the validation call, and the hard abort with fix-and-re-validate; this is the "2 of the 8" in the Step 10 and 10.5 allocation row). Step 10 and 10.5 are two calls to one script; merging them into one invocation would be a behavior change and is not part of "lean" (follow-up, see Risks).
 - **Why.** This is the only place the posted body is checked against the computed verdict. It is a pre-post stop; a reference load rate this low makes it fail open.
 
 ### Step 5: Unresolved Comment Check (lines 479-580)
@@ -77,7 +77,7 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 
 - **Purpose.** If a `[preclaim:{recordId}:{commitSha}]` marker is present, fetch the live head and compare. A match: set `PR_RECORD_ID = PRECLAIM_RECORD_ID`, skip the record fetch, staged check, dedup check and Step 4's own `/prs/claim`. A mismatch or no marker: self-claim as before.
 - **Incident / rationale.** Design, `aba32c7ba` (#1836, 2026-07-17, CBD-1.3/1.4/1.5/1.6): the orchestrator pre-claims before dispatch so a downstream skill must recognize the claim instead of 409-ing against itself.
-- **Verdict: keep in spine** (about 6 lines), as part of the merged claim section. `LAST_REVIEWED_COMMIT` is unset on this path, so Step 5's Unresolved Comment Check treats the run as a first review; the lean spine must keep that sentence because it changes which branch of the check runs.
+- **Verdict: keep in spine** (about 3 lines: compare the marker with the live head, set `PR_RECORD_ID` and skip the fetch/staged/dedup/claim, the `LAST_REVIEWED_COMMIT` sentence below), as part of the merged claim section. With the record lookup (1 line), the staged branch (2) and the dedup check (1, using the shared settle block) this fills the 7-line block. `LAST_REVIEWED_COMMIT` is unset on this path, so Step 5's Unresolved Comment Check treats the run as a first review; the lean spine must keep that sentence because it changes which branch of the check runs.
 - **Why.** Skipping it is a self-409 and a silent no-op run, which the orchestrator's skip counter then charges.
 
 ### Step 5.8: dependency-manifest detection, DBR-3.2 (lines 594-676)
@@ -91,7 +91,7 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 
 - **Purpose.** Build `FILES_JSON` from `git diff --numstat "origin/$base"...HEAD`, map CI to `passing|failing|pending|unknown`, call `compute-pr-risk-signals.ts`, keep `RISK_SIGNALS` (empty on failure). Combined with the subagents' `riskAssessment` by `compute-risk-rating.ts` after Step 7 (lines 918-931) to produce a Risk line on `APPROVE` bodies.
 - **Incident / rationale.** Feature, not incident: `40a18b7a1` (#5116, 2026-11-13) and `planning/review-risk-score/PLAN.md` (initiative SWI-3: the posted review includes a Low/Medium/High rating when the verdict is APPROVE; deterministic signals plus reviewer judgment; failure never blocks). Not found: any incident.
-- **Verdict: keep in spine** (about 5 lines for 6.1 here, plus the rating call counted in Step 7's allocation). Non-fatal failure stays stated once.
+- **Verdict: keep in spine** (about 4 lines for 6.1 here, plus the one-line Step 6 classification pointer in the same 5-line block; the rating call is counted in Step 7's allocation). Non-fatal failure stays stated once.
 - **Why.** The feature exists only if the call runs; a reference load rate this low means most APPROVEs would lose the Risk line without any failure signal, and the feature is 3 days old at audit time (2026-11-16), so adherence data for it does not exist yet. The Risk fold-in format moves to `verdict-folding.md`.
 
 ### Step 11: self-review ledger write, PFL-5.2 (lines 1495-1524)
@@ -112,9 +112,9 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 
 | Guard | Section (lines) | Purpose | Incident / rationale | Verdict |
 |---|---|---|---|---|
-| Stale-head re-check before POST (RHR-1.1) | Step 11.1, 1440-1464 | Re-fetch `headRefOid` just before the POST; on mismatch release the claim, print the abort line, skip 11b | `668638a2d` (#2735, 2026-08-19): on app-vitals/shipwright PR #2728 a fix commit landed 29 s before the review posted, still citing the stale SHA | Keep in spine (about 3 lines) |
+| Stale-head re-check before POST (RHR-1.1) | Step 11.1, 1440-1464 | Re-fetch `headRefOid` just before the POST; on mismatch release the claim, print the abort line, skip 11b | `668638a2d` (#2735, 2026-08-19): on app-vitals/shipwright PR #2728 a fix commit landed 29 s before the review posted, still citing the stale SHA | Keep in spine (about 2 lines: the re-fetch, and the mismatch branch that uses the shared release line, prints the abort and skips 11b) |
 | Never re-execute the review POST | Step 11.2, 1465-1475 | Write the response to a temp file, never `echo "$var" \| jq`, never re-run `gh api -X POST` | `b3e202163` (#2319, 2026-07-28): newline corruption led to retries that posted duplicate COMMENT reviews GitHub cannot delete | Keep in spine (2 lines); this one is irreversible |
-| Post-failure release | Step 11.4, 1481-1494 | A failed POST releases the claim and skips 11b | Same section's own rationale (11b would hide the PR from candidacy via the `commitSha`/`reviewState` dedup) | Keep in spine (2 lines) |
+| Post-failure release | Step 11.4, 1481-1494 | A failed POST releases the claim and skips 11b | Same section's own rationale (11b would hide the PR from candidacy via the `commitSha`/`reviewState` dedup) | Keep in spine (1 line, reusing the shared release line) |
 | Claim heartbeat | Step 5 item 8, 582-590 | Renew the heartbeat before the long review-writing phase | `5ecec1bea` (#1050, 2026-07-03): raised the PR claim TTL to 15 min and added renewal; the reaper otherwise resets a long review to `pending` | Keep in spine (2 lines) |
 | Diff base and file-count sanity check | Step 5.2/5.3, 262-281 | Diff against `origin/$base`; stop if the diff has about 2x the files in `changedFiles` | `b0b104725` (#2336, 2026-07-28): a stale local `main` produced 68 files instead of 4 | Keep in spine (3 lines); the "why" prose (268-272) dropped |
 | Linked-task model tier | 190-223 | Query `GET /tasks?repo&pr`, take the highest tier among matches, default `sonnet` | `db7b2afce` (#2989, 2026-08-31): `PullRequest.taskId` populated on about 10% of records, so the old lookup silently no-op'd | Keep in spine, compressed to the one `jq` (about 4 lines); quality enrichment but silently changes the reviewer model when skipped |
@@ -122,8 +122,8 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 | Malformed/failed response chain | 812-848 | Retry once, then built-in, then inline; always end Step 7 with a valid response; never loop; at most override -> retry -> built-in -> retry -> inline | RVM-1.2; the stated reason is that 9-11's claim-owning PATCHes must run, or the claim hangs | Keep a 3-line version in spine; override-specific branches to `step7-dispatch.md` |
 | Policy via DB-first, `select(. != null)` | 72-100 | Read policy from `/agents/:id/config`, hardcoded defaults | APM-1.2, `c41f32be2` (#3751, 2026-09-29); the `// empty` vs `select(. != null)` note (87-91) records that `//` would discard a deliberately-set `false` | Keep in spine (the jq shape and 4 defaults); essay dropped, one-line comment kept |
 | Staged path (`auto_post_reviews: false`) | 1528-1555 | PATCH `staged: true` with the verdict-dependent `reviewState` and clear the claim | `f39481b65` (#1383, 2026-07-10) | Keep in spine as one PATCH with a variable `reviewState` (2 curls become 1) |
-| Step 11b `/complete` + agentId/reviewedCommitSha | 1559-1603 | Mark posted; never change task status | Text: merge looks tasks up by `pr_open`; changing task status here breaks that | Keep in spine (about 4 lines) incl. "never update task status" |
-| Review Quality Rules | 1936-1958 | Verify before flagging, scope to the diff, no CI echo, no filler, file/line order, never REQUEST_CHANGES | Present since the initial import (`b558378f2`, #75); no incident cited | The section has 12 rules (1940-1960). Verdicts: verify before flagging, check scope, don't echo CI, don't contradict CLAUDE.md, no filler language, organize by file and line, breaking API changes: **keep in spine (7)**. Keep it tight, never REQUEST_CHANGES, APPROVE means clean, check unresolved feedback first, concise approvals: **dropped (5, duplicates; see Dropped text)** |
+| Step 11b `/complete` + agentId/reviewedCommitSha | 1559-1603 | Mark posted; never change task status | Text: merge looks tasks up by `pr_open`; changing task status here breaks that | Keep in spine (about 3 lines: the single `[ -n "$PR_RECORD_ID" ]` guard, the `/complete` call, and the rule) incl. "never update task status" |
+| Review Quality Rules | 1936-1960 | Verify before flagging, scope to the diff, no CI echo, no filler, file/line order, never REQUEST_CHANGES | Present since the initial import (`b558378f2`, #75); no incident cited | The section has 12 rules (1940-1960). Verdicts: verify before flagging, check scope, don't echo CI, don't contradict CLAUDE.md, no filler language, organize by file and line, breaking API changes: **keep in spine (7, in 5 lines: verify before flagging + check scope merged, don't echo CI + don't contradict CLAUDE.md merged)**. Keep it tight, never REQUEST_CHANGES, APPROVE means clean, check unresolved feedback first, concise approvals: **dropped (5, duplicates; see Dropped text)** |
 | Self-review override rationale | 1243-1244 | `selfReview` = canonical `PR_AUTHOR == CURRENT_USER`; GitHub rejects self-APPROVE | Text of Step 10 (API restriction) | Keep in spine (1 line, part of Step 10) |
 
 ## Near-duplicate claim and dedup logic (Steps 4 and 14)
@@ -170,7 +170,7 @@ Spine: `plugins/shipwright/commands/review-lean.md`, hard limit 150 lines counte
 | Config fetch (policy, subagent type, repos), defaults, policy summary line, canonical identity script | 72-131 | 8 |
 | Live-Review Pre-Check (query, `terminal` rule, fresh-comment exception) | 1623-1808 | 12 |
 | Pre-claim fast path, record lookup, staged branch, already-reviewed-at-head dedup | 1810-1932 | 7 |
-| Shared settle-and-stop block | 550-580, 1722-1805, 1896-1926 | 5 |
+| Shared settle-and-stop block (PATCH 2, print + skip-reason + `[silent]` + stop 1, caller-supplied reason and no-separate-release rule 1) | 550-580, 1722-1805, 1896-1926 | 4 |
 | Single claim call, 409 handling, worktree add | 134-188 | 7 |
 | Linked-task model tier | 190-223 | 4 |
 | Context: metadata, diff against `origin/$base` plus file-count sanity check, CI, GraphQL state (compressed), ledger fetch, CLAUDE.md, test-readiness | 248-372, 471-473 | 13 |
@@ -183,11 +183,13 @@ Spine: `plugins/shipwright/commands/review-lean.md`, hard limit 150 lines counte
 | Step 8: thresholds, trim, `CURRENT_PASS_HAS_BLOCKING_FINDINGS` | 952-981 | 3 |
 | Step 9: write `PR_REVIEW_{pr}.md` (template in reference), re-review append | 985-1117 | 3 |
 | Step 9.5: unaddressed-findings gate | 1121-1233 | 5 |
-| Step 10 and 10.5: verdict, literal label rule, validation, hard abort | 1237-1432 | 8 |
-| Step 11 and 11b: freshness re-check, POST, failure release, PFL-5.2 write, staged PATCH, `/complete` | 1436-1603 | 12 |
-| Review Quality Rules (7 retained, one compressed line each, two of them merged) | 1936-1960 | 5 |
+| Step 10 and 10.5: verdict (6: `selfReview`, call, verbatim + JSON shape, literal label rule, 2-line fold-in rule), validation and hard abort (2) | 1237-1432 | 8 |
+| Step 11 and 11b: freshness re-check (2), POST + never re-execute (2), success print (1), failure release (1), PFL-5.2 `if` + POST (2), staged PATCH (2), `/complete` (3) | 1436-1603 | 13 |
+| Review Quality Rules (7 retained, one compressed line each, two pairs merged into one line each) | 1936-1960 | 5 |
 | Section headings and separators not counted above (Steps 9.5-10.5 and 11-11b share one heading each) | n/a | 3 |
 | **Total** | | **149** |
+
+Each row's per-guard estimates in this doc sum to its allocation. Step 11 and 11b was raised from 12 to 13 to fit its seven parts; the line comes from the shared settle-and-stop block (5 to 4), which only compresses one PATCH and its tail and demotes nothing.
 
 This is tight because the two GraphQL queries and the live-review `jq` predicate are literal code that must stay in the spine. If the author cannot fit it, the pressure valve is extracting those into scripts (follow-up), never demoting a guard to a reference.
 
@@ -233,8 +235,8 @@ Overall: 1960 to about 589 lines (about 70% fewer). Compare patch-lean's 57%: re
 | Step 9.5 (1121-1236) | 116 | Spine (5) + `ledger-and-findings.md` |
 | Step 10 (1237-1408) | 172 | Spine (6 of the 8) + `verdict-folding.md`; Case table dropped |
 | Step 10.5 (1409-1435) | 27 | Spine (2 of the 8) |
-| Step 11 (1436-1558) | 123 | Spine (part of 12) + `guards-detail.md` |
-| Step 11b (1559-1605) | 47 | Spine (part of 12) |
+| Step 11 (1436-1558) | 123 | Spine (part of 13) + `guards-detail.md` |
+| Step 11b (1559-1605) | 47 | Spine (part of 13) |
 | Step 14 preamble (1606-1622) | 17 | Spine (inside the merged blocks) |
 | Live-Review Pre-Check (1623-1809) | 187 | Spine (12) + `guards-detail.md` |
 | Pre-Claim, staged refresh, dedup (1810-1935) | 126 | Spine (7 + the shared settle block) |
