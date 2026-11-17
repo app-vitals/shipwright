@@ -176,3 +176,22 @@ describe("SKILL.md — coverage-check 3-stage lifecycle section", () => {
     expect(section).toMatch(/unnecessar(?:y|ily)/i);
   });
 });
+
+describe("repo-config — CI publishes shipwright-coverage lifecycle step", () => {
+  const getSection = () =>
+    content.slice(
+      content.indexOf("## Coverage-check pairing (3-stage lifecycle)"),
+    );
+
+  it("lists publishing the artifact before 'coverage must not decrease'", () => {
+    const section = getSection();
+    const publish = section.indexOf("CI publishes `shipwright-coverage`");
+    const neverDecrease = section.indexOf("| 2. Never-decrease required");
+    expect(publish).toBeGreaterThan(-1);
+    expect(publish).toBeLessThan(neverDecrease);
+  });
+
+  it("references coverage-output.md for the contract", () => {
+    expect(getSection()).toContain("references/coverage-output.md");
+  });
+});
