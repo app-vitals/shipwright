@@ -1,16 +1,20 @@
-# PRODUCT-SPEC.md Template
+# Product Spec Template
 
-This template is used by `/prd` to generate the `planning/{folder}/PRODUCT-SPEC.md` file. It is also the format that `/plan-session` expects when it reads planning documents.
+This template is used by `/prd` to generate a numbered spec file, `planning/{session}/SPEC-{NNNN}.md`. A legacy `PRODUCT-SPEC.md` is spec 1 and keeps its name. It is also the format that `/plan-session` expects when it reads planning documents.
 
-The `/prd` command fills each placeholder from interactive discovery and codebase research. The resulting document is placed at `planning/{folder}/PRODUCT-SPEC.md` for direct consumption by `/plan-session`.
+The `/prd` command fills each placeholder from interactive discovery and codebase research. The resulting document is placed at `planning/{session}/SPEC-{NNNN}.md` for direct consumption by `/plan-session`.
+
+The file's first line is a header comment giving session, repos and spec number. The owner is never written into the file or its header — it is recorded in the task store only.
 
 ---
 
 ```markdown
+<!-- shipwright: session={session} repos={org/repo,org/other} spec={NNNN} -->
 # {Feature/Project Name} — Product Specification
 
 **Date**: {YYYY-MM-DD}
-**Session**: {folder-name}
+**Session**: {session}
+**Repos**: {org/repo, org/other}
 **Status**: Draft
 
 ## Overview
@@ -57,11 +61,11 @@ integrate with, architectural constraints, performance requirements. Populated f
 research. Omit if none identified.}
 
 **Source Map**: {Existing files this feature touches, populated from the Phase 2 researcher
-pass. One file path per line. Omit if the feature is entirely new with no existing code to
-modify. Example:}
-- `src/api/notifications/routes.ts` — adds new endpoint
-- `src/lib/email.ts` — reuses sendEmail utility
-- `src/db/schema.prisma` — adds Notification model
+pass. One file path per line, each prefixed with the `org/repo` it lives in (one of the
+spec's Repos). Omit if the feature is entirely new with no existing code to modify. Example:}
+- `org/repo`: `src/api/notifications/routes.ts` — adds new endpoint
+- `org/repo`: `src/lib/email.ts` — reuses sendEmail utility
+- `org/other`: `src/db/schema.prisma` — adds Notification model
 
 **Testing Strategy**: {Which test layer owns coverage for this feature, and why. Derived from
 the test-layer probe in Phase 2. Format: "Layer: {unit|integration|smoke|e2e} — {reason}".
@@ -131,6 +135,7 @@ and technically. This is the overall completion condition, not per-feature accep
 
 | Field | Purpose | Source in `/prd` |
 |-------|---------|------------------------|
+| **Repos** (required) | Repos the spec covers; every Source Map entry names one of them | `--repos` plus the home repo |
 | **Overview** | Quick project summary | Synthesized from Q2 + Q3 |
 | **Problem Statement** | Specific problem being solved | Q2 |
 | **Users & Context** | Who uses this and why | Q3 |

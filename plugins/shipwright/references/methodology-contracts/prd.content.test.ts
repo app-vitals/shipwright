@@ -106,3 +106,34 @@ describe("prd.md — quality bar details", () => {
     expect(content).not.toContain("Phase 8");
   });
 });
+
+describe("prd.md — numbered specs, repos, owner (PLU-3.2)", () => {
+  const inputs = () =>
+    content.slice(content.indexOf("## Inputs"), content.indexOf("## Output"));
+
+  it("lists specPath, specNumber, repos and owner as inputs", () => {
+    const section = inputs();
+    for (const name of ["specPath", "specNumber", "repos", "owner"]) {
+      expect(section).toContain(`**\`${name}\`**`);
+    }
+  });
+
+  it("documents numbered output with the legacy PRODUCT-SPEC.md as spec 1", () => {
+    expect(content).toContain("planning/{session}/SPEC-{NNNN}.md");
+    expect(content).toMatch(/legacy `PRODUCT-SPEC\.md` is spec 1/);
+    expect(content).toContain("SPEC-0002.md");
+  });
+
+  it("lists the Repos line as a required section", () => {
+    const required = content.slice(
+      content.indexOf("**Required sections**"),
+      content.indexOf("**Quality bar**"),
+    );
+    expect(required).toContain("**Repos**");
+    expect(required.toLowerCase()).toContain("required");
+  });
+
+  it("never lets the owner into the file", () => {
+    expect(content.toLowerCase()).toMatch(/never write it into the file/);
+  });
+});

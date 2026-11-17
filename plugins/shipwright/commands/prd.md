@@ -1,19 +1,29 @@
 ---
-description: Interactive PRD session — asks qualifying questions, researches context, and produces a PRODUCT-SPEC.md ready for /plan-session
+description: Interactive PRD session — asks qualifying questions, researches context, and produces the session's next numbered spec (SPEC-NNNN.md; a legacy PRODUCT-SPEC.md is spec 1) ready for /plan-session
 arguments:
-  - name: folder-name
+  - name: session
     description: Name of the planning session folder under planning/ (e.g., april-2026-workspace-switcher)
     required: true
+  - name: --repos
+    description: "Optional `--repos a,b` — comma-separated org/repo list this spec covers (the home repo is always included)"
+    required: false
+  - name: --owner
+    description: "Optional `--owner email` — the requester recorded as the spec's owner in the task store (never written to a file)"
+    required: false
   - name: --initiative
-    description: "Optional `--initiative {task-id}` — id of an `initiative` or `idea` task to close out once PRODUCT-SPEC.md is finalized"
+    description: "Optional `--initiative {task-id}` — id of an `initiative` or `idea` task to close out (and link via specDocumentId) once the spec is finalized"
     required: false
 ---
 
 # PRD: $ARGUMENTS
 
-Run an interactive requirements session for `planning/$ARGUMENTS/`. Ask qualifying questions one at a time to fully understand what you're building, then produce a structured `PRODUCT-SPEC.md` that `/plan-session` can consume directly.
+Run an interactive requirements session for `planning/$ARGUMENTS/`. Ask qualifying questions one at a time to fully understand what you're building, then produce a structured numbered spec (`SPEC-{NNNN}.md`, or the legacy `PRODUCT-SPEC.md` as spec 1) that `/plan-session` can consume directly.
 
-**Argument parsing:** `$ARGUMENTS` is the folder name token, optionally followed by `--initiative {task-id}`. The first token is the folder name (`{session}`); every `$ARGUMENTS` reference below that names the folder (e.g. `planning/$ARGUMENTS/`) means that token only, never the flag. **`--initiative {task-id}`** (optional) is the id of an `initiative` or `idea` task in the task store that this PRD fulfils; it is used only by the Phase 5 initiative close-out step. Without it, behavior is unchanged.
+**Form:** `/shipwright:prd {session} [--repos a,b] [--owner email] [--initiative id]`
+
+**Argument parsing:** `$ARGUMENTS` is the session token, optionally followed by `--repos a,b`, `--owner email` and `--initiative {task-id}`. The first token is the session (`{session}`); every `$ARGUMENTS` reference below that names the folder (e.g. `planning/$ARGUMENTS/`) means that token only, never a flag. **`--repos a,b`** (optional) lists the `org/repo` values the spec covers; the home repo is always included. **`--owner email`** (optional) overrides the owner (see step 2c). **`--initiative {task-id}`** (optional) is the id of an `initiative` or `idea` task in the task store that this PRD fulfils; it feeds the owner default in step 2c and the Phase 5 initiative close-out step.
+
+Throughout this command, `{SPEC_FILE}` is the spec file chosen in step 2c (`SPEC-{NNNN}.md` or the legacy `PRODUCT-SPEC.md`) and `{SPEC_PATH}` is `planning/$ARGUMENTS/{SPEC_FILE}`.
 
 Follow all phases in order. Proceed automatically between phases. The only pauses are to receive user answers to questions.
 
@@ -47,8 +57,9 @@ built-in process (toolchain detection, discovery questions, research, drafting) 
 not itself a dispatchable subagent — it's the main thread's own inline conversation with the
 human. So the empty value is the built-in path, not a name to dispatch.
 
-**When `PRD_SUBAGENT_TYPE` is non-empty**, still run step 2b below (repo detection — Phase
-5's handoff line needs `{repo}` regardless of which path produces the spec), then skip the
+**When `PRD_SUBAGENT_TYPE` is non-empty**, still run step 2b below (repo detection) and step 2c (session
+documents, spec number, repos and owner — the dispatch needs `{SPEC_PATH}` regardless of which
+path produces the spec), then skip the
 rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straight to the
 **Configured Methodology Dispatch (PRM-1.2)** section that follows Phase 4. Continue to Phase
 5 from there once that section completes.
@@ -70,6 +81,24 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
 
    Print `Detected repo: {repo}` (full `owner/repo` value) in the Phase 0 summary so the user can catch a misdetection before investing time in the session.
 
+2c. **Resolve session documents, spec number, repos and owner (PLU-3.2).** Runs on both paths.
+
+   **Document endpoints.** Probe the store once: `GET $SHIPWRIGHT_TASK_STORE_URL/documents?session=$ARGUMENTS` (header `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN`). A 404/405 or an unreachable store means the store lacks the document endpoints: print one warning (`⚠ Task store has no document endpoints — continuing without document registration.`), set `DOCS_API=off`, and continue with today's behaviour — the numbering rule below works from files alone, and every registration, `prUrl` and `specDocumentId` step is skipped. Warn once, never per step.
+
+   **What the session already has.** The document rows decide which specs exist; file *content* is read from git. Read order for existing content (spec files, `PLAN.md`, any prior spec you reference): (1) the open docs branch — `origin/docs/plan-$ARGUMENTS` (or the suffixed `docs/plan-$ARGUMENTS-{n}` branch that has an open PR), (2) the default branch (`origin/HEAD`), (3) the local checkout, because `planning/` is commonly gitignored and a pass may run on another machine. First match wins.
+
+   **Lazy registration.** If the session has zero document rows but planning files exist for it in git (any read-order source), register them first, before numbering, using the shared PLU-3.1 module `${CLAUDE_PLUGIN_ROOT}/scripts/register-planning-documents.ts` (`registerPlanningSessions` with `sessions: [$ARGUMENTS]`, `repo: {repo}`, a store client backed by the `/documents` and `/tasks` endpoints, and `chainContentSources` in the read order above). Registration is additive bookkeeping: it never throws, and entries in `result.errors` are printed as warnings and never block the session.
+
+   **Home repo.** The home repo is the repo this command runs in (`{repo}` from step 2b). If the session already has document rows whose `repo` differs from `{repo}`, **stop** and print `Session $ARGUMENTS already lives in {home repo} — its documents are at planning/$ARGUMENTS/ in that repo. Run /shipwright:prd $ARGUMENTS there.` Write nothing.
+
+   **Next spec number.** Take the highest spec number across the document rows and the spec files found in git/local (`PRODUCT-SPEC.md` counts as spec 1 — the legacy file is spec 1 and keeps its name; `SPEC-{NNNN}.md` counts as `NNNN`). The new spec is that number plus one, zero-padded to four digits: `SPEC-{NNNN}.md`. A session with no specs gets `SPEC-0001.md`; a session whose only spec is a legacy `PRODUCT-SPEC.md` gets `SPEC-0002.md` — never rename or overwrite the legacy file. `{SPEC_FILE}` is the new file name.
+
+   **Repos.** `{repos}` = the `--repos` list (trimmed, de-duplicated) plus `{repo}` if absent, home repo first.
+
+   **Owner.** Precedence: `--owner` if given; else, when `--initiative {task-id}` was passed and `GET /tasks/{task-id}` returns an `owner`, that owner; else `git config user.email` (if unset, no owner is recorded). The owner is held only for the task-store registration call. **Never write the owner (or any email) into the spec file, its header line, the PR title or the PR body.**
+
+   Print in the Phase 0 summary: `Detected repo: {repo}`, `Spec: {SPEC_PATH}`, `Repos: {repos}`, `Owner: {owner}` so the user can correct any of them before investing time in the session.
+
 3. **Read project documentation** (lightweight scan — highlights only, no deep code dive):
    - `CLAUDE.md` — conventions, architecture decisions, and constraints
    - `README.md` — project overview and current capabilities
@@ -83,7 +112,7 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
 
 4. **Research existing context**: Spawn the `agents/researcher.md` agent with the task: "Based on the project documentation, summarize: (1) the project's current feature set and key modules, (2) architectural patterns a new feature should follow, (3) any existing utilities or abstractions available for reuse." Use the output to further enrich your understanding before asking questions — don't surface what the docs already made clear.
 
-Store detected toolchain, detected repo name, doc findings, and research output for use in Phase 1 (to inform questions), Phase 2 (to enrich technical considerations), and Phase 5 (the `/plan-session` handoff).
+Store detected toolchain, detected repo name, `{SPEC_PATH}`, `{repos}`, `{owner}`, doc findings, and research output for use in Phase 1 (to inform questions), Phase 2 (to enrich technical considerations), and Phase 4 (writing, registering and opening the docs PR).
 
 ## Phase 1: Interactive Discovery
 
@@ -212,9 +241,9 @@ For each flag, ask the user: **"How do you want to handle this?"** Wait for thei
 
 If no complexity risks were found, skip Phase 2b entirely and proceed to Phase 3.
 
-## Phase 3: Draft PRODUCT-SPEC.md
+## Phase 3: Draft the spec
 
-Generate the `PRODUCT-SPEC.md` using the template from `references/product-spec-template.md`.
+Generate the spec using the template from `references/product-spec-template.md`. A new file starts with the template's header line (`<!-- shipwright: session={session} repos={repos} spec={NNNN} -->`) — session, repos and spec number only, never the owner. Fill the required `**Repos**` line from `{repos}`, and give every Source Map entry the repo its file lives in.
 
 Fill in each section from your gathered information:
 - Map Q2 → Problem Statement
@@ -226,7 +255,7 @@ Fill in each section from your gathered information:
 - Map Q8 decisions (driven to resolution) → Resolved Decisions
 - Map Q9 → Success Criteria
 - Map Phase 2 output → Technical Considerations per feature
-- Map Phase 2 file enumeration → Source Map per feature (list of existing files the feature touches)
+- Map Phase 2 file enumeration → Source Map per feature (list of existing files the feature touches, each tagged with its `org/repo`)
 - Map Phase 2 test-layer probe → Testing Strategy per feature + top-level Testing Strategy table
 - Map Phase 2b decisions → adjust feature scope if simplified, or add to Resolved Decisions if flagged for engineering (with the decision recorded as "flagged for engineering review before implementation")
 
@@ -243,16 +272,79 @@ Present the complete draft to the user section by section. After presenting each
 
 ## Phase 4: User Review and Finalize
 
-1. Show the complete assembled `PRODUCT-SPEC.md`
+1. Show the complete assembled spec
 2. Ask:
    ```
    Here's the complete Product Specification. Does this capture what you're building?
    Would you like to adjust anything before I save it?
    ```
 3. Iterate on feedback until the user approves
-4. Write the approved spec to `planning/$ARGUMENTS/PRODUCT-SPEC.md`
+4. Write the approved spec to `{SPEC_PATH}` (new files start with the header line from Phase 3; the file never contains the owner).
+4a. **Register the document** (skip when `DOCS_API=off`): `POST $SHIPWRIGHT_TASK_STORE_URL/documents` with `{"session": "$ARGUMENTS", "kind": "spec", "number": {N}, "repo": "{repo}", "path": "{SPEC_PATH}", "title": "{first H1}", "owner": "{owner}", "repos": [{repos}]}` (omit `owner` when empty). Registration is idempotent on `(session, kind, number)`. Keep the returned `id` as `SPEC_DOC_ID`. A failure prints a warning and continues.
+4b. **Open the docs PR** with the shell block below — the same throwaway-worktree pattern as `plan-session.md` Step 6d. It reuses the open `docs/plan-{session}` PR when one exists (adding the spec to that branch); when that PR has already merged (or closed) it opens `docs/plan-{session}-{n}` with the next free `n`, starting at 2. `planning/` is commonly gitignored, so it stages with `git add -f` on the specific file only — never `-A`, and never edit the repo's `.gitignore`. The mechanical secret-pattern scrub gate still runs before any commit; on a match the PR is not opened.
+
+```bash
+# prd-docs-pr
+SESSION="{session}"
+SPEC_FILE="{SPEC_FILE}"
+SPEC_PR_URL=""
+BRANCH="docs/plan-$SESSION"
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$REPO_ROOT" ] || ! command -v gh >/dev/null; then
+  echo "⏭ Spec PR skipped — not a git checkout or gh unavailable."
+else
+  git -C "$REPO_ROOT" fetch -q origin
+  DEFAULT=$(git -C "$REPO_ROOT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+  # Reuse an OPEN docs PR; if the previous PR merged (or closed), move on to
+  # docs/plan-$SESSION-2, -3, ... until one is open or unused.
+  REUSE=""
+  N=1
+  while [ "$N" -lt 50 ]; do
+    INFO=$(gh pr list --head "$BRANCH" --state all --json url,state -q '.[0] | select(.) | "\(.state) \(.url)"')
+    [ -z "$INFO" ] && break
+    if [ "${INFO%% *}" = "OPEN" ]; then REUSE=1; SPEC_PR_URL="${INFO#* }"; break; fi
+    N=$((N + 1))
+    BRANCH="docs/plan-$SESSION-$N"
+  done
+  WT=$(mktemp -d)/spec-wt
+  if [ -n "$REUSE" ]; then
+    git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "origin/$BRANCH"
+  else
+    # -B: a prior run may have pushed this branch and failed before `gh pr create`.
+    git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "$DEFAULT"
+  fi
+  mkdir -p "$WT/planning/$SESSION"
+  cp "$REPO_ROOT/planning/$SESSION/$SPEC_FILE" "$WT/planning/$SESSION/$SPEC_FILE"
+  # -f: planning/ is commonly gitignored. Stage only this file — never -A.
+  git -C "$WT" add -f "planning/$SESSION/$SPEC_FILE"
+  # Mechanical scrub gate — private key headers and well-known cloud/vendor token prefixes.
+  SECRET_PATTERN='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
+  if git -C "$WT" diff --cached --quiet; then
+    echo "⏭ Spec PR skipped — $SPEC_FILE already on $BRANCH."
+  elif git -C "$WT" diff --cached | grep -qE -- "$SECRET_PATTERN"; then
+    echo "⚠ Spec PR not opened — staged spec content matched a secret-pattern scan; scrub planning/$SESSION and retry."
+    SPEC_PR_URL=""
+  else
+    git -C "$WT" commit -q -m "docs(planning): add $SESSION ${SPEC_FILE%.md}" \
+      && git -C "$WT" push -q -u origin "$BRANCH" \
+      && if [ -z "$REUSE" ]; then
+           (cd "$WT" && gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force) \
+           && SPEC_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
+                --title "docs(planning): add $SESSION ${SPEC_FILE%.md}" \
+                --body "Spec \`$SPEC_FILE\` for session \`$SESSION\`." \
+                --label shipwright)
+         fi
+  fi
+  git -C "$REPO_ROOT" worktree remove --force "$WT"
+fi
+echo "SPEC_PR_BRANCH=$BRANCH"
+echo "SPEC_PR_URL=$SPEC_PR_URL"
+```
+
+   If any check or command fails, print `⚠ Spec PR not opened — {reason}` and continue: the spec is already on disk and the command never fails on this step. If the repo has its own stricter hygiene (banned-string scan, CLAUDE.md rules), apply that too before running the block.
+4c. **Record the PR** (skip when `DOCS_API=off` or `SPEC_PR_URL` is empty): `PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}` with `{"prUrl": "{SPEC_PR_URL}", "state": "pr_open"}`. A failure prints a warning and continues. Surface `Spec PR: {url}` in the Phase 5 summary.
 5. **Link to the plan visualization (additive — never blocks the spec).** The
-   `PRODUCT-SPEC.md` write above is complete and unchanged; this step only
+   spec write above is complete and unchanged; this step only
    surfaces a shareable link to the session view for what was just written.
    Skip cleanly when the admin app base URL is not configured.
 
@@ -276,7 +368,7 @@ Present the complete draft to the user section by section. After presenting each
 ## Configured Methodology Dispatch (PRM-1.2)
 
 **Skip this entire section when `PRD_SUBAGENT_TYPE` is empty** — the built-in step 2 onward
-through Phase 4 already produced `PRODUCT-SPEC.md`; proceed straight to Phase 5. Everything
+through Phase 4 already produced the spec; proceed straight to Phase 5. Everything
 below runs only when Phase 0's resolution subsection resolved `PRD_SUBAGENT_TYPE` to a
 non-empty value, in which case step 2 onward through Phase 4 were skipped and this section
 produces the spec in their place.
@@ -287,7 +379,8 @@ Per `plugins/shipwright/references/methodology-contracts/prd.md` (PRM-1.1), prd 
 no pre-assembled input payload the way review, patch, merge, and plan-session do — the only
 inputs are:
 
-- **Session folder name** — `$ARGUMENTS`, used to derive `planning/$ARGUMENTS/PRODUCT-SPEC.md`.
+- **Session folder name** — `$ARGUMENTS`.
+- **`specPath`, `specNumber`, `repos`, `owner`** — resolved in step 2c: `{SPEC_PATH}`, its spec number, the repo list, and the owner (held for registration only — the subagent must never write it into the file).
 - **Live human interaction** — the configured subagent conducts its own discovery questions,
   research, complexity review, and drafting directly with the human, one turn at a time,
   exactly as the built-in Phases 1 through 4 do. There is no pre-gathered answer set to hand
@@ -307,8 +400,9 @@ Pass a single prompt block that:
 1. Points the subagent at `plugins/shipwright/references/methodology-contracts/prd.md` as the
    contract it must satisfy, and at
    `plugins/shipwright/references/product-spec-template.md` as the required output template.
-2. Supplies the session folder name (`$ARGUMENTS`) and the target output path
-   (`planning/$ARGUMENTS/PRODUCT-SPEC.md`).
+2. Supplies the session folder name (`$ARGUMENTS`), the target output path
+   (`{SPEC_PATH}`), the spec number and the repos, and tells it to start the file with the
+   template's header line and fill the required `Repos` line — and never to write the owner.
 3. States that it must conduct its own interactive discovery, research, and complexity-review
    process directly with the human (one question at a time, driving every uncertainty to a
    resolved decision or a named blocker — no "TBD" markers), present the assembled spec for
@@ -325,11 +419,11 @@ structural sanity check, not a re-grading of content quality (probing depth, dec
 rationale, acceptance-criterion wording, etc. stay the configured subagent's responsibility
 per the contract's Scope section):
 
-1. `planning/$ARGUMENTS/PRODUCT-SPEC.md` exists and is non-empty.
+1. `{SPEC_PATH}` exists and is non-empty.
 2. It contains every required top-level section heading from the contract's Required Sections
    list: `Overview`, `Problem Statement`, `Users & Context`, `Features`,
-   `Technical Constraints`, `Scope`, `Priorities & Sequence`, `Testing Strategy`,
-   `Resolved Decisions`, `Success Criteria`.
+   `Repos` (the required `**Repos**` line), `Technical Constraints`, `Scope`,
+   `Priorities & Sequence`, `Testing Strategy`, `Resolved Decisions`, `Success Criteria`.
 3. It contains no unresolved `TBD` marker (case-insensitive) — the contract's quality bar
    requires every uncertainty be driven to a decision or a named blocker before the file is
    written.
@@ -361,24 +455,25 @@ built-in PRD flow.
 ```
 
 Either way — configured subagent success, or fallback to the built-in flow — Phase 5 always
-runs against a real, structurally valid spec on disk.
+runs against a real, structurally valid spec on disk. Steps 4a-4c (register, docs PR, record
+the PR) run after either path, once the file is validated.
 
 ## Phase 5: Summary and Next Steps
 
 Phase 5 is path-agnostic (PRM-1.2): it runs identically whether Phase 0 step 2 through Phase
 4 ran inline above, or that flow was replaced by the Configured Methodology Dispatch section
-— either way, a structurally valid `PRODUCT-SPEC.md` is already on disk by the time this
+— either way, a structurally valid spec is already on disk by the time this
 phase runs. On the built-in path the counts below (features, requirements, acceptance
 criteria, resolved decisions, external blockers) come from the in-session Phase 1-4 tally;
 on the dispatch path no such tally exists in this thread, so
-derive every count directly from the written `PRODUCT-SPEC.md` (its `### Feature N` headings,
+derive every count directly from the written spec (its `### Feature N` headings,
 `Requirements`/`Acceptance Criteria` bullets, and `Resolved Decisions` entries) instead.
 
 **Two figures are the exceptions — neither is reconstructable from the artifact, so scope
 both out on the dispatch path:**
 
 1. **`Complexity Flags` — omit the line entirely.** Per Phase 3's mapping rule, a Phase 2b
-   flag the user accepted as-is ("Keep as-is") is reflected nowhere in `PRODUCT-SPEC.md` —
+   flag the user accepted as-is ("Keep as-is") is reflected nowhere in the spec file —
    only a "Simplify" (folded into the feature's own scope) or "Flag for engineering review"
    (written to Resolved Decisions) decision leaves any trace. `N reviewed` and `N accepted`
    therefore cannot be reconstructed from the artifact alone on the dispatch path, where no
@@ -400,7 +495,8 @@ Print:
 PRD COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PRD: planning/$ARGUMENTS/PRODUCT-SPEC.md
+PRD: {SPEC_PATH}
+Spec PR: {url}    ← omit this line if the docs PR was skipped or failed
 Plan viz: {url}   ← omit this line if the render step was skipped
 
 Features: {N}
@@ -411,7 +507,7 @@ Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}  
 Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
 External Blockers: {N items require external resolution before plan-session}
 
-NEXT: /plan-session {repo} $ARGUMENTS
+NEXT: /plan-session $ARGUMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚠ Do NOT skip /plan-session. It is the ONLY command that writes tasks to
@@ -422,7 +518,7 @@ If the work feels trivial, `/plan-session` will produce a single small task —
 that is the correct fast path. "Small" is NOT a reason to skip planning.
 ```
 
-Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line must contain two arguments.
+The handoff line is exactly `NEXT: /plan-session {session}` — one argument, the session name.
 
 On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely and
 print `Resolved Decisions:` with only its total (see the two exceptions above the template)
@@ -430,17 +526,17 @@ rather than printing a partial or guessed count.
 
 **Initiative close-out** (only when `--initiative {task-id}` was passed):
 
-Run this after `PRODUCT-SPEC.md` is finalized, alongside the summary. Phase 5 is path-agnostic, so this step runs identically after the built-in path and after the Configured Methodology Dispatch path.
+Run this after the spec is finalized, alongside the summary. Phase 5 is path-agnostic, so this step runs identically after the built-in path and after the Configured Methodology Dispatch path.
 
 1. `GET $SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}` (header `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN`). On 404 or any other failure, print a warning and continue.
 2. If `kind` is not `initiative` or `idea`, print a warning and continue. If `status` is already one of `done`, `merged`, `deployed`, `released`, `cancelled`, print a warning (already closed) and continue.
-3. Otherwise PATCH it to done:
+3. Otherwise PATCH it to done and — unless `DOCS_API=off` or no `SPEC_DOC_ID` exists — set `specDocumentId` to `SPEC_DOC_ID` in the same body (omit that key otherwise):
 
 ```bash
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
-  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PRODUCT-SPEC.md\"}" | jq .
+  -d "{\"status\": \"done\", \"source\": \"{SPEC_PATH}\", \"specDocumentId\": \"{SPEC_DOC_ID}\"}" | jq .
 ```
 
 A failed PATCH also prints a warning and continues. This step never fails the session — the spec is already on disk.
