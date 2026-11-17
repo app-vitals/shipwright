@@ -58,6 +58,18 @@ A `PlanDocument` row (PLU-2.1 schema) records one numbered spec, or the session'
 
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
+#### Nightly reconciler
+
+`PlanDocumentReconciler` (`task-store/src/plan-document-reconciler.ts`, PLU-2.6) runs every 24 hours (a `setInterval` in `task-store/src/main.ts`, like the other reapers) and settles `PlanDocument` rows that are still `draft` or `pr_open` against GitHub. `merged` and `abandoned` rows are never examined.
+
+- `merged`: the document's file exists on its home repo's default branch. `commitSha` is set to the latest default-branch commit touching the file, and `prUrl` is filled from that commit's merged PR when the row had none.
+- `abandoned`: the row's `prUrl` PR was closed without merging **and** the file is not on the default branch.
+- Otherwise (PR still open, no PR, or a merged PR whose file was later deleted) the row is left alone.
+
+Only `state`, `prUrl` and `commitSha` are ever changed, via a conditional update that skips a row a concurrent `PATCH` already moved. A GitHub error on one row is logged and the sweep continues.
+
+**Credential:** the task-store process needs a GitHub token in `GH_TOKEN` (or `GITHUB_TOKEN`) with read access to the documents' home repos (contents and pull requests). Without one the sweep does nothing and logs `no GitHub credential` once per process. The decision logic is the pure `decideDocumentState()`; GitHub access goes through the injectable `PlanDocumentGitHubClient` (`task-store/src/github-plan-client.ts` takes an injectable `fetch`), so tests replay recorded responses from `task-store/src/fixtures/plan-reconciler-github.json`.
+
 ### Task `pr` field
 
 `Task.pr` is an integer column. `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` normalize a supplied `pr` (`normalizePr` in `task-store/src/validate.ts`) to a positive integer: a positive integer, an integer string, or a `https://github.com/<owner>/<repo>/pull/<n>` URL are all accepted (`null` clears it). Anything else, or a value above the INT4 maximum, is a `400` naming the accepted forms rather than a Prisma `500`.
