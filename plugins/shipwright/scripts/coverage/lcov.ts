@@ -12,8 +12,25 @@ function num(line: string, prefixLength: number): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
-export function parseLcov(content: string): NormalizedCoverage | null {
+export interface LcovScan {
+  /** Total LF of files dropped by the exclusion predicate. */
+  excludedLines: number;
+  /** Every SF path seen, excluded or not. */
+  paths: string[];
+}
+
+/**
+ * With `exclude`, files whose SF path matches are left out of every count and
+ * the result also carries an LcovScan. Without it the result is unchanged.
+ */
+export function parseLcov(
+  content: string,
+  exclude?: (path: string) => boolean,
+): (NormalizedCoverage & Partial<LcovScan>) | null {
   let files = 0;
+  let skipping = false;
+  let excludedLines = 0;
+  const paths: string[] = [];
   let lf = 0;
   let lh = 0;
   let brf = 0;
@@ -27,6 +44,11 @@ export function parseLcov(content: string): NormalizedCoverage | null {
     const line = raw.trim();
     if (line.startsWith("SF:")) {
       files++;
+      const path = line.slice(3);
+      paths.push(path);
+      skipping = exclude?.(path) ?? false;
+    } else if (skipping) {
+      if (line.startsWith("LF:")) excludedLines += num(line, 3);
     } else if (line.startsWith("LF:")) {
       lf += num(line, 3);
     } else if (line.startsWith("LH:")) {
@@ -46,10 +68,14 @@ export function parseLcov(content: string): NormalizedCoverage | null {
 
   if (files === 0) return null;
 
-  const result: NormalizedCoverage = {
+  const result: NormalizedCoverage & Partial<LcovScan> = {
     lines: { covered: lh, total: lf },
     tool: "lcov",
   };
+  if (exclude) {
+    result.excludedLines = excludedLines;
+    result.paths = paths;
+  }
   if (hasBranches) result.branches = { covered: brh, total: brf };
   if (hasFunctions) result.functions = { covered: fnh, total: fnf };
   return result;
