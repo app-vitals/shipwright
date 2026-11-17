@@ -2663,7 +2663,7 @@ export interface paths {
         put?: never;
         /**
          * Create a system-cron definition — admin-only
-         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.
+         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.
          */
         post: {
             parameters: {
@@ -2740,7 +2740,7 @@ export interface paths {
         head?: never;
         /**
          * Update a system-cron definition — admin-only
-         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
+         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
          */
         patch: {
             parameters: {
@@ -4180,6 +4180,19 @@ export interface components {
              */
             descriptionTemplate: string;
             /**
+             * @description Which repos the cron fans out to: every repo ('all') or only `repos` ('selected').
+             * @example all
+             * @enum {string}
+             */
+            repoScope: "all" | "selected";
+            /**
+             * @description org/repo list used when repoScope is 'selected'; always [] when 'all'.
+             * @example [
+             *       "acme/widgets"
+             *     ]
+             */
+            repos: string[];
+            /**
              * Format: date-time
              * @example 2026-11-14T00:00:00.000Z
              */
@@ -4211,6 +4224,19 @@ export interface components {
             titleTemplate: string;
             /** @example Audit {repo}'s dependencies. */
             descriptionTemplate: string;
+            /**
+             * @description Defaults to 'all'.
+             * @example all
+             * @enum {string}
+             */
+            repoScope?: "all" | "selected";
+            /**
+             * @description org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500.
+             * @example [
+             *       "acme/widgets"
+             *     ]
+             */
+            repos?: string[];
         };
         PatchSystemCronBody: {
             name?: string;
@@ -4218,6 +4244,9 @@ export interface components {
             timezone?: string;
             titleTemplate?: string;
             descriptionTemplate?: string;
+            /** @enum {string} */
+            repoScope?: "all" | "selected";
+            repos?: string[];
         };
         FireSystemCronResponse: {
             /**
