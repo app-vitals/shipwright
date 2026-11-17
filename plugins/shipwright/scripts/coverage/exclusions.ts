@@ -62,7 +62,12 @@ export function parseExclusionConfig(content: string): ExclusionConfig {
   }
   const d = data as Record<string, unknown>;
   const max = d.maxExcludedPct;
-  if (typeof max !== "number" || !Number.isFinite(max) || max < 0 || max > 100) {
+  if (
+    typeof max !== "number" ||
+    !Number.isFinite(max) ||
+    max < 0 ||
+    max > 100
+  ) {
     return fail(`"maxExcludedPct" must be a number between 0 and 100`);
   }
   return {

@@ -70,7 +70,9 @@ function setup(s: Setup) {
             total_count: s.artifacts.length,
             artifacts: s.artifacts,
           });
-        if (path.startsWith(`repos/${REPO}/contents/.shipwright/coverage.json`)) {
+        if (
+          path.startsWith(`repos/${REPO}/contents/.shipwright/coverage.json`)
+        ) {
           const sha = path.split("?ref=")[1] as string;
           if (s.contentsError)
             return { ok: false, stdout: "", stderr: s.contentsError };
@@ -483,7 +485,10 @@ describe("coverage exclusions", () => {
   };
 
   it("fails loudly on invalid JSON", () =>
-    rejects({ exclusionFiles: { aaa: "{nope" } }, /coverage\.json.*invalid JSON/));
+    rejects(
+      { exclusionFiles: { aaa: "{nope" } },
+      /coverage\.json.*invalid JSON/,
+    ));
 
   it("fails loudly on wrong types", () =>
     rejects(

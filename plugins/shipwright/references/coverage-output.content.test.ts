@@ -64,7 +64,9 @@ describe("coverage-output.md — per-language recipes", () => {
   ];
   for (const lang of recipes) {
     it(`has a recipe row for ${lang}`, () => {
-      expect(content).toMatch(new RegExp(`^\\| .*${lang.replace(".", "\\.")}`, "m"));
+      expect(content).toMatch(
+        new RegExp(`^\\| .*${lang.replace(".", "\\.")}`, "m"),
+      );
     });
   }
 });

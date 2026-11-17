@@ -112,7 +112,10 @@ export function normalizeReports(
   if (branches) result.branches = branches;
   if (functions) result.functions = functions;
   if (exclude) {
-    result.excludedLines = parsed.reduce((n, r) => n + (r.excludedLines ?? 0), 0);
+    result.excludedLines = parsed.reduce(
+      (n, r) => n + (r.excludedLines ?? 0),
+      0,
+    );
     result.paths = parsed.flatMap((r) => r.paths ?? []);
   }
   return result;
