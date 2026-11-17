@@ -663,3 +663,37 @@ describe("renderDashboardPage — CPP-1.4 PR Commits panel", () => {
     expect(qualitySection).toContain("PR Commits");
   });
 });
+
+describe("renderDashboardPage — CVT-3.2 Coverage by repo section", () => {
+  test("renders table, picker, trend canvas and empty state on the authenticated page", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('aria-label="Coverage by repo"');
+    expect(html).toContain("Coverage by repo");
+    expect(html).toContain('id="coverage-repo-table"');
+    expect(html).toContain('id="coverage-tbody"');
+    expect(html).toContain('id="coverage-repo-picker"');
+    expect(html).toContain('id="coverage-repo-select"');
+    expect(html).toContain('id="coverage-trend-chart"');
+    expect(html).toContain('id="coverage-empty"');
+  });
+
+  test("empty state explains how a repo starts reporting", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain("POST /coverage-snapshots");
+  });
+
+  test("omits the section from the read-only public variant", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).not.toContain("Coverage by repo");
+    expect(html).not.toContain('id="coverage-trend-chart"');
+    expect(html).not.toContain('id="coverage-repo-select"');
+  });
+
+  test("keeps the existing per-task Coverage delta panel in both variants", () => {
+    for (const readOnly of [false, true]) {
+      const html = renderDashboardPage({ userName: "X", readOnly });
+      expect(html).toContain('id="coverage-reports"');
+      expect(html).toContain('id="coverage-delta"');
+    }
+  });
+});

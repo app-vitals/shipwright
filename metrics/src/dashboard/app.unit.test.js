@@ -12,10 +12,17 @@ import { beforeAll, describe, expect, test } from "bun:test";
 
 let fetchSequential;
 let computeFleetWeightedAvgCommits;
+let buildCoverageTrend;
+let fmtCoverageDelta;
 
 beforeAll(async () => {
   await import("./app.js");
-  ({ fetchSequential, computeFleetWeightedAvgCommits } = globalThis.__dashboardAppTestExports);
+  ({
+    fetchSequential,
+    computeFleetWeightedAvgCommits,
+    buildCoverageTrend,
+    fmtCoverageDelta,
+  } = globalThis.__dashboardAppTestExports);
 });
 
 describe("fetchSequential", () => {
@@ -165,7 +172,13 @@ describe("computeFleetWeightedAvgCommits", () => {
     const repos = [
       {
         repo: "org/alpha",
-        byOrigin: { shipwright: 5, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 5,
+          ci: 1,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 4.0,
         commitBreakdown: {
           docsRefresh: 0.5,
@@ -191,7 +204,13 @@ describe("computeFleetWeightedAvgCommits", () => {
     const repos = [
       {
         repo: "org/alpha",
-        byOrigin: { shipwright: 10, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 10,
+          ci: 1,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 3.0,
         commitBreakdown: {
           docsRefresh: 0.3,
@@ -202,7 +221,13 @@ describe("computeFleetWeightedAvgCommits", () => {
       },
       {
         repo: "org/beta",
-        byOrigin: { shipwright: 5, ci: 2, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 5,
+          ci: 2,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 4.0,
         commitBreakdown: {
           docsRefresh: 0.4,
@@ -236,13 +261,25 @@ describe("computeFleetWeightedAvgCommits", () => {
     const repos = [
       {
         repo: "org/alpha",
-        byOrigin: { shipwright: 5, ci: 1, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 5,
+          ci: 1,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: null,
         commitBreakdown: null,
       },
       {
         repo: "org/beta",
-        byOrigin: { shipwright: 3, ci: 2, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 3,
+          ci: 2,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: null,
         commitBreakdown: null,
       },
@@ -267,7 +304,13 @@ describe("computeFleetWeightedAvgCommits", () => {
     const repos = [
       {
         repo: "org/alpha",
-        byOrigin: { shipwright: 10, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 10,
+          ci: 0,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 5.0,
         commitBreakdown: {
           docsRefresh: 0.5,
@@ -278,7 +321,13 @@ describe("computeFleetWeightedAvgCommits", () => {
       },
       {
         repo: "org/beta",
-        byOrigin: { shipwright: 0, ci: 5, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 0,
+          ci: 5,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 3.0,
         commitBreakdown: {
           docsRefresh: 0.3,
@@ -305,7 +354,13 @@ describe("computeFleetWeightedAvgCommits", () => {
     const repos = [
       {
         repo: "org/alpha",
-        byOrigin: { shipwright: 10, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 10,
+          ci: 0,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: 2.0,
         commitBreakdown: {
           docsRefresh: 0.2,
@@ -316,7 +371,13 @@ describe("computeFleetWeightedAvgCommits", () => {
       },
       {
         repo: "org/beta",
-        byOrigin: { shipwright: 5, ci: 0, dependency_bot: 0, human: 0, unknown: 0 },
+        byOrigin: {
+          shipwright: 5,
+          ci: 0,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
         avgCommitCount: null,
         commitBreakdown: null,
       },
@@ -332,5 +393,62 @@ describe("computeFleetWeightedAvgCommits", () => {
       ciFix: 0.4,
       implementation: 0.6,
     });
+  });
+});
+
+describe("buildCoverageTrend", () => {
+  const trend = [
+    {
+      repo: "org/alpha",
+      measuredAt: "2026-06-10T12:00:00.000Z",
+      commitSha: "a",
+      linesPct: 81,
+    },
+    {
+      repo: "org/beta",
+      measuredAt: "2026-06-12T09:00:00.000Z",
+      commitSha: "b",
+      linesPct: 64,
+    },
+    {
+      repo: "org/alpha",
+      measuredAt: "2026-06-17T12:00:00.000Z",
+      commitSha: "c",
+      linesPct: 82.5,
+    },
+  ];
+
+  test("one dataset per repo with one point per snapshot (null where a repo has none)", () => {
+    const { labels, datasets } = buildCoverageTrend(trend, "");
+    expect(labels).toHaveLength(3);
+    expect(datasets.map((d) => d.label)).toEqual(["org/alpha", "org/beta"]);
+    expect(datasets[0].data).toEqual([81, null, 82.5]);
+    expect(datasets[1].data).toEqual([null, 64, null]);
+  });
+
+  test("repo filter restricts to that repo's series", () => {
+    const { labels, datasets } = buildCoverageTrend(trend, "org/alpha");
+    expect(labels).toHaveLength(2);
+    expect(datasets).toHaveLength(1);
+    expect(datasets[0].label).toBe("org/alpha");
+    expect(datasets[0].data).toEqual([81, 82.5]);
+  });
+
+  test("empty input yields no labels or datasets", () => {
+    expect(buildCoverageTrend([], "")).toEqual({ labels: [], datasets: [] });
+    expect(buildCoverageTrend(undefined, "org/x").datasets).toEqual([]);
+  });
+});
+
+describe("fmtCoverageDelta", () => {
+  test("signs positive and negative deltas, formats to 1 decimal", () => {
+    expect(fmtCoverageDelta(1.5)).toEqual({ text: "+1.5 pp", cls: "good" });
+    expect(fmtCoverageDelta(-0.25).text).toBe("-0.3 pp");
+    expect(fmtCoverageDelta(-2).cls).toBe("critical");
+    expect(fmtCoverageDelta(0)).toEqual({ text: "0.0 pp", cls: "" });
+  });
+
+  test("null delta renders an em dash", () => {
+    expect(fmtCoverageDelta(null)).toEqual({ text: "—", cls: "" });
   });
 });

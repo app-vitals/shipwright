@@ -309,6 +309,36 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
 
+      <!-- Coverage by repo -->
+      <section class="section" id="coverage-section" aria-label="Coverage by repo">
+        <div class="section-header">
+          <h2 class="section-title">Coverage by repo</h2>
+        </div>
+        <div id="coverage-content">
+          <div class="coverage-table-wrapper">
+            <table class="token-table" id="coverage-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Lines %</th>
+                  <th>Change<span class="info-icon" data-tooltip="Line-coverage change versus the repo's previous snapshot, in percentage points" tabindex="0" aria-label="Line-coverage change versus the repo's previous snapshot, in percentage points">i</span></th>
+                  <th>Last measured<span class="info-icon" data-tooltip="Rows measured more than 14 days ago are marked stale" tabindex="0" aria-label="Rows measured more than 14 days ago are marked stale">i</span></th>
+                </tr>
+              </thead>
+              <tbody id="coverage-tbody"></tbody>
+            </table>
+          </div>
+          <div class="merged-prs-repo-picker" id="coverage-repo-picker" style="display:none">
+            <label for="coverage-repo-select">Repo</label>
+            <select id="coverage-repo-select"></select>
+          </div>
+          <div class="chart-container">
+            <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
+          </div>
+        </div>
+        <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -838,6 +868,36 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
           </div>
         </div>
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
+      </section>
+
+      <!-- Coverage by repo -->
+      <section class="section" id="coverage-section" aria-label="Coverage by repo">
+        <div class="section-header">
+          <h2 class="section-title">Coverage by repo</h2>
+        </div>
+        <div id="coverage-content">
+          <div class="coverage-table-wrapper">
+            <table class="token-table" id="coverage-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Lines %</th>
+                  <th>Change<span class="info-icon" data-tooltip="Line-coverage change versus the repo's previous snapshot, in percentage points" tabindex="0" aria-label="Line-coverage change versus the repo's previous snapshot, in percentage points">i</span></th>
+                  <th>Last measured<span class="info-icon" data-tooltip="Rows measured more than 14 days ago are marked stale" tabindex="0" aria-label="Rows measured more than 14 days ago are marked stale">i</span></th>
+                </tr>
+              </thead>
+              <tbody id="coverage-tbody"></tbody>
+            </table>
+          </div>
+          <div class="merged-prs-repo-picker" id="coverage-repo-picker" style="display:none">
+            <label for="coverage-repo-select">Repo</label>
+            <select id="coverage-repo-select"></select>
+          </div>
+          <div class="chart-container">
+            <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
+          </div>
+        </div>
+        <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
 
       <!-- Pipeline Quality -->
@@ -1371,6 +1431,36 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
 
+      <!-- Coverage by repo -->
+      <section class="section" id="coverage-section" aria-label="Coverage by repo">
+        <div class="section-header">
+          <h2 class="section-title">Coverage by repo</h2>
+        </div>
+        <div id="coverage-content">
+          <div class="coverage-table-wrapper">
+            <table class="token-table" id="coverage-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Lines %</th>
+                  <th>Change<span class="info-icon" data-tooltip="Line-coverage change versus the repo's previous snapshot, in percentage points" tabindex="0" aria-label="Line-coverage change versus the repo's previous snapshot, in percentage points">i</span></th>
+                  <th>Last measured<span class="info-icon" data-tooltip="Rows measured more than 14 days ago are marked stale" tabindex="0" aria-label="Rows measured more than 14 days ago are marked stale">i</span></th>
+                </tr>
+              </thead>
+              <tbody id="coverage-tbody"></tbody>
+            </table>
+          </div>
+          <div class="merged-prs-repo-picker" id="coverage-repo-picker" style="display:none">
+            <label for="coverage-repo-select">Repo</label>
+            <select id="coverage-repo-select"></select>
+          </div>
+          <div class="chart-container">
+            <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
+          </div>
+        </div>
+        <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -1902,6 +1992,36 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
 
+      <!-- Coverage by repo -->
+      <section class="section" id="coverage-section" aria-label="Coverage by repo">
+        <div class="section-header">
+          <h2 class="section-title">Coverage by repo</h2>
+        </div>
+        <div id="coverage-content">
+          <div class="coverage-table-wrapper">
+            <table class="token-table" id="coverage-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Lines %</th>
+                  <th>Change<span class="info-icon" data-tooltip="Line-coverage change versus the repo's previous snapshot, in percentage points" tabindex="0" aria-label="Line-coverage change versus the repo's previous snapshot, in percentage points">i</span></th>
+                  <th>Last measured<span class="info-icon" data-tooltip="Rows measured more than 14 days ago are marked stale" tabindex="0" aria-label="Rows measured more than 14 days ago are marked stale">i</span></th>
+                </tr>
+              </thead>
+              <tbody id="coverage-tbody"></tbody>
+            </table>
+          </div>
+          <div class="merged-prs-repo-picker" id="coverage-repo-picker" style="display:none">
+            <label for="coverage-repo-select">Repo</label>
+            <select id="coverage-repo-select"></select>
+          </div>
+          <div class="chart-container">
+            <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
+          </div>
+        </div>
+        <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -2421,6 +2541,8 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
         </div>
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
+
+
 
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
