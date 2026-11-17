@@ -1,5 +1,5 @@
 /**
- * Unit tests for scripts/check-coverage-gate.ts
+ * Unit tests for plugins/shipwright/scripts/check-coverage-gate.ts
  *
  * Pure function, no I/O: computeCoverageGate() computes the dual (feature +
  * line) coverage_gate block and a self-consistency guard over a
@@ -241,9 +241,7 @@ describe("parseCliInput", () => {
 
   it("throws when featureSource is missing from the input JSON", () => {
     const { featureSource: _drop, ...rest } = BASE_INPUT;
-    expect(() => parseCliInput(JSON.stringify(rest))).toThrow(
-      /featureSource/,
-    );
+    expect(() => parseCliInput(JSON.stringify(rest))).toThrow(/featureSource/);
   });
 
   it("throws when linePct is missing from the input JSON", () => {

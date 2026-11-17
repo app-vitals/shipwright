@@ -37,7 +37,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.488.1",
+      "version": "1.494.0",
       "dependencies": {
         "@app-vitals/agent-admin": "1.67.0",
         "@app-vitals/agent-lib": "1.67.0",
@@ -76,7 +76,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.488.1",
+      "version": "1.494.0",
       "dependencies": {
         "@app-vitals/agent-lib": "1.67.0",
         "@hono/zod-openapi": "^1.0.0",
@@ -94,7 +94,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.488.1",
+      "version": "1.494.0",
       "dependencies": {
         "@app-vitals/agent-runtime": "1.67.0",
         "js-yaml": "^5.0.0",
@@ -156,7 +156,7 @@
 
     "@apm-js-collab/code-transformer-bundler-plugins": ["@apm-js-collab/code-transformer-bundler-plugins@0.7.4", "", { "dependencies": { "@apm-js-collab/code-transformer": "^0.18.1", "es-module-lexer": "^2.1.0", "magic-string": "^0.30.21", "module-details-from-path": "^1.0.4" } }, "sha512-nAfOeZPSUAQvJa1iFT/5oCrTm5YQhMMrfCNthNnaXHZiOQhu1KGuLoIx7HtbAi3wfwaBYLaICPIeenIaEwcXIg=="],
 
-    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.67.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.137.0", "@app-vitals/agent-lib": "1.67.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" }, "hasInstallScript": true }, "sha512-mQkN5f6ul6ZDShM9gg+XUy04HH4Rc954izTjWowWYK5OfVfKh87FfwpAILJ2T/lruu2l9/EJlwsOVXXCAUjvGA=="],
+    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.67.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.137.0", "@app-vitals/agent-lib": "1.67.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" } }, "sha512-mQkN5f6ul6ZDShM9gg+XUy04HH4Rc954izTjWowWYK5OfVfKh87FfwpAILJ2T/lruu2l9/EJlwsOVXXCAUjvGA=="],
 
     "@app-vitals/agent-lib": ["@app-vitals/agent-lib@1.67.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-agkguK/pn6LMtXNuCylAdhi5t8to9ka9pybaSO4gv6KK9IAENxUqBkB4OFERYWulIr+NsUMc83SqvUk6a9KqBQ=="],
 
