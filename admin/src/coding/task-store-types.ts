@@ -2494,6 +2494,200 @@ export interface paths {
         };
         trace?: never;
     };
+    "/sessions/preflight/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scope preflight for a list of repos
+         * @description Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description A repo (org/repo) to check. Repeatable (?repo=a&repo=b). */
+                    repo: string | string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Covered and uncovered repos */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScopePreflightResponse"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{slug}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acquire the session planning lock
+         * @description Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SessionLockBody"];
+                };
+            };
+            responses: {
+                /** @description Lock acquired */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLock"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Lock held and unexpired */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLockConflict"];
+                    };
+                };
+            };
+        };
+        /**
+         * Release the session planning lock
+         * @description Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.
+         */
+        delete: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SessionLockBody"];
+                };
+            };
+            responses: {
+                /** @description Lock released */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLockRelease"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Lock held by someone else */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -4482,6 +4676,49 @@ export interface components {
              *     ]
              */
             repos?: string[];
+        };
+        ScopePreflightResponse: {
+            /**
+             * @example [
+             *       "org/a"
+             *     ]
+             */
+            covered: string[];
+            /**
+             * @example [
+             *       "org/b"
+             *     ]
+             */
+            uncovered: string[];
+        };
+        SessionLock: {
+            /** @example agent-1 */
+            holder: string;
+            /** @example 2026-11-17T10:00:00.000Z */
+            acquiredAt: string;
+            /** @example 2026-11-17T10:15:00.000Z */
+            expiresAt: string;
+        };
+        SessionLockConflict: {
+            /** @example planning lock held by agent-1 since 2026-11-17T10:00:00.000Z */
+            error: string;
+            /** @example agent-1 */
+            holder: string;
+            /** @example 2026-11-17T10:00:00.000Z */
+            acquiredAt: string;
+            /** @example 2026-11-17T10:15:00.000Z */
+            expiresAt: string;
+        };
+        SessionLockBody: {
+            /**
+             * @description Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.
+             * @example agent-1
+             */
+            holder?: string;
+        };
+        SessionLockRelease: {
+            /** @enum {boolean} */
+            released: true;
         };
         RegisterPlanDocumentBody: {
             /** @example shipwright-may-launch */

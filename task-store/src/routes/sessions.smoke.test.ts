@@ -18,10 +18,16 @@ import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
-import { ApiError, NotFoundError } from "../errors.ts";
+import {
+  ApiError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../errors.ts";
 import { buildTaskStoreSpec } from "../generate-spec.ts";
 import { type SpecParam, sampleValue } from "../lib/spec-param-sample.ts";
 import type {
+  PlanningLock,
   SessionListFilters,
   SessionListItem,
   SessionListResult,
@@ -59,6 +65,7 @@ function visible(
 }
 
 function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
+  const locks = new Map<string, PlanningLock>();
   return {
     async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
       let items = records.filter((r) => visible(r, filters.agentScope));
@@ -178,6 +185,49 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
         record.archived = false;
       }
       return toItem(record);
+    },
+
+    async acquirePlanningLock(
+      slug: string,
+      holder: string,
+      accountId: string = DEFAULT_ACCOUNT_ID,
+    ): Promise<PlanningLock> {
+      if (!records.some((r) => r.slug === slug && r.accountId === accountId)) {
+        throw new NotFoundError("session not found");
+      }
+      const held = locks.get(slug);
+      if (held && held.holder !== holder) {
+        throw new ConflictError(
+          `planning lock held by ${held.holder} since ${held.acquiredAt.toISOString()}`,
+          {
+            holder: held.holder,
+            acquiredAt: held.acquiredAt.toISOString(),
+            expiresAt: held.expiresAt.toISOString(),
+          },
+        );
+      }
+      const lock = {
+        holder,
+        acquiredAt: new Date("2026-02-01T00:00:00.000Z"),
+        expiresAt: new Date("2026-02-01T00:15:00.000Z"),
+      };
+      locks.set(slug, lock);
+      return lock;
+    },
+
+    async releasePlanningLock(
+      slug: string,
+      holder: string,
+      accountId: string = DEFAULT_ACCOUNT_ID,
+    ): Promise<void> {
+      if (!records.some((r) => r.slug === slug && r.accountId === accountId)) {
+        throw new NotFoundError("session not found");
+      }
+      const held = locks.get(slug);
+      if (held && held.holder !== holder) {
+        throw new ForbiddenError("planning lock is held by someone else");
+      }
+      locks.delete(slug);
     },
   };
 }
@@ -303,7 +353,8 @@ function makeParent(
   });
   parent.onError((err, c) => {
     if (err instanceof ApiError) {
-      return c.json({ error: err.message }, err.statusCode as 400);
+      const details = err instanceof ConflictError ? err.details : undefined;
+      return c.json({ ...details, error: err.message }, err.statusCode as 400);
     }
     return c.json({ error: "internal error" }, 500);
   });
@@ -881,5 +932,104 @@ describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
       body: JSON.stringify({ owner: "a@example.com" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("planning lock routes (smoke)", () => {
+  const post = (parent: ReturnType<typeof makeParent>, body?: unknown) =>
+    parent.request("/active-1/lock", {
+      method: "POST",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const del = (parent: ReturnType<typeof makeParent>, body?: unknown) =>
+    parent.request("/active-1/lock", {
+      method: "DELETE",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  it("acquire returns the lock; a second holder gets 409 naming holder and time", async () => {
+    const parent = makeAdminParent(makeApp());
+    const first = await post(parent, { holder: "pass-a" });
+    expect(first.status).toBe(200);
+    expect(((await first.json()) as PlanningLock).holder).toBe("pass-a");
+
+    const second = await post(parent, { holder: "pass-b" });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as Record<string, string>;
+    expect(body.holder).toBe("pass-a");
+    expect(body.acquiredAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(body.error).toContain("pass-a");
+  });
+
+  it("release by the holder clears it; by someone else is 403", async () => {
+    const parent = makeAdminParent(makeApp());
+    await post(parent, { holder: "pass-a" });
+    expect((await del(parent, { holder: "pass-b" })).status).toBe(403);
+    const ok = await del(parent, { holder: "pass-a" });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ released: true });
+    expect((await post(parent, { holder: "pass-b" })).status).toBe(200);
+  });
+
+  it("holder defaults to the agent id, and unknown sessions 404", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
+    const res = await post(parent);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PlanningLock).holder).toBe("agent-1");
+    const missing = await parent.request("/nope/lock", { method: "POST" });
+    expect(missing.status).toBe(404);
+  });
+
+  it("an agent token with the session out of scope gets 404", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
+    const res = await parent.request("/no-scope/lock", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a non-string holder", async () => {
+    const parent = makeAdminParent(makeApp());
+    expect((await post(parent, { holder: 5 })).status).toBe(400);
+  });
+});
+
+describe("GET /preflight/scope (smoke)", () => {
+  const get = (parent: ReturnType<typeof makeParent>, qs: string) =>
+    parent.request(`/preflight/scope?${qs}`);
+
+  it("returns the uncovered repos for a token lacking one", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
+    const res = await get(parent, "repo=org/a&repo=org/b");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      covered: ["org/a"],
+      uncovered: ["org/b"],
+    });
+  });
+
+  it("returns an empty uncovered list when all are covered", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a", "org/b"]);
+    const res = await get(parent, "repo=org/a&repo=org/b");
+    expect(await res.json()).toEqual({
+      covered: ["org/a", "org/b"],
+      uncovered: [],
+    });
+  });
+
+  it("admin tokens cover everything; an empty-scope agent covers nothing", async () => {
+    const admin = await get(makeAdminParent(makeApp()), "repo=org/x");
+    expect(await admin.json()).toEqual({ covered: ["org/x"], uncovered: [] });
+    const none = await get(
+      makeAgentParent(makeApp(), "agent-1", []),
+      "repo=org/x",
+    );
+    expect(await none.json()).toEqual({ covered: [], uncovered: ["org/x"] });
+  });
+
+  it("400s without repo and on unknown params", async () => {
+    const parent = makeAdminParent(makeApp());
+    expect((await get(parent, "")).status).toBe(400);
+    expect((await get(parent, "repo=org/a&bogus=1")).status).toBe(400);
   });
 });

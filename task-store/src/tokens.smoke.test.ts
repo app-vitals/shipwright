@@ -34,6 +34,12 @@ function fakeSessionService(): SessionServiceLike {
     async update() {
       throw new Error("not implemented");
     },
+    async acquirePlanningLock() {
+      throw new Error("not implemented");
+    },
+    async releasePlanningLock() {
+      throw new Error("not implemented");
+    },
   };
 }
 
