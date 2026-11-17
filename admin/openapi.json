@@ -987,6 +987,29 @@
                   "adopted",
                   "deleted"
                 ]
+              },
+              "marketplace": {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer"
+                  },
+                  "updated": {
+                    "type": "integer"
+                  },
+                  "adopted": {
+                    "type": "integer"
+                  },
+                  "deleted": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "created",
+                  "updated",
+                  "adopted",
+                  "deleted"
+                ]
               }
             },
             "required": [
@@ -1038,7 +1061,8 @@
                   "enum": [
                     "cron_name_conflict",
                     "invalid_cron_schedule",
-                    "denylisted_env_key"
+                    "denylisted_env_key",
+                    "marketplace_conflict"
                   ]
                 }
               },
