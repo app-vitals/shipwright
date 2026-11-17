@@ -289,16 +289,15 @@ Anything the audit couldn't determine without a human call. Common entries:
    hand-compute the verdict.** Source the four required inputs the same way Step 4c of
    `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
    mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
-   - `linePct` / `lineSource`: locate the most recent green CI run of the
-     `lint / typecheck / test` job (`gh run list` / `gh run view --log`), scope the log
-     read to that run's `Test` step, and grep for the `Lines:` line printed by
-     `scripts/check-coverage.ts` (shape: `Lines:     88.84% (12345/13897) — threshold: 80%`).
-     `linePct` is the parsed percentage; `lineSource` cites the CI run URL and the commit
-     SHA it ran against.
+   - `linePct` / `lineSource`: run
+     `bun run plugins/shipwright/scripts/coverage-summary.ts --repo {org}/{repo}` and take the
+     most recent result (contract in `references/coverage-output.md`). `linePct` is
+     `lines.covered / lines.total` as a percentage; `lineSource` cites the result's `runUrl`
+     and `commitSha`. A `not_reporting` result means the input is unavailable.
    - `featurePct` / `featureSource`: read `feature_coverage_pct` from
      `docs/test-readiness/test-inventory.md` (already a Process step 1 prerequisite
      artifact for this run). `featureSource` cites that file.
-   - **Never guess.** If no green CI run can be found, the run has no `Test` step, or
+   - **Never guess.** If the reader returns `not_reporting`, or
      `test-inventory.md` is missing or lacks `feature_coverage_pct`, the corresponding
      input is unavailable — do not substitute an estimated value; proceed to the refusal
      rule below instead.

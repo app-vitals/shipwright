@@ -191,11 +191,14 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     expect(section).toMatch(/mirrors that step's\s+mechanism exactly/i);
   });
 
-  it("sources linePct from the most recent green CI run's Test step Lines: line", () => {
+  it("sources linePct from the coverage-summary.ts reader, not the CI log", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("linePct");
-    expect(section).toMatch(/`Test` step/);
-    expect(section).toContain("Lines:");
+    expect(section).toContain("coverage-summary.ts");
+    expect(section).toContain("lines.covered / lines.total");
+    expect(section).toContain("not_reporting");
+    expect(section).not.toContain("`Test` step");
+    expect(section).not.toContain("Lines:");
   });
 
   it("sources featurePct from test-inventory.md's feature_coverage_pct", () => {
