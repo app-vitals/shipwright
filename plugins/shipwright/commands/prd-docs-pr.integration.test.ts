@@ -165,7 +165,7 @@ describe("prd.md docs PR shell block (behaviour)", () => {
     const r = runBlock(
       "s5",
       "SPEC-0001.md",
-      "# Spec\nkey AKIAABCDEFGHIJKLMNOP\n",
+      `# Spec\nkey ${["AKIA", "ABCDEFGHIJKLMNOP"].join("")}\n`,
     );
     expect(r.out).toContain("matched a secret-pattern scan");
     expect(r.url).toBe("");
