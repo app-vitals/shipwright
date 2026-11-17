@@ -35,8 +35,10 @@ Consequence: agent and factorymode need no CI changes up front. Once step 8 hand
 |---|---|---|---|---|
 | CGF-1.1 fix: ship check-coverage-gate in the plugin | — | CLI | haiku | 2 |
 | CGF-1.2 fix: treat not_reporting as a gate outcome | CGF-1.1 | CLI | sonnet | 4 |
+| CGF-1.3 chore: confirm the fix is live in the deployed plugin (HITL) | CGF-1.2 | CLI | haiku | 1 |
 
-Safe to deploy standalone: yes (both). No HITL tasks.
+Safe to deploy standalone: yes (all). CGF-1.3 is HITL (verification only): the agent and factorymode
+test-readiness tasks depend on it, factorymode additionally on the agent task (agent first).
 
 ## Decision Log
 
@@ -45,7 +47,7 @@ Safe to deploy standalone: yes (both). No HITL tasks.
 
 ## Not carried
 
-- Re-enabling agent then factorymode in the test-readiness scheduler: a human config action
-  after the fix is released and rolled out; not a code task.
-- Deployed plugin lag: runs use the deployed plugin (1.484.0 at planning time); the fix reaches
+- Re-running agent then factorymode: the cancelled test-readiness tasks were returned to pending with
+  dependencies on CGF-1.3 (and factorymode on the agent task), so they dispatch on their own.
+- Deployed plugin lag (gated by CGF-1.3): runs use the deployed plugin (1.484.0 at planning time); the fix reaches
   agents only after release + image rollout.
