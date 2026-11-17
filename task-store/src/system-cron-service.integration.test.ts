@@ -122,6 +122,9 @@ describeOrSkip("SystemCronService.fire (integration)", () => {
     expect(task.assignee).toBeNull();
     expect(task.status).toBe("pending");
     expect(task.accountId).toBe("acct-scr");
+    expect(task.branch).toBe(
+      `feat/sc-${CRON_ID}-${SLOT}-acme-widgets`.toLowerCase(),
+    );
 
     const triggers = await prisma.systemCronTrigger.findMany({
       where: { cronId: CRON_ID },

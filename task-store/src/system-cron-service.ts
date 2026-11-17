@@ -49,6 +49,7 @@ import {
   isValidSystemCronRepo,
   parseScheduledFor,
   renderRepoTemplate,
+  systemCronTaskBranch,
   systemCronTaskId,
 } from "./system-cron-template.ts";
 import { bulkTxTimeoutMs, MAX_BULK_TASKS } from "./task-service.ts";
@@ -435,21 +436,25 @@ export class SystemCronService implements SystemCronServiceLike {
       taskIds: [],
     };
 
-    const tasks: Prisma.TaskCreateManyInput[] = repos.map((repo) => ({
-      id: systemCronTaskId(def.id, slot, repo),
-      accountId: def.accountId,
-      title: renderRepoTemplate(def.titleTemplate, repo),
-      description: renderRepoTemplate(def.descriptionTemplate, repo),
-      status: "pending",
-      kind: "dev",
-      hitl: false,
-      assignee: null,
-      repo,
-      source: SYSTEM_CRON_TASK_SOURCE,
-      // PLU-2.5: typed provenance. No owner — never invented for cron tasks.
-      originKind: "cron" satisfies OriginKind,
-      originRef: def.name,
-    }));
+    const tasks: Prisma.TaskCreateManyInput[] = repos.map((repo) => {
+      const id = systemCronTaskId(def.id, slot, repo);
+      return {
+        id,
+        branch: systemCronTaskBranch(id),
+        accountId: def.accountId,
+        title: renderRepoTemplate(def.titleTemplate, repo),
+        description: renderRepoTemplate(def.descriptionTemplate, repo),
+        status: "pending",
+        kind: "dev",
+        hitl: false,
+        assignee: null,
+        repo,
+        source: SYSTEM_CRON_TASK_SOURCE,
+        // PLU-2.5: typed provenance. No owner — never invented for cron tasks.
+        originKind: "cron" satisfies OriginKind,
+        originRef: def.name,
+      };
+    });
 
     try {
       return await this.prisma.$transaction(

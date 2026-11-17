@@ -60,6 +60,14 @@ export function systemCronTaskId(
   return `SC-${cronId}-${slot}-${owner}-${name}`;
 }
 
+/**
+ * Branch for a system-cron task — dev-task blocks any claimed task without
+ * one, so it is set at creation, in lockstep with the id.
+ */
+export function systemCronTaskBranch(taskId: string): string {
+  return `feat/${taskId.toLowerCase()}`;
+}
+
 const CRON_ID_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** Definition ids are lowercase slugs — they're embedded in task ids. */
