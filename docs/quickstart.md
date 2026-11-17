@@ -210,8 +210,9 @@ The distinction matters: step 1 is a shell command, step 2 is a slash command th
 Run it from **inside** the cloned repo (the prompt's step 1 clones and `cd`s for you first). It is **idempotent** — safe to re-run:
 
 1. Verifies prerequisites (`git`, `bun`, `task`) and fails with an install pointer if any is missing.
-2. Runs `task setup` (idempotent `bun install` across all workspaces).
-3. Starts the dashboard with `task dev` (the dev supervisor; Ctrl-C stops it) and points you at `http://localhost:3460/dashboard`.
+2. Runs `scripts/doctor.sh --skip-task-store` as an advisory check (the rest of the Shipwright prerequisites: `gh` sign-in, a GitHub `origin`, git identity). Problems are printed but do not stop setup, because the offline dashboard needs none of them. Set `SHIPWRIGHT_SKIP_DOCTOR=1` to skip this step.
+3. Runs `task setup` (idempotent `bun install` across all workspaces).
+4. Starts the dashboard with `task dev` (the dev supervisor; Ctrl-C stops it) and points you at `http://localhost:3460/dashboard`.
 
 ### Offline by default
 
