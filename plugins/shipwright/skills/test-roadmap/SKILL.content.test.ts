@@ -211,6 +211,20 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     expect(section).toContain("test-inventory.md");
   });
 
+  it("routes not_reporting to the script as linePct null, not to the refusal rule", () => {
+    const section = coverageGateStepSection();
+    expect(section).toContain("linePct: null");
+    expect(section).toMatch(/not_reporting.{0,40}not.{0,10}abort/s);
+    expect(section).toContain("line coverage not reporting");
+    expect(section).toContain("step 9b");
+    expect(section).not.toMatch(
+      /not_reporting` result means the input is unavailable/,
+    );
+    expect(section).not.toMatch(
+      /reader returns `not_reporting`, or\s+`test-inventory/,
+    );
+  });
+
   it("states never to guess a missing coverage input", () => {
     const section = coverageGateStepSection();
     expect(section).toMatch(/never guess/i);
@@ -381,6 +395,12 @@ describe("SKILL.md — Process step 9 auto-emits the stage-3 coverage-promotion 
     expect(section).toMatch(/>=\s*90|≥\s*90/);
   });
 
+  it("does not promote when line_coverage_pct is null (not reporting)", () => {
+    const section = step9Section();
+    expect(section).toMatch(/`null`.{0,40}not reporting/s);
+    expect(section).toMatch(/no promotion task/i);
+  });
+
   it("does not emit a promotion task when line_coverage_pct < 90", () => {
     const section = step9Section();
     expect(section).toMatch(/<\s*90/);
@@ -521,7 +541,7 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
     const filled = coverageGateBlock
       .replaceAll("{{FEATURE_COVERAGE_PCT}}", String(gate.feature_coverage_pct))
       .replaceAll("{{FEATURE_COVERAGE_SOURCE}}", gate.feature_coverage_source)
-      .replaceAll("{{LINE_COVERAGE_PCT}}", String(gate.line_coverage_pct))
+      .replaceAll("{{LINE_COVERAGE_PCT}}", `${gate.line_coverage_pct}%`)
       .replaceAll("{{LINE_COVERAGE_SOURCE}}", gate.line_coverage_source)
       .replaceAll("{{COVERAGE_VERDICT}}", gate.verdict)
       .replaceAll("{{FEATURE_TARGET}}", String(gate.targets.feature))
@@ -533,6 +553,27 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
     expect(filled).toContain("docs/test-readiness/test-inventory.md");
     expect(filled).toContain("CI run https://example.invalid/run/1 @ abc1234");
     expect(filled).toContain("READY");
+  });
+
+  it("renders a null line_coverage_pct as 'not reporting' with the BLOCKED verdict", () => {
+    const gate = computeCoverageGate({
+      featurePct: 92,
+      featureSource: "docs/test-readiness/test-inventory.md",
+      linePct: null,
+      lineSource: "no shipwright-coverage artifact",
+    });
+    const headerIdx = templateContent.indexOf("## Coverage Gate");
+    const section1Idx = templateContent.indexOf("## 1. Where we are now");
+    const filled = templateContent
+      .slice(headerIdx, section1Idx)
+      .replaceAll(
+        "{{LINE_COVERAGE_PCT}}",
+        gate.line_coverage_pct === null
+          ? "not reporting"
+          : `${gate.line_coverage_pct}%`,
+      );
+    expect(filled).toContain("Line coverage | not reporting (target");
+    expect(gate.verdict).toBe("BLOCKED: line coverage not reporting");
   });
 
   it("renders a BLOCKED verdict verbatim (not paraphrased) when a gate fails", () => {

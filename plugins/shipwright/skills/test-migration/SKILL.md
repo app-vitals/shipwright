@@ -131,7 +131,7 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}
 The reader consumes the coverage artifact the repo's CI publishes (contract in
 `references/coverage-output.md`) and prints JSON: one result per commit, each with raw
 `lines` counts and, when the report carries them, `functions` and `branches` counts, plus
-`commitSha` and `runUrl`. Compute `line_coverage_pct` as `lines.covered / lines.total`, and
+`commitSha` and `runUrl`. Compute `line_coverage_pct` (nullable) as `lines.covered / lines.total`, and
 `function_coverage_pct` / `branch_coverage_pct` the same way when `functions` / `branches`
 are present; use the most recent result. No local coverage run is needed — like Step 4a,
 this is always obtainable from CI history alone. This step is mandatory and runs on every

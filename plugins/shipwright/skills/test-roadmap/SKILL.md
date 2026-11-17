@@ -21,7 +21,7 @@ By the `/test-roadmap` command. Requires:
 
 `docs/test-readiness/test-readiness-plan.md` opens with a `## Coverage Gate` block — the
 headline machine-checkable verdict (`feature_coverage_pct`, `feature_coverage_source`,
-`line_coverage_pct`, `line_coverage_source`, `verdict`, `targets`), computed by
+`line_coverage_pct` (nullable), `line_coverage_source`, `verdict`, `targets`), computed by
 `${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts` and rendered verbatim (see Process step 8) — followed by
 six sections:
 
@@ -293,14 +293,16 @@ Anything the audit couldn't determine without a human call. Common entries:
      `bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}` and take the
      most recent result (contract in `references/coverage-output.md`). `linePct` is
      `lines.covered / lines.total` as a percentage; `lineSource` cites the result's `runUrl`
-     and `commitSha`. A `not_reporting` result means the input is unavailable.
+     and `commitSha`. A `not_reporting` result is
+     **not** an abort: pass `linePct: null` with `lineSource` set to the reader's reason (e.g.
+     "no shipwright-coverage artifact: <reason>"). Unmeasured is `null`, never `0`.
    - `featurePct` / `featureSource`: read `feature_coverage_pct` from
      `docs/test-readiness/test-inventory.md` (already a Process step 1 prerequisite
      artifact for this run). `featureSource` cites that file.
-   - **Never guess.** If the reader returns `not_reporting`, or
-     `test-inventory.md` is missing or lacks `feature_coverage_pct`, the corresponding
-     input is unavailable — do not substitute an estimated value; proceed to the refusal
-     rule below instead.
+   - **Never guess.** If `test-inventory.md` is missing or lacks `feature_coverage_pct`,
+     that input is unavailable — do not substitute an estimated value; proceed to the
+     refusal rule below instead. (A `not_reporting` line-coverage reader result is the
+     exception: it is a gate outcome, passed as `linePct: null` — see above.)
 
    Run the script via Bash with the sourced inputs as a JSON blob (argv or stdin) —
    the script computes `verdict` itself; the agent does not compose "READY"/"BLOCKED"
@@ -317,12 +319,17 @@ Anything the audit couldn't determine without a human call. Common entries:
    `{{FEATURE_COVERAGE_SOURCE}}` / `{{LINE_COVERAGE_PCT}}` / `{{LINE_COVERAGE_SOURCE}}` /
    `{{COVERAGE_VERDICT}}` / `{{FEATURE_TARGET}}` / `{{LINE_TARGET}}` template placeholders.
    Do not paraphrase the `READY` / `BLOCKED: ...` verdict text — render it verbatim.
+   `line_coverage_pct` may be `null` (verdict `BLOCKED: line coverage not reporting`,
+   combined with the feature-gap clause when feature coverage is also short): render it as
+   `not reporting` in `{{LINE_COVERAGE_PCT}}` and a numeric value as `<n>%`. Then continue
+   to step 9 and step 9b — a `null` result is a normal outcome, not a failure.
 
    **Abort if the script call fails — do not write `test-readiness-plan.md`.** This is the
    correctness backstop the script enforces: if the script exits nonzero (missing required
    input field, or a self-consistency check failure), if its stdout is not valid JSON
    matching the six-field `coverage_gate` shape, or if any of the six fields ends up
-   missing/null in a way that makes the block inconsistent, stop here. Do not proceed to
+   missing/null (other than `line_coverage_pct` and its `null`-reason source, which
+   may legitimately be `null` per above) in a way that makes the block inconsistent, stop here. Do not proceed to
    step 9 and do not write a partial or fabricated `test-readiness-plan.md` — mirrors
    Process step 1's "Abort if any missing" failure mode, applied to the coverage_gate
    computation instead of the three prior-artifact reads.
@@ -331,6 +338,8 @@ Anything the audit couldn't determine without a human call. Common entries:
    coverage-check's 3rd stage (see the step-6 note above and `repo-config/SKILL.md`'s
    "Coverage-check pairing (3-stage lifecycle)" section) — it follows the existing
    auto-pairing emission mechanism, no manual trigger step:
+   - **If `line_coverage_pct` is `null` (not reporting):** no promotion task — the line
+     gate cannot be judged closed without a measurement. Proceed to step 9b.
    - **If `line_coverage_pct < 90`:** no promotion task. The never-decrease check (stage 2)
      is still the active gate. Nothing to do — proceed to step 10.
    - **If `line_coverage_pct >= 90`:** before emitting, check whether a stage-3 promotion
@@ -429,5 +438,5 @@ Anything the audit couldn't determine without a human call. Common entries:
   filed must skip emission, not add a duplicate `T-NNN` row each cycle.
 - **Don't emit the stage-3 coverage-promotion task before the gate has actually closed.**
   Process step 9 is gated on `coverage_gate.line_coverage_pct >= 90` (step 8's freshly
-  computed value) — a repo still below 90% keeps the never-decrease check (stage 2) as its
+  computed value; `null` never promotes) — a repo still below 90% keeps the never-decrease check (stage 2) as its
   active gate; do not promote to the hard ≥90% gate early.

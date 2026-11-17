@@ -8,12 +8,14 @@
 
 The headline machine-checkable verdict — computed by `${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts`
 (CGT-1.2), rendered verbatim below. See Process step for the render step's refusal
-behavior when this block cannot be computed.
+behavior when this block cannot be computed. `line_coverage_pct` is nullable: render a
+number as `87%`, and a `null` (line coverage unmeasured — no `shipwright-coverage` artifact) as
+`not reporting`, with `line_coverage_source` giving the reason.
 
 | Field | Value |
 |---|---|
 | Feature coverage | {{FEATURE_COVERAGE_PCT}}% (target {{FEATURE_TARGET}}%) — source: {{FEATURE_COVERAGE_SOURCE}} |
-| Line coverage | {{LINE_COVERAGE_PCT}}% (target {{LINE_TARGET}}%) — source: {{LINE_COVERAGE_SOURCE}} |
+| Line coverage | {{LINE_COVERAGE_PCT}} (target {{LINE_TARGET}}%) — source: {{LINE_COVERAGE_SOURCE}} |
 | **Verdict** | **{{COVERAGE_VERDICT}}** |
 
 ## 1. Where we are now

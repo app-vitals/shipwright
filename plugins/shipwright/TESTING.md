@@ -1303,7 +1303,7 @@ cover only that the instruction text exists, not that an LLM run obeys it). Veri
 dry runs: (a) run `/test-roadmap` against a repo whose Phase 3 migration output has, within
 the same milestone, both a feature-coverage-gap-closing row (a `critical`/`high` tier item
 closing a named feature/error-path gap) and a line-coverage-filler row (a row whose only
-stated justification is raising `line_coverage_pct`). (b) run `/test-fix` against a
+stated justification is raising `line_coverage_pct`, which is nullable when line coverage is unmeasured). (b) run `/test-fix` against a
 `test-readiness-plan.md` whose task list contains a line-coverage-bucket row with no cited
 feature/error-path mapping in its outcome column (assertion-free filler, e.g. "add a test for
 a trivial getter to raise line coverage").
