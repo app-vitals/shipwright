@@ -25,6 +25,35 @@ tests:
       - failedTemplate:
           errorPattern: "admin/loopTranscriptUpload/agentIds"
 
+  - it: accepts a valid admin.templateSeed
+    set:
+      admin.templateSeed:
+        marketplaces:
+          - name: example-plugins
+            source: example-org/plugins
+            ref: v1.2.0
+        plugins:
+          - some-plugin@example-plugins
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an admin.templateSeed marketplace without a source
+    set:
+      admin.templateSeed:
+        marketplaces:
+          - name: example-plugins
+    asserts:
+      - failedTemplate:
+          errorPattern: "admin/templateSeed/marketplaces/0"
+
+  - it: rejects a non-string admin.templateSeed plugin entry
+    set:
+      admin.templateSeed:
+        plugins: [42]
+    asserts:
+      - failedTemplate:
+          errorPattern: "admin/templateSeed/plugins/0"
+
   - it: rejects an admin service whose required `service` block is removed
     set:
       admin.service: null

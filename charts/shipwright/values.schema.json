@@ -281,6 +281,29 @@
                 }
               }
             },
+            "templateSeed": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "marketplaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "source"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": { "type": "string", "minLength": 1 },
+                      "source": { "type": "string", "minLength": 1 },
+                      "ref": { "type": "string" }
+                    }
+                  }
+                },
+                "plugins": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
             "repoAccessCheck": {
               "type": "object",
               "additionalProperties": false,

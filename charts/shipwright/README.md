@@ -140,6 +140,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.podServiceAccount.enabled` | `false` | Toggle the pod ServiceAccount flag (`SHIPWRIGHT_K8S_AGENT_POD_SERVICE_ACCOUNT_ENABLED`). |
 | `admin.cronRunNow.enabled` | `false` | Toggle the cron run-now route (`SHIPWRIGHT_CRON_RUN_NOW_ENABLED`). |
 | `admin.loopTranscriptUpload.agentIds` | `[]` | Agent ids whose coding-loop runs may upload redacted transcripts (`SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS`); empty by default. Requires `admin.transcriptApi.enabled`. |
+| `admin.templateSeed` | `{}` | Default marketplaces and plugins seeded on each admin boot (`SHIPWRIGHT_TEMPLATE_SEED`, JSON). Keys: `marketplaces` (list of `{name, source, ref?}`) and `plugins` (list of `plugin@marketplace` strings). An explicit empty list clears seeded items; the empty default renders nothing. |
 | `admin.transcriptApi.enabled` | `false` | Toggle the cron-run transcript API routes (`SHIPWRIGHT_TRANSCRIPT_API_ENABLED`). |
 | `admin.repoAccessCheck.enabled` | `false` | Toggle the agent repo-access check (`SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED`). |
 | `metrics.enabled` | `true` | Toggle the metrics dashboard (port **3460**). |

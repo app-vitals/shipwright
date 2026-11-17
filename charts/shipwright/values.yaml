@@ -313,10 +313,22 @@ admin:
   # -- Opt-in coding-loop transcript upload configuration.
   loopTranscriptUpload:
     # -- Agent ids whose coding-loop runs may upload a redacted transcript
-    # (intended to be comma-joined into SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS;
+    # (comma-joined into SHIPWRIGHT_LOOP_TRANSCRIPT_AGENT_IDS;
     # also needs `admin.transcriptApi.enabled`). Empty means no agent uploads.
-    # Not yet rendered by the bundled agent-platform library chart.
     agentIds: []
+  # -- Default marketplaces and plugins seeded into the admin on boot. Renders
+  # SHIPWRIGHT_TEMPLATE_SEED (JSON) on the admin container whenever a
+  # `marketplaces` or `plugins` key is set; the seed is applied on each admin
+  # boot. An explicit empty list (`plugins: []`) still renders the variable and
+  # clears previously seeded items. Empty by default (nothing rendered).
+  # Each marketplace needs a `name` and a `source`; `ref` is optional. Each
+  # plugin is a string such as `plugin@marketplace`. Example:
+  #   templateSeed:
+  #     marketplaces:
+  #       - {name: example-plugins, source: example-org/plugins, ref: v1.2.0}
+  #     plugins:
+  #       - some-plugin@example-plugins
+  templateSeed: {}
   # -- Agent repo-access check configuration.
   repoAccessCheck:
     # -- Enable the agent repo-access check (sets SHIPWRIGHT_AGENT_REPO_ACCESS_CHECK_ENABLED).
