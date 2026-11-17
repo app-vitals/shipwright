@@ -108,7 +108,7 @@ Stages:
 
 | Stage | Trigger | What happens |
 |---|---|---|
-| 0. CI publishes `shipwright-coverage` | Before the coverage CI job lands | The job uploads the coverage artifact per `plugins/shipwright/references/coverage-output.md`, so Shipwright can read it. This precedes "coverage must not decrease" — the check has nothing to compare without it |
+| 0. CI publishes `shipwright-coverage` | The coverage CI job is written | The job uploads the coverage artifact per `plugins/shipwright/references/coverage-output.md`, so Shipwright can read it. This precedes "coverage must not decrease" — the check has nothing to compare without it |
 | 1. Coverage CI job lands | `test.yml` gains a coverage-computing job | No required check yet — signal only |
 | 2. Never-decrease required (immediately) | Paired task, same mechanism as the pairing rule above | Branch protection requires a "coverage must not decrease" status check as soon as the coverage CI job lands — `depends_on` the job-lands task, enabled immediately, not deferred |
 | 3. Hard ≥90% required (auto-emitted) | `test-roadmap` re-run detects `coverage_gate.line_coverage_pct >= 90` | `test-roadmap` automatically emits a repo-config task promoting the required check from never-decrease to a hard ≥90% gate — no manual step |
