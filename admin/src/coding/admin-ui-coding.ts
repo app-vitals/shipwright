@@ -94,6 +94,7 @@ import {
   isSessionVisible,
   type SessionForVisibility,
 } from "./session-scope.ts";
+import type { SessionOwnership } from "./session-documents.ts";
 import type { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
 import { fetchRecentVerificationChecks } from "./verification-checks.ts";
 
@@ -215,7 +216,9 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
   fetchTaskStoreSession?: (
     slug: string,
     accountId?: string,
-  ) => Promise<SessionForVisibility | null>;
+  ) => Promise<
+    (SessionForVisibility & SessionOwnership & { repos: string[] }) | null
+  >;
   /**
    * Apply a rename/archive patch to a session via the task-store's
    * `PATCH /sessions/:slug` (SESH-3.1, admin-token only). Backs the session
@@ -1205,6 +1208,18 @@ export function createCodingAdminUIApp(
       }
     }
 
+    // PLU-5.1: owner, repos and documents come from the session record in the
+    // task store (never GitHub). Best-effort — a failure just omits them.
+    let sessionInfo: (SessionOwnership & { repos?: string[] }) | undefined;
+    if (!degraded && fetchTaskStoreSession) {
+      try {
+        sessionInfo =
+          (await fetchTaskStoreSession(sessionId, accountId)) ?? undefined;
+      } catch {
+        sessionInfo = undefined;
+      }
+    }
+
     // SESH-5.2: the ?success=/?error= flash-message convention used
     // elsewhere in this file (e.g. the agent detail page's
     // ?success=manifest_synced handling) — set by
@@ -1251,6 +1266,7 @@ export function createCodingAdminUIApp(
         view.kind === "all" && accountId
           ? `?accountId=${encodeURIComponent(accountId)}`
           : "",
+        sessionInfo,
       ),
     );
   });
