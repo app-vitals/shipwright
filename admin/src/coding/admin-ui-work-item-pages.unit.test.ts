@@ -1086,9 +1086,9 @@ describe("renderTasksPage — PR column", () => {
     expect(html).toContain("—");
   });
 
-  test("empty state colspan is 10 (9 columns + 1 for new Source column)", () => {
+  test("empty state colspan is 12 (10 columns + Origin and Owner)", () => {
     const html = render([]);
-    expect(html).toContain('colspan="10"');
+    expect(html).toContain('colspan="12"');
   });
 
   test("task with pr value uses indigo link color matching ID column style", () => {
@@ -6588,5 +6588,91 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
       expect(html).toContain("alert-success");
       expect(html).toContain("Promoted.");
     });
+  });
+});
+
+// ─── PLU-5.2: owner, origin, linked-document source ─────────────────────────
+
+describe("renderTasksPage — owner, origin and source link (PLU-5.2)", () => {
+  const render = (
+    tasks: TaskItem[],
+    filters: Parameters<typeof renderTasksPage>[1] = {},
+    view: "table" | "board" = "table",
+  ) =>
+    renderTasksPage(
+      tasks,
+      filters,
+      false,
+      "me@example.com",
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      undefined,
+      {},
+      view,
+    );
+
+  test("source is an anchor to the session's documents for a document-linked task", () => {
+    const html = render([
+      { ...TASK_ITEM, source: "plan-session", specDocumentId: "d1" },
+    ]);
+    expect(html).toContain(
+      '<a href="/admin/sessions/session-abc#session-documents"',
+    );
+    expect(html).toContain(">plan-session</a>");
+  });
+
+  test("source stays plain text without a linked document or without a session", () => {
+    const a = render([{ ...TASK_ITEM, source: "manual" }]);
+    expect(a).toContain(">manual</td>");
+    const b = render([
+      { ...TASK_ITEM, session: null, source: "x", planDocumentId: "d" },
+    ]);
+    expect(b).toContain(">x</td>");
+    expect(b).not.toContain("#session-documents");
+  });
+
+  test("shows owner and origin columns", () => {
+    const html = render([
+      {
+        ...TASK_ITEM,
+        owner: "o@example.com",
+        originKind: "skill",
+        originRef: "dev-task",
+      },
+    ]);
+    expect(html).toContain("<th>Owner</th>");
+    expect(html).toContain("o@example.com");
+    expect(html).toContain("skill: dev-task");
+  });
+
+  test("owner switch keeps ?owner= in pagination and quick-add default", () => {
+    const html = render([TASK_ITEM], {
+      ownerView: { mode: "mine", owner: "me@example.com" },
+    });
+    expect(html).toContain('id="owner-switch"');
+    expect(html).toContain("owner=me%40example.com");
+    expect(html).toMatch(/name="owner"[^>]*value="me@example.com"/);
+  });
+
+  test("quick-add owner is editable and defaults to the user on the board too", () => {
+    const html = render([TASK_ITEM], {}, "board");
+    expect(html).toMatch(/name="owner"[^>]*value="me@example.com"/);
+  });
+
+  test("task detail shows owner and origin", () => {
+    const html = renderTaskDetailPage(
+      {
+        ...TASK_ITEM,
+        owner: "o@example.com",
+        originKind: "cron",
+        originRef: "nightly",
+      },
+      "me",
+    );
+    expect(html).toContain("o@example.com");
+    expect(html).toContain("cron: nightly");
   });
 });

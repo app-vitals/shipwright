@@ -568,7 +568,7 @@ describe("SSP-6.8 — /admin/tasks scoped by account", () => {
   it("an account user sees only their account's tasks", async () => {
     const calls: Calls = {};
     const { app } = makeApp(calls);
-    const res = await get(app, "/admin/tasks?view=table", A_USER);
+    const res = await get(app, "/admin/tasks?view=table&owner=all", A_USER);
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("Alpha task in account A");
