@@ -1,0 +1,52 @@
+{
+  "steps": [
+    {
+      "stepNumber": "5",
+      "title": "Fetch reviewThreads (GraphQL)",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first — no telemetry hook observes the reviewThreads GraphQL fetch and its result is not persisted to the PR record",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "6.1",
+      "title": "Compute Risk Signals",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first — run-telemetry.ts only observes Agent/Task dispatches and the risk-signals script execution is not persisted to the PR record",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "7",
+      "title": "Deep Review (dispatch code-reviewer subagent)",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch of shipwright:code-reviewer (or each configured multi-reviewer subagent). Any Agent/Task tool-name dispatch counts, detected via isDispatchStep. Note: inline review counts as skipping the subagent — no size exemption",
+      "measurable": true,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "9.5",
+      "title": "Unaddressed-Findings Hard Gate",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first — the gate outcome is not persisted to the PR record or observed by run telemetry",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "10.5",
+      "title": "Hard-Gate Validation (Before Posting)",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first — validation result is not persisted to the PR record or observed by run telemetry",
+      "measurable": false,
+      "lane": "any"
+    },
+    {
+      "stepNumber": "11b",
+      "title": "Mark PullRequest Record Posted",
+      "mandatory": true,
+      "proofOfRunning": "task-store PR record enriched with reviewState, reviewedCommitSha and agentId",
+      "measurable": true,
+      "lane": "any"
+    }
+  ]
+}
