@@ -1,5 +1,5 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck,
+// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck, CoverageSnapshot,
 // SystemCronDefinition, SystemCronTrigger.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
@@ -580,6 +580,43 @@ model VerificationCheck {
   @@index([prRecordId, at])
   @@index([repo, checkName])
   @@index([accountId])
+}
+
+// ─── CoverageSnapshot ─────────────────────────────────────────────────────────
+// CVT-2.1: one measured coverage reading per (account, repo, commit). Has no
+// parent Task/PullRequest — accountId comes straight from the caller's scope.
+// The percentages are computed server-side from the covered/total counts; the
+// branches*/functions* triplets are all-null when the tool did not report them.
+// A repeat POST for the same commit updates the row in place (upsert).
+
+model CoverageSnapshot {
+  id        String @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope
+
+  repo      String
+  branch    String
+  commitSha String
+
+  linesCovered Int
+  linesTotal   Int
+  linesPct     Float
+
+  branchesCovered Int?
+  branchesTotal   Int?
+  branchesPct     Float?
+
+  functionsCovered Int?
+  functionsTotal   Int?
+  functionsPct     Float?
+
+  tool       String
+  runUrl     String?
+  measuredAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, repo, commitSha])
+  @@index([repo, measuredAt])
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────

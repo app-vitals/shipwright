@@ -143,6 +143,16 @@ The scheduler is the admin's `system-cron-scheduler` background pass (`admin/src
 
 To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (admin-only; returns `{ triggers: [...] }`). Triggers are sorted newest first by `scheduledFor` (tie-break: `createdAt` desc), capped at `limit` (1–50, default 5). Each trigger object contains `scheduledFor` (ISO timestamp of the slot), `claimedAt` (when the slot was claimed), and `taskCount` (number of tasks created for that slot). This is read-only and does not record skipped ticks.
 
+### Coverage snapshots
+
+`CoverageSnapshot` stores one measured test-coverage reading per commit: `id`, `accountId`, `repo`, `branch`, `commitSha`, `linesCovered` / `linesTotal` / `linesPct`, optional `branchesCovered` / `branchesTotal` / `branchesPct` and `functionsCovered` / `functionsTotal` / `functionsPct`, `tool`, optional `runUrl`, `measuredAt`, `createdAt`. It is unique on `(accountId, repo, commitSha)` and indexed on `(repo, measuredAt)`. A snapshot has no parent task or PR, so its account comes from the caller.
+
+- `POST /coverage-snapshots` takes counts only; the server computes each pct as `covered / total * 100` (a branches/functions pair with `total` 0 gets a `null` pct). It upserts on `(accountId, repo, commitSha)`: `201` when the row is new, `200` when a repeat POST for the same commit replaced it (still one row per commit). `measuredAt` defaults to now.
+- `400` when `linesTotal` is not > 0, any covered exceeds its total, a branches/functions pair is only half supplied, a count is negative or non-integer, `commitSha`/`branch`/`tool` is empty, or `repo` is not `owner/repo`.
+- `GET /coverage-snapshots?repo=&since=&limit=&offset=` returns `{ snapshots, total, limit, offset }`, newest `measuredAt` first (default `limit=50`). `since` is an ISO timestamp (`400` if unparseable).
+- `GET /coverage-snapshots/latest` returns `{ snapshots }` with exactly one row per repo, the newest by `measuredAt`.
+- Scope: agent tokens may write only repos in their scope (`403` otherwise), always write to and read from their own account (a client-supplied `accountId` is ignored); admin tokens are unrestricted and may pass `accountId` (body on POST, query on GET; default `default` on POST).
+
 ### Token management
 
 All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope), and revoke (soft-delete via `revokedAt`) scoped tokens. See the OpenAPI spec for request/response shapes.
