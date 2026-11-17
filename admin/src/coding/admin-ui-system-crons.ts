@@ -50,6 +50,8 @@ export interface SystemCronItem {
   enabled: boolean;
   titleTemplate: string;
   descriptionTemplate: string;
+  /** CRS-2.2 — owning account; selects which account's repo listing feeds the checklist. */
+  accountId?: string | null;
   /** CRS-1.1; absent on older stores, which means 'all'. */
   repoScope?: "all" | "selected";
   repos?: string[];
@@ -57,7 +59,7 @@ export interface SystemCronItem {
 
 /** Structural match for the platform's GithubLookupService (listRepositories). */
 export interface RepositoryLookup {
-  listRepositories(): Promise<{
+  listRepositories(accountId?: string | null): Promise<{
     configured: boolean;
     repos: { fullName: string; archived: boolean }[];
   }>;
@@ -129,9 +131,19 @@ interface PageOpts {
     repoScope?: string;
     repos?: string[];
   };
-  /** Repos the lookup App can see; `null` when unconfigured or the listing failed. */
-  repoListing?: { fullName: string; archived: boolean }[] | null;
+  /**
+   * Repos the lookup App can see, keyed by account (CRS-2.2; `""` is the
+   * deployment-wide listing for a cron without an accountId). A missing or
+   * null entry means unconfigured or the listing failed.
+   */
+  repoListings?: Record<
+    string,
+    { fullName: string; archived: boolean }[] | null
+  >;
 }
+
+const accountKey = (c: Pick<SystemCronItem, "accountId">): string =>
+  c.accountId ?? "";
 
 function scopeSummary(c: SystemCronItem): string {
   if ((c.repoScope ?? "all") === "all") return "All repositories";
@@ -142,7 +154,7 @@ function scopeSummary(c: SystemCronItem): string {
 function renderScopeControl(
   c: SystemCronItem,
   draft: PageOpts["draft"],
-  listing: PageOpts["repoListing"],
+  listing: { fullName: string; archived: boolean }[] | null | undefined,
 ): string {
   const cid = escapeHtml(c.id);
   const scope = (draft?.repoScope ?? c.repoScope ?? "all") as string;
@@ -250,7 +262,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
         <textarea id="descriptionTemplate-${escapeHtml(c.id)}" name="descriptionTemplate" class="form-input" rows="4">${escapeHtml(description)}</textarea>
         <p style="font-size:12px;color:#6b7280;margin:4px 0 0"><code>{repo}</code> is replaced with the org/repo; nothing else is evaluated.</p>
       </div>
-      ${renderScopeControl(c, draft, opts.repoListing)}
+      ${renderScopeControl(c, draft, opts.repoListings?.[accountKey(c)])}
       <button type="submit" class="btn btn-primary">Save</button>
     </form>
     ${renderRecentRuns(opts.recentRuns?.[c.id])}
@@ -351,14 +363,24 @@ export function registerSystemCronsRoutes(
         }
       }),
     );
-    let repoListing: PageOpts["repoListing"] = null;
-    if (deps.githubLookup && crons.length > 0) {
-      try {
-        const listing = await deps.githubLookup.listRepositories();
-        if (listing.configured) repoListing = listing.repos;
-      } catch {
-        repoListing = null;
-      }
+    // One listing per distinct account; each cron's checklist renders from its own.
+    const repoListings: NonNullable<PageOpts["repoListings"]> = {};
+    const lookup = deps.githubLookup;
+    if (lookup) {
+      await Promise.all(
+        [...new Set(crons.map((cron) => cron.accountId ?? null))].map(
+          async (accountId) => {
+            try {
+              const listing = await lookup.listRepositories(accountId);
+              repoListings[accountId ?? ""] = listing.configured
+                ? listing.repos
+                : null;
+            } catch {
+              repoListings[accountId ?? ""] = null;
+            }
+          },
+        ),
+      );
     }
     const noticeKey = c.req.query("notice");
     const errorKey = c.req.query("error");
@@ -368,7 +390,7 @@ export function registerSystemCronsRoutes(
         nav: getSettingsNav(c) ?? { sections: [] },
         crons,
         recentRuns,
-        repoListing,
+        repoListings,
         degraded,
         lookupConfigured: await lookupAppConfigured(c),
         ...rest,

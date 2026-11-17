@@ -16,11 +16,16 @@
  *        - otherwise the last claimed slot, so slots missed while the admin
  *          was down (or the lookup App unconfigured) are caught up.
  *      enabledAt is null only for rows predating it; updatedAt stands in.
- *   3. Only when at least one slot is due: list repos ONCE via the platform's
- *      lookup App (AdminPlatformServices.githubLookup.listRepositories()).
- *      `configured: false` → log and skip the tick, recording nothing. A
- *      lister failure rejects the tick before anything is fired. Archived
- *      repos are dropped; with none left the tick is skipped.
+ *   3. Due definitions are grouped by their accountId (CRS-2.2); each
+ *      account's repos are listed ONCE per tick via the platform's lookup App
+ *      (AdminPlatformServices.githubLookup.listRepositories(accountId)).
+ *      `configured: false` → log and skip that account's definitions only,
+ *      recording nothing. A lister failure rejects the tick before anything
+ *      is fired (every account is listed before the first fire). Archived
+ *      repos are dropped; an account with none left is skipped likewise.
+ *      The tick status is 'fired' unless EVERY due definition was skipped by
+ *      its account's listing (then skipped-unconfigured when all were
+ *      unconfigured, else skipped-no-repos).
  *   4. POST /system-crons/:id/fire {scheduledFor, repos} per slot, oldest
  *      first. The task-store claims each (id, scheduledFor) exactly once and
  *      rolls a failed fire back, so N admin replicas firing the same slot
@@ -50,6 +55,8 @@ export interface SystemCronDefinitionView {
   enabled: boolean;
   enabledAt: string | null;
   updatedAt: string;
+  /** CRS-2.2 — owning account; absent/null → the deployment-wide listing. */
+  accountId?: string | null;
   /** CRS-1.1 — optional so older task-store responses still parse. */
   repoScope?: "all" | "selected";
   repos?: string[];
@@ -72,7 +79,7 @@ export interface SystemCronStore {
  * (AdminPlatformServices.githubLookup, 1.40.0+).
  */
 export interface LookupRepositoryLister {
-  listRepositories(): Promise<{
+  listRepositories(accountId?: string | null): Promise<{
     configured: boolean;
     repos: { fullName: string; archived: boolean }[];
   }>;
@@ -154,6 +161,7 @@ export class SystemCronScheduler {
 
     const due: {
       id: string;
+      accountId: string | null;
       slots: Date[];
       scope: Pick<SystemCronDefinitionView, "repoScope" | "repos">;
     }[] = [];
@@ -170,6 +178,7 @@ export class SystemCronScheduler {
         if (slots.length > 0) {
           due.push({
             id: def.id,
+            accountId: def.accountId ?? null,
             slots,
             scope: { repoScope: def.repoScope, repos: def.repos },
           });
@@ -180,23 +189,48 @@ export class SystemCronScheduler {
     }
     if (due.length === 0) return { status: "idle", fired, errors };
 
-    const listing = await this.deps.lookup.listRepositories();
-    if (!listing.configured) {
-      this.log(
-        `${P} lookup App not configured; skipping tick (${due.length} definition(s) due, nothing recorded)`,
-      );
-      return { status: "skipped-unconfigured", fired, errors };
-    }
-    const allRepos = listing.repos
-      .filter((r) => !r.archived)
-      .map((r) => r.fullName);
-    if (allRepos.length === 0) {
-      this.log(`${P} lookup App lists no unarchived repos; skipping tick`);
-      return { status: "skipped-no-repos", fired, errors };
+    // One listing per distinct account, all before the first fire so a lister
+    // failure rejects the tick with nothing recorded.
+    const listings = new Map<
+      string | null,
+      { unconfigured: true } | { repos: string[] }
+    >();
+    for (const { accountId } of due) {
+      if (listings.has(accountId)) continue;
+      const label = accountId ?? "deployment-wide";
+      const listing = await this.deps.lookup.listRepositories(accountId);
+      if (!listing.configured) {
+        this.log(
+          `${P} account ${label}: lookup App not configured; skipping its definition(s) (nothing recorded)`,
+        );
+        listings.set(accountId, { unconfigured: true });
+        continue;
+      }
+      const repos = listing.repos
+        .filter((r) => !r.archived)
+        .map((r) => r.fullName);
+      if (repos.length === 0) {
+        this.log(
+          `${P} account ${label}: lookup App lists no unarchived repos; skipping its definition(s)`,
+        );
+      }
+      listings.set(accountId, { repos });
     }
 
-    const visible = new Set(allRepos);
-    for (const { id, slots, scope } of due) {
+    let skippedUnconfigured = 0;
+    let skippedNoRepos = 0;
+    for (const { id, accountId, slots, scope } of due) {
+      const listing = listings.get(accountId);
+      if (!listing || "unconfigured" in listing) {
+        skippedUnconfigured++;
+        continue;
+      }
+      const allRepos = listing.repos;
+      if (allRepos.length === 0) {
+        skippedNoRepos++;
+        continue;
+      }
+      const visible = new Set(allRepos);
       // 'selected' → intersect with the listing so archived or
       // no-longer-visible repos drop out; 'all' (or an older task-store
       // response without repoScope) uses every unarchived repo.
@@ -230,6 +264,14 @@ export class SystemCronScheduler {
           break;
         }
       }
+    }
+    if (skippedUnconfigured + skippedNoRepos === due.length) {
+      return {
+        status:
+          skippedNoRepos === 0 ? "skipped-unconfigured" : "skipped-no-repos",
+        fired,
+        errors,
+      };
     }
     return { status: "fired", fired, errors };
   }

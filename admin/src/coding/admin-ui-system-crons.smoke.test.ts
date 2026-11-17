@@ -467,4 +467,42 @@ describe("Repo selection (CRS-1.3)", () => {
     expect(store.calls[0]).not.toContain("repoScope");
     expect(store.crons[0]?.repos).toEqual(["acme/web"]);
   });
+
+  it("renders each cron's checklist from its own account's listing, one call per account", async () => {
+    const calls: (string | null | undefined)[] = [];
+    const byAccount: Record<string, string> = {
+      a1: "acme/a1-repo",
+      a2: "acme/a2-repo",
+    };
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([
+        makeCron({ id: "dep-audit", name: "Dep audit", accountId: "a1" }),
+        makeCron({ id: "docs-sweep", name: "Docs sweep", accountId: "a2" }),
+        makeCron({ id: "third", name: "Third", accountId: "a1" }),
+      ]),
+      githubLookup: {
+        listRepositories: async (accountId?: string | null) => {
+          calls.push(accountId);
+          return {
+            configured: true,
+            repos: [{ fullName: byAccount[accountId ?? ""], archived: false }],
+          };
+        },
+      },
+    });
+    const html = await (
+      await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+    ).text();
+    expect(calls.sort()).toEqual(["a1", "a2"]);
+    const card = (id: string) => {
+      const start = html.indexOf(`data-system-cron="${id}"`);
+      return html.slice(start, html.indexOf("Recent runs", start));
+    };
+    expect(card("dep-audit")).toContain("acme/a1-repo");
+    expect(card("dep-audit")).not.toContain("acme/a2-repo");
+    expect(card("docs-sweep")).toContain("acme/a2-repo");
+    expect(card("docs-sweep")).not.toContain("acme/a1-repo");
+    expect(card("third")).toContain("acme/a1-repo");
+  });
 });
