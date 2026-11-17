@@ -216,6 +216,8 @@ For each remaining finding:
   "id": "prompt-{class}-{fp8}-{repo-slug}-{YYYY-Www}",
   "title": "Prompt audit: {rule} - {file}",
   "source": "prompt-fix",
+  "originKind": "skill",
+  "originRef": "prompt-fix",
   "repo": "<repo from Step 8>",
   "branch": "chore/prompt-{fp8}-{slug}",
   "layer": "Docs",

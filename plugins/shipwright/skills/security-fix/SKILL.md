@@ -270,6 +270,8 @@ unchanged rather than reconstructing it:
   "id": "security-{rule}-{repo-slug}-{YYYY-Www}",
   "title": "Security fix: {rule description}",
   "source": "security-fix",
+  "originKind": "skill",
+  "originRef": "security-fix",
   "repo": "<repo, as detected in 6q.1>",
   "branch": "fix/security-{rule}-{short-description}",
   "layer": "Shared",

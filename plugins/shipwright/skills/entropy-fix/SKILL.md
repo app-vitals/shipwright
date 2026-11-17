@@ -242,6 +242,8 @@ detected in 6q.1 — do not re-derive them:
   "id": "entropy-{rule-id}-{repo-slug}-{YYYY-Www}",
   "title": "Entropy fix: {rule.description}",
   "source": "entropy-fix",
+  "originKind": "skill",
+  "originRef": "entropy-fix",
   "repo": "<repo, as detected in 6q.1>",
   "branch": "fix/entropy-{rule-id}-{short-description}",
   "layer": "Shared",
