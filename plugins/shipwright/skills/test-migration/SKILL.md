@@ -125,7 +125,7 @@ actually breaches the Tier 2 trigger.
 Read coverage from the reader, never from CI logs. From the target repo's worktree run:
 
 ```bash
-bun run plugins/shipwright/scripts/coverage-summary.ts --repo {org}/{repo}
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}
 ```
 
 The reader consumes the coverage artifact the repo's CI publishes (contract in

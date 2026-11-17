@@ -157,7 +157,7 @@ block or be blocked by another's.
 Before the phase loop, in the repo's worktree, run:
 
 ```bash
-bun run plugins/shipwright/scripts/coverage-summary.ts --repo {org}/{repo} --record
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo} --record
 ```
 
 This runs on every invocation, regardless of phase staleness, including when

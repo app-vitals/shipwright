@@ -290,7 +290,7 @@ Anything the audit couldn't determine without a human call. Common entries:
    `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
    mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
    - `linePct` / `lineSource`: run
-     `bun run plugins/shipwright/scripts/coverage-summary.ts --repo {org}/{repo}` and take the
+     `bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}` and take the
      most recent result (contract in `references/coverage-output.md`). `linePct` is
      `lines.covered / lines.total` as a percentage; `lineSource` cites the result's `runUrl`
      and `commitSha`. A `not_reporting` result means the input is unavailable.

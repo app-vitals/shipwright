@@ -148,7 +148,12 @@ describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
 
   it("sources coverage from coverage-summary.ts, not CI logs", () => {
     const section = step4cSection();
-    expect(section).toContain("coverage-summary.ts");
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
     expect(section).toContain("references/coverage-output.md");
     expect(section).not.toContain("lint / typecheck / test");
     expect(section).not.toContain("`Test` step");

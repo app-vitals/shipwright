@@ -194,7 +194,12 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
   it("sources linePct from the coverage-summary.ts reader, not the CI log", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("linePct");
-    expect(section).toContain("coverage-summary.ts");
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
     expect(section).toContain("lines.covered / lines.total");
     expect(section).toContain("not_reporting");
     expect(section).not.toContain("`Test` step");

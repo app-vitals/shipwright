@@ -209,7 +209,18 @@ describe("test-readiness — Step 1.5 records coverage before the phase loop", (
   });
 
   it("runs coverage-summary.ts with --repo and --record", () => {
-    expect(section).toMatch(/coverage-summary\.ts --repo \{org\}\/\{repo\} --record/);
+    expect(section).toMatch(
+      /coverage-summary\.ts" --repo \{org\}\/\{repo\} --record/,
+    );
+  });
+
+  it("invokes the reader via CLAUDE_PLUGIN_ROOT, not a repo-relative path", () => {
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
   });
 
   it("states it runs even when all phases are fresh and never blocks them", () => {
