@@ -191,11 +191,19 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     expect(section).toMatch(/mirrors that step's\s+mechanism exactly/i);
   });
 
-  it("sources linePct from the most recent green CI run's Test step Lines: line", () => {
+  it("sources linePct from the coverage-summary.ts reader, not the CI log", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("linePct");
-    expect(section).toMatch(/`Test` step/);
-    expect(section).toContain("Lines:");
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
+    expect(section).toContain("lines.covered / lines.total");
+    expect(section).toContain("not_reporting");
+    expect(section).not.toContain("`Test` step");
+    expect(section).not.toContain("Lines:");
   });
 
   it("sources featurePct from test-inventory.md's feature_coverage_pct", () => {
@@ -551,5 +559,28 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
 
     expect(gate.verdict).toContain("BLOCKED");
     expect(filled).toContain(gate.verdict);
+  });
+});
+
+describe("SKILL.md — step 9b emits the publish-coverage-artifact task", () => {
+  const step = () =>
+    content
+      .slice(content.indexOf("9b."), content.indexOf("\n10. Load"))
+      .replace(/\s+/g, " ");
+
+  it("emits the publish task on not_reporting", () => {
+    expect(step()).toContain("not_reporting");
+    expect(step()).toContain("Publish the shipwright-coverage artifact from CI");
+  });
+
+  it("emits nothing when the repo is reporting", () => {
+    expect(step()).toContain("emit nothing");
+  });
+
+  it("body covers upload step, reporter command and default-branch check", () => {
+    expect(step()).toContain("upload step");
+    expect(step()).toContain("native reporter command");
+    expect(step()).toContain("pushes to the default branch");
+    expect(step()).toContain("references/coverage-output.md");
   });
 });

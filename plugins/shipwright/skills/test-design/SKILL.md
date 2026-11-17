@@ -84,6 +84,11 @@ Document:
   above — one of `lcov` (Bun/Jest/Vitest native), `jacoco` (JVM), `coverage.py` (Python),
   `c8`/`nyc` (Node), or `go-cover` (Go). Recorded the same way as the other CI pipeline
   shape fields — per repo, not a fixed default.
+- **Coverage report path and upload step**: alongside the toolchain, record the native
+  report path (the file the toolchain's reporter writes, e.g. `coverage/lcov.info`) and the
+  step that uploads it as the `shipwright-coverage` workflow artifact, on pushes to the
+  default branch. Take the reporter command and path from the per-language recipe table in
+  `${CLAUDE_PLUGIN_ROOT}/references/coverage-output.md` rather than restating it here.
 
 **Per-workspace matrix sharding — explicit override, not the default.** The default CI shape is **one job per layer** — `unit-all`, `integration-all`, `smoke-all` — each running its layer's full suite across every workspace in a single combined job. Splitting a layer into a per-workspace matrix (one job per workspace, per layer) is an **explicit override** that must be justified against the conditions below, not a default granularity choice. Per-job overhead — checkout, dependency install, environment setup, and (for integration jobs) container init for dependencies like Postgres — is fixed cost paid by every job in the matrix regardless of how little work that job actually does; at low per-workspace test volume this overhead routinely dwarfs the real test execution time, and job-level CI queuing delays are multiplied by every extra job added to a PR.
 

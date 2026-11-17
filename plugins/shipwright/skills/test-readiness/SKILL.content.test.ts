@@ -197,3 +197,41 @@ describe("test-readiness — Step 1 requires --repo", () => {
     expect(step1).toContain("opt-in");
   });
 });
+
+describe("test-readiness — Step 1.5 records coverage before the phase loop", () => {
+  const content = readSkill();
+  const stepIdx = content.indexOf("### Step 1.5: Record coverage");
+  const section = content.slice(stepIdx, content.indexOf("### Step 2:"));
+
+  it("places the record step ahead of the phase loop", () => {
+    expect(stepIdx).toBeGreaterThan(-1);
+    expect(stepIdx).toBeLessThan(content.indexOf("### Step 2:"));
+  });
+
+  it("runs coverage-summary.ts with --repo and --record", () => {
+    expect(section).toMatch(
+      /coverage-summary\.ts" --repo \{org\}\/\{repo\} --record/,
+    );
+  });
+
+  it("invokes the reader via CLAUDE_PLUGIN_ROOT, not a repo-relative path", () => {
+    expect(section).toContain(
+      `bun run "\${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts"`,
+    );
+    expect(section).not.toContain(
+      "bun run plugins/shipwright/scripts/coverage-summary.ts",
+    );
+  });
+
+  it("states it runs even when all phases are fresh and never blocks them", () => {
+    expect(section).toMatch(/every invocation/i);
+    expect(section).toMatch(/every phase artifact is fresh/i);
+    expect(section).toMatch(/not_reporting/);
+    expect(section).toMatch(/never\s+blocks the phases/i);
+  });
+
+  it("references coverage-output.md instead of restating the contract", () => {
+    expect(section).toContain("references/coverage-output.md");
+    expect(section).not.toContain("shipwright-coverage");
+  });
+});

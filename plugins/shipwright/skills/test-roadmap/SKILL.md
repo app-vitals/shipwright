@@ -289,16 +289,15 @@ Anything the audit couldn't determine without a human call. Common entries:
    hand-compute the verdict.** Source the four required inputs the same way Step 4c of
    `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
    mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
-   - `linePct` / `lineSource`: locate the most recent green CI run of the
-     `lint / typecheck / test` job (`gh run list` / `gh run view --log`), scope the log
-     read to that run's `Test` step, and grep for the `Lines:` line printed by
-     `scripts/check-coverage.ts` (shape: `Lines:     88.84% (12345/13897) — threshold: 80%`).
-     `linePct` is the parsed percentage; `lineSource` cites the CI run URL and the commit
-     SHA it ran against.
+   - `linePct` / `lineSource`: run
+     `bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}` and take the
+     most recent result (contract in `references/coverage-output.md`). `linePct` is
+     `lines.covered / lines.total` as a percentage; `lineSource` cites the result's `runUrl`
+     and `commitSha`. A `not_reporting` result means the input is unavailable.
    - `featurePct` / `featureSource`: read `feature_coverage_pct` from
      `docs/test-readiness/test-inventory.md` (already a Process step 1 prerequisite
      artifact for this run). `featureSource` cites that file.
-   - **Never guess.** If no green CI run can be found, the run has no `Test` step, or
+   - **Never guess.** If the reader returns `not_reporting`, or
      `test-inventory.md` is missing or lacks `feature_coverage_pct`, the corresponding
      input is unavailable — do not substitute an estimated value; proceed to the refusal
      rule below instead.
@@ -361,6 +360,21 @@ Anything the audit couldn't determine without a human call. Common entries:
    markdown-only (no new task-store write path, no new skill) — it just adds one more row
    to the same Section 5 walk that step 6 already populates, and `test-fix` files it
    exactly like any other paired row.
+9b. **Auto-emit the publish-coverage-artifact task when the repo is not reporting.** Using
+    the reader result from step 8 (contract in `${CLAUDE_PLUGIN_ROOT}/references/coverage-output.md`):
+    - **If the reader returned `not_reporting`:** emit exactly one new `T-NNN` row into the
+      Section 5 task list (Milestone 1, `bucket: infra`) with the outcome "Publish the
+      shipwright-coverage artifact from CI". Skip it if step 4's task-store result set
+      already holds a task with that title (idempotent on re-run). The task body carries:
+      - the artifact upload step, copied from the contract's example upload step;
+      - the native reporter command and report path for the toolchain recorded in
+        `test-system.md`'s **Coverage toolchain:** and **Coverage report path:** fields,
+        taken from the contract's per-language recipe table;
+      - a check that the CI workflow running the upload also runs on pushes to the default
+        branch, since the reader ignores artifacts from any other branch.
+    - **If the reader returned a result (the repo is reporting):** emit nothing.
+    Name no specific repo, workflow, job or step in the task — it is derived from the
+    recorded toolchain and the contract alone.
 10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
     Write to `docs/test-readiness/test-readiness-plan.md`.
     - Fill the `## Coverage Gate` section's seven placeholders
