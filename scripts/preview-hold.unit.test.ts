@@ -15,6 +15,7 @@ import {
   JOB_BUDGET_MINUTES,
   MAX_POLL_FAILURES,
   type PrState,
+  pidAlive,
   runHold,
 } from "./preview-hold.ts";
 
@@ -218,5 +219,12 @@ describe("runHold", () => {
     );
     expect(reason).toBe("poll_failures");
     expect(now).toBe(T0 + 2 * MIN);
+  });
+});
+
+describe("pidAlive", () => {
+  it("is true for this process and false for an unused pid", () => {
+    expect(pidAlive(process.pid)).toBe(true);
+    expect(pidAlive(2 ** 22 + 12345)).toBe(false);
   });
 });
