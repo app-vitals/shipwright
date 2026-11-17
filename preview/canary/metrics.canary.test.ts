@@ -49,8 +49,25 @@ describe("metrics canary", () => {
     const task = await createTask(t, { status: "blocked" });
     created.push(task.id);
 
+    const dump = async (label: string) => {
+      const h = bearer(t.taskStoreToken);
+      const one = await fetch(`${t.taskStoreUrl}/tasks/${task.id}`, { headers: h });
+      const list = await fetch(`${t.taskStoreUrl}/tasks?repo=canary/preview&limit=200&offset=0`, { headers: h });
+      const lj = (await list.json()) as { tasks?: Array<{ id: string; status: string; createdAt?: string }>; total?: number };
+      const q = await fetch(`${t.metricsUrl}/metrics/queue?preset=7d`, { headers: { ...h, Cookie: cookie } });
+      console.log("DIAG", label, JSON.stringify({
+        now: new Date().toISOString(),
+        taskGet: { status: one.status, body: await one.json() },
+        listStatus: list.status, listTotal: lj.total, listCount: lj.tasks?.length,
+        listHasTask: lj.tasks?.some((x) => x.id === task.id),
+        blockedInList: lj.tasks?.filter((x) => x.status === "blocked").length,
+        metricsStatus: q.status, metricsBody: await q.text(),
+      }));
+    };
+    await dump("t0");
     const reflected = await poll(async () => {
       const now = await queueMetrics(cookie);
+      await dump("poll");
       return now.tasksBlocked !== undefined && now.tasksBlocked > baseline
         ? now.tasksBlocked
         : undefined;
