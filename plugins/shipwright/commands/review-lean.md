@@ -9,8 +9,8 @@ narrative goes to `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md` and `pr_revi
 ## Arguments
 `$ARGUMENTS` (`org/repo#number`, or `number`/`#number` using `repos[0]`) is **required**. **No arguments**: respond `[silent]` and stop immediately — before any GitHub or task-store query; no PR discovery. A trailing `[preclaim:{recordId}:{commitSha}]` marker (loop orchestrator only, CBD-1.3):
 extract `PRECLAIM_RECORD_ID`/`PRECLAIM_COMMIT_SHA` and strip it before parsing. Never posts a staged review.
-## Step 1: Preflight, Config, Identity
-`command -v bun >/dev/null 2>&1 || { echo "bun is required but not installed. Install it from https://bun.sh and re-run /shipwright:review-lean."; exit 1; }` (missing → print that, stop), then `WORKSPACE_ROOT=$(pwd)`. One config fetch serves policy, subagent type and `repos[0]` (`select(. != null)`,
+## Step 1: Config, Identity
+`WORKSPACE_ROOT=$(pwd)`. One config fetch serves policy, subagent type and `repos[0]` (`select(. != null)`,
 never `// empty`, which would discard a deliberately-set `false`):
 ```bash
 CONFIG_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config"); AUTO_POST_REVIEWS=$(echo "$CONFIG_JSON" | jq -r '.autoPostReviews | select(. != null)'); ALLOW_SELF_REVIEW=$(echo "$CONFIG_JSON" | jq -r '.allowSelfReview | select(. != null)')

@@ -2875,16 +2875,8 @@ describe("review.md — jq -Rs fix for headRefOid and body newline (JNL-1.1)", (
   });
 });
 
-describe("bun prerequisite preflight (CRQ-6.1)", () => {
+describe("bun prerequisite docs", () => {
   const repoRoot = join(import.meta.dir, "..", "..", "..");
-
-  it("review.md preflights bun before Step 3 and names the install URL", () => {
-    const md = readFileSync(join(import.meta.dir, "review.md"), "utf-8");
-    const preflight = md.indexOf("command -v bun");
-    expect(preflight).toBeGreaterThan(-1);
-    expect(preflight).toBeLessThan(md.indexOf("## Step 3:"));
-    expect(md).toContain("https://bun.sh");
-  });
 
   it("quickstart first-PR prerequisites and README mention Bun", () => {
     const quickstart = readFileSync(

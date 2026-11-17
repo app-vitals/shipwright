@@ -770,21 +770,15 @@ describe("dev-task references — missing-branch block reason (DBH-1.1)", () => 
   });
 });
 
-describe("first-PR preflight (CRQ-7.3)", () => {
-  for (const cmd of ["plan-session", "dev-task"]) {
-    it(`${cmd}.md preflights gh auth, GitHub remote and git identity before any step`, () => {
+describe("commands carry no onboarding preflight section", () => {
+  for (const cmd of ["dev-task", "plan-session", "review", "review-lean"]) {
+    it(`${cmd}.md has no preflight section`, () => {
       const md = readFileSync(join(import.meta.dir, `${cmd}.md`), "utf-8");
-      const pre = md.indexOf(
-        "**Preflight — GitHub auth, repo and git identity.**",
-      );
-      expect(pre).toBeGreaterThan(-1);
-      expect(pre).toBeLessThan(md.indexOf("## Step 1:"));
-      expect(md).toContain("gh auth status");
-      expect(md).toContain("gh auth login");
-      expect(md).toContain("git remote get-url origin");
-      expect(md).toContain("git config --global user.name");
-      expect(md).toContain("git config --global user.email");
-      expect(md).toContain("must not set, guess or invent a git identity");
+      expect(md).not.toContain("## Preflight");
+      expect(md).not.toContain("**Preflight —");
+      expect(md).not.toContain("gh auth status");
+      expect(md).not.toContain("command -v bun");
+      expect(md).not.toMatch(/^## Step \d+: Preflight/m);
     });
   }
 });
