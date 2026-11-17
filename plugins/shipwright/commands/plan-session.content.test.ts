@@ -235,12 +235,13 @@ describe("plan-session.md — repo auto-detect preserves org/repo format (PRF-1.
     );
   });
 
-  it("Step 6b task JSON template still writes the full org/repo value into repo", () => {
+  it("Step 6b task JSON template writes the full org/repo value of the task's target repo into repo", () => {
     const section = extractStep6bSection(content);
     const codeBlockMatch = section.match(/```json[\s\S]*?```/);
     expect(codeBlockMatch).not.toBeNull();
     const codeBlock = codeBlockMatch?.[0] ?? "";
-    expect(codeBlock).toContain('"repo": "{repo}"');
+    expect(codeBlock).toContain('"repo": "{target-repo}"');
+    expect(codeBlock).not.toContain('"repo": "{repo}"');
   });
 });
 
@@ -755,8 +756,9 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
     const inputs = extractInputsSubsection(content);
     const declared = [...inputs.matchAll(/^- \*\*`([^`]+)`\*\*/gm)].map((m) => m[1]);
     expect(declared).toEqual([
-      "specContent",
-      "repo",
+      "specs",
+      "homeRepo",
+      "repos",
       "session",
       "existingSessionTaskIds",
       "openCrossSessionTasks",
@@ -797,18 +799,26 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
   });
 
   /**
-   * `specContent` is a required contract input with no omission rule, but Step 1 explicitly
-   * allows an interactive session with no PRODUCT-SPEC.md ("What are we building?"). Without a
-   * rule for that path a human running this command against a configured methodology in a
-   * spec-less repo would dispatch with `specContent` undefined.
+   * `specs[]` is a required contract input with no omission rule, but Step 1 explicitly
+   * allows an interactive session with no registered spec ("What are we building?"). Without a
+   * rule for that path a human running this command against a configured methodology would
+   * dispatch with `specs` empty.
    */
-  it("says what specContent carries on Step 1's interactive no-spec-file path", () => {
-    const specContent = extractInputBullet(content, "specContent");
-    const lower = prose(specContent);
+  it("says what specs carries on the interactive no-spec path and that it replaces specContent", () => {
+    const specs = extractInputBullet(content, "specs");
+    const lower = prose(specs);
     expect(lower).toContain("what are we building?");
     expect(lower).toMatch(/required/);
-    expect(lower).toMatch(/never (omitted|dispatched with `?speccontent`? missing)/);
-    expect(lower).toMatch(/pass the description collected|passed as `?speccontent/);
+    expect(lower).toMatch(/never (omitted|dispatched with `?specs`? (missing|empty))/);
+    expect(lower).toMatch(/\{number, path, content\}/);
+    expect(lower).toContain("no longer exists");
+  });
+
+  it("passes homeRepo and repos to the subagent, with homeRepo always in repos", () => {
+    expect(prose(extractInputBullet(content, "homeRepo"))).toMatch(/home repo/);
+    const repos = prose(extractInputBullet(content, "repos"));
+    expect(repos).toContain("homerepo");
+    expect(repos).toMatch(/union/);
   });
 
   it("requires exactly the contract's inputs — no more, no less — and passes autonomous as {taskId}", () => {
@@ -929,25 +939,32 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
   });
 
   /**
-   * The PSM-1.1 contract specifies `repo` as "the `repo` passed in, unchanged" — a value
-   * contract, not key-presence. `validateRepo` in task-store/src/routes/tasks.ts returns early
-   * on a literal `null`, so a `null` repo is written through and leaves the task undispatchable
-   * (dev-task derives its worktree paths from `task.repo`), while a wrong/hallucinated
-   * `org/repo` 400s the whole batch after Step 6a already wrote PLAN.md.
+   * Every task's `repo` must be one of the session's target repos (PLU-4.2) — a membership
+   * check, not equality with one argument. A `null` repo is still written through silently by
+   * the bulk endpoint, and an out-of-scope `org/repo` 400s the batch after PLAN.md is on disk.
    */
-  it("value-checks repo against the repo input rather than merely asserting key presence", () => {
+  it("checks repo for membership in the repos input: accepts a listed repo, rejects one outside it", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     const repoIdx = sub.indexOf("**`repo`**");
     expect(repoIdx).toBeGreaterThan(-1);
     const check = prose(sub.slice(repoIdx));
-    expect(check).toMatch(/equals the `?repo`? value passed in as an input, exactly/);
+    expect(check).toMatch(/is one of the `?repos`? entries passed in as an input/);
+    expect(check).toMatch(/accepted/);
+    expect(check).toMatch(/outside (that|the) (list|`?repos`?)[^.]*rejected/);
+    expect(check).not.toMatch(/equals the `?repo`? value passed in/);
     expect(check).toMatch(/value contract, not just key-presence/);
-    expect(check).toMatch(/key-presence alone is not enough/);
     expect(check).toMatch(/`?"?repo"?: null`?/);
     expect(check).toMatch(/undispatchable/);
     expect(check).toMatch(/validaterepo/);
     // Mirrors check 11's session value-equality standard.
     expect(check).toMatch(/check 11/);
+  });
+
+  it("checks specNumber against the specs input", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const idx = sub.indexOf("**`specNumber`**");
+    expect(idx).toBeGreaterThan(-1);
+    expect(prose(sub.slice(idx))).toMatch(/matches the `?number`? of an entry in the `?specs`? input/);
   });
 
   it("rejects the WHOLE batch on any failing task — all-or-nothing, do not POST anything", () => {
@@ -1570,5 +1587,124 @@ describe("plan-session.md — --initiative close-out (ICO-1.1)", () => {
     expect(s).toContain("Configured Methodology Dispatch");
     expect(s).toMatch(/built-in/);
     expect(s).toContain("Step 6b");
+  });
+});
+
+describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
+  function extractStep0Section(md: string): string {
+    const match = md.match(/## Step 0: Resolve Session, Specs and Repos[\s\S]*?(?=\n## Step 1: Load Context)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  function extractArgsSection(md: string): string {
+    const match = md.match(/^---[\s\S]*?Wait for user confirmation before continuing to Step 1\./);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("documents the new form with --repos, --owner and --initiative", () => {
+    const args = extractArgsSection(content);
+    expect(args).toContain("/shipwright:plan-session {session} [--repos a,b] [--owner email] [--initiative id]");
+    expect(args).toContain("--repos");
+    expect(args).toContain("--owner");
+  });
+
+  it("specifies the two-argument {repo} {session} form for a new and an existing session (AC1)", () => {
+    const args = prose(extractArgsSection(content));
+    expect(args).toContain("`{repo} {session}`");
+    expect(args).toMatch(/new session[^.]*that repo is (the )?home and (the )?sole target/);
+    expect(args).toMatch(/existing session[^.]*stored home repo wins[^.]*named repo is added as a target/);
+    expect(args).toContain("autonomous dispatcher");
+  });
+
+  it("plans the session's unplanned specs and asks what to add when there are none and a human is present", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toContain("kind=spec&planned=false");
+    expect(step0).toMatch(/no unplanned specs[^.]*human is present[^.]*ask/);
+  });
+
+  it("defines target repos as the union of the specs' repos and --repos, each explored from its SHIPWRIGHT_REPO_DIR checkout", () => {
+    const step0 = extractStep0Section(content);
+    expect(prose(step0)).toMatch(/union of the (unplanned )?specs'? `?repos`? and `?--repos`?/);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted plan-session doc text, not JS interpolation
+    expect(step0).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
+    expect(prose(step0)).toMatch(/missing checkout[^.]*stop[^.]*naming the repo/);
+  });
+
+  it("runs the scope preflight in Step 0, before Step 6a writes anything, and stops naming uncovered repos (AC2)", () => {
+    const step0 = extractStep0Section(content);
+    expect(step0).toContain("/sessions/preflight/scope");
+    expect(prose(step0)).toMatch(/uncovered[^.]*stop[^.]*naming/);
+    expect(prose(step0)).toContain("before step 6a writes anything");
+    expect(content.indexOf("/sessions/preflight/scope")).toBeLessThan(
+      content.indexOf("**Step 6a — Save the plan to disk:**"),
+    );
+    expect(prose(step0)).toContain("credential check, not a permission model");
+  });
+
+  it("makes an uncovered repo a hard contradiction under --autonomous", () => {
+    const step0 = extractStep0Section(content);
+    expect(step0).toContain("plan_session_autonomous_hard_contradiction");
+  });
+
+  it("warns, best-effort and never blocking, when no agent has a target repo in scope", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toMatch(/no agent has[^.]*target repo[^.]*in scope/);
+    expect(step0).toMatch(/best-effort/);
+    expect(step0).toMatch(/never blocks/);
+  });
+
+  it("warns once and keeps today's behaviour when the store lacks the document endpoints", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toContain("docs_api=off");
+    expect(step0).toMatch(/warn once/);
+    expect(step0).toMatch(/today's behaviour/);
+  });
+
+  it("keeps the existing task prefix and continues the milestone number, derived from the session's task ids", () => {
+    const step5 = content.slice(content.indexOf("## Step 5: Task Breakdown"));
+    const idLine = step5.split("\n").find((l) => l.startsWith("- **ID**")) ?? "";
+    const lower = prose(idLine);
+    expect(lower).toMatch(/existing task prefix/);
+    expect(lower).toMatch(/continue the milestone number/);
+    expect(lower).toMatch(/highest/);
+  });
+
+  it("resolves owner by --owner, initiative, spec/plan inheritance and never writes it to a file", () => {
+    const step0 = prose(extractStep0Section(content));
+    expect(step0).toMatch(/`?--owner`?[^.]*overrides/);
+    expect(step0).toContain("initiative");
+    expect(step0).toMatch(/inherit/);
+    expect(step0).toMatch(/never written (in)?to (a|any) committed file/);
+    expect(step0).toMatch(/decision log/);
+  });
+
+  it("Step 6b tasks carry planDocumentId, specDocumentId, owner, originKind document and originRef = plan document id (AC4)", () => {
+    const section = extractStep6bSection(content);
+    const block = section.match(/```json[\s\S]*?```/)?.[0] ?? "";
+    expect(block).toContain('"source": "planning/{session}/PLAN.md"');
+    expect(block).toContain('"planDocumentId": "{PLAN_DOC_ID}"');
+    expect(block).toContain('"specDocumentId": "{SPEC_DOC_ID}"');
+    expect(block).toContain('"owner": "{owner}"');
+    expect(block).toContain('"originKind": "document"');
+    expect(block).toContain('"originRef": "{PLAN_DOC_ID}"');
+    const lower = prose(section);
+    expect(lower).toMatch(/spec's owner|owner of the spec/);
+    expect(lower).toMatch(/omit `?owner`? when (empty|none|unset)/);
+  });
+
+  it("marks planned specs with plannedAt and widens the session's declared repos after the bulk POST", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain("plannedAt");
+    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}");
+    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}");
+    expect(prose(section)).toMatch(/widen/);
+  });
+
+  it("no longer ties the input to a single PRODUCT-SPEC.md: Step 1 reads specs[] with the legacy file as spec 1", () => {
+    const step1 = prose(content.slice(content.indexOf("## Step 1: Load Context"), content.indexOf("### `--autonomous` Mode")));
+    expect(step1).toContain("specs[]");
+    expect(step1).toMatch(/`?product-spec\.md`? is spec 1/);
   });
 });
