@@ -11,7 +11,7 @@ Shipwright Harness is the open-source autonomous delivery system in your own env
 | **A** | **Plugin** (the system) | `plugins/shipwright/` | The Claude Code plugin users `/plugin install` — commands, skills, agents, scripts for the full delivery loop. Repo-agnostic. |
 | **B** | **Metrics dashboard** | `metrics/` | Hono service: backend-agnostic `MetricsProvider` JSON endpoints + a server-rendered dashboard. Two modes: fixtures (offline), taskstore (live task-store + admin APIs). |
 | **C** | **Shipwright agent** | `agent/` + `admin/` | Hono service + Prisma store (in `@shipwright/admin`); a thin autonomous runner: pick next ready task → build → ship PR → forward metrics. |
-| **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema defines `Task`, `PullRequest`, `PrFinding`, and `TaskToken` models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
+| **D** | **Task store service** | `task-store/` | Postgres-backed task queue, PR tracking, and scoped tokens. Prisma schema (`task-store/prisma/schema.prisma`) defines `Task`, `PullRequest`, `PrFinding`, `CoverageSnapshot`, `Session`, `PlanDocument`, `SystemCronDefinition`, `TaskToken` and related models; re-exported as `@shipwright/task-store` for use by plugin scripts and agent services. Replaces the JSON file fallback. |
 
 The hard architectural rule: **no new coupling.** The plugin stays repo-agnostic; the metrics service and the agent each stand alone. Everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls happen only when an env var explicitly enables them.
 
@@ -46,7 +46,7 @@ A repo or team can extend this loop with its own commands, skills, or scheduled 
 
 ## B — Metrics dashboard
 
-A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, merged-prs, cost-efficiency, tokens) and unauthenticated `/public/*` (summary, trends, features, queue, merged-prs, cost-efficiency), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
+A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, merged-prs, cost-efficiency, tokens, coverage, pr-outcomes) and unauthenticated `/public/*` (summary, trends, features, queue, merged-prs, cost-efficiency), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
 
 ## C — Shipwright agent
 
@@ -56,7 +56,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 
 ## D — Task store service
 
-Postgres-backed task queue, PR tracking, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and `/health/ready` are unauthenticated (liveness and readiness probes, respectively), everything else requires a bearer token.
+Postgres-backed task queue, PR tracking, coverage snapshots, planning documents, system-cron definitions, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and `/health/ready` are unauthenticated (liveness and readiness probes, respectively), everything else requires a bearer token.
 
 ## MCP Server
 
@@ -93,6 +93,7 @@ The chat service (web chat threads, messages, and scoped agent tokens) is hosted
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwrightharness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
 | Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
+| Preview environment | `scripts/preview-env.ts`, `preview/canary/` | Throwaway full-stack cluster for CI (`task preview:up`, `task preview:canary`) using `charts/shipwright/examples/values-preview.yaml`. See [deploy-kubernetes-providers.md](./deploy-kubernetes-providers.md#preview-throwaway-ci-clusters). |
 | Local state | `state/` | Git-ignored JSON fallback (local-only, used when the Postgres task-store service is unavailable) + cached review state. |
 
 ## Workspace layout

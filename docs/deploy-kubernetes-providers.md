@@ -635,3 +635,25 @@ hook, and the mutual-exclusion rule between `ingress-nginx` and `traefik`),
 and [Minikube (local)](#minikube-local) for a dev-tuned variant of this same
 profile (`task minikube:cloud-native` / `task minikube:cloud-native:traefik`).
 
+## Preview (throwaway CI clusters)
+
+`charts/shipwright/examples/values-preview.yaml` is a full-stack profile for a
+throwaway cluster that is deleted after a CI job (admin, metrics, task-store,
+mcp-server, chat and bundled PostgreSQL, no persistence). It runs
+`auth.mode: open` with a known PostgreSQL password, so **never install it on a
+cluster that outlives the job**. The five CI-built images use local
+repositories and `pullPolicy: Never`; the bring-up script side-loads them.
+
+```bash
+task preview:up -- --context <ctx> --chart charts/shipwright [--host <h>] [--htpasswd-file <f>] [--env-out <file>]
+task preview:canary ENV_FILE=<file>   # deployed-target suite in preview/canary/
+```
+
+[`scripts/preview-env.ts`](../scripts/preview-env.ts) creates the three Secrets
+the profile references, waits for the ingress controller, runs
+`helm dependency build` and installs onto the existing context (it never
+creates or deletes a cluster). With `--htpasswd-file` the release also carries
+basic-auth annotations (gate helpers in `scripts/preview-gate.ts`);
+`scripts/preview-hold.ts` keeps a public preview alive and decides when it
+ends. The design lives in
+[`docs/superpowers/specs/2026-11-14-preview-environment-design.md`](./superpowers/specs/2026-11-14-preview-environment-design.md).
