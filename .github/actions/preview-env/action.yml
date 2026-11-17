@@ -1,0 +1,151 @@
+name: Preview environment
+description: >-
+  Builds the five first-party images from an (untrusted) source checkout,
+  side-loads them into a kind cluster named "preview" and brings the full
+  Shipwright preview stack up with the bring-up script from a trusted
+  checkout. A composite action, not a reusable workflow, so the cluster is
+  still alive for the caller's later steps. Requires the repo checked out at
+  the workspace root (local action) plus the two checkouts passed as inputs.
+  No secrets, no build args: the source is untrusted.
+inputs:
+  source-path:
+    description: Checkout of the code under test (images are built from it, and its chart is installed).
+    required: true
+  trusted-path:
+    description: Trusted checkout that supplies scripts/preview-env.ts and its dependencies.
+    required: true
+  host:
+    description: Optional ingress host passed to the bring-up script.
+    required: false
+    default: ""
+  htpasswd-file:
+    description: Optional htpasswd file for the ingress basic-auth gate.
+    required: false
+    default: ""
+outputs:
+  env-file:
+    description: Path of the env file the bring-up script wrote (PREVIEW_* targets).
+    value: ${{ steps.up.outputs.env-file }}
+runs:
+  using: composite
+  steps:
+    - name: Install Helm
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      with:
+        version: v4.3.1
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: "1.x"
+
+    - name: Add Helm chart repos
+      uses: ./.github/actions/helm-repos
+      with:
+        repos: |
+          ingress-nginx https://kubernetes.github.io/ingress-nginx
+          traefik https://traefik.github.io/charts
+          jetstack https://charts.jetstack.io
+          agent https://app-vitals.github.io/agent
+
+    - name: Create kind cluster
+      uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+      with:
+        version: v0.33.0
+        cluster_name: preview
+
+    # The kind ingress-nginx manifest schedules its controller only on a node
+    # labelled ingress-ready=true; kind-action's default cluster has no label.
+    - name: Label kind node for ingress-nginx
+      shell: bash
+      run: kubectl --context kind-preview label node --all ingress-ready=true --overwrite
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Build admin image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.source-path }}
+        file: ${{ inputs.source-path }}/admin/Dockerfile
+        tags: shipwright-admin:0.1.0
+        load: true
+        push: false
+        cache-from: type=gha,scope=preview-admin
+        cache-to: type=gha,scope=preview-admin,mode=max,ignore-error=true
+
+    - name: Build metrics image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.source-path }}
+        file: ${{ inputs.source-path }}/metrics/Dockerfile
+        tags: shipwright-metrics:0.1.0
+        load: true
+        push: false
+        cache-from: type=gha,scope=preview-metrics
+        cache-to: type=gha,scope=preview-metrics,mode=max,ignore-error=true
+
+    - name: Build task-store image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.source-path }}
+        file: ${{ inputs.source-path }}/task-store/Dockerfile
+        tags: shipwright-task-store:0.1.0
+        load: true
+        push: false
+        cache-from: type=gha,scope=preview-task-store
+        cache-to: type=gha,scope=preview-task-store,mode=max,ignore-error=true
+
+    - name: Build mcp-server image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.source-path }}
+        file: ${{ inputs.source-path }}/mcp-server/Dockerfile
+        tags: shipwright-mcp-server:0.1.0
+        load: true
+        push: false
+        cache-from: type=gha,scope=preview-mcp-server
+        cache-to: type=gha,scope=preview-mcp-server,mode=max,ignore-error=true
+
+    - name: Build agent image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.source-path }}
+        file: ${{ inputs.source-path }}/agent/Dockerfile
+        tags: shipwright-agent:0.1.0
+        load: true
+        push: false
+        cache-from: type=gha,scope=preview-agent
+        cache-to: type=gha,scope=preview-agent,mode=max,ignore-error=true
+
+    - name: Load images into the kind cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        kind load docker-image --name preview \
+          shipwright-admin:0.1.0 \
+          shipwright-metrics:0.1.0 \
+          shipwright-task-store:0.1.0 \
+          shipwright-mcp-server:0.1.0 \
+          shipwright-agent:0.1.0
+
+    - name: Bring up the preview stack
+      id: up
+      shell: bash
+      env:
+        SOURCE_PATH: ${{ inputs.source-path }}
+        TRUSTED_PATH: ${{ inputs.trusted-path }}
+        PREVIEW_HOST: ${{ inputs.host }}
+        PREVIEW_HTPASSWD_FILE: ${{ inputs.htpasswd-file }}
+      run: |
+        set -euo pipefail
+        ENV_FILE="$RUNNER_TEMP/preview.env"
+        SOURCE_ABS="$(cd "$SOURCE_PATH" && pwd)"
+        args=(--context kind-preview --chart "$SOURCE_ABS/charts/shipwright" --env-out "$ENV_FILE")
+        if [ -n "$PREVIEW_HOST" ]; then args+=(--host "$PREVIEW_HOST"); fi
+        if [ -n "$PREVIEW_HTPASSWD_FILE" ]; then args+=(--htpasswd-file "$PREVIEW_HTPASSWD_FILE"); fi
+        cd "$TRUSTED_PATH"
+        # Equivalent of `task preview:up -- <args>` (Taskfile.yml preview:up).
+        bun install --frozen-lockfile
+        bun run scripts/preview-env.ts "${args[@]}"
+        echo "env-file=$ENV_FILE" >> "$GITHUB_OUTPUT"

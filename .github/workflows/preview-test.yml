@@ -1,0 +1,128 @@
+name: Preview Test
+
+# Automatic preview test: brings the full stack up on a throwaway kind cluster
+# and runs `helm test` plus the deployed-target canary. Runs on untrusted PR
+# code (including forks), so: pull_request only (never pull_request_target),
+# read-only token, no secrets, no environment, third-party actions SHA-pinned.
+# Deliberately NOT a required check.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Decides whether the diff can affect the preview stack. Fails open: any
+  # inability to compute the diff defaults to true (run the test).
+  changes:
+    name: Detect changed paths
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    outputs:
+      preview: ${{ steps.filter.outputs.preview }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Determine whether the preview stack is affected
+        id: filter
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! git rev-parse --verify "$PR_BASE_SHA" >/dev/null 2>&1 \
+            || ! git rev-parse --verify "$PR_HEAD_SHA" >/dev/null 2>&1; then
+            echo "Could not resolve base/head — running the preview test to be safe."
+            echo "preview=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! CHANGED=$(git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA"); then
+            echo "preview=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # package.json / bun.lock carry the platform version pins, so
+          # automated platform-release and chart-bump PRs are tested too.
+          PATTERN='^(charts/|admin/|metrics/|task-store/|mcp-server/|agent/|preview/|scripts/preview-|\.github/actions/preview-env/|\.github/workflows/preview-test\.yml$|\.github/workflows/preview\.yml$|package\.json$|bun\.lock$)'
+
+          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qE "$PATTERN"; then
+            echo "preview=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "preview=false" >> "$GITHUB_OUTPUT"
+            echo "No preview-relevant changes — skipping the cluster."
+          fi
+
+  preview-test:
+    name: preview test
+    needs: changes
+    if: needs.changes.outputs.preview == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      # Workspace root: provides the local ./ actions.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Code under test (the PR head).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: source
+          persist-credentials: false
+      # Trusted scripts: the base branch, never PR-controlled.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 53492bbee664db2f317e1af1c22102ccbd549677
+          path: trusted
+          persist-credentials: false
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Bring up the preview stack
+        id: preview
+        uses: ./.github/actions/preview-env
+        with:
+          source-path: source
+          trusted-path: trusted
+
+      - name: helm test
+        run: helm test shipwright --namespace shipwright --timeout 5m
+
+      - name: Canary
+        working-directory: trusted
+        env:
+          ENV_FILE: ${{ steps.preview.outputs.env-file }}
+        run: task preview:canary ENV_FILE="$ENV_FILE"
+
+      # Pod status, events and logs only. Never Secret objects.
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          mkdir -p diagnostics/logs
+          kubectl get pods,deployments,services,ingress,jobs --all-namespaces -o wide > diagnostics/status.txt 2>&1 || true
+          kubectl describe pods --namespace shipwright > diagnostics/describe-pods.txt 2>&1 || true
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp > diagnostics/events.txt 2>&1 || true
+          for pod in $(kubectl get pods --namespace shipwright -o name 2>/dev/null); do
+            name="${pod#pod/}"
+            kubectl logs "$pod" --namespace shipwright --all-containers --tail=500 > "diagnostics/logs/${name}.log" 2>&1 || true
+            kubectl logs "$pod" --namespace shipwright --all-containers --previous --tail=500 > "diagnostics/logs/${name}.previous.log" 2>&1 || true
+          done
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-diagnostics
+          path: diagnostics
+          if-no-files-found: ignore
