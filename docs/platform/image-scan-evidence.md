@@ -56,7 +56,7 @@ Node is needed because the Claude Code CLI requires a real Node runtime. A scan 
 Image scanning is in the release workflow, not in pull request CI.
 
 - **Pull request CI (`.github/workflows/ci.yml`)**: has no image scan step. Per-PR Trivy scans were considered and removed before PR #110 merged, at reviewer direction, so PR builds produce no scan output.
-- **Release workflow (`publish-image` job)**: this is the only place image scans run. The job runs once per matrix entry (`agent`, `agent-admin`, `agent-chat`), named `Image ghcr.io/app-vitals/<image>`.
+- **Release workflow (`.github/workflows/release.yml`, `publish-image` job)**: this is the only place image scans run. The job runs once per matrix entry (`agent`, `agent-admin`, `agent-chat`), named `Image ghcr.io/app-vitals/<image>`.
 
 The release-workflow scan steps are introduced in PR #115. Each `publish-image` matrix entry does the following:
 
