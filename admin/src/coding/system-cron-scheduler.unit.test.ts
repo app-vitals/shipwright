@@ -336,6 +336,75 @@ describe("SystemCronScheduler — lookup App and errors", () => {
   });
 });
 
+describe("SystemCronScheduler — per-definition repo selection (CRS-1.2)", () => {
+  const NOW = "2026-11-14T07:00:05Z";
+  const fresh = { enabledAt: "2026-11-13T08:00:00.000Z" };
+
+  it("'all' fires for every unarchived repo, as before", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [def({ ...fresh, repoScope: "all", repos: [] })];
+    await scheduler.tick();
+    expect(store.fires.map((f) => f.repos)).toEqual([
+      ["acme/widgets", "acme/gadgets"],
+    ]);
+  });
+
+  it("'selected' fires only for selected repos still present and unarchived", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [
+      def({
+        ...fresh,
+        repoScope: "selected",
+        repos: ["acme/gadgets", "acme/old", "acme/gone"],
+      }),
+    ];
+    await scheduler.tick();
+    expect(store.fires.map((f) => f.repos)).toEqual([["acme/gadgets"]]);
+  });
+
+  it("an empty intersection skips that definition only, logging and recording nothing", async () => {
+    const { store, scheduler, logs } = setup(NOW);
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/old"] }),
+      def({ id: "other", schedule: "0 6 * * *", ...fresh }),
+    ];
+    const result = await scheduler.tick();
+    expect(result.status).toBe("fired");
+    expect(result.errors).toEqual([]);
+    expect(store.fires.map((f) => f.id)).toEqual(["other"]);
+    expect(logs.some((l) => l.includes("docs-freshness: none of its"))).toBe(
+      true,
+    );
+  });
+
+  it("mixed definitions each get their own repo list", async () => {
+    const { store, scheduler } = setup(NOW);
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/widgets"] }),
+      def({ id: "everyone", schedule: "0 6 * * *", ...fresh }),
+    ];
+    await scheduler.tick();
+    expect(store.fires.map((f) => [f.id, f.repos])).toEqual([
+      ["docs-freshness", ["acme/widgets"]],
+      ["everyone", ["acme/widgets", "acme/gadgets"]],
+    ]);
+  });
+
+  it("skipped-no-repos still wins when the listing has no unarchived repos", async () => {
+    const { store, scheduler } = setup(
+      NOW,
+      lister({
+        configured: true,
+        repos: [{ fullName: "acme/old", archived: true }],
+      }),
+    );
+    store.defs = [
+      def({ ...fresh, repoScope: "selected", repos: ["acme/old"] }),
+    ];
+    expect((await scheduler.tick()).status).toBe("skipped-no-repos");
+  });
+});
+
 describe("createHttpSystemCronStore", () => {
   function recorder(responses: Response[]) {
     const calls: { url: string; init?: RequestInit }[] = [];
