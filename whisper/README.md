@@ -12,7 +12,7 @@ docker build --platform linux/amd64 -f whisper/Dockerfile -t shipwright-whisper:
 docker run --rm --entrypoint dpkg-query shipwright-whisper:security -W libbrotli1 libbrotli-dev
 ```
 
-`build-whisper.yml` builds on pull requests and publishes only after a successful
+The `whisper-*` jobs in `release.yml` build on pull requests and publishes only after a successful
 CI run for the same upstream-main commit. It uses a commit-specific tag
 `ghcr.io/app-vitals/shipwright-whisper:sha-<commit>`. No chart default or running
 installation changes until an operator selects the published image by digest.
@@ -21,7 +21,7 @@ failed and a later unrelated commit passed), dispatch the recovery from main wit
 the successful CI run id:
 
 ```sh
-gh workflow run build-whisper.yml --repo app-vitals/shipwright --ref main -f ci_run_id=123456
+gh workflow run release.yml --repo app-vitals/shipwright --ref main -f ci_run_id=123456
 ```
 
 The recovery validates the workflow id, upstream repository, main branch, push

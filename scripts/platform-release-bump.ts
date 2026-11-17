@@ -12,7 +12,7 @@
  *
  * It also re-pins `ARG PLATFORM_VERSION=` in agent/Dockerfile (AGR-4.4): the
  * shipwright-agent image is built FROM the platform image at that version, so
- * merging the bump PR is what makes build-agent.yml cut a new agent-vX image,
+ * merging the bump PR is what makes release.yml cut a new agent-vX image,
  * and agent-platform-image.content.test.ts requires it to equal the
  * @app-vitals/agent-lib pin.
  *

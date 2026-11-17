@@ -1,0 +1,362 @@
+# Shipwright release workflow (RCN-9.3; release standard, ADR 0002). Replaces the six per-service build-*.yml workflows.
+#
+# Two families of artifact live here, as separate jobs:
+#
+#   1. Semver services (agent, admin, metrics, task-store, mcp-server): a matrix
+#      job runs once per service whose paths changed. Step order is fixed so a git
+#      tag only exists for an image that built, passed verification and was pushed:
+#      compute tag (dry run) -> build (local, no push) -> verify -> push -> tag.
+#      The tag is annotated (message = release record trailers) and is pushed with
+#      DISPATCH_TOKEN, not GITHUB_TOKEN, so the tag push still triggers
+#      auto-bump-chart.yml and sync-plugin-version.yml (GITHUB_TOKEN pushes
+#      trigger no workflows).
+#
+#   2. Whisper (validate / changes / publish): a CVE-rebuild of a third-party
+#      image. It has no semver tag and no git tag; images are tagged
+#      sha-<commit>. It also builds on pull requests and has a workflow_dispatch
+#      recovery path (ci_run_id). Kept as its own jobs, unchanged in behaviour,
+#      because none of that fits the semver matrix.
+#
+# Not adopted from the template: workflow_dispatch with run_id/base_tag and the
+# run-name. The only dispatch path here is whisper's ci_run_id recovery, and
+# sharing a dispatch between whisper and the semver services would either also
+# rebuild every service or need a second CI-run resolver. The release-record
+# run-id label and Release-Run trailer are therefore always empty here.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful upstream-main CI run to publish (whisper recovery after a missed/failed earlier build)
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - "whisper/**"
+      - ".github/workflows/release.yml"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+# Least privilege at the workflow level; jobs widen as needed. No job needs
+# contents:write: the git tag is pushed with secrets.DISPATCH_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Semver services
+  # ---------------------------------------------------------------------------
+  filter:
+    name: filter changed paths
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      # One row per semver service. image = ghcr.io/app-vitals/shipwright-<service>.
+      # latest: also push :latest (task-store: default image for scripts/local-store.sh).
+      SERVICES: >-
+        [
+        {"service":"agent","tag_prefix":"agent-v","dockerfile":"agent/Dockerfile","image":"ghcr.io/app-vitals/shipwright-agent","latest":"false"},
+        {"service":"admin","tag_prefix":"admin-v","dockerfile":"admin/Dockerfile","image":"ghcr.io/app-vitals/shipwright-admin","latest":"false"},
+        {"service":"metrics","tag_prefix":"metrics-v","dockerfile":"metrics/Dockerfile","image":"ghcr.io/app-vitals/shipwright-metrics","latest":"false"},
+        {"service":"task-store","tag_prefix":"task-store-v","dockerfile":"task-store/Dockerfile","image":"ghcr.io/app-vitals/shipwright-task-store","latest":"true"},
+        {"service":"mcp-server","tag_prefix":"mcp-server-v","dockerfile":"mcp-server/Dockerfile","image":"ghcr.io/app-vitals/shipwright-mcp-server","latest":"false"}
+        ]
+    outputs:
+      any: ${{ steps.select.outputs.any }}
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve base SHA
+        id: base
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "sha=$(git rev-parse "$HEAD_SHA"~1)" >> "$GITHUB_OUTPUT"
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ steps.base.outputs.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
+          filters: |
+            agent:
+              - "agent/**"
+              - "plugins/**"
+              - ".claude-plugin/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/release.yml"
+            admin:
+              - "admin/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/release.yml"
+            metrics:
+              - "metrics/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/release.yml"
+            task-store:
+              - "task-store/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/release.yml"
+            mcp-server:
+              - "mcp-server/**"
+              - "package.json"
+              - "bun.lock"
+              - ".github/workflows/release.yml"
+
+      - name: Select services to release
+        id: select
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+        run: |
+          matrix=$(jq -c --argjson changes "$CHANGES" \
+            '{include: [.[] | select(.service as $s | $changes | index($s))]}' <<<"$SERVICES")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "any=$(jq -c '.include | length > 0' <<<"$matrix")" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: release ${{ matrix.service }}
+    needs: filter
+    if: needs.filter.outputs.any == 'true'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.filter.outputs.matrix) }}
+    # Serialise releases of the same service (tag computation reads existing tags).
+    concurrency:
+      group: release-${{ matrix.service }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write # docker/login-action push to GHCR
+    env:
+      # The commit CI ran on (workflow_run's github.sha is the latest main commit).
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SERVICE: ${{ matrix.service }}
+      IMAGE: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 1. Compute the next version. Dry run: creates nothing.
+      - name: Compute next tag
+        id: tag
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7.0.0
+        with:
+          github_token: ${{ secrets.DISPATCH_TOKEN }}
+          tag_prefix: ${{ matrix.tag_prefix }}
+          default_bump: patch
+          fetch_all_tags: true
+          dry_run: true
+
+      # 2. Build locally; nothing is pushed yet.
+      - name: Build Docker image
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          LATEST: ${{ matrix.latest }}
+          WORKFLOW_RUN: ${{ github.run_id }}
+        run: |
+          ARGS=()
+          if [ "$SERVICE" = agent ]; then
+            # Bare semver off the tag (agent-v0.117.0 -> 0.117.0), stamped into the
+            # image so the deployed artifact's plugin.json matches the tag it was
+            # built for (agent/Dockerfile "sync plugin version" step). Agent only.
+            # The git-committed version for the public marketplace listing is synced
+            # asynchronously by sync-plugin-version.yml, which this tag also triggers.
+            AGENT_VERSION="${NEW_TAG#agent-v}"
+            ARGS+=(--build-arg AGENT_VERSION="$AGENT_VERSION")
+          fi
+          if [ "$LATEST" = true ]; then
+            ARGS+=(-t "$IMAGE:latest")
+          fi
+          # run-id is empty: no conductor dispatch path in this workflow (see header).
+          docker build \
+            -f "$DOCKERFILE" \
+            "${ARGS[@]}" \
+            --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
+            --label com.app-vitals.release.version="$NEW_TAG" \
+            --label com.app-vitals.release.source-sha="$SOURCE_SHA" \
+            --label com.app-vitals.release.upstream-versions= \
+            --label com.app-vitals.release.run-id= \
+            --label com.app-vitals.release.workflow-run="$WORKFLOW_RUN" \
+            -t "$IMAGE:$NEW_TAG" \
+            .
+
+      # 3. Verify what was built. A failure stops here: nothing pushed, no tag.
+      #    Only agent has a real smoke check (binaries on PATH). For every other
+      #    service this is deliberately minimal: confirm the built image exists.
+      - name: Verify image
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+        run: |
+          docker image inspect "$IMAGE:$NEW_TAG" >/dev/null
+          if [ "$SERVICE" = agent ]; then
+            docker run --rm --entrypoint /bin/sh "$IMAGE:$NEW_TAG" -c '
+              for b in mise claude gh node bun; do
+                command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }
+              done
+            '
+          fi
+
+      # 4. Push (versioned tag, then :latest where configured).
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          LATEST: ${{ matrix.latest }}
+        run: |
+          docker push "$IMAGE:$NEW_TAG"
+          if [ "$LATEST" = true ]; then
+            docker push "$IMAGE:latest"
+          fi
+
+      # 5. Create the git tag last: it exists only for an image that built, passed
+      #    verification and was pushed. Annotated, message = release record
+      #    trailers (ADR 0002). Pushed with DISPATCH_TOKEN (checkout above did not
+      #    persist credentials) so the tag push triggers auto-bump-chart.yml and
+      #    sync-plugin-version.yml; GITHUB_TOKEN pushes would not.
+      - name: Tag release
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          WORKFLOW_RUN: ${{ github.run_id }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEW_TAG" "$SOURCE_SHA" -F - <<MSG
+          Release $NEW_TAG
+
+          Release-Version: $NEW_TAG
+          Source-Sha: $SOURCE_SHA
+          Upstream-Versions:
+          Release-Run:
+          Workflow-Run: $WORKFLOW_RUN
+          MSG
+          git remote set-url origin "https://x-access-token:${DISPATCH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "refs/tags/$NEW_TAG"
+
+  # ---------------------------------------------------------------------------
+  # Whisper (sha-tagged, no git tag; see header)
+  # ---------------------------------------------------------------------------
+  whisper-validate:
+    name: whisper validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: whisper-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test publication guard
+        run: python3 -m unittest discover -s whisper -p 'test_*.py'
+      - name: Build and verify patched image
+        run: |
+          docker build --platform linux/amd64 -f whisper/Dockerfile -t shipwright-whisper:ci .
+          bash whisper/verify-image.sh shipwright-whisper:ci
+
+  whisper-changes:
+    name: whisper changes
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Resolve trusted CI commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id || github.event.workflow_run.id }}
+        run: python3 whisper/resolve-ci-run.py
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Filter image changes
+        id: filter
+        env:
+          RECOVERY: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "$RECOVERY" = true ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^ HEAD -- whisper .github/workflows/release.yml)
+          if [ -n "$changed" ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  whisper-publish:
+    name: whisper publish
+    needs: whisper-changes
+    if: needs.whisper-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: whisper-${{ github.event.workflow_run.head_sha || inputs.ci_run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/shipwright-whisper:sha-${{ needs.whisper-changes.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.whisper-changes.outputs.sha }}
+          persist-credentials: false
+      - name: Build and verify patched image
+        run: |
+          docker build --platform linux/amd64 -f whisper/Dockerfile \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=${{ needs.whisper-changes.outputs.sha }}" \
+            -t "$IMAGE" .
+          bash whisper/verify-image.sh "$IMAGE"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Push verified image
+        run: docker push "$IMAGE"

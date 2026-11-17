@@ -1,8 +1,7 @@
 name: Auto-Bump Chart Version
 
 # Triggers whenever an image-build tag is pushed for any of the Shipwright
-# services. Each build workflow (build-agent.yml, build-admin.yml,
-# build-metrics.yml, build-task-store.yml) creates a tag like agent-v*,
+# services. The release workflow (release.yml) creates a tag like agent-v*,
 # admin-v*, metrics-v*, or task-store-v* on main after a successful image push.
 # The chat image (ghcr.io/app-vitals/agent-chat) is released by app-vitals/agent
 # instead: the platform-release dispatch re-pins PLATFORM_VERSION in
