@@ -603,8 +603,8 @@ describe("GET /admin/sessions — agent names", () => {
 
 describe("GET /admin/sessions — merged Session/Slug column", () => {
   // SSP-6.8 added an Account column for platform admins (this suite's
-  // default caller), so the admin view has 8 columns — still no Slug <th>.
-  it("has no separate Slug <th> (8 columns for an admin, incl. Account)", async () => {
+  // default caller), so the admin view has 10 columns (Owner and Documents added in PLU-5.1) — still no Slug <th>.
+  it("has no separate Slug <th> (10 columns for an admin, incl. Account)", async () => {
     const app = buildApp({
       fetchTaskStoreSessions: async () => ({
         sessions: [],
@@ -617,8 +617,8 @@ describe("GET /admin/sessions — merged Session/Slug column", () => {
     const html = await res.text();
     expect(html).not.toContain("<th>Slug</th>");
     expect(html).toContain("<th>Account</th>");
-    expect(html).toContain('colspan="8"');
-    expect(html).not.toContain('colspan="9"');
+    expect(html).toContain('colspan="10"');
+    expect(html).not.toContain('colspan="11"');
   });
 
   it("shows the slug underneath the title only when it differs from the title", async () => {
@@ -880,5 +880,145 @@ describe("GET /admin/sessions — full-width page (AWT-1.1)", () => {
     });
     const html = await (await app.request("/admin/sessions")).text();
     expect(html).toMatch(/<div class="vos-page[^"]*vos-page-wide[^"]*">/);
+  });
+});
+
+// ─── PLU-5.1: owner column, Mine / All switch, documents cell ───────────────
+
+describe("GET /admin/sessions — owner view and documents", () => {
+  const ME = "me@example.com";
+  const mineSession = makeSession({
+    slug: "mine-1",
+    title: "Mine One",
+    owner: ME,
+    documents: [
+      {
+        kind: "spec",
+        number: 1,
+        repo: "org/home",
+        path: "p/SPEC-0001.md",
+        owner: ME,
+        prUrl: null,
+        state: "merged",
+        commitSha: null,
+        plannedAt: null,
+      },
+      {
+        kind: "spec",
+        number: 2,
+        repo: "org/home",
+        path: "p/SPEC-0002.md",
+        owner: ME,
+        prUrl: "https://github.com/org/home/pull/2",
+        state: "pr_open",
+        commitSha: null,
+        plannedAt: null,
+      },
+    ],
+  });
+  const otherSession = makeSession({
+    slug: "other-1",
+    title: "Other One",
+    owner: "other@example.com",
+  });
+  const all = [mineSession, otherSession];
+
+  /** Honours ?owner= like the real GET /sessions. */
+  function ownerAwareFetch(calls: URLSearchParams[] = []) {
+    return async (params: URLSearchParams) => {
+      calls.push(params);
+      const owner = params.get("owner");
+      const rows = owner ? all.filter((s) => s.owner === owner) : all;
+      return { sessions: rows, total: rows.length, limit: 50, offset: 0 };
+    };
+  }
+
+  const headers = { "x-test-user-email": ME };
+
+  it("?owner= shows only that owner's sessions", async () => {
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch() });
+    const html = await (
+      await app.request("/admin/sessions?owner=other@example.com", { headers })
+    ).text();
+    expect(html).toContain("Other One");
+    expect(html).not.toContain("Mine One");
+  });
+
+  it("defaults to Mine when the signed-in user owns sessions", async () => {
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch() });
+    const html = await (
+      await app.request("/admin/sessions", { headers })
+    ).text();
+    expect(html).toContain("Mine One");
+    expect(html).not.toContain("Other One");
+    expect(html).toMatch(
+      /class="btn btn-primary"[^>]*aria-current="true">Mine</,
+    );
+    expect(html).toContain("owner=me%40example.com");
+  });
+
+  it("defaults to All when the user owns nothing", async () => {
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch() });
+    const html = await (
+      await app.request("/admin/sessions", {
+        headers: { "x-test-user-email": "nobody@example.com" },
+      })
+    ).text();
+    expect(html).toContain("Mine One");
+    expect(html).toContain("Other One");
+    expect(html).toMatch(
+      /class="btn btn-primary"[^>]*aria-current="true">All</,
+    );
+  });
+
+  it("?owner=all shows everything even for an owner, and probes nothing", async () => {
+    const calls: URLSearchParams[] = [];
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch(calls) });
+    const html = await (
+      await app.request("/admin/sessions?owner=all", { headers })
+    ).text();
+    expect(html).toContain("Mine One");
+    expect(html).toContain("Other One");
+    expect(calls.length).toBe(1);
+    expect(calls[0].get("owner")).toBeNull();
+  });
+
+  it("falls back to All when the ownership probe fails", async () => {
+    let n = 0;
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => {
+        if (n++ === 0) throw new Error("boom");
+        return { sessions: all, total: 2, limit: 50, offset: 0 };
+      },
+    });
+    const res = await app.request("/admin/sessions", { headers });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Other One");
+  });
+
+  it("renders the Owner column and a compact documents cell", async () => {
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch() });
+    const html = await (
+      await app.request("/admin/sessions?owner=all", { headers })
+    ).text();
+    expect(html).toContain("<th>Owner</th>");
+    expect(html).toContain("<th>Documents</th>");
+    expect(html).toContain("other@example.com");
+    expect(html).toContain("2 specs");
+    expect(html).toContain("unmerged");
+    // Session with no documents: dash, no marker.
+    const otherRow = html.slice(html.indexOf("Other One"));
+    expect(otherRow.slice(0, otherRow.indexOf("</tr>"))).not.toContain(
+      "unmerged",
+    );
+  });
+
+  it("keeps the owner view in the filter form and pagination links", async () => {
+    const app = buildApp({ fetchTaskStoreSessions: ownerAwareFetch() });
+    const html = await (
+      await app.request("/admin/sessions?owner=all", { headers })
+    ).text();
+    expect(html).toContain('<input type="hidden" name="owner" value="all" />');
   });
 });

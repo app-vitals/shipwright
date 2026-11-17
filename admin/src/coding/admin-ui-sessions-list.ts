@@ -36,6 +36,12 @@ import {
   resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-work-item-pages.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
+import {
+  documentsSummary,
+  type OwnerView,
+  resolveOwnerView,
+  type SessionDocument,
+} from "./session-documents.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,
@@ -71,6 +77,12 @@ export interface Session {
     kind: "hitl" | "blocked" | "pr_blocked";
   }>;
   archived: boolean;
+  /** Owner email, set from the session's first document (PLU-5.1). */
+  owner?: string | null;
+  /** The org/repo the session's planning files live in. */
+  homeRepo?: string | null;
+  /** The session's planning documents. */
+  documents?: SessionDocument[];
   /** The session's account (SSP-6.7); every task-store row carries one. */
   accountId?: string;
 }
@@ -142,6 +154,8 @@ interface SessionsListFilters {
   q?: string;
   sort: "waitingSince" | "lastActivityAt";
   archived: boolean;
+  /** Mine / All / specific-owner view, kept in the URL as `?owner=`. */
+  ownerView: OwnerView;
 }
 
 // ─── Scope resolution ───────────────────────────────────────────────────────
@@ -248,13 +262,24 @@ function sessionRow(
     showAccount && session.accountId && session.accountId !== DEFAULT_ACCOUNT_ID
       ? `?accountId=${encodeURIComponent(session.accountId)}`
       : "";
+  const docs = documentsSummary(session.documents);
+  const documentsCell =
+    docs.specCount === 0 && !docs.needsAttention
+      ? '<span style="color:#9ca3af">—</span>'
+      : `${docs.specCount} ${docs.specCount === 1 ? "spec" : "specs"}${
+          docs.needsAttention
+            ? ' <span class="badge badge-warning" title="A document is a draft, has an open PR, or was abandoned">unmerged</span>'
+            : ""
+        }`;
   const accountCell = showAccount
     ? `<td style="font-size:12px">${badgeList(session.accountId ? [session.accountId] : [], "badge-gray")}</td>`
     : "";
   return `<tr>
     <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}${accountQuery}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>${accountCell}
+    <td style="font-size:12px">${session.owner ? escapeHtml(session.owner) : '<span style="color:#9ca3af">—</span>'}</td>
     <td style="font-size:12px">${badgeList(agentLabels, "badge-gray")}</td>
     <td style="font-size:12px">${badgeList(session.repos, "badge-purple")}</td>
+    <td style="font-size:12px">${documentsCell}</td>
     <td style="font-size:12px">${session.counts.open}/${session.counts.total}</td>
     <td style="font-size:12px">${formatTimestamp(session.waitingSince, timezone)}</td>
     <td style="font-size:12px">${formatTimestamp(session.lastActivityAt, timezone)}</td>
@@ -279,8 +304,10 @@ function renderSection(
         <thead>
           <tr>
             <th>Session</th>${showAccount ? "\n            <th>Account</th>" : ""}
+            <th>Owner</th>
             <th>Agents</th>
             <th>Repos</th>
+            <th>Documents</th>
             <th>Open/Total</th>
             <th>Waiting since</th>
             <th>Last activity</th>
@@ -290,7 +317,7 @@ function renderSection(
         <tbody>
           ${
             sessions.length === 0
-              ? `<tr><td colspan="${showAccount ? 8 : 7}" class="empty-state">No sessions.</td></tr>`
+              ? `<tr><td colspan="${showAccount ? 10 : 9}" class="empty-state">No sessions.</td></tr>`
               : sessions
                   .map((s) =>
                     sessionRow(
@@ -342,9 +369,19 @@ function renderSessionsListPage(
     : "";
 
   const makeUrl = (
-    overrides: Partial<{ archived: boolean; offset: number }>,
+    overrides: Partial<{
+      archived: boolean;
+      offset: number;
+      owner: string;
+    }>,
   ): string => {
     const params = new URLSearchParams();
+    // The view is always written explicitly so the URL reflects (and a
+    // reload preserves) what the page is showing, including a defaulted Mine.
+    const owner =
+      overrides.owner ??
+      (filters.ownerView.mode === "all" ? "all" : filters.ownerView.owner);
+    params.set("owner", owner);
     for (const r of filters.repo) params.append("repo", r);
     for (const o of filters.org) params.append("org", o);
     if (filters.agentId) params.set("agent", filters.agentId);
@@ -361,6 +398,22 @@ function renderSessionsListPage(
   const archivedToggle = filters.archived
     ? `<a href="${makeUrl({ archived: false, offset: 0 })}" class="btn btn-secondary" style="font-size:12px">← Back to active sessions</a>`
     : `<a href="${makeUrl({ archived: true, offset: 0 })}" class="btn btn-secondary" style="font-size:12px">Archived</a>`;
+
+  const ownerSwitch = (() => {
+    const tab = (label: string, active: boolean, href: string) =>
+      `<a href="${escapeHtml(href)}" class="btn ${active ? "btn-primary" : "btn-secondary"}" style="font-size:12px"${active ? ' aria-current="true"' : ""}>${label}</a>`;
+    const view = filters.ownerView;
+    const mine = view.mode === "mine";
+    const other =
+      view.mode === "owner"
+        ? `<span class="badge badge-gray">Owner: ${escapeHtml(view.owner)}</span>`
+        : "";
+    return `<div id="owner-switch" style="display:flex;gap:6px;align-items:center;margin-bottom:16px">
+      ${userName ? tab("Mine", mine, makeUrl({ owner: userName, offset: 0 })) : ""}
+      ${tab("All", view.mode === "all", makeUrl({ owner: "all", offset: 0 }))}
+      ${other}
+    </div>`;
+  })();
 
   const filterForm = `<form method="GET" action="${SESSIONS_LIST_PATH}" class="card" style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
     <div class="form-group" style="margin:0">
@@ -382,6 +435,7 @@ function renderSessionsListPage(
         <option value="lastActivityAt"${filters.sort === "lastActivityAt" ? " selected" : ""}>Last activity</option>
       </select>
     </div>
+    <input type="hidden" name="owner" value="${escapeHtml(filters.ownerView.mode === "all" ? "all" : filters.ownerView.owner)}" />
     ${filters.archived ? '<input type="hidden" name="archived" value="true" />' : ""}
     <button type="submit" class="btn btn-primary" style="font-size:12px">Filter</button>
     ${archivedToggle}
@@ -457,6 +511,7 @@ function renderSessionsListPage(
       <h1 class="page-title">Sessions</h1>
     </div>
     ${degradedHtml}
+    ${ownerSwitch}
     ${filterForm}
     ${sectionsHtml}
     ${paginationHtml}
@@ -524,14 +579,7 @@ export function registerSessionsListRoutes(
       ? Math.max(0, Number.parseInt(offsetRaw, 10) || 0)
       : 0;
 
-    const filters: SessionsListFilters = {
-      repo,
-      org,
-      agentId,
-      q,
-      sort,
-      archived,
-    };
+    const ownerParam = c.req.query("owner");
 
     const scope = await resolveVisibilityScope(
       isAdmin,
@@ -544,6 +592,44 @@ export function registerSessionsListRoutes(
     // SSP-6.8: an account user's sessions are filtered server-side.
     const accountId =
       typeof scope.accountId === "string" ? scope.accountId : undefined;
+
+    // PLU-5.1: Mine / All. With no `?owner=`, default to Mine only when the
+    // signed-in user actually owns a session (one cheap limit=1 probe,
+    // best-effort — any failure or missing dep falls back to All).
+    let ownsAny = false;
+    if (
+      ownerParam === undefined &&
+      userEmail &&
+      deps.fetchTaskStoreSessions &&
+      !(
+        accountId === undefined &&
+        scope.agentIds !== "all" &&
+        scope.agentIds.length === 0
+      )
+    ) {
+      try {
+        const probe = new URLSearchParams({
+          state: "all",
+          owner: userEmail,
+          limit: "1",
+          offset: "0",
+        });
+        ownsAny =
+          (await deps.fetchTaskStoreSessions(probe, accountId)).total > 0;
+      } catch {
+        ownsAny = false;
+      }
+    }
+    const ownerView = resolveOwnerView(ownerParam, userEmail, ownsAny);
+    const filters: SessionsListFilters = {
+      repo,
+      org,
+      agentId,
+      q,
+      sort,
+      archived,
+      ownerView,
+    };
 
     // A member with zero memberships can see nothing — short-circuit
     // without ever calling the task store, rendering an empty page rather
@@ -603,6 +689,8 @@ export function registerSessionsListRoutes(
               for (const r of repo) params.append("repo", r);
               for (const o of org) params.append("org", o);
               if (q) params.set("q", q);
+              if (ownerView.mode !== "all")
+                params.set("owner", ownerView.owner);
               params.set("limit", String(fetchLimit));
               params.set("offset", String(fetchOffset));
               const fetched = await fetchTaskStoreSessions(params, accountId);
