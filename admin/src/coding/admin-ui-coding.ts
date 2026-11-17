@@ -11,7 +11,7 @@
  *   GET  /admin/tasks, /admin/tasks/:id           — task-store tasks (board/table, detail)
  *   POST /admin/tasks/:id/release                 — release a claimed task
  *   POST /admin/tasks/quick-add                   — create an initiative/idea task (INI-1.3)
- *   POST /admin/tasks/:id/promote                 — promote idea→initiative→prd (INI-1.3)
+ *   POST /admin/tasks/:id/promote                 — promote idea→initiative (INI-1.3)
  *   GET  /admin/sessions, /admin/sessions/:id     — sessions list and detail
  *   POST /admin/sessions/:slug/{follow,unfollow,archive,unarchive,rename}
  *   GET|POST /admin/settings/notifications        — session notification prefs

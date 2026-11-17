@@ -6515,8 +6515,8 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
       const html = page([idea, initiative, dev, prd], { view });
       expect(html).toContain('action="/admin/tasks/T-IDEA/promote');
       expect(html).toContain("Promote to initiative");
-      expect(html).toContain('action="/admin/tasks/T-INI/promote');
-      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).not.toContain("Promote to PRD");
       expect(html).not.toContain('action="/admin/tasks/T-DEV/promote');
       expect(html).not.toContain('action="/admin/tasks/T-PRD/promote');
     });
@@ -6536,9 +6536,9 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
   });
 
-  test("promoteTargetKind maps idea->initiative, initiative->prd, else null", () => {
+  test("promoteTargetKind maps idea->initiative, else null", () => {
     expect(promoteTargetKind("idea")).toBe("initiative");
-    expect(promoteTargetKind("initiative")).toBe("prd");
+    expect(promoteTargetKind("initiative")).toBeNull();
     expect(promoteTargetKind("dev")).toBeNull();
     expect(promoteTargetKind("prd")).toBeNull();
     expect(promoteTargetKind(undefined)).toBeNull();
@@ -6560,13 +6560,15 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
         notice,
       );
 
-    test("initiative shows copyable plan-session hint and promote to PRD", () => {
+    test("initiative shows copyable prd and plan-session --initiative hints, no promote", () => {
       const html = render({ ...initiative, session: "my-sess" });
+      expect(html).toContain("/shipwright:prd");
       expect(html).toContain("/shipwright:plan-session");
+      expect(html).toContain("--initiative T-INI");
       expect(html).toContain("<code");
-      expect(html).toContain("T-INI");
-      expect(html).toContain('action="/admin/tasks/T-INI/promote');
-      expect(html).toContain("Promote to PRD");
+      expect(html).not.toContain("promote to PRD");
+      expect(html).not.toContain('action="/admin/tasks/T-INI/promote');
+      expect(html).not.toContain("Promote to PRD");
     });
 
     test("idea shows promote to initiative but no plan-session hint", () => {

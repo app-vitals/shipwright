@@ -1615,8 +1615,8 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
     expect(patches).toEqual([{ id: "T-1", patch: { kind: "initiative" } }]);
   });
 
-  it("POST /admin/tasks/:id/promote patches initiative->prd and honours a valid return path", async () => {
-    const patches: Record<string, unknown>[] = [];
+  it("POST /admin/tasks/:id/promote rejects initiative tasks", async () => {
+    let patched = 0;
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTask: async (id: string) => ({
@@ -1625,8 +1625,8 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
           status: "pending",
           kind: "initiative",
         }),
-        patchTask: async (_id: string, patch: Record<string, unknown>) => {
-          patches.push(patch);
+        patchTask: async () => {
+          patched++;
           return {};
         },
       }),
@@ -1635,9 +1635,9 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
       return: "/admin/tasks/T-2",
     });
     expect(res.headers.get("Location")).toBe(
-      "/admin/tasks/T-2?success=task_promoted",
+      "/admin/tasks/T-2?error=promote_invalid",
     );
-    expect(patches).toEqual([{ kind: "prd" }]);
+    expect(patched).toBe(0);
   });
 
   it("POST /admin/tasks/:id/promote ignores an off-site return path", async () => {
@@ -1745,7 +1745,9 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     const html = await res.text();
+    expect(html).toContain("/shipwright:prd");
     expect(html).toContain("/shipwright:plan-session");
+    expect(html).toContain("--initiative T-9");
     expect(html).toContain("Task promoted.");
   });
 
