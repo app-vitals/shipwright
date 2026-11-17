@@ -10,11 +10,35 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.32.256] - 2026-11-17
+## [1.32.260] - 2026-11-17
 
 ### Changed
 
 - preview profile: admin and metrics share one SHIPWRIGHT_SESSION_SECRET via the shipwright-preview-admin-keys Secret (fixes metrics canary 401)
+
+## [1.32.259] - 2026-11-17
+
+### Changed
+
+- auto-bump to chart v1.32.259 triggered by release tag(s): `agent-v1.491.0`
+
+## [1.32.258] - 2026-11-17
+
+### Changed
+
+- auto-bump to chart v1.32.258 triggered by release tag(s): `agent-v1.490.0`
+
+## [1.32.257] - 2026-11-17
+
+### Changed
+
+- auto-bump to chart v1.32.257 triggered by release tag(s): `agent-v1.489.0`
+
+## [1.32.256] - 2026-11-17
+
+### Changed
+
+- auto-bump to chart v1.32.256 triggered by release tag(s): `admin-v1.355.3`, `agent-v1.488.2`, `metrics-v1.196.2`, `task-store-v1.255.4`
 
 ## [1.32.255] - 2026-11-17
 

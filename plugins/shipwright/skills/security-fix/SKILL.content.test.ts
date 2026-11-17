@@ -133,7 +133,7 @@ describe("SKILL.md — dedup check widened to recently-closed done tasks", () =>
   });
 
   it("falls back to blockedReason, then the literal 'resolved', when note is absent", () => {
-    expect(content).toContain('then its `blockedReason`');
+    expect(content).toContain("then its `blockedReason`");
     expect(content).toContain('then the literal\n`"resolved"`');
   });
 });
@@ -233,7 +233,9 @@ describe("SKILL.md — Error Handling section", () => {
 describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () => {
   it("re-checks suppressions between filtering and dry-run/dedup", () => {
     const step = content.indexOf("## Step 3.5: Re-check Suppressions");
-    expect(step).toBeGreaterThan(content.indexOf("## Step 3: Filter and Group Findings"));
+    expect(step).toBeGreaterThan(
+      content.indexOf("## Step 3: Filter and Group Findings"),
+    );
     expect(step).toBeLessThan(content.indexOf("## Step 4: Dry-Run Output"));
   });
 
@@ -243,11 +245,28 @@ describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () =
   });
 
   it("uses a skip message distinct from the active/recently-closed ones", () => {
-    expect(content).toMatch(/Skipping .* suppressed in \.shipwright\/suppressions\.yml/);
-    expect(content).toContain("Skipped (suppressed in .shipwright/suppressions.yml)");
+    expect(content).toMatch(
+      /Skipping .* suppressed in \.shipwright\/suppressions\.yml/,
+    );
+    expect(content).toContain(
+      "Skipped (suppressed in .shipwright/suppressions.yml)",
+    );
   });
 
   it("only treats osv/grype/posture findings as suppression candidates", () => {
     expect(content).toContain('{rule: "osv"|"grype", cve');
+  });
+});
+
+describe("PLU-4.4 origin provenance", () => {
+  it("files tasks with originKind skill and its own name as originRef", () => {
+    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
+    expect(text).toContain('"originKind": "skill"');
+    expect(text).toContain('"originRef": "security-fix"');
+  });
+
+  it("still writes source unchanged", () => {
+    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
+    expect(text).toContain('"source": "security-fix"');
   });
 });
