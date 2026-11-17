@@ -50,7 +50,14 @@ let state: string;
 function sh(cmd: string, cwd = work, env: Record<string, string> = {}) {
   const r = Bun.spawnSync(["bash", "-c", cmd], {
     cwd,
-    env: { ...process.env, ...env },
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@example.com",
+      ...env,
+    },
   });
   return {
     code: r.exitCode,
@@ -94,10 +101,6 @@ beforeEach(() => {
     `${env}; git clone -q ${origin} work && cd work && git checkout -q -b main && echo x > README.md && echo planning/ > .gitignore && git add README.md .gitignore && git commit -q -m init && git push -q -u origin main && git remote set-head origin main`,
     dir,
   );
-  process.env.GIT_AUTHOR_NAME = "t";
-  process.env.GIT_AUTHOR_EMAIL = "t@example.com";
-  process.env.GIT_COMMITTER_NAME = "t";
-  process.env.GIT_COMMITTER_EMAIL = "t@example.com";
 });
 
 afterEach(() => {
