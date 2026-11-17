@@ -227,3 +227,16 @@ describe("ledger-schema documents prompt-fix transitions", () => {
     expect(text).toContain("`taskId`");
   });
 });
+
+describe("PLU-4.4 origin provenance", () => {
+  it("files tasks with originKind skill and its own name as originRef", () => {
+    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
+    expect(text).toContain('"originKind": "skill"');
+    expect(text).toContain('"originRef": "prompt-fix"');
+  });
+
+  it("still writes source unchanged", () => {
+    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
+    expect(text).toContain('"source": "prompt-fix"');
+  });
+});
