@@ -41,13 +41,27 @@ describe("plan-session.md — framed as an implementation-agnostic interface con
 });
 
 describe("plan-session.md — inputs", () => {
-  it("documents the PRODUCT-SPEC.md content input", () => {
-    expect(content).toContain("specContent");
+  it("documents the specs[] input with number, path and content", () => {
+    expect(content).toContain("`specs[]`");
+    for (const f of ["number", "path", "content"]) {
+      expect(content).toContain(f);
+    }
     expect(content).toContain("PRODUCT-SPEC.md");
   });
 
-  it("documents repo and session inputs", () => {
-    expect(content).toContain("`repo`");
+  it("documents homeRepo and repos[] inputs", () => {
+    expect(content).toContain("`homeRepo`");
+    expect(content).toContain("`repos[]`");
+  });
+
+  it("no longer defines the single specContent or repo inputs", () => {
+    expect(content).not.toContain("- **`specContent`**");
+    expect(content).not.toContain("- **`repo`**");
+    expect(content).toContain("single `specContent` input no longer exists");
+    expect(content).toContain("single `repo` input no longer exists");
+  });
+
+  it("documents the session input", () => {
     expect(content).toContain("`session`");
   });
 
@@ -91,6 +105,7 @@ describe("plan-session.md — output", () => {
       "id",
       "source",
       "session",
+      "specNumber",
       "repo",
       "title",
       "description",
@@ -112,6 +127,10 @@ describe("plan-session.md — output", () => {
   it("documents planMarkdown and that the caller (not the subagent) writes PLAN.md", () => {
     expect(content).toContain("planMarkdown");
     expect(content).toContain("PLAN.md");
+  });
+
+  it("states planMarkdown is this pass only", () => {
+    expect(content).toContain("this pass only");
   });
 
   it("documents decisionLog[]", () => {
