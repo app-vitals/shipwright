@@ -64,6 +64,10 @@ export interface PrOutcome {
   commitSha?: string | null;
   /** CI-failure streak (DTA-9.3 patch guardrail); 0 = none reported. */
   consecutiveCiFailureCount?: number | null;
+  /** Review completion proof (DTA-10.2 Step 11b). */
+  reviewState?: string | null;
+  reviewedCommitSha?: string | null;
+  agentId?: string | null;
 }
 
 export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
