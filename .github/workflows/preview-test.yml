@@ -105,6 +105,16 @@ jobs:
           ENV_FILE: ${{ steps.preview.outputs.env-file }}
         run: task preview:canary ENV_FILE="$ENV_FILE"
 
+      - name: Install Playwright Chromium
+        working-directory: trusted
+        run: bunx playwright install --with-deps chromium
+
+      - name: Browser e2e
+        working-directory: trusted
+        env:
+          ENV_FILE: ${{ steps.preview.outputs.env-file }}
+        run: task preview:e2e ENV_FILE="$ENV_FILE"
+
       # Pod status, events and logs only. Never Secret objects.
       - name: Collect diagnostics
         if: failure()

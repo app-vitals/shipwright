@@ -296,6 +296,17 @@ tasks:
         set +a
         bun test --config=/dev/null ./preview/canary/*.canary.test.ts
 
+  preview:e2e:
+    desc: "Run the browser e2e specs (preview/e2e/*.e2e.ts, Playwright Chromium) against a stack from `task preview:up`. Targets come from the env file preview:up wrote (usage: task preview:e2e ENV_FILE=state/preview.env); with no ENV_FILE PREVIEW_ADMIN_URL and PREVIEW_METRICS_URL must already be exported. Requires the Chromium browser (`bunx playwright install --with-deps chromium`)."
+    vars:
+      ENV_FILE: '{{.ENV_FILE | default ""}}'
+    cmds:
+      - |
+        set -a
+        if [ -n "{{.ENV_FILE}}" ]; then . "{{.ENV_FILE}}"; fi
+        set +a
+        bunx playwright test --config preview/e2e/playwright.config.ts
+
   audit-extraction:
     desc: "Pre-publication audit of an extracted tree and its full git history (usage: task audit-extraction -- <tree> [--json] [--report <path>] [--no-history-banned] [--no-gitleaks] [--working-tree-only])"
     cmds:

@@ -6,9 +6,10 @@
 # them with the Bun runner. Exclude site/ from the root `bun test` scan so the
 # Astro site stays fully isolated from the monorepo test suite.
 #
-# metrics/e2e/ and admin/e2e/ contain Playwright *.e2e.ts tests that must be
+# metrics/e2e/, admin/e2e/ and preview/e2e/ contain Playwright *.e2e.ts tests that must be
 # run via `bunx playwright test` — not via bun test. Exclude them so Bun does
-# not try to execute Playwright test files with the Bun runner.
+# not try to execute Playwright test files with the Bun runner. preview/e2e/
+# runs against a deployed preview stack via `task preview:e2e`.
 #
 # *.canary.test.ts is the suffix for the canary suite (preview/canary/, run by
 # `task preview:canary` with --config=/dev/null) defined by the canary-execution skill contract
@@ -26,5 +27,5 @@
 # a second guard until Bun supports preload inheritance for nested/filtered
 # runs. See docs/observability.md for why this matters (Sentry test guard).
 [test]
-pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**", "**/*.canary.test.ts"]
+pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**", "**/preview/e2e/**", "**/*.canary.test.ts"]
 preload = ["./scripts/test-env-preload.ts"]
