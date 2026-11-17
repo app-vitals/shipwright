@@ -161,6 +161,12 @@ To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (adm
 - `GET /coverage-snapshots/latest` returns `{ snapshots }` with exactly one row per repo, the newest by `measuredAt`.
 - Scope: agent tokens may write only repos in their scope (`403` otherwise), always write to and read from their own account (a client-supplied `accountId` is ignored); admin tokens are unrestricted and may pass `accountId` (body on POST, query on GET; default `default` on POST).
 
+### Planning documents (schema)
+
+`PlanDocument` (PLU-2.1) records one planning file per row: `id`, `accountId`, `session` (slug), `kind` (`spec` | `plan`), `number` (specs 1, 2, 3… per session; plans always 1), `repo` (home repo), `path`, optional `title` and `owner` (email), `repos` (target `org/repo` list, default empty), optional `prUrl`, `state` (`draft` | `pr_open` | `merged` | `abandoned`, default `draft`), optional `commitSha`, `plannedAt` and `originTaskId`, `createdAt`, `updatedAt`. It is unique on `(accountId, session, kind, number)`.
+
+The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The service and routes that read and write these land separately.
+
 ### Token management
 
 All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope), and revoke (soft-delete via `revokedAt`) scoped tokens. See the OpenAPI spec for request/response shapes.

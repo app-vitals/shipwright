@@ -108,6 +108,22 @@ model Task {
   hitl               Boolean?
   kind               TaskKind @default(dev)
 
+  // ─── Planning provenance (PLU-2.1) ───
+  // All nullable and default-free so existing rows are untouched. owner is the
+  // requester's email (never invented for scanner/cron tasks). planDocumentId /
+  // specDocumentId point at PlanDocument.id but are deliberately plain strings,
+  // not FK relations — the same convention as Task.session and
+  // Task.dependencies: no constraint on existing data, and a document row can
+  // never block a task write or delete. The API validates them (PLU-2.5).
+  // originKind is one of a registered list (document | skill | cron | human)
+  // validated in code, kept a string so the list can grow without a migration;
+  // originRef names the thing (a document id, skill or cron name, ...).
+  owner          String?
+  planDocumentId String?
+  specDocumentId String?
+  originKind     String?
+  originRef      String?
+
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
@@ -638,8 +654,76 @@ model Session {
   archivedBy String?
   accountId  String    @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
 
+  // ─── Planning (PLU-2.1) ───
+  // All nullable and default-free so existing rows are untouched. owner is an
+  // email set from the session's first document; homeRepo is the org/repo the
+  // planning files live in; declaredRepos are the declared target repos (the
+  // `repos` field in session responses stays the derived union of task repos
+  // and these). declaredRepos has no DEFAULT on purpose — adding one would
+  // backfill every existing row — so pre-existing sessions read as NULL.
+  owner                 String?
+  homeRepo              String?
+  declaredRepos         String[]
+  // Short-lived, self-expiring planning lock: a planning pass holds it while it
+  // reads and appends to the session's PLAN.md. Free when the holder is null
+  // or the expiry has passed.
+  planningLockHolder    String?
+  planningLockExpiresAt DateTime?
+
   @@unique([accountId, slug])
   @@index([accountId])
+}
+
+// ─── Plan Document ────────────────────────────────────────────────────────────
+// PLU-2.1: one row per planning document (a numbered spec, or the session's
+// single plan) living as a file in the session's home repo. The rows — not the
+// files on local disk — decide what a session has. Keyed by
+// [accountId, session, kind, number]; plans always use number 1.
+//
+// session is the session slug as a plain string (not an FK), matching
+// Task.session: Session's identity is the composite [accountId, slug], and a
+// document may be registered before any task creates its session row.
+// originTaskId is likewise a plain string (the prd/initiative task the
+// document came from).
+//
+// state lifecycle: draft (registered, no PR) → pr_open (a docs PR carries it)
+// → merged (on the home repo's default branch) | abandoned (PR closed unmerged).
+
+enum PlanDocumentKind {
+  spec
+  plan
+}
+
+enum PlanDocumentState {
+  draft
+  pr_open
+  merged
+  abandoned
+}
+
+model PlanDocument {
+  id        String @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+
+  session String // session slug
+  kind    PlanDocumentKind
+  number  Int // specs: 1, 2, 3… within the session; plans: always 1
+  repo    String // home repo (org/repo) the file lives in
+  path    String // repo-relative path, e.g. planning/{session}/SPEC-0002.md
+  title   String? // first heading of the file, when known
+  owner   String? // email; optional by design
+  repos   String[]         @default([]) // target repos (org/repo) this document covers
+
+  prUrl        String? // docs PR carrying the file
+  state        PlanDocumentState @default(draft)
+  commitSha    String? // commit the file was last read or written at
+  plannedAt    DateTime? // specs only: set when a planning pass consumed it
+  originTaskId String? // the prd/initiative task this document came from
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, session, kind, number])
 }
 
 // ─── System Cron Definition ───────────────────────────────────────────────────
