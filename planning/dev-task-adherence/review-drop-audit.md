@@ -166,27 +166,27 @@ Spine: `plugins/shipwright/commands/review-lean.md`, hard limit 150 lines counte
 | Block | Source (lines) | Lines |
 |---|---|---|
 | Frontmatter, scope, state-store note, task-store note, no-argument `[silent]` | 1-26, 48-51 | 6 |
-| Arguments, `[preclaim:...]` parse, `bun` preflight, `WORKSPACE_ROOT`, curl convention, cwd rule | 28-47, 57-70 | 8 |
+| Arguments, `[preclaim:...]` parse, `bun` preflight, `WORKSPACE_ROOT`, curl convention, cwd rule | 28-47, 57-70 | 6 |
 | Config fetch (policy, subagent type, repos), defaults, policy summary line, canonical identity script | 72-131 | 8 |
 | Live-Review Pre-Check (query, `terminal` rule, fresh-comment exception) | 1623-1808 | 12 |
-| Pre-claim fast path, record lookup, staged branch, already-reviewed-at-head dedup | 1810-1932 | 8 |
+| Pre-claim fast path, record lookup, staged branch, already-reviewed-at-head dedup | 1810-1932 | 7 |
 | Shared settle-and-stop block | 550-580, 1722-1805, 1896-1926 | 5 |
 | Single claim call, 409 handling, worktree add | 134-188 | 7 |
 | Linked-task model tier | 190-223 | 4 |
-| Context: metadata, diff against `origin/$base` plus file-count sanity check, CI, GraphQL state (compressed), ledger fetch, CLAUDE.md, test-readiness | 248-372, 471-473 | 14 |
+| Context: metadata, diff against `origin/$base` plus file-count sanity check, CI, GraphQL state (compressed), ledger fetch, CLAUDE.md, test-readiness | 248-372, 471-473 | 13 |
 | Prior qualifying reviews and ledger POSTs (resolved / superseded), ordering rule | 373-469 | 6 |
 | Unresolved Comment Check | 479-580 | 6 |
 | Heartbeat | 582-590 | 2 |
 | Dependency-manifest detection (5.8) | 594-676 | 5 |
 | Classification pointer plus risk signals (6, 6.1) | 680-710 | 5 |
-| Step 7: dispatch, inputs pointer, failure chain, multi-reviewer trigger and four rules, attestation POST, rating | 714-948 | 11 |
+| Step 7: dispatch, subagent input list (8 lines: PR metadata, diff, changed files, CLAUDE.md blocks, policy, and the three optional inputs `acceptanceCriteria`, `testReadinessContext`, PVD-1.2 `Prior Findings — Requires Resolution Check`, each with its omit-when-empty rule), failure chain, multi-reviewer trigger and four rules, attestation POST, rating | 714-948 | 18 |
 | Step 8: thresholds, trim, `CURRENT_PASS_HAS_BLOCKING_FINDINGS` | 952-981 | 3 |
 | Step 9: write `PR_REVIEW_{pr}.md` (template in reference), re-review append | 985-1117 | 3 |
 | Step 9.5: unaddressed-findings gate | 1121-1233 | 5 |
 | Step 10 and 10.5: verdict, literal label rule, validation, hard abort | 1237-1432 | 8 |
 | Step 11 and 11b: freshness re-check, POST, failure release, PFL-5.2 write, staged PATCH, `/complete` | 1436-1603 | 12 |
 | Review Quality Rules (7 retained, one compressed line each, two of them merged) | 1936-1960 | 5 |
-| Section headings and separators not counted above | n/a | 6 |
+| Section headings and separators not counted above (Steps 9.5-10.5 and 11-11b share one heading each) | n/a | 3 |
 | **Total** | | **149** |
 
 This is tight because the two GraphQL queries and the live-review `jq` predicate are literal code that must stay in the spine. If the author cannot fit it, the pressure valve is extracting those into scripts (follow-up), never demoting a guard to a reference.
@@ -196,35 +196,35 @@ This is tight because the two GraphQL queries and the live-review `jq` predicate
 | File | Budget (lines) | Contents | Loaded when |
 |---|---|---|---|
 | `review-lean.md` (spine) | <=150 (target 149) | Every step and every guard above, compressed | Always |
-| `step7-dispatch.md` | 70 | Subagent input list (733-768), `priorFindingsStatus[]`/`riskAssessment` output shape, RVM-1.2 override branches | When the subagent response is malformed, or an override is configured |
+| `step7-dispatch.md` | 50 | `priorFindingsStatus[]`/`riskAssessment` output shape (759-774), RVM-1.2 override branches. The subagent input list (733-758) is not here: it is passed on every dispatch, and the PVD-1.2 input is what makes the subagent return `priorFindingsStatus[]` for Step 9.5 and the ledger writes, so it stays in the spine | When the subagent response is malformed, or an override is configured |
 | `multi-reviewer.md` | 70 | MPS-2.1 list parsing and failure rules, MPS-2.2 duplicate/collapse/`agreement`/merge rules, MPS-2.3 verifier | `REVIEW_SUBAGENT_TYPE` contains a comma |
 | `ledger-and-findings.md` | 90 | Full POST bodies for PFL-2.1 (resolved/superseded/attested), PFL-5.2, `priorQualifyingReviews` rules (PVD-1.2), 9.5 exclusion summary, PR #89 ordering note | First ledger write on a PR with prior reviews; 9.5 when `UNADDRESSED_FINDINGS` looks wrong |
 | `review-file-template.md` | 90 | Step 6 category definitions (682-693), Step 9 `PR_REVIEW` template and re-review update template | Writing the review file |
 | `verdict-folding.md` | 50 | Dependency-risk clause and Risk line/factor table formats (1369-1400), diff-line mapping (1402-1407) | Building `pr_review_{pr}.json` with a dependency analysis, an APPROVE, or inline comments |
 | `guards-detail.md` | 90 | UCC reconciler caveat and bot-detection note, RVD-1.2 `isTerminalReviewLabel`/`hasFreshNonAgentComment` mirror notes and CHU-2.4 caveat, `gh api --arg` gotcha, RHR-1.1 rationale | Only when a guard result looks wrong (reading material, never a required step) |
-| **Total** | **609** (149 + 460) | | |
+| **Total** | **589** (149 + 440) | | |
 
-Overall: 1960 to about 609 lines (about 69% fewer). Compare patch-lean's 57%: review's extra margin comes from the script-wrapped prose being dropped, not from demoting steps.
+Overall: 1960 to about 589 lines (about 70% fewer). Compare patch-lean's 57%: review's extra margin comes from the script-wrapped prose being dropped, not from demoting steps.
 
 ### Current accounting (sums to 1960)
 
 | Current block | Lines | Destination |
 |---|---|---|
-| Preamble and Arguments (1-54) | 54 | Spine (14) |
+| Preamble and Arguments (1-54) | 54 | Spine (12) |
 | Step 1 policy (55-108) | 54 | Spine (config block, 8); essay dropped |
 | Step 3 identity (109-133) | 25 | Spine (3, inside the config block) |
 | Step 4 checkout and claim (134-189) | 56 | Spine (merged claim, 7) |
 | Model tier (190-224) | 35 | Spine (4) |
 | Configured subagent (225-247) | 23 | Spine (folded into config fetch) |
-| Step 5 items 1-5 and ledger fetch (248-372) | 125 | Spine (14), query compressed |
+| Step 5 items 1-5 and ledger fetch (248-372) | 125 | Spine (13), query compressed |
 | Prior qualifying reviews and PFL-2.1 (373-470) | 98 | Spine (6) + `ledger-and-findings.md` |
-| Step 5 items 6-7 (471-478) | 8 | Spine (inside the 14 above) |
+| Step 5 items 6-7 (471-478) | 8 | Spine (inside the 13 above) |
 | Unresolved Comment Check (479-581) | 103 | Spine (6) + `guards-detail.md` |
 | Heartbeat (582-593) | 12 | Spine (2) |
 | Step 5.8 (594-679) | 86 | Spine (5) + existing `dependency-risk-analysis.md` |
 | Step 6 (680-694) | 15 | `review-file-template.md` (pointer in spine) |
 | Step 6.1 (695-713) | 19 | Spine (5) |
-| Step 7 dispatch (714-775) | 62 | Spine (part of 11) + `step7-dispatch.md` |
+| Step 7 dispatch (714-775) | 62 | Spine (part of 18, incl. the 8-line input list) + `step7-dispatch.md` (output shape) |
 | Attestation POST (776-811) | 36 | Spine (merged ledger form) + `ledger-and-findings.md` |
 | Failure chain (812-849) | 38 | Spine (3) + `step7-dispatch.md` |
 | Multi-reviewer (850-951) | 102 | Spine (4) + `multi-reviewer.md` |
@@ -237,11 +237,11 @@ Overall: 1960 to about 609 lines (about 69% fewer). Compare patch-lean's 57%: re
 | Step 11b (1559-1605) | 47 | Spine (part of 12) |
 | Step 14 preamble (1606-1622) | 17 | Spine (inside the merged blocks) |
 | Live-Review Pre-Check (1623-1809) | 187 | Spine (12) + `guards-detail.md` |
-| Pre-Claim, staged refresh, dedup (1810-1935) | 126 | Spine (8 + the shared settle block) |
+| Pre-Claim, staged refresh, dedup (1810-1935) | 126 | Spine (7 + the shared settle block) |
 | Review Quality Rules (1936-1960) | 25 | Spine (5); 5 rules dropped |
 | **Total** | **1960** | |
 
-Because a spine of 149 plus references of 460 is 609, the other 1351 lines are removed. They are made of: duplicated claim/PATCH/ledger bodies collapsed by the merge table, restated script semantics, rationale and incident narrative, and the compression of multi-line code into one-line forms with the same operation. The specific text removed by content, rather than by reformatting, is listed next.
+Because a spine of 149 plus references of 440 is 589, the other 1371 lines are removed. They are made of: duplicated claim/PATCH/ledger bodies collapsed by the merge table, restated script semantics, rationale and incident narrative, and the compression of multi-line code into one-line forms with the same operation. The specific text removed by content, rather than by reformatting, is listed next.
 
 ## Dropped text (with rationale)
 
