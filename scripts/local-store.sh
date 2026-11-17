@@ -8,8 +8,9 @@
 #   ./scripts/local-store.sh --down         # tear down containers, volume, token and env file
 #   ./scripts/local-store.sh --help
 #
-# Runs scripts/doctor.sh --skip-task-store first (boot path only); set
-# SHIPWRIGHT_SKIP_DOCTOR=1 to skip it.
+# Runs scripts/doctor.sh --skip-task-store first (boot path only) as an advisory
+# check: problems are printed but do not stop the boot. Set SHIPWRIGHT_SKIP_DOCTOR=1
+# to skip it.
 #
 # What it does:
 #   1. Generates a docker compose file (Postgres + the published task-store image)
@@ -118,7 +119,7 @@ fi
 
 if [ -z "${SHIPWRIGHT_SKIP_DOCTOR:-}" ]; then
   "${BASH:-bash}" "$SCRIPT_DIR/doctor.sh" --skip-task-store \
-    || die "Prerequisite check failed (see above). Fix the lines above and re-run, or set SHIPWRIGHT_SKIP_DOCTOR=1 to skip."
+    || echo "WARNING: prerequisite check reported problems (see above); continuing — the store itself only needs Docker and curl." >&2
 fi
 
 require_docker

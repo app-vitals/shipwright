@@ -14,6 +14,8 @@ You need [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://
 docker compose version
 ```
 
+**Bun** runs the `/shipwright:review` helper scripts; install it from <https://bun.sh>. The doctor in Step 0 checks that it is on your PATH.
+
 **A small repo you can push to** is where the first PR lands. A scratch repo is ideal. Create one and `cd` into it:
 
 ```bash

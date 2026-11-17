@@ -82,11 +82,12 @@ describe("scripts/local-store.sh", () => {
     expect(r.stderr).toContain("Docker is not installed");
   });
 
-  test("boot runs the doctor first and stops on its failure", () => {
+  test("boot runs the doctor first and warns without stopping", () => {
     const r = run([], { SHIPWRIGHT_SKIP_DOCTOR: "" });
-    expect(r.status).toBe(1);
     expect(r.stderr).toContain("bun is not on PATH");
-    expect(r.stderr).toContain("Prerequisite check failed");
+    expect(r.stderr).toContain("prerequisite check reported problems");
+    // The doctor is advisory: boot continues to the Docker check.
+    expect(r.stderr).toContain("Docker is not installed");
     expect(r.stderr).not.toContain("SHIPWRIGHT_TASK_STORE_URL and");
   });
 
