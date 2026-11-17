@@ -123,7 +123,7 @@ For each guard: purpose, incident or design rationale (with evidence source), ve
 | Policy via DB-first, `select(. != null)` | 72-100 | Read policy from `/agents/:id/config`, hardcoded defaults | APM-1.2, `c41f32be2` (#3751, 2026-09-29); the `// empty` vs `select(. != null)` note (87-91) records that `//` would discard a deliberately-set `false` | Keep in spine (the jq shape and 4 defaults); essay dropped, one-line comment kept |
 | Staged path (`auto_post_reviews: false`) | 1528-1555 | PATCH `staged: true` with the verdict-dependent `reviewState` and clear the claim | `f39481b65` (#1383, 2026-07-10) | Keep in spine as one PATCH with a variable `reviewState` (2 curls become 1) |
 | Step 11b `/complete` + agentId/reviewedCommitSha | 1559-1603 | Mark posted; never change task status | Text: merge looks tasks up by `pr_open`; changing task status here breaks that | Keep in spine (about 4 lines) incl. "never update task status" |
-| Review Quality Rules | 1936-1958 | Verify before flagging, scope to the diff, no CI echo, no filler, file/line order, never REQUEST_CHANGES | Present since the initial import (`b558378f2`, #75); no incident cited | Keep 5 rules in spine; 5 duplicates dropped (see Dropped text) |
+| Review Quality Rules | 1936-1958 | Verify before flagging, scope to the diff, no CI echo, no filler, file/line order, never REQUEST_CHANGES | Present since the initial import (`b558378f2`, #75); no incident cited | The section has 12 rules (1940-1960). Verdicts: verify before flagging, check scope, don't echo CI, don't contradict CLAUDE.md, no filler language, organize by file and line, breaking API changes: **keep in spine (7)**. Keep it tight, never REQUEST_CHANGES, APPROVE means clean, check unresolved feedback first, concise approvals: **dropped (5, duplicates; see Dropped text)** |
 | Self-review override rationale | 1243-1244 | `selfReview` = canonical `PR_AUTHOR == CURRENT_USER`; GitHub rejects self-APPROVE | Text of Step 10 (API restriction) | Keep in spine (1 line, part of Step 10) |
 
 ## Near-duplicate claim and dedup logic (Steps 4 and 14)
@@ -161,7 +161,7 @@ Ordering that must be preserved in the spine: identity, then Live-Review Pre-Che
 
 Spine: `plugins/shipwright/commands/review-lean.md`, hard limit 150 lines counted with `wc -l` (blank lines and headings included). References live under `plugins/shipwright/commands/references/review-lean/` (new). Existing shared references (`references/post-review-guide.md` 149 lines, `references/dependency-risk-analysis.md` 94 lines, `references/methodology-contracts/review.md`) are reused unchanged and not counted. The budgets are targets, not measurements.
 
-### Spine allocation (148)
+### Spine allocation (149)
 
 | Block | Source (lines) | Lines |
 |---|---|---|
@@ -185,9 +185,9 @@ Spine: `plugins/shipwright/commands/review-lean.md`, hard limit 150 lines counte
 | Step 9.5: unaddressed-findings gate | 1121-1233 | 5 |
 | Step 10 and 10.5: verdict, literal label rule, validation, hard abort | 1237-1432 | 8 |
 | Step 11 and 11b: freshness re-check, POST, failure release, PFL-5.2 write, staged PATCH, `/complete` | 1436-1603 | 12 |
-| Review Quality Rules (5 retained) | 1936-1958 | 4 |
+| Review Quality Rules (7 retained, one compressed line each, two of them merged) | 1936-1960 | 5 |
 | Section headings and separators not counted above | n/a | 6 |
-| **Total** | | **148** |
+| **Total** | | **149** |
 
 This is tight because the two GraphQL queries and the live-review `jq` predicate are literal code that must stay in the spine. If the author cannot fit it, the pressure valve is extracting those into scripts (follow-up), never demoting a guard to a reference.
 
@@ -195,16 +195,16 @@ This is tight because the two GraphQL queries and the live-review `jq` predicate
 
 | File | Budget (lines) | Contents | Loaded when |
 |---|---|---|---|
-| `review-lean.md` (spine) | <=150 (target 148) | Every step and every guard above, compressed | Always |
+| `review-lean.md` (spine) | <=150 (target 149) | Every step and every guard above, compressed | Always |
 | `step7-dispatch.md` | 70 | Subagent input list (733-768), `priorFindingsStatus[]`/`riskAssessment` output shape, RVM-1.2 override branches | When the subagent response is malformed, or an override is configured |
 | `multi-reviewer.md` | 70 | MPS-2.1 list parsing and failure rules, MPS-2.2 duplicate/collapse/`agreement`/merge rules, MPS-2.3 verifier | `REVIEW_SUBAGENT_TYPE` contains a comma |
 | `ledger-and-findings.md` | 90 | Full POST bodies for PFL-2.1 (resolved/superseded/attested), PFL-5.2, `priorQualifyingReviews` rules (PVD-1.2), 9.5 exclusion summary, PR #89 ordering note | First ledger write on a PR with prior reviews; 9.5 when `UNADDRESSED_FINDINGS` looks wrong |
 | `review-file-template.md` | 90 | Step 6 category definitions (682-693), Step 9 `PR_REVIEW` template and re-review update template | Writing the review file |
 | `verdict-folding.md` | 50 | Dependency-risk clause and Risk line/factor table formats (1369-1400), diff-line mapping (1402-1407) | Building `pr_review_{pr}.json` with a dependency analysis, an APPROVE, or inline comments |
 | `guards-detail.md` | 90 | UCC reconciler caveat and bot-detection note, RVD-1.2 `isTerminalReviewLabel`/`hasFreshNonAgentComment` mirror notes and CHU-2.4 caveat, `gh api --arg` gotcha, RHR-1.1 rationale | Only when a guard result looks wrong (reading material, never a required step) |
-| **Total** | **608** (148 + 460) | | |
+| **Total** | **609** (149 + 460) | | |
 
-Overall: 1960 to about 608 lines (about 69% fewer). Compare patch-lean's 57%: review's extra margin comes from the script-wrapped prose being dropped, not from demoting steps.
+Overall: 1960 to about 609 lines (about 69% fewer). Compare patch-lean's 57%: review's extra margin comes from the script-wrapped prose being dropped, not from demoting steps.
 
 ### Current accounting (sums to 1960)
 
@@ -238,10 +238,10 @@ Overall: 1960 to about 608 lines (about 69% fewer). Compare patch-lean's 57%: re
 | Step 14 preamble (1606-1622) | 17 | Spine (inside the merged blocks) |
 | Live-Review Pre-Check (1623-1809) | 187 | Spine (12) + `guards-detail.md` |
 | Pre-Claim, staged refresh, dedup (1810-1935) | 126 | Spine (8 + the shared settle block) |
-| Review Quality Rules (1936-1960) | 25 | Spine (4); 5 rules dropped |
+| Review Quality Rules (1936-1960) | 25 | Spine (5); 5 rules dropped |
 | **Total** | **1960** | |
 
-Because a spine of 148 plus references of 460 is 608, the other 1352 lines are removed. They are made of: duplicated claim/PATCH/ledger bodies collapsed by the merge table, restated script semantics, rationale and incident narrative, and the compression of multi-line code into one-line forms with the same operation. The specific text removed by content, rather than by reformatting, is listed next.
+Because a spine of 149 plus references of 460 is 609, the other 1351 lines are removed. They are made of: duplicated claim/PATCH/ledger bodies collapsed by the merge table, restated script semantics, rationale and incident narrative, and the compression of multi-line code into one-line forms with the same operation. The specific text removed by content, rather than by reformatting, is listed next.
 
 ## Dropped text (with rationale)
 
@@ -260,7 +260,7 @@ Because a spine of 148 plus references of 460 is 608, the other 1352 lines are r
 | Step 11b `else`/`fi` wrapping instructions | 1567-1575 (9) | Collapsed into a single `[ -n "$PR_RECORD_ID" ]` guard |
 | Stale line refs in 11b ("lines 926, 935") | 1587 (1) | Wrong cross-references; no such lines exist in this file |
 | Step 3 staged-reviews and "Step 14 parses it" paragraphs | 123-130 (8) | Duplicated by Step 14's own text (1840-1843), which the spine keeps in one line |
-| Quality rules that duplicate other steps | 1946-1956 (5 rules) | "Keep it tight" (972), "Never REQUEST_CHANGES" (enforced by the script's `event`), "APPROVE means clean" and "Check for unresolved feedback first" (Step 9.5/10), "Concise approvals" (judgment guidance; code-reviewer's own rules cover it) |
+| Quality rules that duplicate other steps | 1948, 1950-1958 (5 of 12 rules, non-contiguous) | "Keep it tight" (972), "Never REQUEST_CHANGES" (enforced by the script's `event`), "APPROVE means clean" and "Check for unresolved feedback first" (Step 9.5/10), "Concise approvals" (judgment guidance; code-reviewer's own rules cover it) |
 | Repeated skip-reason explanation | 574-578, 1799-1803, 1902-1907 (3 x 5) | Replaced by one statement in the shared settle-and-stop block (all three tails name the same `SKIP_BLOCK_THRESHOLD` reason) |
 | Repeated RCT-1.1 "perpetual retrigger" explanation | 543-549, 1758-1764, 1913-1918 (3 x 7) | Same: stated once in the shared block |
 
