@@ -308,7 +308,7 @@ Before writing tasks, load the principles file:
 Let its `architecture`, `testing`, and `security` domain entries inform each task's scope and acceptance criteria (e.g. respecting `architecture_layering` when splitting a task across layers, citing a relevant `security_*` principle entry when writing security-specific acceptance criteria, or citing the relevant `t*` testing entry when writing the test decision bullet below).
 
 For each task:
-- **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name; when adding to a session, keep the existing task prefix and continue the milestone number from the highest existing `N` (Step 1.3) instead of restarting at 1
+- **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name; when adding to a session, keep the existing task prefix and continue the milestone number — new milestones start at highest existing `N` + 1 (Step 1.3), with `M` restarting at 1 in each — instead of restarting at 1
 - **Repo**: one of the session's target repos (Step 0.3), full `org/repo`; `{home}` when the task has no other target
 - **Title**: a Conventional-Commit subject, `type: verb-first summary` (e.g., "feat: add billing schema migration"). dev-task uses the title verbatim as the PR title, which the repo's pr-title-lint checks. `type` must be one of `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, chosen by the nature of the work: docs-only → `docs`; tests only → `test`; CI/workflow → `ci`; build/dependency → `build`; behavior change → `feat` or `fix`; refactor → `refactor`; otherwise `chore`
 - **Description**: what to build, not how
@@ -822,7 +822,7 @@ Slack channel/thread. Omit it if the step was skipped.
 
 **Step 6b — Write tasks to the store:**
 
-Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk. `repo` is the full `org/repo` of the task's target repo, one of the session's target repos. `planDocumentId` is `PLAN_DOC_ID` and `specDocumentId` is the `SPEC_DOC_ID` of the spec the task implements (its `specNumber`); `originKind` is `"document"` and `originRef` is `PLAN_DOC_ID`. `owner` is the spec's owner (Step 0.6: `--owner`, initiative, or the spec's own), which the plan and its tasks inherit; omit `owner` when empty. Omit `planDocumentId`, `specDocumentId`, `originKind`, `originRef` when `DOCS_API=off` or the registration failed:
+Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk. `repo` is the full `org/repo` of the task's target repo, one of the session's target repos. `planDocumentId` is `PLAN_DOC_ID` and `specDocumentId` is the `SPEC_DOC_ID` of the spec the task implements (its `specNumber`); `originKind` is `"document"` and `originRef` is `PLAN_DOC_ID`. `owner` is the spec's owner (Step 0.6: resolved by Step 0.6 precedence: `--owner`, then initiative, then the spec's own), which the plan and its tasks inherit; omit `owner` when empty. Omit `planDocumentId`, `specDocumentId`, `originKind`, `originRef` when `DOCS_API=off` or the registration failed:
 
 ```json
 [
