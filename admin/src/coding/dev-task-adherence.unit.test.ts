@@ -1120,3 +1120,77 @@ describe("review adherence (DTA-10.2)", () => {
     }
   });
 });
+
+describe("review guardrail metrics (DTA-10.3)", () => {
+  const row = (id: string, cv: string, itemId: string): CronRunRow => ({
+    id,
+    itemId,
+    contextFingerprint: null,
+    commandVariant: cv,
+    skillUsage: [agent("shipwright:code-reviewer")],
+  });
+  const prEnr = (reviewCycles: number, reviewState: string): RunEnrichment => ({
+    task: { startedAt: null, pr: 1, prCreatedAt: null },
+    checks: [],
+    pr: { commitsCiFix: null, reviewCycles, reviewState },
+  });
+  const gr = (rep: ReturnType<typeof buildReport>, v: string) =>
+    rep.byCommandVariant.find((s) => s.commandVariant === v)?.reviewGuardrails;
+  const mk = (rows: CronRunRow[], e?: Map<string, RunEnrichment | undefined>) =>
+    buildReport(
+      REVIEW_REQUIRED_STEPS,
+      mergeRunRows(rows).map((r) =>
+        buildRunAdherence(REVIEW_REQUIRED_STEPS, r, r.skillUsage, e?.get(r.itemId ?? ""), "review"),
+      ),
+      e,
+      "review",
+      rows,
+    );
+
+  it("computes repeat-review, clean-first-pass and mean cycles per arm; mixed PRs apart", () => {
+    const rows = [
+      row("a", "default", "o/r#1"),
+      row("b", "default", "o/r#2"),
+      row("c", "default", "o/r#3"),
+      row("d", "alternate", "o/r#4"),
+      row("e1", "default", "o/r#5"),
+      row("e2", "alternate", "o/r#5"),
+    ];
+    const e = new Map<string, RunEnrichment | undefined>([
+      ["o/r#1", prEnr(1, "approved")],
+      ["o/r#2", prEnr(3, "approved")],
+      ["o/r#3", prEnr(1, "posted")],
+      ["o/r#4", prEnr(2, "posted")],
+      ["o/r#5", prEnr(9, "approved")],
+    ]);
+    const rep = mk(rows, e);
+    expect(gr(rep, "default")).toEqual({
+      prs: 3,
+      repeatReviewRate: 1 / 3,
+      cleanFirstPassApproveRate: 1 / 3,
+      meanReviewCycles: 5 / 3,
+    });
+    expect(gr(rep, "alternate")).toEqual({
+      prs: 1,
+      repeatReviewRate: 1,
+      cleanFirstPassApproveRate: 0,
+      meanReviewCycles: 2,
+    });
+    expect(rep.counts.mixedPrs).toBe(1);
+  });
+
+  it("skips unreviewed PRs, is null without records, and is absent for other commands", () => {
+    const rows = [row("a", "default", "o/r#1")];
+    const unreviewed = mk(rows, new Map([["o/r#1", prEnr(0, "pending")]]));
+    expect(gr(unreviewed, "default")).toEqual({
+      prs: 0,
+      repeatReviewRate: null,
+      cleanFirstPassApproveRate: null,
+      meanReviewCycles: null,
+    });
+    expect(mk(rows).overall.reviewGuardrails?.prs).toBe(0);
+    const dev = buildReport(REQUIRED_STEPS, []);
+    expect(dev.overall.reviewGuardrails).toBeUndefined();
+    expect(dev.counts.mixedPrs).toBeUndefined();
+  });
+});

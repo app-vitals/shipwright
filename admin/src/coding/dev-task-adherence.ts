@@ -74,6 +74,16 @@
  * has no direct CI-green flag) and meanPatchCycles. Mixed PRs (run under both
  * arms) are excluded and reported as counts.mixedPrs.
  *
+ * Review guardrails (DTA-10.3): for `command: "review"` each series carries
+ * `reviewGuardrails` over its single-arm PRs that have been reviewed at least
+ * once (reviewCycles >= 1): repeatReviewRate (reviewCycles > 1),
+ * cleanFirstPassApproveRate (reviewCycles == 1 and reviewState "approved" —
+ * the PR record keeps no per-review history, so this is a proxy for "first
+ * review at head was APPROVE") and meanReviewCycles. Mixed PRs are excluded
+ * and reported as counts.mixedPrs. Confound: until DTA-11.1 ships, the
+ * unaddressed-findings gate's false positive can force a re-review, inflating
+ * repeatReviewRate without the review itself having been wrong.
+ *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
  * Steps with neither a dispatch nor task-store proof (7, 10) are reported
  * as "unmeasured" and excluded from adherence rates.
@@ -232,6 +242,17 @@ interface PatchGuardrails {
   meanPatchCycles: number | null;
 }
 
+/** Review guardrails (DTA-10.3) over single-arm, reviewed PRs. */
+interface ReviewGuardrails {
+  /** PRs with reviewCycles >= 1. */
+  prs: number;
+  /** count(reviewCycles > 1) / prs. May be confounded by DTA-11.1. */
+  repeatReviewRate: number | null;
+  /** count(reviewCycles == 1 && reviewState == "approved") / prs. */
+  cleanFirstPassApproveRate: number | null;
+  meanReviewCycles: number | null;
+}
+
 interface AdherenceSeries {
   /** Variant tag (contextFingerprint); null for runs without one. */
   variant: string | null;
@@ -244,6 +265,8 @@ interface AdherenceSeries {
   cost: CostMetrics;
   /** Patch command only. */
   patchGuardrails?: PatchGuardrails;
+  /** Review command only. */
+  reviewGuardrails?: ReviewGuardrails;
 }
 
 interface CommandVariantSeries extends Omit<AdherenceSeries, "variant"> {
@@ -263,7 +286,7 @@ interface RunCounts {
    * counts as a value). Excluded from per-arm outcomes.
    */
   mixedTasks: number;
-  /** Patch command only: mixedTasks, where the item is a PR. */
+  /** Patch and review commands: mixedTasks, where the item is a PR. */
   mixedPrs?: number;
 }
 
@@ -726,6 +749,30 @@ function computePatchGuardrails(
   };
 }
 
+function computeReviewGuardrails(
+  itemIds: Iterable<string>,
+  enrichments: Map<string, RunEnrichment | undefined> | undefined,
+): ReviewGuardrails {
+  const cycles: number[] = [];
+  let cleanFirstPass = 0;
+  for (const id of itemIds) {
+    const pr = enrichments?.get(id)?.pr;
+    if (!pr || pr.reviewCycles == null || pr.reviewCycles < 1) continue;
+    cycles.push(pr.reviewCycles);
+    if (pr.reviewCycles === 1 && pr.reviewState === "approved") cleanFirstPass++;
+  }
+  return {
+    prs: cycles.length,
+    repeatReviewRate:
+      cycles.length === 0
+        ? null
+        : cycles.filter((n) => n > 1).length / cycles.length,
+    cleanFirstPassApproveRate:
+      cycles.length === 0 ? null : cleanFirstPass / cycles.length,
+    meanReviewCycles: mean(cycles),
+  };
+}
+
 function summarize(
   steps: RequiredStep[],
   runs: RunAdherence[],
@@ -733,6 +780,7 @@ function summarize(
   outcomes: OutcomeMetrics,
   cost: CostMetrics,
   guardrails: PatchGuardrails | undefined,
+  reviewGuardrails: ReviewGuardrails | undefined,
   command: AdherenceCommand = "dev-task",
 ): AdherenceSeries {
   const adherentRuns = runs.filter((r) => r.adherent).length;
@@ -744,6 +792,7 @@ function summarize(
     outcomes,
     cost,
     ...(guardrails ? { patchGuardrails: guardrails } : {}),
+    ...(reviewGuardrails ? { reviewGuardrails } : {}),
     steps: steps.map((step) => {
       let ran = 0;
       let skipped = 0;
@@ -812,6 +861,7 @@ export function buildReport(
   const mixedTasks = [...cvKeys.values()].filter((s) => s.size > 1).length;
 
   const isPatch = command === "patch";
+  const isReview = command === "review";
   const singleArmIds = (
     keys: Map<string, Set<string | null>>,
     seriesKey: string | null,
@@ -821,6 +871,8 @@ export function buildReport(
       .map(([id]) => id);
   const guardrailsFor = (ids: string[]) =>
     isPatch ? computePatchGuardrails(ids, enrichments) : undefined;
+  const reviewGuardrailsFor = (ids: string[]) =>
+    isReview ? computeReviewGuardrails(ids, enrichments) : undefined;
   // Cost counts a run only when its task stayed in one arm (silent ticks have
   // no task and no cost worth attributing).
   const costFor = (rs: RunAdherence[], keys: Map<string, Set<string | null>>) =>
@@ -836,7 +888,7 @@ export function buildReport(
       taskBearingRuns: taskBearing.length,
       silentTicks: runs.length - taskBearing.length,
       mixedTasks,
-      ...(isPatch ? { mixedPrs: mixedTasks } : {}),
+      ...(isPatch || isReview ? { mixedPrs: mixedTasks } : {}),
     },
     runs,
     // Overall spans every arm, so it keeps every task, mixed or not.
@@ -847,6 +899,7 @@ export function buildReport(
       computeOutcomes(allIds, enrichments),
       computeCost(taskBearing),
       guardrailsFor(allIds),
+      reviewGuardrailsFor(allIds),
       command,
     ),
     byVariant: [...groupBy(taskBearing, (r) => r.contextFingerprint)].map(
@@ -858,6 +911,7 @@ export function buildReport(
           outcomesFor(fpKeys, variant),
           costFor(rs, fpKeys),
           guardrailsFor(singleArmIds(fpKeys, variant)),
+          reviewGuardrailsFor(singleArmIds(fpKeys, variant)),
           command,
         ),
     ),
@@ -871,6 +925,7 @@ export function buildReport(
           outcomesFor(cvKeys, commandVariant),
           costFor(rs, cvKeys),
           guardrailsFor(singleArmIds(cvKeys, commandVariant)),
+          reviewGuardrailsFor(singleArmIds(cvKeys, commandVariant)),
           command,
         );
         return { commandVariant, ...series };
