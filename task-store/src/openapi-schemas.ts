@@ -778,6 +778,63 @@ export const SessionPatchBodySchema = z
   })
   .openapi("SessionPatchBody");
 
+// ─── Planning lock + scope preflight (PLU-2.4) ────────────────────────────────
+
+/** Optional body for POST/DELETE /sessions/:slug/lock. */
+export const SessionLockBodySchema = z
+  .object({
+    holder: z.string().min(1).optional().openapi({
+      example: "agent-1",
+      description:
+        "Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.",
+    }),
+  })
+  .openapi("SessionLockBody");
+
+/** A held planning lock. */
+export const SessionLockSchema = z
+  .object({
+    holder: z.string().openapi({ example: "agent-1" }),
+    acquiredAt: z.string().openapi({ example: "2026-11-17T10:00:00.000Z" }),
+    expiresAt: z.string().openapi({ example: "2026-11-17T10:15:00.000Z" }),
+  })
+  .openapi("SessionLock");
+
+/** 409 body when the planning lock is already held and unexpired. */
+export const SessionLockConflictSchema = z
+  .object({
+    error: z.string().openapi({
+      example: "planning lock held by agent-1 since 2026-11-17T10:00:00.000Z",
+    }),
+    holder: z.string().openapi({ example: "agent-1" }),
+    acquiredAt: z.string().openapi({ example: "2026-11-17T10:00:00.000Z" }),
+    expiresAt: z.string().openapi({ example: "2026-11-17T10:15:00.000Z" }),
+  })
+  .openapi("SessionLockConflict");
+
+/** Response for DELETE /sessions/:slug/lock. */
+export const SessionLockReleaseSchema = z
+  .object({ released: z.literal(true) })
+  .openapi("SessionLockRelease");
+
+/** Query for GET /sessions/preflight/scope. */
+export const ScopePreflightQuerySchema = z
+  .object({
+    repo: z.union([z.string(), z.array(z.string())]).openapi({
+      example: "org/repo",
+      description: "A repo (org/repo) to check. Repeatable (?repo=a&repo=b).",
+    }),
+  })
+  .openapi("ScopePreflightQuery");
+
+/** Response for GET /sessions/preflight/scope. */
+export const ScopePreflightResponseSchema = z
+  .object({
+    covered: z.array(z.string()).openapi({ example: ["org/a"] }),
+    uncovered: z.array(z.string()).openapi({ example: ["org/b"] }),
+  })
+  .openapi("ScopePreflightResponse");
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 
 /**

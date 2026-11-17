@@ -35,7 +35,11 @@ export class NotFoundError extends ApiError {
 }
 
 export class ConflictError extends ApiError {
-  constructor(message = "Conflict") {
+  /** Optional structured fields merged into the JSON error body. */
+  constructor(
+    message = "Conflict",
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(409, message);
     this.name = "ConflictError";
   }

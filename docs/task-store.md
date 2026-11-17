@@ -60,6 +60,8 @@ Sessions carry the planning fields too (PLU-2.3). `GET /sessions` and `GET /sess
 
 Scoped-token reads widen additively: besides the existing task-based rule, an agent token sees a document, and its session, when the document's home repo or any of its target repos is in the token's scope, so a spec registered before any task exists is readable. A session's `documents` list is filtered to the documents the token can see. Writes keep their rules (`POST /documents` needs the home repo in scope; `PATCH /documents/:id` is still home-repo only).
 
+Planning lock and scope preflight (PLU-2.4). `POST /sessions/:slug/lock` takes a self-expiring (15 minute) planning lock before a pass reads the plan; `DELETE /sessions/:slug/lock` releases it once tasks are written and the plan is pushed. The holder is the optional body `holder`, else the token's agent id (`admin` for admin tokens). Acquiring a held, unexpired lock returns `409` with `error`, `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the holder re-acquiring extends it. Releasing a live lock as a non-holder returns `403`; releasing a free or expired lock is a no-op. `GET /sessions/preflight/scope?repo=a&repo=b` is a read-only credential check (not a permission model): it returns `{ covered, uncovered }` for the calling token, where admin tokens cover everything and an agent token covers the repos in its resolved scope.
+
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
 #### Nightly reconciler
