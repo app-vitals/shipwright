@@ -83,6 +83,34 @@ export function resolveOwnerView(
   return { mode: "owner", owner };
 }
 
+/** The `?owner=` value that reproduces a view (`all` or the owner's email). */
+export function ownerViewParam(view: OwnerView): string {
+  return view.mode === "all" ? "all" : view.owner;
+}
+
+/**
+ * The Mine / All switch shared by the sessions and tasks lists. `makeUrl`
+ * builds the list URL for a given `?owner=` value; Mine is only offered when
+ * the signed-in identity is known.
+ */
+export function renderOwnerSwitch(
+  view: OwnerView,
+  userEmail: string,
+  makeUrl: (owner: string) => string,
+): string {
+  const tab = (label: string, active: boolean, href: string) =>
+    `<a href="${escapeHtml(href)}" class="btn ${active ? "btn-primary" : "btn-secondary"}" style="font-size:12px"${active ? ' aria-current="true"' : ""}>${label}</a>`;
+  const other =
+    view.mode === "owner"
+      ? `<span class="badge badge-gray">Owner: ${escapeHtml(view.owner)}</span>`
+      : "";
+  return `<div id="owner-switch" style="display:flex;gap:6px;align-items:center;margin-bottom:16px">
+      ${userEmail ? tab("Mine", view.mode === "mine", makeUrl(userEmail)) : ""}
+      ${tab("All", view.mode === "all", makeUrl("all"))}
+      ${other}
+    </div>`;
+}
+
 const STATE_BADGE: Record<SessionDocument["state"], string> = {
   draft: "badge-gray",
   pr_open: "badge-blue",

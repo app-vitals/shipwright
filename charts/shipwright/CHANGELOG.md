@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.32.264] - 2026-11-17
+## [1.32.265] - 2026-11-17
 
 ### Added
 
 - expose admin.templateSeed to seed default marketplaces and plugins (renders SHIPWRIGHT_TEMPLATE_SEED on the admin container); refreshes the vendored agent-platform 0.4.0 library chart
+
+## [1.32.264] - 2026-11-17
+
+### Changed
+
+- preview profile: admin and metrics share one SHIPWRIGHT_SESSION_SECRET via the shipwright-preview-admin-keys Secret (fixes metrics canary 401)
 
 ## [1.32.263] - 2026-11-17
 

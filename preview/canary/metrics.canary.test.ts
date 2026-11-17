@@ -5,6 +5,7 @@ import {
   createTask,
   deleteTask,
   loadTargets,
+  parseQueueTasksBlocked,
   poll,
 } from "./client.ts";
 
@@ -32,8 +33,10 @@ async function queueMetrics(
     headers: { ...bearer(t.taskStoreToken), Cookie: cookie },
   });
   if (res.status !== 200) return { status: res.status };
-  const body = (await res.json()) as { tasksBlocked: number };
-  return { status: 200, tasksBlocked: body.tasksBlocked };
+  return {
+    status: 200,
+    tasksBlocked: parseQueueTasksBlocked(await res.json()),
+  };
 }
 
 describe("metrics canary", () => {
