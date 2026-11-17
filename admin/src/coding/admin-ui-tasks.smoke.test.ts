@@ -16,7 +16,7 @@ import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
-import type { PrListItem } from "./admin-ui-work-item-pages.ts";
+import type { PrListItem, TaskItem } from "./admin-ui-work-item-pages.ts";
 
 // ─── Tasks page ───────────────────────────────────────────────────────────────
 
@@ -32,7 +32,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -50,7 +51,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -68,7 +70,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 200, offset: 0 };
         },
       }),
@@ -87,7 +90,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -106,7 +110,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -123,7 +128,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return {
             tasks: [
               {
@@ -140,7 +146,7 @@ describe("admin UI — tasks page", () => {
         },
       }),
     );
-    const res = await app.request("/admin/tasks?kind=initiative", {
+    const res = await app.request("/admin/tasks?kind=initiative&owner=all", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -155,7 +161,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -171,7 +178,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -188,7 +196,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -205,7 +214,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -222,7 +232,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -239,7 +250,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -256,7 +268,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -274,7 +287,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -291,7 +305,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -334,7 +349,8 @@ describe("admin UI — tasks page", () => {
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
-          capturedParams.push(params);
+          // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
+          if (!params.has("owner")) capturedParams.push(params);
           return { tasks: [], total: 0, limit: 50, offset: 0 };
         },
       }),
@@ -685,7 +701,7 @@ describe("admin UI — tasks page", () => {
       }),
     );
     const res = await app.request(
-      "/admin/tasks?view=table&status=in_progress",
+      "/admin/tasks?view=table&status=in_progress&owner=all",
       {
         headers: { Cookie: `admin_session=${cookie}` },
       },
@@ -693,7 +709,7 @@ describe("admin UI — tasks page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     const expectedFrom = encodeURIComponent(
-      "/admin/tasks?status=in_progress&view=table",
+      "/admin/tasks?status=in_progress&owner=all&view=table",
     );
     expect(html).toContain(
       `action="/admin/tasks/task-2/release?from=${expectedFrom}"`,
@@ -1777,5 +1793,169 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
     expect(html).toContain("Pub");
     expect(html).not.toContain("quick-add");
     expect(html).not.toContain("/promote");
+  });
+});
+
+// ─── PLU-5.2: owner, origin, linked-document source, Mine / All ──────────────
+
+describe("admin UI — tasks owner, origin and Mine view (PLU-5.2)", () => {
+  const ME = "admin@example.com";
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  const mk = (over: Partial<TaskItem>): TaskItem => ({
+    id: "T-1",
+    title: "A task",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+    ...over,
+  });
+  const mine = mk({
+    id: "T-MINE",
+    title: "Mine task",
+    owner: ME,
+    source: "plan-session",
+    session: "sess-a",
+    planDocumentId: "doc-plan-1",
+    originKind: "document",
+    originRef: "doc-plan-1",
+  });
+  const other = mk({
+    id: "T-OTHER",
+    title: "Other task",
+    owner: "other@example.com",
+    source: "manual",
+    originKind: "human",
+  });
+  const all = [mine, other];
+
+  function ownerAwareFetch(calls: URLSearchParams[] = []) {
+    return async (params: URLSearchParams) => {
+      calls.push(params);
+      const owner = params.get("owner");
+      const rows = owner ? all.filter((t) => t.owner === owner) : all;
+      return { tasks: rows, total: rows.length, limit: 50, offset: 0 };
+    };
+  }
+  const get = (app: ReturnType<typeof createCodingTestApp>, path: string) =>
+    app.request(path, { headers: { Cookie: `admin_session=${cookie}` } });
+
+  it("renders source as an anchor when the task has a linked document, plain text otherwise", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch() }),
+    );
+    const html = await (
+      await get(app, "/admin/tasks?view=table&owner=all")
+    ).text();
+    expect(html).toMatch(
+      /<td class="col-source[^"]*"[^>]*><a href="\/admin\/sessions\/sess-a[^"]*"[^>]*>plan-session<\/a>/,
+    );
+    expect(html).toMatch(/<td class="col-source[^"]*"[^>]*>manual<\/td>/);
+    expect(html).toContain("<th>Owner</th>");
+    expect(html).toContain("<th>Origin</th>");
+    expect(html).toContain("document: doc-plan-1");
+    expect(html).toContain("other@example.com");
+  });
+
+  it("?owner= filters the task-store query and the list", async () => {
+    const calls: URLSearchParams[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch(calls) }),
+    );
+    const html = await (
+      await get(app, "/admin/tasks?view=table&owner=other@example.com")
+    ).text();
+    expect(calls.at(-1)?.get("owner")).toBe("other@example.com");
+    expect(html).toContain("Other task");
+    expect(html).not.toContain("Mine task");
+  });
+
+  it("defaults to Mine when the signed-in user owns tasks", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch() }),
+    );
+    const html = await (await get(app, "/admin/tasks?view=table")).text();
+    expect(html).toContain("Mine task");
+    expect(html).not.toContain("Other task");
+    expect(html).toMatch(
+      /class="btn btn-primary"[^>]*aria-current="true">Mine</,
+    );
+    expect(html).toContain("owner=admin%40example.com");
+  });
+
+  it("defaults to All when the user owns nothing, and ?owner=all skips the probe", async () => {
+    const nobody = await makeSessionCookie(
+      undefined,
+      "sub-9",
+      "nobody@example.com",
+    );
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch() }),
+    );
+    const html = await (
+      await app.request("/admin/tasks?view=table", {
+        headers: { Cookie: `admin_session=${nobody}` },
+      })
+    ).text();
+    expect(html).toContain("Mine task");
+    expect(html).toContain("Other task");
+    expect(html).toMatch(
+      /class="btn btn-primary"[^>]*aria-current="true">All</,
+    );
+
+    const calls: URLSearchParams[] = [];
+    const app2 = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch(calls) }),
+    );
+    await get(app2, "/admin/tasks?view=table&owner=all");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].get("owner")).toBeNull();
+  });
+
+  it("the board view shows the same Mine / All switch", async () => {
+    const app = createCodingTestApp(
+      makeCodingMockDeps({ fetchTaskStoreTasks: ownerAwareFetch() }),
+    );
+    const html = await (await get(app, "/admin/tasks")).text();
+    expect(html).toMatch(
+      /class="btn btn-primary"[^>]*aria-current="true">Mine</,
+    );
+    expect(html).toContain("Mine task");
+    expect(html).not.toContain("Other task");
+  });
+
+  it("quick-add form defaults owner to the signed-in email and posts it", async () => {
+    const created: Record<string, unknown>[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: ownerAwareFetch(),
+        createTask: async (body: Record<string, unknown>) => {
+          created.push(body);
+          return { id: "n" };
+        },
+      }),
+    );
+    const html = await (await get(app, "/admin/tasks?owner=all")).text();
+    expect(html).toMatch(/name="owner"[^>]*value="admin@example.com"/);
+
+    const post = (fields: Record<string, string>) =>
+      app.request("/admin/tasks/quick-add", {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${cookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(fields).toString(),
+      });
+    await post({ title: "x", kind: "idea" });
+    await post({ title: "y", kind: "idea", owner: "edited@example.com" });
+    expect(created[0]).toMatchObject({ owner: ME });
+    expect(created[1]).toMatchObject({ owner: "edited@example.com" });
   });
 });

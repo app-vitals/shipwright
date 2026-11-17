@@ -910,7 +910,7 @@ describe("admin UI — session detail page", () => {
       }),
     );
     const listRes = await app.request(
-      "/admin/tasks?status=in_progress&page=2",
+      "/admin/tasks?status=in_progress&owner=all&page=2",
       {
         headers: { Cookie: `admin_session=${cookie}` },
       },
@@ -929,7 +929,7 @@ describe("admin UI — session detail page", () => {
     expect(sessionRes.status).toBe(200);
     const sessionHtml = await sessionRes.text();
     expect(sessionHtml).toContain(
-      `<a href="/admin/tasks?status=in_progress&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks?status=in_progress&amp;owner=all&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 

@@ -48,6 +48,14 @@ See [`docs/session-notifications.md`](./session-notifications.md) for the follow
 - `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` (optional, default `60000`) — tick cadence in ms. Blank, non-numeric, zero, or negative values fall back to the default.
 - See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for the full env var reference.
 
+## Tasks list owner, origin and Mine / All (PLU-5.2)
+
+The authenticated tasks pages (`/admin/tasks`, board and `?view=table`) show who owns and where each task came from. The table has **Origin** (`originKind: originRef`, e.g. `skill: plan-session`) and **Owner** (the task's requester email) columns; the task detail page shows both as fields. The **Source** cell is an anchor to the task's session `#session-documents` block when the task has a linked `planDocumentId` or `specDocumentId` and a session, and plain text otherwise — rendering never calls GitHub.
+
+A **Mine / All** switch above the quick-add form reuses the sessions behaviour and its helpers (`resolveOwnerView`, `ownerViewParam`, `renderOwnerSwitch` in `admin/src/coding/session-documents.ts`). The view lives in `?owner=`: `?owner=<email>` filters the task-store `GET /tasks` call to that owner (the signed-in user's own email is "Mine"), `?owner=all` or an empty value shows everyone. With no `owner` param the page defaults to Mine when a `limit=1` `GET /tasks?owner=<email>` probe finds a task owned by the signed-in user; a failed probe or unknown identity falls back to All. The current view is written into pagination, state-tab, filter-form and back-link URLs. The public board (`/public/tasks`) is unaffected.
+
+The initiative / idea **quick-add** form has an editable **Owner** field pre-filled with the signed-in user's email; `POST /admin/tasks/quick-add` sends it as the new task's `owner` (a form that omits the field gets the same default; a blanked field creates the task without an owner).
+
 ## Public read-only task board (`coding/admin-ui-coding.ts`) — unauthenticated
 
 Mounted at `/public/tasks`. **No authentication required** — renders a read-only task list scoped to a configurable repository. When `SHIPWRIGHT_ADMIN_PUBLIC_REPO` is set, fetches tasks for that repo from the task-store and displays them in a static HTML page with no mutation controls (create/edit/status-change disabled). When the config is absent or task-store access fails, the page renders in degraded mode (empty table + warning notice). The endpoint is always registered and always accessible; it gracefully degrades when prerequisites are missing.
