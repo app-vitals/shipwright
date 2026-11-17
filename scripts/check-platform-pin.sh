@@ -1,36 +1,104 @@
 #!/usr/bin/env bash
 #
 # scripts/check-platform-pin.sh <package> <minVersion>
+# scripts/check-platform-pin.sh --task <PRODUCER-TASK-ID> <package>
 #
 # The pin-check behind a RELEASE GATE task (docs/release-gate.md). Exits 0 when
 # app-vitals/shipwright main pins <package> at >= <minVersion>; otherwise exits
-# 1 and prints which stage of the release chain the change is stuck in:
+# 1 and prints which stage of the release chain the change is stuck in.
 #
-#   STAGE: no-agent-release       agent has not cut v<minVersion>
+# With --task, <minVersion> is not hardcoded: it is the first agent release
+# (vX.Y.Z tag) containing the merge commit of the producer task's PR, read from
+# the task store (repo + pr) and GitHub.
+#
+#   STAGE: producer-not-merged    --task only: producer PR not merged yet
+#   STAGE: no-agent-release       agent has not cut v<minVersion> (with --task:
+#                                 no release contains the producer's merge commit)
 #   STAGE: no-bump-pr             release published, no chore/platform-release PR
 #   STAGE: bump-pr-conflicting    bump PR open but CONFLICTING
 #   STAGE: bump-pr-red            bump PR open and a check failed
 #   STAGE: bump-pr-pending        bump PR open, checks still running / merging
 #
-# Exit 2 means bad usage, an unreadable pin, or a gh failure other than a
-# missing release (not a stage). Read-only: only
-# `gh api` / `gh pr list` reads, no task-store calls. Needs gh authenticated.
+# Exit 2 means bad usage, an unreadable pin, a task with no repo/pr, a
+# task-store failure, or a gh failure other than a missing release (not a
+# stage). Read-only: only `gh api` / `gh pr list` reads, plus one task-store
+# GET in --task mode (SHIPWRIGHT_TASK_STORE_URL / SHIPWRIGHT_TASK_STORE_TOKEN).
+# Needs gh authenticated.
 # Overrides: SHIPWRIGHT_REPO (app-vitals/shipwright), AGENT_REPO
 # (app-vitals/agent), BUMP_BRANCH (chore/platform-release).
 # Tests: scripts/check-platform-pin.unit.test.ts (fake gh on PATH).
 #
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: check-platform-pin.sh <package> <minVersion>" >&2
+TASK_ID=""
+if [[ "${1:-}" == "--task" ]]; then
+  if [[ $# -ne 3 ]]; then
+    echo "usage: check-platform-pin.sh --task <PRODUCER-TASK-ID> <package>" >&2
+    exit 2
+  fi
+  TASK_ID="$2"
+  PACKAGE="$3"
+  MIN=""
+elif [[ $# -ne 2 ]]; then
+  echo "usage: check-platform-pin.sh <package> <minVersion> | --task <PRODUCER-TASK-ID> <package>" >&2
   exit 2
+else
+  PACKAGE="$1"
+  MIN="${2#v}"
 fi
-PACKAGE="$1"
-MIN="$2"
-MIN="${MIN#v}"
 SHIPWRIGHT_REPO="${SHIPWRIGHT_REPO:-app-vitals/shipwright}"
 AGENT_REPO="${AGENT_REPO:-app-vitals/agent}"
 BUMP_BRANCH="${BUMP_BRANCH:-chore/platform-release}"
+
+# --task: resolve MIN from the producer task's merge commit. Exits 1 with a
+# STAGE line when the producer is unmerged or no release contains it.
+resolve_min_from_task() {
+  if [[ -z "${SHIPWRIGHT_TASK_STORE_URL:-}" || -z "${SHIPWRIGHT_TASK_STORE_TOKEN:-}" ]]; then
+    echo "SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN are required for --task" >&2
+    exit 2
+  fi
+  local task repo pr pull merge_sha tags tag status
+  task="$(curl -sf -H "Authorization: Bearer ${SHIPWRIGHT_TASK_STORE_TOKEN}" \
+    "${SHIPWRIGHT_TASK_STORE_URL}/tasks/${TASK_ID}")" || {
+    echo "cannot read task ${TASK_ID} from the task store" >&2
+    exit 2
+  }
+  repo="$(echo "$task" | jq -r '.repo // empty')" || exit 2
+  pr="$(echo "$task" | jq -r '.pr // empty')" || exit 2
+  if [[ -z "$repo" || -z "$pr" ]]; then
+    echo "task ${TASK_ID} has no repo/pr — the producer task has no PR yet" >&2
+    exit 2
+  fi
+  pull="$(gh api "repos/${repo}/pulls/${pr}")" || {
+    echo "cannot read ${repo}#${pr}" >&2
+    exit 2
+  }
+  merge_sha="$(echo "$pull" | jq -r 'if .merged_at then (.merge_commit_sha // empty) else empty end')"
+  if [[ -z "$merge_sha" ]]; then
+    echo "STAGE: producer-not-merged (${repo}#${pr} for task ${TASK_ID} is not merged yet)"
+    exit 1
+  fi
+  tags="$(gh api "repos/${AGENT_REPO}/releases?per_page=100")" || {
+    echo "cannot list ${AGENT_REPO} releases" >&2
+    exit 2
+  }
+  tags="$(echo "$tags" | jq -r '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)"
+  for tag in $tags; do
+    # tag contains merge_sha when the tag is ahead of (or identical to) it.
+    status="$(gh api "repos/${repo}/compare/${merge_sha}...${tag}" | jq -r '.status')" || {
+      echo "cannot compare ${merge_sha} with ${tag} in ${repo}" >&2
+      exit 2
+    }
+    if [[ "$status" == "ahead" || "$status" == "identical" ]]; then
+      MIN="${tag#v}"
+      echo "producer ${TASK_ID} (${repo}#${pr}, ${merge_sha:0:7}) first shipped in ${tag}"
+      return
+    fi
+  done
+  echo "STAGE: no-agent-release (no ${AGENT_REPO} release contains ${repo}#${pr} @ ${merge_sha:0:7} — check the Release workflow; a release is only cut for a feat:/fix:/perf: commit)"
+  exit 1
+}
 
 # Succeeds when $1 >= $2 (semver; a prerelease sorts below its release).
 version_gte() {
@@ -58,6 +126,10 @@ pinned="$(echo "$pkg_json" | jq -r --arg p "$PACKAGE" \
 if [[ -z "$pinned" ]]; then
   echo "${PACKAGE} is not pinned in ${SHIPWRIGHT_REPO}@main package.json" >&2
   exit 2
+fi
+
+if [[ -n "$TASK_ID" ]]; then
+  resolve_min_from_task
 fi
 
 if version_gte "$pinned" "$MIN"; then

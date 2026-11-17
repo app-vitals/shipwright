@@ -29,18 +29,21 @@ Insert a RELEASE GATE between the **Expand** (step 1) and **Migrate** (step 2) t
 Run the read-only pin check (no task-store calls):
 
 ```bash
-scripts/check-platform-pin.sh <package> <minVersion>
-# e.g. scripts/check-platform-pin.sh @app-vitals/agent-runtime 0.17.0
+scripts/check-platform-pin.sh --task <PRODUCER-TASK-ID> <package>
+# e.g. scripts/check-platform-pin.sh --task AGT-1.2 @app-vitals/agent-runtime
 ```
 
-- **Exit 0** — shipwright `main` pins the package at >= `minVersion`. Mark the gate task `done`; the consumer task becomes ready through its dependency.
+Gates name the **producer task id**, never a hardcoded version. `--task` reads the producer task (repo + pr) from the task store (`SHIPWRIGHT_TASK_STORE_URL` / `SHIPWRIGHT_TASK_STORE_TOKEN`), resolves the PR's merge commit, finds the first agent `vX.Y.Z` release containing it, and runs the pin check at that version. The legacy `scripts/check-platform-pin.sh <package> <minVersion>` form still works.
+
+- **Exit 0** — shipwright `main` pins the package at >= the first release containing the producer's merge commit (`--task`) or `minVersion` (legacy). Mark the gate task `done`; the consumer task becomes ready through its dependency.
 - **Exit 1** — not yet. The script prints the stuck stage (below). Leave the gate `pending` and report the stage; do **not** mark it `done` or `blocked`.
-- **Exit 2** — usage error, the package is not pinned, or a `gh` call failed (auth, network); fix the invocation or environment and retry.
+- **Exit 2** — usage error, the package is not pinned, the producer task has no repo/pr or the task store is unreachable, or a `gh` call failed (auth, network); fix the invocation or environment and retry.
 - **Stuck > 2h** after the producer merged: set `hitl` with a note naming the stage.
 
 | `STAGE:` | Meaning |
 |---|---|
-| `no-agent-release` | agent has not cut `vX.Y.Z` |
+| `producer-not-merged` | `--task` only: the producer PR has not merged yet |
+| `no-agent-release` | agent has not cut `vX.Y.Z` (`--task`: no release contains the producer's merge commit) |
 | `no-bump-pr` | release published, no open `chore/platform-release` PR |
 | `bump-pr-conflicting` | bump PR open but `CONFLICTING` |
 | `bump-pr-red` | bump PR open and a check failed |

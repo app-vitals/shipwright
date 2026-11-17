@@ -1334,15 +1334,16 @@ describe("plan-session.md — Cross-repo producer → consumer work (XPF-4.1)", 
     expect(section).toContain("chore: wait for @app-vitals/agent");
   });
 
-  it("includes the gate title template with {minVersion} placeholder", () => {
+  it("includes the gate title template keyed by {PRODUCER-TASK-ID}, not a version", () => {
     const section = extractBreakingChangeSafetySection(content);
-    expect(section).toContain("{minVersion}");
+    expect(section).toContain("{PRODUCER-TASK-ID}");
+    expect(section).not.toContain("{minVersion}");
     expect(section).toContain("chore: wait for @app-vitals/agent");
   });
 
   it("documents the completion check using scripts/check-platform-pin.sh", () => {
     const section = extractBreakingChangeSafetySection(content);
-    expect(section).toContain("scripts/check-platform-pin.sh");
+    expect(section).toContain("scripts/check-platform-pin.sh --task {PRODUCER-TASK-ID}");
     expect(section).toContain("@app-vitals/agent-");
   });
 

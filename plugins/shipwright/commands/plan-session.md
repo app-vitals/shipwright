@@ -369,13 +369,13 @@ If a task has no renames, removals, or constraint additions, mark it: `Safe to d
 2. **Migrate** (consumer repo) — update consumers to use the new contract. Each migrate task depends on a RELEASE GATE task (see below) that waits for the producer's expand task to be deployed.
 3. **Contract** (producer repo, later) — removal or narrowing of the contract. This task depends on the consumer's migrate task being deployed (not just merged), ensuring zero consumers are still on the old interface.
 
-For any consumer task needing an unreleased producer version, insert a RELEASE GATE task (title: `chore: wait for @app-vitals/agent >= X in shipwright`) between the producer and consumer:
+For any consumer task needing an unreleased producer version, insert a RELEASE GATE task (title: `chore: wait for @app-vitals/agent release of {PRODUCER-TASK-ID} in shipwright`) between the producer and consumer:
 
 ```
-chore: wait for @app-vitals/agent >= {minVersion} in shipwright
+chore: wait for @app-vitals/agent release of {PRODUCER-TASK-ID} in shipwright
 
-Producer task: {PRODUCER-TASK-ID}; min version: {minVersion}.
-Completion check: run `scripts/check-platform-pin.sh @app-vitals/agent-{package} {minVersion}`.
+Producer task: {PRODUCER-TASK-ID} (never hardcode a version).
+Completion check: run `scripts/check-platform-pin.sh --task {PRODUCER-TASK-ID} @app-vitals/agent-{package}`.
 Exit 0 → mark gate done; exit non-zero → report the printed stage and leave pending (never done/blocked).
 Stuck > 2h after {PRODUCER-TASK-ID} merged → set hitl naming the stuck stage.
 
