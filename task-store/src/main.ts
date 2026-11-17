@@ -21,6 +21,11 @@ import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
 import { DocumentService } from "./document-service.ts";
 import {
+  createGitHubPlanClient,
+  githubTokenFromEnv,
+} from "./github-plan-client.ts";
+import { PlanDocumentReconciler } from "./plan-document-reconciler.ts";
+import {
   createPrismaClientWithPool,
   enablePoolObservability,
 } from "./prisma-client.ts";
@@ -327,6 +332,20 @@ async function startServer(): Promise<void> {
     }, 3_600_000);
     console.log("[task-store] session-retention reaper started (interval: 1h)");
   }
+
+  // PLU-2.6: nightly planning-document reconcile. With no GitHub credential
+  // the sweep is a no-op that logs once, so the interval is always registered.
+  const githubToken = githubTokenFromEnv();
+  const planDocumentReconciler = new PlanDocumentReconciler(
+    prisma,
+    githubToken ? createGitHubPlanClient({ token: githubToken }) : null,
+  );
+  setInterval(() => {
+    planDocumentReconciler.sweep().catch((err) => {
+      console.error("[plan-document-reconciler] sweep error:", err);
+    });
+  }, 86_400_000);
+  console.log("[task-store] plan-document reconciler started (interval: 24h)");
 
   const server = Bun.serve({ port, fetch: app.fetch });
 
