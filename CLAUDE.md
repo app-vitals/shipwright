@@ -153,7 +153,7 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 
 - **No new coupling:** the plugin stays repo-agnostic; the metrics service and the agent depend on no external platform service.
 - **Local-first:** everything runs offline by default (fixtures / injected doubles / scratch queue); live external calls only when env explicitly enables them.
-- **Conventional Commits** — required (a `pr-title-lint` workflow enforces PR titles); releases are automated via semantic-release.
+- **Conventional Commits** — required (a `pr-title-lint` workflow enforces PR titles); releases are tag-driven (`build-*.yml`).
 - **Lint/format:** Biome (2-space indent, organize-imports). Run `task lint` before committing.
 - **License:** MIT across all artifacts.
 
