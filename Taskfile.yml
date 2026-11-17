@@ -98,6 +98,11 @@ tasks:
         export SHIPWRIGHT_DEFAULT_AGENT_TYPE="${SHIPWRIGHT_DEFAULT_AGENT_TYPE:-coding}"
         bun scripts/agent-workspace-pull.ts {{.CLI_ARGS}}
 
+  register-planning-sessions:
+    desc: "Register every planning/*/ session in this checkout with the task store (task register-planning-sessions -- [--dry-run] [--root <dir>] [--repo <org/repo>]) — re-runnable; --dry-run writes nothing; non-standard files are reported, never registered; owner stays empty. Requires SHIPWRIGHT_TASK_STORE_URL + SHIPWRIGHT_TASK_STORE_TOKEN."
+    cmds:
+      - bun scripts/register-planning-sessions.ts {{.CLI_ARGS}}
+
   demo:serve:
     desc: Serve demo/slides/*.html for local sizzle-reel recording → http://localhost:4321/slides/
     cmds:

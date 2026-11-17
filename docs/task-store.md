@@ -62,6 +62,18 @@ Scoped-token reads widen additively: besides the existing task-based rule, an ag
 
 Planning lock and scope preflight (PLU-2.4). `POST /sessions/:slug/lock` takes a self-expiring (15 minute) planning lock before a pass reads the plan; `DELETE /sessions/:slug/lock` releases it once tasks are written and the plan is pushed. The holder is the optional body `holder`, else the token's agent id (`admin` for admin tokens). Acquiring a held, unexpired lock returns `409` with `error`, `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the holder re-acquiring extends it. Releasing a live lock as a non-holder returns `403`; releasing a free or expired lock is a no-op. `GET /sessions/preflight/scope?repo=a&repo=b` is a read-only credential check (not a permission model): it returns `{ covered, uncovered }` for the calling token, where admin tokens cover everything and an agent token covers the repos in its resolved scope.
 
+#### Registering existing planning sessions
+
+Operators register sessions that predate document registration with `task register-planning-sessions` (`scripts/register-planning-sessions.ts`). It walks `planning/*/` in the current checkout and applies the shared PLU-3.1 rules from `plugins/shipwright/scripts/register-planning-documents.ts` (the same module the commands use for lazy registration): `PLAN.md` is plan 1, `PRODUCT-SPEC.md` is spec 1, `SPEC-{NNNN}.md` is spec NNNN, and tasks whose `source` is the plan path gain `planDocumentId` and nothing else. Any other file is listed in the report and never registered; `owner` is never set.
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL=... SHIPWRIGHT_TASK_STORE_TOKEN=...
+task register-planning-sessions -- --dry-run   # print what would happen, write nothing
+task register-planning-sessions                # apply
+```
+
+Flags: `--dry-run`, `--root <dir>` (checkout root, default the current directory) and `--repo <org/repo>` (home repo; default: parsed from `git remote get-url origin`). The script is re-runnable: a second run over an unchanged tree reports zero creates and zero updates. The report lists documents created and updated, tasks linked, non-standard files and any errors; the exit code is non-zero when there are errors. A document already registered keeps its home repo.
+
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
 #### Nightly reconciler

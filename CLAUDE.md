@@ -63,6 +63,7 @@ task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
 task stack      # full dev stack in a tmux session (6 panes) — requires tmux + Docker + state/dev-agent.env
 task hitl       # human-in-the-loop runner: boots task-store (:3002) + admin (:3001), then loops — pulls the next ready task and launches Claude Code with the right command
 task agent-workspace-pull -- <id-or-name>  # mirror a real, already-deployed agent's workspace locally (clones its repos, installs its plugins) — no dispatch loop. Requires SHIPWRIGHT_API_URL + SHIPWRIGHT_ADMIN_API_KEY; optional SHIPWRIGHT_WORKSPACE_PULL_ROOT. The task defaults SHIPWRIGHT_SPECIALTIES_DIR (symlinking agent/workspace templates) and SHIPWRIGHT_DEFAULT_AGENT_TYPE=coding when unset
+task register-planning-sessions -- [--dry-run]  # operator script: register every planning/*/ session in this checkout with the task store (re-runnable, reports non-standard files, owner stays empty); see docs/task-store.md#registering-existing-planning-sessions
 task store:local                            # boot a local task store (Postgres + published image via Docker) and print the SHIPWRIGHT_TASK_STORE_URL/TOKEN exports; `-- --down` removes it (wraps scripts/local-store.sh)
 ```
 
