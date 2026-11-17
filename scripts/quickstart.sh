@@ -25,6 +25,9 @@
 #
 set -euo pipefail
 
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+[ "$SCRIPT_DIR" != "${BASH_SOURCE[0]}" ] || SCRIPT_DIR=.
+
 DASHBOARD_URL="http://localhost:3460/dashboard"
 
 # --- prerequisite checks (read-only; safe to re-run) ------------------------
@@ -43,6 +46,14 @@ echo "[quickstart] checking prerequisites (git, bun, task)..."
 require git "Install git: https://git-scm.com/downloads"
 require bun "Install Bun: https://bun.sh"
 require task "Install go-task: https://taskfile.dev/installation/"
+
+# Advisory only: the offline dashboard needs none of gh, a GitHub remote or a git
+# identity, so a doctor failure warns but does not stop setup. The lines above name
+# what to fix before the first PR. Set SHIPWRIGHT_SKIP_DOCTOR=1 to skip.
+if [ -z "${SHIPWRIGHT_SKIP_DOCTOR:-}" ]; then
+  "${BASH:-bash}" "$SCRIPT_DIR/doctor.sh" --skip-task-store \
+    || echo "[quickstart] WARNING: prerequisite check reported problems (see above); continuing." >&2
+fi
 
 # Note: Claude Code itself is a prerequisite for the /plugin install step of the
 # onboarding prompt, but it is NOT needed by this script — so we do not check
