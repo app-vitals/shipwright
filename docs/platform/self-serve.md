@@ -55,7 +55,7 @@ A non-admin session is non-admin at the JSON API too: the `admin_session` cookie
 Owners and members create, configure and delete agents in their account, up to quota:
 
 - Agents are provisioned with the resolved self-serve specialty (configurable via `SHIPWRIGHT_SELF_SERVE_AGENT_TYPE`, defaulting to the platform's default specialty).
-- **Bring your own credentials:** an Anthropic API key or Claude Code OAuth token supplied at create time, a Slack app (needs the customer's own Slack App Configuration Token — saved once on the account's Slack config token settings page, or pasted on the form as a fallback; the `xapp-` Socket Mode token stays a manual step) and a GitHub PAT, manual GitHub App entry or the auto App manifest flow under the customer's own org. The new-agent form lists these prerequisites and the remaining quota.
+- **Bring your own credentials:** an Anthropic API key or Claude Code OAuth token supplied at create time, a Slack app (needs the customer's own Slack App Configuration Token) and a GitHub PAT, manual GitHub App entry or the auto App manifest flow under the customer's own org. The new-agent form lists these prerequisites and the remaining quota.
 - Full per-agent control: settings, repos, allowlists, envs (including `ANTHROPIC_*`, `SLACK_*`, `GH_*`), crons, tools, plugins, tokens, chat, members and delete. There is **no reserved-key lockdown** in Phase 1 — tenants can run arbitrary shell in their pods through tools and cron `preCheck`, so containment relies on the isolation below.
 - The Tasks, PRs and Sessions views show only the account's own rows.
 
