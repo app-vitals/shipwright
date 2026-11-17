@@ -38,6 +38,7 @@ import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   ErrorSchema,
   SessionAccountQuerySchema,
@@ -159,6 +160,8 @@ export function createSessionsRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
+    // PLU-1.1: a filter we don't recognise must 400, never silently widen.
+    rejectUnknownQuery(c, SessionListQuerySchema);
     const agentId = c.get("agentId");
     const repos = c.get("repos");
 

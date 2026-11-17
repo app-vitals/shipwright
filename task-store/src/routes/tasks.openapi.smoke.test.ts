@@ -11,7 +11,9 @@ import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { ApiError, BadRequestError, NotFoundError } from "../errors.ts";
+import { buildTaskStoreSpec } from "../generate-spec.ts";
 import type { Task, TaskEvent } from "../index.ts";
+import { type SpecParam, sampleValue } from "../lib/spec-param-sample.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { createTasksRoutes } from "./tasks.ts";
 
@@ -1136,5 +1138,42 @@ describe("GET /:id/events (TCS-1.2)", () => {
 
     const res = await parent.request("/t-1/events");
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── Unknown query parameters (PLU-1.1) ───────────────────────────────────────
+
+describe("GET /tasks unknown query parameters (PLU-1.1)", () => {
+  it("returns 400 naming an unrecognised parameter", async () => {
+    const parent = makeAdminParent(createTasksRoutes(fakeTaskService()));
+    const res = await parent.request("/?bogus=1");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("bogus");
+  });
+
+  it("rejects an unknown parameter on the ready and blocked branches too", async () => {
+    const parent = makeAdminParent(createTasksRoutes(fakeTaskService()));
+    for (const qs of ["ready=true&sesion=x", "state=blocked&sesion=x"]) {
+      const res = await parent.request(`/?${qs}`);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("sesion");
+    }
+  });
+
+  it("accepts every parameter documented in the OpenAPI schema", async () => {
+    const spec = buildTaskStoreSpec() as {
+      paths: Record<string, { get?: { parameters?: SpecParam[] } }>;
+    };
+    const params = spec.paths["/tasks"]?.get?.parameters ?? [];
+    expect(params.length).toBeGreaterThan(0);
+    for (const p of params) {
+      const parent = makeAdminParent(createTasksRoutes(fakeTaskService()));
+      const res = await parent.request(
+        `/?${encodeURIComponent(p.name)}=${encodeURIComponent(sampleValue(p))}`,
+      );
+      expect(`${p.name}:${res.status}`).toBe(`${p.name}:200`);
+    }
   });
 });

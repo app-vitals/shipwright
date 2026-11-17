@@ -77,6 +77,7 @@ import {
   NotFoundError,
 } from "../errors.ts";
 import type { Prisma, TaskKind } from "../index.ts";
+import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   BulkInsertBodySchema,
   BulkInsertResponseSchema,
@@ -975,6 +976,8 @@ export function createTasksRoutes(
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
+    // PLU-1.1: a filter we don't recognise must 400, never silently widen.
+    rejectUnknownQuery(c, TaskListQuerySchema);
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const scopeDegraded = c.get("scopeDegraded");

@@ -4,6 +4,31 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `GET /tasks` and `GET /sessions` reject unknown query parameters _(PLU-1.1)_
+
+**Version**: next (PLU-1.1)
+
+**Who this affects**: any task-store API client that sends a query parameter the list endpoint does
+not document. Shipwright's own plugin, agent, admin, metrics and MCP server were audited and send
+none; `list-query-callers.content.test.ts` (repo root) keeps that true.
+
+- An unrecognised query parameter on `GET /tasks` or `GET /sessions` now returns `400` instead of
+  being ignored. Before, a misspelt filter (`?sesion=x`) silently widened to the whole store.
+- The body names every offending parameter and lists the accepted ones, for example
+  `{"error":"unknown query parameter: sesion (accepted: status, state, source, session, ...)"}`.
+- The accepted set is the key set of the zod query schema that generates `task-store/openapi.json`
+  (`TaskListQuerySchema`, `SessionListQuerySchema`), so the allow-list and the docs cannot drift.
+  The check is the shared `rejectUnknownQuery()` helper in `task-store/src/lib/`, reused by new
+  list routes.
+- Stray parameter or typo? Compare the name in the error with the `accepted:` list. A close match
+  (`sesion` for `session`, `repos` for `repo`, `agent` for `agentId` on sessions) is a typo: fix the
+  spelling. A name with no close match is a stray: drop it, because the endpoint never read it.
+  A parameter that belongs to another endpoint, such as `prNumber` or `reviewState` (`GET /prs`),
+  or an admin UI page parameter such as `view`, is also a stray on these two endpoints.
+- A documented parameter with a bad value still returns `400` from schema validation, as before.
+
+---
+
 ## Breaking: task-store drops `deploying`, `deployingAt`, the `deploy` PR phase and `readyForDeployAt` _(MPD-3.5)_
 
 **Version**: next (MPD-3.5)

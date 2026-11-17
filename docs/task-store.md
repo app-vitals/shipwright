@@ -58,6 +58,14 @@ A `Session` row is upserted automatically whenever a task write sets a non-blank
 
 `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` also type-check the non-string columns that the passthrough body schemas leave untyped (`assertTaskFieldTypes` in `task-store/src/routes/tasks.ts`): integer fields such as `complexity`, `skipCount` and the token counters must be an integer or `null`; `hours`, `coverageDelta` and `costUsd` a finite number or `null`; `hitl` a boolean or `null`; `acceptanceCriteria` and `dependencies` an array of strings. A mistyped value (e.g. `complexity: "S"`) is a `400` naming the field — there is no string-to-number coercion — rather than a Prisma `500`.
 
+### GET list query parameter validation
+
+`GET /tasks` and `GET /sessions` reject any query parameter the endpoint does not document with a `400` error, naming every unknown parameter and listing the accepted ones. This prevents typos (e.g., `?sesion=x` for `?session=x`) and stray parameters from silently widening results to the whole store. The accepted parameter set is derived from the same zod schema that generates the OpenAPI spec (`TaskListQuerySchema`, `SessionListQuerySchema`), so the documented and validated sets cannot drift. The check is shared via the `rejectUnknownQuery()` helper in `task-store/src/lib/reject-unknown-query.ts`.
+
+Error body example: `{"error":"unknown query parameter: sesion (accepted: status, state, source, session, ...)"}`
+
+A documented parameter with a bad value still returns `400` from schema validation — this validation gate catches *unknown* parameters only, before schema coercion.
+
 ### Task status lifecycle
 
 ```

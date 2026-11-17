@@ -19,6 +19,8 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
 import { ApiError, NotFoundError } from "../errors.ts";
+import { buildTaskStoreSpec } from "../generate-spec.ts";
+import { type SpecParam, sampleValue } from "../lib/spec-param-sample.ts";
 import type {
   SessionListFilters,
   SessionListItem,
@@ -755,5 +757,41 @@ describe("/sessions account scoping (smoke, SSP-6.7)", () => {
       body: JSON.stringify({ archived: true }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Unknown query parameters (PLU-1.1) ───────────────────────────────────────
+
+describe("GET /sessions unknown query parameters (PLU-1.1)", () => {
+  it("returns 400 naming an unrecognised parameter", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/?bogus=1");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("bogus");
+  });
+
+  it("names every unrecognised parameter, even alongside valid ones", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/?state=all&agent=a&tsak=b");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("agent");
+    expect(body.error).toContain("tsak");
+  });
+
+  it("accepts every parameter documented in the OpenAPI schema", async () => {
+    const spec = buildTaskStoreSpec() as {
+      paths: Record<string, { get?: { parameters?: SpecParam[] } }>;
+    };
+    const params = spec.paths["/sessions"]?.get?.parameters ?? [];
+    expect(params.length).toBeGreaterThan(0);
+    for (const p of params) {
+      const parent = makeAdminParent(makeApp());
+      const res = await parent.request(
+        `/?${encodeURIComponent(p.name)}=${encodeURIComponent(sampleValue(p))}`,
+      );
+      expect(`${p.name}:${res.status}`).toBe(`${p.name}:200`);
+    }
   });
 });
