@@ -216,7 +216,7 @@ async function ghFetchPr(repo: string, pr: string): Promise<PrState> {
   };
 }
 
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

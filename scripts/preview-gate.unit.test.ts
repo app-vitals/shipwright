@@ -15,6 +15,7 @@ import {
   buildHtpasswd,
   GATE_SECRET_NAME,
   gateIngressValues,
+  hashToFiles,
   helmSetEscape,
   verifyGate,
 } from "./preview-gate.ts";
@@ -190,6 +191,36 @@ describe("hash CLI", () => {
       );
       expect(await proc.exited).not.toBe(0);
       expect(() => statSync(out)).toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("hashToFiles", () => {
+  it("writes a verifiable bcrypt htpasswd and a 0600 selfcheck in-process", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "preview-gate-files-"));
+    try {
+      const out = join(dir, "htpasswd");
+      await hashToFiles("in-proc-pw\n", out);
+      const lines = readFileSync(out, "utf8").trimEnd().split("\n");
+      expect(lines).toHaveLength(2);
+      const hash = lines[0].slice("preview:".length).replace("$2y$", "$2b$");
+      expect(await Bun.password.verify("in-proc-pw", hash)).toBe(true);
+      const self = readFileSync(`${out}.selfcheck`, "utf8").trim();
+      expect(lines[1].startsWith(`${self.split(":")[0]}:$2y$`)).toBe(true);
+      expect(statSync(out).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an unusable password before writing anything", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "preview-gate-files-"));
+    try {
+      const out = join(dir, "htpasswd");
+      await expect(hashToFiles("\n", out)).rejects.toThrow(/empty/);
+      expect(() => readFileSync(out)).toThrow();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

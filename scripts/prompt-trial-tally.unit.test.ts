@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   costOf,
   formatReport,
+  loadSessions,
   median,
+  mergeTranscripts,
   parseArgs,
   parseTranscript,
   tallyVariants,
@@ -203,12 +208,87 @@ describe("tallyVariants", () => {
 describe("parseArgs", () => {
   test("parses flags", () => {
     expect(
-      parseArgs(["--command", "dev-task", "--dir", "a", "--dir", "b", "--json"]),
+      parseArgs([
+        "--command",
+        "dev-task",
+        "--dir",
+        "a",
+        "--dir",
+        "b",
+        "--json",
+      ]),
     ).toEqual({ command: "dev-task", dirs: ["a", "b"], json: true });
   });
   test("errors on missing command or unknown flag", () => {
     expect(() => parseArgs([])).toThrow(/--command/);
     expect(() => parseArgs(["--command", "x", "--bogus"])).toThrow(/bogus/);
     expect(() => parseArgs(["--command"])).toThrow(/--command/);
+  });
+});
+
+describe("mergeTranscripts", () => {
+  test("folds subagent turns, cost, refs and dispatches into the parent", () => {
+    const parent = parseTranscript(
+      [
+        user("p", "/shipwright:dev-task-lean X"),
+        assistant("p", {
+          usage: { output_tokens: M },
+          tools: [{ name: "Agent", input: { subagent_type: "implementer" } }],
+        }),
+      ].join("\n"),
+    );
+    const sub = parseTranscript(
+      assistant("s", {
+        usage: { output_tokens: M },
+        tools: [
+          { name: "Agent", input: { subagent_type: "implementer" } },
+          {
+            name: "Read",
+            input: { file_path: "references/dev-task-lean/a.md" },
+          },
+        ],
+      }),
+      true,
+    );
+    const merged = mergeTranscripts(parent, [sub]);
+    expect(merged).toBe(parent);
+    expect(merged.turns).toEqual({ main: 1, sub: 1 });
+    expect(merged.cost.sub).toBeCloseTo(15);
+    expect([...merged.refs]).toEqual(["dev-task-lean/a.md"]);
+    expect(merged.dispatches.implementer).toBe(2);
+  });
+});
+
+describe("loadSessions", () => {
+  test("returns [] for a missing dir", () => {
+    expect(loadSessions(join(tmpdir(), "no-such-trial-dir-xyz"))).toEqual([]);
+  });
+
+  test("loads sessions, merges subagents/, and ignores non-jsonl files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "trial-tally-"));
+    try {
+      writeFileSync(
+        join(dir, "s1.jsonl"),
+        [
+          user("s1", "/shipwright:dev-task-lean X"),
+          assistant("s1", { usage: { output_tokens: M } }),
+        ].join("\n"),
+      );
+      writeFileSync(join(dir, "notes.txt"), "ignore me");
+      mkdirSync(join(dir, "s1", "subagents"), { recursive: true });
+      writeFileSync(
+        join(dir, "s1", "subagents", "agent.jsonl"),
+        assistant("s1", { usage: { output_tokens: M } }),
+      );
+      writeFileSync(join(dir, "s1", "subagents", "skip.md"), "x");
+      writeFileSync(join(dir, "s2.jsonl"), user("s2", "/shipwright:review 1"));
+      const sessions = loadSessions(dir);
+      expect(sessions).toHaveLength(2);
+      const s1 = sessions.find((s) => s.sessionId === "s1");
+      expect(s1?.name).toBe("dev-task-lean");
+      expect(s1?.turns).toEqual({ main: 1, sub: 1 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

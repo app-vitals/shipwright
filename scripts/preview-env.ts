@@ -422,7 +422,10 @@ export function buildTargetsEnv(
 }
 
 /** Argv for one background `kubectl port-forward`. */
-function buildPortForwardArgv(context: string, p: PortForward): string[] {
+export function buildPortForwardArgv(
+  context: string,
+  p: PortForward,
+): string[] {
   return [
     "kubectl",
     "--context",

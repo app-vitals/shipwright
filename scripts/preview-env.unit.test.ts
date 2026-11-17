@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Command } from "./minikube.ts";
 import {
+  buildPortForwardArgv,
   buildPreviewCommands,
   buildTargetsEnv,
   generatePreviewSecrets,
@@ -295,6 +296,23 @@ describe("secret files", () => {
       expect(existsSync(seenDir)).toBe(false);
     } finally {
       rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildPortForwardArgv", () => {
+  it("builds a kubectl port-forward argv for each forward", () => {
+    for (const p of PORT_FORWARDS) {
+      expect(buildPortForwardArgv("ctx", p)).toEqual([
+        "kubectl",
+        "--context",
+        "ctx",
+        "port-forward",
+        "--namespace",
+        p.namespace,
+        `svc/${p.service}`,
+        `${p.local}:${p.remote}`,
+      ]);
     }
   });
 });
