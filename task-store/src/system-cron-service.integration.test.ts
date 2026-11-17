@@ -108,6 +108,10 @@ describeOrSkip("SystemCronService.fire (integration)", () => {
     const task = await prisma.task.findUniqueOrThrow({
       where: { id: `SC-${CRON_ID}-${SLOT}-acme-widgets` },
     });
+    // PLU-2.5: system-cron tasks carry typed origin provenance.
+    expect(task.originKind).toBe("cron");
+    expect(task.originRef).toBe("Dependency audit");
+    expect(task.owner).toBeNull();
     expect(task.title).toBe("Dependency audit: acme/widgets");
     expect(task.description).toBe(
       "Audit acme/widgets dependencies. Leave ${x} {{x}} {other} alone.",

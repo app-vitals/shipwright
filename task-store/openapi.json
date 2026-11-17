@@ -117,6 +117,34 @@
           {
             "schema": {
               "type": "string",
+              "example": "dev@example.com",
+              "description": "Only tasks whose owner (requester email) equals this exactly."
+            },
+            "required": false,
+            "description": "Only tasks whose owner (requester email) equals this exactly.",
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "document",
+                "skill",
+                "cron",
+                "human"
+              ],
+              "example": "cron",
+              "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+            },
+            "required": false,
+            "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.",
+            "name": "originKind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "agent-id-123"
             },
             "required": false,
@@ -4535,6 +4563,53 @@
             ],
             "example": true
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents."
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1",
+            "description": "Id of the plan document this task came from."
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1",
+            "description": "Id of the spec document this task implements."
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session",
+            "description": "Names the origin: a document id, skill name, cron name, etc."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -4797,6 +4872,49 @@
           "source": {
             "type": "string",
             "example": "manual"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1"
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1"
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session"
           },
           "kind": {
             "type": "string",

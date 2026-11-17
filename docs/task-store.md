@@ -193,7 +193,13 @@ To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (adm
 
 `PlanDocument` (PLU-2.1) records one planning file per row: `id`, `accountId`, `session` (slug), `kind` (`spec` | `plan`), `number` (specs 1, 2, 3… per session; plans always 1), `repo` (home repo), `path`, optional `title` and `owner` (email), `repos` (target `org/repo` list, default empty), optional `prUrl`, `state` (`draft` | `pr_open` | `merged` | `abandoned`, default `draft`), optional `commitSha`, `plannedAt` and `originTaskId`, `createdAt`, `updatedAt`. It is unique on `(accountId, session, kind, number)`.
 
-The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The service and routes that read and write these land separately.
+The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The task fields are described in [Task provenance](#task-provenance).
+
+### Task provenance
+
+`POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` accept, and every task response returns, `owner` (the requester's email), `planDocumentId`, `specDocumentId`, `originKind` and `originRef` (each a string or `null`). They never reuse `assignee` or `claimedBy`, which identify agents, and `source` is unchanged and still written. `GET /tasks` filters on `owner` (exact match) and `originKind`.
+
+`originKind` comes from one registered list, `ORIGIN_KINDS` in `task-store/src/origin-kinds.ts` (`document`, `skill`, `cron`, `human`). The write validator and the `?originKind=` filter schema both read it, so any value a row can hold is a value the filter accepts, and anything else is a `400` on both. Adding a kind means adding it to that one list (the column is a plain string, so no migration). Tasks filed by a system cron write `originKind: "cron"` with `originRef` set to the cron's name and no `owner`. Existing rows are not backfilled and read `null`.
 
 ### Token management
 
