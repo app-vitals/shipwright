@@ -77,6 +77,11 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
         );
       }
 
+      if (filters.owner !== undefined) {
+        const owner = filters.owner;
+        items = items.filter((r) => r.owner === owner);
+      }
+
       if (filters.state === undefined) {
         items = items.filter((r) => !r.archived && r.state !== "closed");
       } else if (filters.state === "archived") {
@@ -160,6 +165,9 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
       );
       if (!record) throw new NotFoundError("session not found");
       if ("title" in patch) record.title = patch.title ?? null;
+      if ("owner" in patch) record.owner = patch.owner ?? null;
+      if ("homeRepo" in patch) record.homeRepo = patch.homeRepo ?? null;
+      if (patch.repos !== undefined) record.repos = patch.repos;
       if (patch.archived === true) {
         record.archivedAt = new Date("2026-02-01T00:00:00.000Z");
         record.archivedBy = actor;
@@ -185,6 +193,9 @@ function makeRecord(overrides: Partial<FakeSessionRecord>): FakeSessionRecord {
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     archivedAt: null,
     archivedBy: null,
+    owner: null,
+    homeRepo: null,
+    documents: [],
     state: "active",
     waitingSince: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
@@ -793,5 +804,82 @@ describe("GET /sessions unknown query parameters (PLU-1.1)", () => {
       );
       expect(`${p.name}:${res.status}`).toBe(`${p.name}:200`);
     }
+  });
+});
+
+// ─── PLU-2.3: owner, home repo, declared repos ───────────────────────────────
+
+describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
+  const records = () => [
+    makeRecord({ slug: "mine", owner: "a@example.com", homeRepo: "org/home" }),
+    makeRecord({ slug: "theirs", owner: "b@example.com" }),
+    makeRecord({ slug: "unowned" }),
+  ];
+
+  it("GET /?owner= returns only that owner's sessions", async () => {
+    const parent = makeAdminParent(makeApp(records()));
+    const res = await parent.request("/?owner=a@example.com&state=all");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListResult;
+    expect(body.sessions.map((x) => x.slug)).toEqual(["mine"]);
+    expect(body.sessions[0].owner).toBe("a@example.com");
+    expect(body.sessions[0].homeRepo).toBe("org/home");
+    expect(body.sessions[0].documents).toEqual([]);
+  });
+
+  it("PATCH accepts owner, homeRepo and repos and returns them", async () => {
+    const parent = makeAdminParent(makeApp(records()));
+    const res = await parent.request("/unowned", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        owner: "a@example.com",
+        homeRepo: "org/home",
+        repos: ["org/a", "org/b"],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.owner).toBe("a@example.com");
+    expect(body.homeRepo).toBe("org/home");
+    expect(body.repos).toEqual(["org/a", "org/b"]);
+  });
+
+  it("PATCH owner: null clears the owner", async () => {
+    const parent = makeAdminParent(makeApp(records()));
+    const res = await parent.request("/mine", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: null }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as SessionListItem).owner).toBeNull();
+  });
+
+  it("PATCH rejects a non-string owner, non-string homeRepo and a malformed repos", async () => {
+    const parent = makeAdminParent(makeApp(records()));
+    for (const body of [
+      { owner: 5 },
+      { homeRepo: false },
+      { repos: "org/a" },
+      { repos: ["org/a", 3] },
+    ]) {
+      const res = await parent.request("/mine", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("agent tokens still get 403 on PATCH with the new fields", async () => {
+    const parent = makeAgentParent(makeApp(records()), "agent-1", ["org/a"]);
+    const res = await parent.request("/mine", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: "a@example.com" }),
+    });
+    expect(res.status).toBe(403);
   });
 });

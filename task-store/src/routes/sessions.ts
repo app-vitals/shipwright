@@ -22,7 +22,7 @@
  * or DEFAULT_ACCOUNT_ID when omitted.
  *
  * Routes:
- *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?limit, ?offset, ?accountId)
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?owner, ?limit, ?offset, ?accountId)
  *                          returns { sessions, total, limit, offset }
  *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
  *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
@@ -62,7 +62,7 @@ const listRoute = createRoute({
   tags: ["sessions"],
   summary: "List sessions",
   description:
-    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -84,7 +84,7 @@ const getOneRoute = createRoute({
   tags: ["sessions"],
   summary: "Get a session by slug",
   description:
-    "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
+    "Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -111,7 +111,7 @@ const patchRoute = createRoute({
   tags: ["sessions"],
   summary: "Rename/archive a session — admin-only",
   description:
-    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -180,6 +180,7 @@ export function createSessionsRoutes(
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       q: c.req.query("q"),
+      owner: c.req.query("owner"),
       accountId: resolveAccountScope(c),
       limit:
         limitRaw !== undefined
@@ -240,6 +241,25 @@ export function createSessionsRoutes(
         throw new BadRequestError("archived must be a boolean");
       }
       patch.archived = body.archived;
+    }
+    for (const field of ["owner", "homeRepo"] as const) {
+      if (field in body) {
+        if (body[field] !== null && typeof body[field] !== "string") {
+          throw new BadRequestError(`${field} must be a string or null`);
+        }
+        patch[field] = body[field] as string | null;
+      }
+    }
+    if ("repos" in body) {
+      if (
+        !Array.isArray(body.repos) ||
+        !body.repos.every((r) => typeof r === "string" && r.length > 0)
+      ) {
+        throw new BadRequestError(
+          "repos must be an array of non-empty strings",
+        );
+      }
+      patch.repos = body.repos as string[];
     }
 
     const updated = await sessionService.update(

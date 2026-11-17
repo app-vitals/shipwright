@@ -15,8 +15,10 @@
  * registrations cannot overwrite each other.
  *
  * Scope: registering requires the document's home repo to be in the caller's
- * repo scope (`repos: null` = admin = unrestricted). Reads and patches of
- * documents outside an agent token's repo scope behave as not-found.
+ * repo scope (`repos: null` = admin = unrestricted). Reads (list) show a
+ * document when its home repo OR any target repo is in the token's scope
+ * (PLU-2.3); patches keep the stricter home-repo rule. Anything outside the
+ * scope behaves as not-found.
  */
 
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
@@ -204,7 +206,15 @@ export class DocumentService implements DocumentServiceLike {
   ): Promise<{ documents: PlanDocument[]; total: number }> {
     const and: object[] = [];
     if (scope.accountId !== null) and.push({ accountId: scope.accountId });
-    if (scope.repos !== null) and.push({ repo: { in: scope.repos } });
+    if (scope.repos !== null) {
+      // PLU-2.3: visible through the home repo OR any target repo.
+      and.push({
+        OR: [
+          { repo: { in: scope.repos } },
+          { repos: { hasSome: scope.repos } },
+        ],
+      });
+    }
     if (filters.session !== undefined) and.push({ session: filters.session });
     if (filters.kind !== undefined) and.push({ kind: filters.kind });
     if (filters.owner !== undefined) and.push({ owner: filters.owner });
