@@ -29,7 +29,7 @@ import {
 } from "@app-vitals/agent-admin/admin-ui-settings-layout";
 import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { Context, Hono, MiddlewareHandler } from "hono";
-import { validateTemplateForm } from "./system-cron-form.ts";
+import { validateScopeForm, validateTemplateForm } from "./system-cron-form.ts";
 import {
   formatTriggerRow,
   RECENT_RUNS_LIMIT,
@@ -50,13 +50,29 @@ export interface SystemCronItem {
   enabled: boolean;
   titleTemplate: string;
   descriptionTemplate: string;
+  /** CRS-1.1; absent on older stores, which means 'all'. */
+  repoScope?: "all" | "selected";
+  repos?: string[];
+}
+
+/** Structural match for the platform's GithubLookupService (listRepositories). */
+export interface RepositoryLookup {
+  listRepositories(): Promise<{
+    configured: boolean;
+    repos: { fullName: string; archived: boolean }[];
+  }>;
 }
 
 export interface SystemCronsFetchers {
   fetchSystemCrons?: () => Promise<{ systemCrons: SystemCronItem[] }>;
   patchSystemCron?: (
     id: string,
-    patch: { titleTemplate?: string; descriptionTemplate?: string },
+    patch: {
+      titleTemplate?: string;
+      descriptionTemplate?: string;
+      repoScope?: "all" | "selected";
+      repos?: string[];
+    },
   ) => Promise<unknown>;
   setSystemCronEnabled?: (id: string, enabled: boolean) => Promise<unknown>;
   fetchSystemCronTriggers?: (
@@ -76,6 +92,8 @@ export interface SystemCronsDeps extends SystemCronsFetchers {
     path: string,
     init?: RequestInit,
   ) => Response | Promise<Response>;
+  /** Feeds the repo checklist (CRS-1.3); absent/unconfigured → degraded checklist. */
+  githubLookup?: RepositoryLookup;
 }
 
 const NOTICES: Record<string, string> = {
@@ -104,8 +122,92 @@ interface PageOpts {
   error?: string;
   warnings?: string[];
   /** Submitted-but-invalid values, keyed by cron id, to re-fill the form. */
-  draft?: { id: string; titleTemplate: string; descriptionTemplate: string };
+  draft?: {
+    id: string;
+    titleTemplate: string;
+    descriptionTemplate: string;
+    repoScope?: string;
+    repos?: string[];
+  };
+  /** Repos the lookup App can see; `null` when unconfigured or the listing failed. */
+  repoListing?: { fullName: string; archived: boolean }[] | null;
 }
+
+function scopeSummary(c: SystemCronItem): string {
+  if ((c.repoScope ?? "all") === "all") return "All repositories";
+  const n = c.repos?.length ?? 0;
+  return `${n} ${n === 1 ? "repo" : "repos"}`;
+}
+
+function renderScopeControl(
+  c: SystemCronItem,
+  draft: PageOpts["draft"],
+  listing: PageOpts["repoListing"],
+): string {
+  const cid = escapeHtml(c.id);
+  const scope = (draft?.repoScope ?? c.repoScope ?? "all") as string;
+  const selected = new Set(draft?.repos ?? c.repos ?? []);
+  const known = new Map((listing ?? []).map((r) => [r.fullName, r]));
+  // Selected repos absent from the listing stay visible (and flagged) so a
+  // save never silently drops them. With no listing, the selection is all we have.
+  const missing = [...selected].filter((r) => !known.has(r));
+  const rows = [
+    ...missing.map((r) => ({
+      fullName: r,
+      archived: false,
+      flag: listing ? "not in the current listing" : "",
+    })),
+    ...(listing ?? []).map((r) => ({ ...r, flag: "" })),
+  ]
+    .map((r) => {
+      const flags = [
+        r.flag
+          ? `<span class="badge" data-repo-flag="missing">${escapeHtml(r.flag)}</span>`
+          : "",
+        r.archived ? `<span class="badge badge-gray">archived</span>` : "",
+      ].join(" ");
+      return `<label data-repo-row data-repo-name="${escapeHtml(r.fullName.toLowerCase())}" style="display:flex;align-items:center;gap:8px;padding:2px 0;font-size:13px"><input type="checkbox" name="repos" value="${escapeHtml(r.fullName)}"${selected.has(r.fullName) ? " checked" : ""} /> <span>${escapeHtml(r.fullName)}</span> ${flags}</label>`;
+    })
+    .join("");
+  const note = listing
+    ? ""
+    : `<p data-repo-list="unavailable" style="font-size:12px;color:#6b7280;margin:4px 0">The repository list is unavailable until the GitHub lookup App is configured; only the current selection is shown.</p>`;
+  return `<fieldset class="form-group" data-repo-scope="${cid}" style="border:0;padding:0;margin:0 0 12px">
+    <legend class="form-label">Repositories</legend>
+    <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="all"${scope === "all" ? " checked" : ""} /> All repositories <span style="color:#6b7280">(current and future)</span></label>
+    <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="selected"${scope === "selected" ? " checked" : ""} /> Only select repositories</label>
+    <div data-repo-checklist style="margin-top:8px">
+      <input type="search" class="form-input" data-repo-search placeholder="Search repositories" aria-label="Search repositories" />
+      ${note}
+      <div style="max-height:200px;overflow:auto;margin-top:6px">${rows || `<p class="empty-state" style="margin:4px 0">No repositories to show.</p>`}</div>
+    </div>
+  </fieldset>`;
+}
+
+const SCOPE_SCRIPT = `<script>
+(function() {
+  function sync(fs) {
+    var sel = fs.querySelector('input[name="repoScope"][value="selected"]');
+    var box = fs.querySelector('[data-repo-checklist]');
+    if (box && sel) box.style.display = sel.checked ? '' : 'none';
+  }
+  var sets = document.querySelectorAll('[data-repo-scope]');
+  for (var i = 0; i < sets.length; i++) sync(sets[i]);
+  document.addEventListener('change', function(e) {
+    var fs = e.target && e.target.closest && e.target.closest('[data-repo-scope]');
+    if (fs) sync(fs);
+  });
+  document.addEventListener('input', function(e) {
+    var t = e.target;
+    if (!t || !t.hasAttribute || !t.hasAttribute('data-repo-search')) return;
+    var q = t.value.toLowerCase();
+    var rows = t.closest('[data-repo-checklist]').querySelectorAll('[data-repo-row]');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].style.display = rows[i].getAttribute('data-repo-name').indexOf(q) === -1 ? 'none' : 'flex';
+    }
+  });
+})();
+</script>`;
 
 function renderRecentRuns(runs: RecentRuns | undefined): string {
   const heading = `<div class="form-label" style="margin-top:16px">Recent runs</div>`;
@@ -137,7 +239,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
         </form>
       </span>
     </div>
-    <p style="font-size:12px;color:#6b7280;margin:0 0 12px">Schedule <code>${escapeHtml(c.schedule)}</code> (${escapeHtml(c.timezone)})</p>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 12px">Schedule <code>${escapeHtml(c.schedule)}</code> (${escapeHtml(c.timezone)}) · Scope <span data-scope-summary>${escapeHtml(scopeSummary(c))}</span></p>
     <form method="POST" action="${SYSTEM_CRONS_SETTINGS_PATH}/${id}">
       <div class="form-group">
         <label class="form-label" for="titleTemplate-${escapeHtml(c.id)}">Title template</label>
@@ -148,7 +250,8 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
         <textarea id="descriptionTemplate-${escapeHtml(c.id)}" name="descriptionTemplate" class="form-input" rows="4">${escapeHtml(description)}</textarea>
         <p style="font-size:12px;color:#6b7280;margin:4px 0 0"><code>{repo}</code> is replaced with the org/repo; nothing else is evaluated.</p>
       </div>
-      <button type="submit" class="btn btn-primary">Save templates</button>
+      ${renderScopeControl(c, draft, opts.repoListing)}
+      <button type="submit" class="btn btn-primary">Save</button>
     </form>
     ${renderRecentRuns(opts.recentRuns?.[c.id])}
   </div>`;
@@ -186,7 +289,7 @@ export function renderSystemCronsPage(opts: PageOpts): string {
       active: SYSTEM_CRONS_SETTINGS_PATH,
       isAdmin: true,
       body: `${banner}${degraded}${notice}${error}${warnings}
-    ${cards}`,
+    ${cards}${opts.crons.length > 0 ? SCOPE_SCRIPT : ""}`,
     }),
   });
 }
@@ -248,6 +351,15 @@ export function registerSystemCronsRoutes(
         }
       }),
     );
+    let repoListing: PageOpts["repoListing"] = null;
+    if (deps.githubLookup && crons.length > 0) {
+      try {
+        const listing = await deps.githubLookup.listRepositories();
+        if (listing.configured) repoListing = listing.repos;
+      } catch {
+        repoListing = null;
+      }
+    }
     const noticeKey = c.req.query("notice");
     const errorKey = c.req.query("error");
     return deps.html(
@@ -256,6 +368,7 @@ export function registerSystemCronsRoutes(
         nav: getSettingsNav(c) ?? { sections: [] },
         crons,
         recentRuns,
+        repoListing,
         degraded,
         lookupConfigured: await lookupAppConfigured(c),
         ...rest,
@@ -320,20 +433,33 @@ export function registerSystemCronsRoutes(
         titleTemplate: form.get("titleTemplate")?.toString(),
         descriptionTemplate: form.get("descriptionTemplate")?.toString(),
       };
+      const rawScope = {
+        repoScope: form.get("repoScope")?.toString(),
+        repos: form.getAll("repos").map((r) => r.toString()),
+      };
       const result = validateTemplateForm(raw);
-      if (!result.ok) {
+      const scope = validateScopeForm(rawScope);
+      if (!result.ok || !scope.ok) {
         return renderPage(c, {
-          error: result.errors.join(" "),
+          error: [
+            ...(result.ok ? [] : result.errors),
+            ...(scope.ok ? [] : scope.errors),
+          ].join(" "),
           draft: {
             id,
             titleTemplate: raw.titleTemplate ?? "",
             descriptionTemplate: raw.descriptionTemplate ?? "",
+            repoScope: rawScope.repoScope,
+            repos: rawScope.repos,
           },
           status: 400,
         });
       }
       try {
-        const updated = await deps.patchSystemCron(id, result.value);
+        const updated = await deps.patchSystemCron(id, {
+          ...result.value,
+          ...scope.value,
+        });
         if (updated === null) return fail("not_found");
       } catch {
         return fail("update_failed");
