@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { computeCoverageGate } from "../../../../scripts/check-coverage-gate";
+import { computeCoverageGate } from "../../scripts/check-coverage-gate";
 
 const SKILL_MD_PATH = join(import.meta.dir, "SKILL.md");
 const TEMPLATE_PATH = join(
@@ -173,7 +173,7 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     return content.slice(idx, nextStepIdx);
   }
 
-  it("has a numbered Process step invoking scripts/check-coverage-gate.ts", () => {
+  it("has a numbered Process step invoking ${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("scripts/check-coverage-gate.ts");
   });

@@ -1138,7 +1138,7 @@ coverage-gate tooling delta:
    baseline via `git show 297fb61e:<path>`, not just inferred from the diff stat):
    `plugins/shipwright/skills/repo-config/SKILL.content.test.ts`,
    `plugins/shipwright/skills/test-inventory/SKILL.content.test.ts`,
-   `scripts/check-coverage-gate.unit.test.ts`,
+   `plugins/shipwright/scripts/check-coverage-gate.unit.test.ts`,
    `scripts/check-coverage-no-decrease.integration.test.ts`,
    `scripts/check-coverage-no-decrease.unit.test.ts`,
    `scripts/check-coverage.unit.test.ts` (genuinely new — the file did not exist before

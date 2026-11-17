@@ -63,14 +63,14 @@
 
 ## Coverage Gate
 
-The headline machine-checkable verdict — computed by `scripts/check-coverage-gate.ts`,
+The headline machine-checkable verdict — computed by `plugins/shipwright/scripts/check-coverage-gate.ts`,
 rendered verbatim below.
 
 **2026-11-17 re-sourcing (supersedes the 2026-11-12 figures below).** Latest green `lint / typecheck / test` run on main: [run 44091676159](https://github.com/app-vitals/shipwright/actions/runs/44091676159) @ `d86d7a137`, `Lines: 91.01% (32798/36039) — threshold: 90%` (functions 89.21% vs 89%). Computed via:
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 91.01, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/44091676159 @ d86d7a137"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 ```json
@@ -83,7 +83,7 @@ Verdict: **READY** (feature 100% / target 90%, line 91.01% / target 90%).
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 90.66, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/43162172918 @ bfc06b145"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 ```json
@@ -96,7 +96,7 @@ Verdict: **READY** (feature 100% / target 90%, line 90.66% / target 90%).
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.25, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/40275940573 @ b139236fe"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 ```json
@@ -109,7 +109,7 @@ Verdict: **READY** (feature 100% / target 90%, line 93.25% / target 90%).
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.5, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/40061108872 @ 8ee00c73f"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 ```json
@@ -128,7 +128,7 @@ Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-24
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.63, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/39700470653 @ 45fc9d061"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 ```json
@@ -151,7 +151,7 @@ Note (2026-10-03): the exact line-coverage percentage is carried forward from th
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 92.54, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/36969562510 @ ea1412b66"}' \
-  | bun run scripts/check-coverage-gate.ts
+  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
 ```
 
 Actually run (not hand-computed):

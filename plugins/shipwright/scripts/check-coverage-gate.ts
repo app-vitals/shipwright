@@ -12,7 +12,7 @@
 // this script via Bash rather than hand-computing the verdict text.
 //
 // CLI:
-//   bun run scripts/check-coverage-gate.ts '{"featurePct":92,"featureSource":"...","linePct":87,"lineSource":"..."}'
+//   bun run "${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts" '{"featurePct":92,"featureSource":"...","linePct":87,"lineSource":"..."}'
 // or pipe the same JSON blob via stdin.
 
 type CoverageGateTargets = {

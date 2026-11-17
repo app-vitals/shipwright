@@ -22,7 +22,7 @@ By the `/test-roadmap` command. Requires:
 `docs/test-readiness/test-readiness-plan.md` opens with a `## Coverage Gate` block — the
 headline machine-checkable verdict (`feature_coverage_pct`, `feature_coverage_source`,
 `line_coverage_pct`, `line_coverage_source`, `verdict`, `targets`), computed by
-`scripts/check-coverage-gate.ts` and rendered verbatim (see Process step 8) — followed by
+`${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts` and rendered verbatim (see Process step 8) — followed by
 six sections:
 
 ### 1. Where we are now
@@ -285,7 +285,7 @@ Anything the audit couldn't determine without a human call. Common entries:
    See `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)" section for
    the full 3-stage table; Process step 9 below is where this repo implements stage 3.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
-8. **Compute the coverage_gate block by invoking `scripts/check-coverage-gate.ts` — never
+8. **Compute the coverage_gate block by invoking `${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts` — never
    hand-compute the verdict.** Source the four required inputs the same way Step 4c of
    `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
    mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
@@ -307,10 +307,10 @@ Anything the audit couldn't determine without a human call. Common entries:
    text by hand:
    ```bash
    echo '{"featurePct": 92, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 87, "lineSource": "CI run <url> @ <sha>"}' \
-     | bun run scripts/check-coverage-gate.ts
+     | bun run "${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts"
    ```
-   (run from the target repo root, matching how `scripts/check-coverage.ts` itself is
-   invoked by `task test:coverage`)
+   (the script ships in the plugin and resolves via `${CLAUDE_PLUGIN_ROOT}`, so this works
+   from any target repo)
    Take the script's JSON stdout output verbatim — `feature_coverage_pct`,
    `feature_coverage_source`, `line_coverage_pct`, `line_coverage_source`, `verdict`,
    `targets.feature`, `targets.line` — into the `{{FEATURE_COVERAGE_PCT}}` /

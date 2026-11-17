@@ -1,5 +1,5 @@
 /**
- * Unit tests for scripts/check-coverage-gate.ts
+ * Unit tests for plugins/shipwright/scripts/check-coverage-gate.ts
  *
  * Pure function, no I/O: computeCoverageGate() computes the dual (feature +
  * line) coverage_gate block and a self-consistency guard over a

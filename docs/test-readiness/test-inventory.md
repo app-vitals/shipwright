@@ -270,7 +270,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `mcp-server/src/generated-tools.ts` (`GENERATED FILE`, produced by `scripts/generate-mcp-tools.ts` from `task-store/openapi.json`; new) | (generated code — excluded) | — | — | n/a |
 | `scripts/check-coverage.ts` (multi-format coverage parser — `CoverageParser` interface + `LcovParser`/`JacocoParser`/`IstanbulParser`/`CoveragePyParser`/`GoCoverParser` + threshold gate) | 1. Pure business logic (parsing) | unit | high | n/a |
 | `scripts/coverage-tool-dispatch.ts` (`extractCoverageTool`/`selectParser` — per-repo coverage-tool selection from a `test-system.md` marker) | 1. Pure business logic | unit | medium | n/a |
-| `scripts/check-coverage-gate.ts` (`computeCoverageGate` — six-field dual feature+line coverage_gate block with self-consistency guard) | 1. Pure business logic (with a throwing consistency guard) | unit | high | n/a |
+| `plugins/shipwright/scripts/check-coverage-gate.ts` (`computeCoverageGate` — six-field dual feature+line coverage_gate block with self-consistency guard) | 1. Pure business logic (with a throwing consistency guard) | unit | high | n/a |
 | `scripts/check-config-docs.ts` (env-var doc-coverage checker) | 1. Pure business logic | unit | medium | n/a |
 | `scripts/check-competitive-freshness.ts` (precheck for a not-yet-wired competitive-freshness cron, CF-2.1 — flags `site/src/pages/vs/*.astro`/`compare.astro` rows with a stale/missing/unparseable `verifiedDate`; fully dependency-injected, pure date-evaluation core; new) | 1. Pure business logic | unit | medium | n/a |
 | `scripts/sync-version.ts` | 2. Service-boundary code (file writes) | integration | medium | n/a |
