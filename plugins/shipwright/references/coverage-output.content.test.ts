@@ -3,7 +3,8 @@
  *
  * Verifies the coverage-output reference documents the artifact contract,
  * accepted formats, the JSON escape hatch, the default-branch requirement,
- * an example upload step, per-language recipes and the exclusion contract. Content-assertion only (mirrors decisions-registry.content.test.ts).
+ * an example upload step, per-language recipes and the exclusion contract.
+ * Content-assertion only (mirrors decisions-registry.content.test.ts).
  */
 import { beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
