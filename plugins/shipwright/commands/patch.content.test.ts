@@ -565,3 +565,21 @@ describe("patch — no lean variant left behind", () => {
     expect(existsSync(join(import.meta.dir, "patch-lean.md"))).toBe(false);
   });
 });
+
+describe("patch references — semantic no-finding classification (DTA-11.1)", () => {
+  it("classification.md documents the --candidates no-finding step persisted to the ledger", () => {
+    const classification = refs["classification.md"];
+    expect(classification).toContain("DTA-11.1");
+    expect(classification).toContain("--candidates");
+    expect(classification).toContain(
+      '"disposition": "resolved", "source": "review"',
+    );
+    expect(classification).toContain("isResolvedByLedger");
+  });
+
+  it("the spine keeps the never-override rule and points at the narrow exception", () => {
+    const spine = readFileSync(PATCH_MD_PATH, "utf8");
+    expect(spine).toContain("Never override the script by judgment");
+    expect(spine).toContain("--candidates");
+  });
+});

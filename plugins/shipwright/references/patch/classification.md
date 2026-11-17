@@ -191,6 +191,14 @@ review or thread (the script's unit tests are the authoritative spec): a ledger 
 review by the same reviewer at the same head (`isSupersededBySameHeadApproval`); a PR-author reply
 after the review (`isAddressedByAuthorReply`) or within the thread (`isThreadAddressedByAuthorReply`).
 
+**Semantic "no finding" classification (DTA-11.1).** When the script prints `true`, re-run it with the extra
+`--candidates` argument; it adds `unclassifiedCandidates[]` (`{kind, ref, author, body}`) — only reviews/threads the exclusions above
+already qualified. For each, ask ONE question: does the body raise an actual concern, or is it purely descriptive with no findings (any
+doubt = a concern)? For each purely descriptive one, `POST $SHIPWRIGHT_TASK_STORE_URL/prs/{id}/findings` with
+`{"ref": "<candidate.ref>", "disposition": "resolved", "source": "review", "evidence": "no finding: <reason>"}` (non-fatal on failure),
+add the entries to `PR_FINDINGS_JSON`, and re-run the script without `--candidates`: `isResolvedByLedger` now excludes them, so each is
+judged once. If that leaves `false`, the PR is not List A. Candidates that raise a concern get no entry and stay in List A.
+
 **A clean self-APPROVE with no ledger entry IS in List A.** Such a PR must not exit `[silent]`; Step
 5c.5 settles it with a `rejected` ledger entry ("review contains no actionable finding").
 
