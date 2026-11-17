@@ -1228,8 +1228,9 @@ export function renderTaskDetailPage(
     task.kind === "initiative"
       ? `<div class="card" style="margin-bottom:16px">
         <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Plan this initiative</div>
-        <div style="font-size:13px;color:#374151;margin-bottom:6px">Run in a planning session (human-in-the-loop), or promote to PRD for auto-planning:</div>
-        <code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:plan-session ${escapeHtml(task.title)} (${escapeHtml(task.id)})</code>
+        <div style="font-size:13px;color:#374151;margin-bottom:6px">Run one of these in a planning session; the initiative closes when the run finishes:</div>
+        <div style="margin-bottom:4px"><code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:prd &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
+        <div><code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:plan-session &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
       </div>`
       : "";
 
@@ -1704,13 +1705,15 @@ function renderIdeasToggle(ideas: boolean | undefined): string {
   return `<label class="form-label" style="font-size:11px;display:flex;gap:4px;align-items:center;margin-bottom:6px"><input type="checkbox" name="ideas" value="1"${ideas ? " checked" : ""} /> Show ideas</label>`;
 }
 
-/** Kind a task is promoted to (INI-1.3): idea → initiative → prd. Null when not promotable. */
+/**
+ * Kind a task is promoted to (INI-1.3): idea → initiative. Null when not
+ * promotable. Initiatives are promoted to a PRD by running /shipwright:prd or
+ * /shipwright:plan-session with --initiative, not from the admin UI.
+ */
 export function promoteTargetKind(
   kind: string | null | undefined,
-): "initiative" | "prd" | null {
-  if (kind === "idea") return "initiative";
-  if (kind === "initiative") return "prd";
-  return null;
+): "initiative" | null {
+  return kind === "idea" ? "initiative" : null;
 }
 
 /** Human-readable text for the quick-add / promote `?success=` / `?error=` codes. */
@@ -1720,24 +1723,21 @@ export const TASK_ACTION_MESSAGES: Record<string, string> = {
   quick_add_invalid:
     "Title is required, kind must be initiative or idea, and repo (if given) must look like org/repo.",
   quick_add_failed: "Failed to create the task. Please try again.",
-  promote_invalid: "Only idea and initiative tasks can be promoted.",
+  promote_invalid: "Only idea tasks can be promoted.",
   promote_failed: "Failed to promote the task. Please try again.",
   task_not_found: "Task not found.",
   task_store_unavailable: "Task store is not configured.",
 };
 
-/** Promote button form (idea → initiative, initiative → prd); empty for other kinds. */
+/** Promote button form (idea → initiative); empty for other kinds. */
 function renderPromoteForm(
   task: Pick<TaskItem, "id" | "kind">,
   returnTo: string,
 ): string {
-  const target = promoteTargetKind(task.kind);
-  if (!target) return "";
-  const label =
-    target === "initiative" ? "Promote to initiative" : "Promote to PRD";
+  if (!promoteTargetKind(task.kind)) return "";
   return `<form method="POST" action="/admin/tasks/${escapeHtml(task.id)}/promote" style="display:inline">
         <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
-        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${label}</button>
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Promote to initiative</button>
       </form>`;
 }
 
