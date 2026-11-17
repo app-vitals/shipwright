@@ -7,7 +7,7 @@ swapped in via a per-agent, per-phase `AgentPhaseMethodology` override (`phase -
 subagentType or null`, phase value `"plan-session"`). The `/shipwright:plan-session` command
 is the caller: it owns Step 1 (loading CLAUDE.md, scanning for existing/duplicate tasks in
 this session, scanning open cross-session tasks, and — under `--autonomous` — materializing
-`planning/{session}/PRODUCT-SPEC.md` from the originating PRD task's `description`) and Step 6
+`planning/{session}/PRODUCT-SPEC.md` (spec 1) from the originating PRD task's `description`) and Step 6
 (writing `PLAN.md` to disk, the `/tasks/bulk` POST, the plan-viz link, autonomous PRD
 closeout, and opening the plan PR) — none of that is delegated. Once the spec is loaded, the
 caller dispatches whichever subagent is configured for the plan-session phase with the inputs
@@ -26,14 +26,19 @@ this doc only specifies the wire shape, not decomposition policy.
 
 ## Inputs
 
-- **`specContent`** — the full verbatim contents of `planning/{session}/PRODUCT-SPEC.md`
-  (Step 1's primary input). Under `--autonomous`, this is the text the caller already
-  materialized from the originating PRD task's `description` (with the submitter's
+- **`specs[]`** — the session's numbered specs, each `{number, path, content}`: `number` is the
+  spec's integer position in the session (a legacy `PRODUCT-SPEC.md` is spec 1; later specs are
+  `SPEC-NNNN.md`), `path` is its `planning/{session}/` path, and `content` is its full verbatim
+  text (Step 1's primary input). Under `--autonomous`, the entry's `content` is the text the
+  caller already materialized from the originating PRD task's `description` (with the submitter's
   `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.` instruction line stripped) —
-  the subagent receives the same materialized spec either way and does not re-derive it.
-- **`repo`** — `org/repo`. Always passed explicitly by the caller (interactively-confirmed or,
-  under `--autonomous`, supplied by the dispatcher) — the subagent must not attempt to
-  auto-detect it.
+  the subagent receives the same materialized spec either way and does not re-derive it. The
+  single `specContent` input no longer exists.
+- **`homeRepo`** — `org/repo`, the session's home repo (where `planning/{session}/` lives and
+  the plan PR opens). Always passed explicitly by the caller — the subagent must not attempt
+  to auto-detect it. The single `repo` input no longer exists.
+- **`repos[]`** — every `org/repo` tasks may target, always including `homeRepo`. Each task's
+  `repo` must be one of these entries.
 - **`session`** — the session slug used to group tasks and PRs.
 - **`existingSessionTaskIds`** (optional) — task ids already queued for this session (Step
   1.3's dedup scan against `GET /tasks?session={session}`), so the subagent does not propose
@@ -74,6 +79,7 @@ A single JSON object:
       "id": "PREFIX-1.1",
       "source": "planning/{session}/PLAN.md",
       "session": "{session}",
+      "specNumber": 1,
       "repo": "org/repo",
       "title": "feat: add billing schema migration",
       "description": "What to build, not how.",
@@ -108,7 +114,11 @@ A single JSON object:
   - `source` — always `"planning/{session}/PLAN.md"` — links the task back to the plan file
     the caller writes to disk in Step 6a. Maps to `Task.source` (`String?`).
   - `session` — the session slug passed in. Maps to `Task.session` (`String?`).
-  - `repo` — the `repo` passed in, unchanged. Maps to `Task.repo` (`String?`); the bulk
+  - `specNumber` — the `number` of the `specs[]` entry the task implements; it must match an
+    entry passed in. Maps to the task's originating spec (`Task.specDocumentId` is resolved from
+    it by the caller).
+  - `repo` — one of the `repos[]` entries passed in (`homeRepo` when the task has no other
+    target), unchanged. Maps to `Task.repo` (`String?`); the bulk
     endpoint requires the `repo` key be present on every item (a literal `null` is valid for
     an unscoped task, but the key must exist).
   - `title` — a Conventional-Commit subject, `type: verb-first summary` (type from `feat fix perf revert docs refactor test build ci chore`). Maps to `Task.title` (`String`, required by the bulk
@@ -137,9 +147,10 @@ A single JSON object:
   - `model` — `"haiku" | "sonnet" | "opus"`, derived from `complexity` and, for bundled
     tasks, bumped to the bundle's highest tier before being written. Maps to `Task.model`
     (`String?`).
-- **`planMarkdown`** — the full plan writeup (session name, technical design from Step 4, the
+- **`planMarkdown`** — the full plan writeup for **this pass only** (the command appends it to
+  any earlier passes' content; the subagent never reproduces prior passes) (session name, technical design from Step 4, the
   task table and Dependency Map from Step 5, Breaking Change Safety notes, and — under
-  `--autonomous` — the `## Decision Log` section). The caller writes this verbatim to
+  `--autonomous` — the `## Decision Log` section). The caller writes it to
   `planning/{session}/PLAN.md` in Step 6a; the subagent does not write to disk itself.
 - **`decisionLog[]`** — one string per soft-ambiguity default applied under `--autonomous`, in
   the form `"{decision point}: defaulted to {choice} — {one-line reason}"`. Empty outside
