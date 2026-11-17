@@ -475,7 +475,8 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
 
   it("force-adds only the session's planning files, since planning/ is commonly gitignored", () => {
     const section = step6d();
-    expect(section).toContain('add -f "planning/$SESSION/PLAN.md"');
+    expect(section).toContain('git -C "$WT" add -f "$f"');
+    expect(section).toContain("PLAN.md");
     expect(section).toContain("never -A");
   });
 
@@ -487,10 +488,13 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
     expect(section).toContain("gh pr create --head");
   });
 
-  it("is idempotent — an existing PR for the branch counts as done", () => {
+  it("does not skip when a PR for the branch exists — it commits the updated plan on a second pass (PLU-4.3)", () => {
     const section = step6d();
     expect(section).toContain("--state all");
-    expect(section.toLowerCase()).toContain("do not open a second one");
+    expect(section).not.toContain("Plan PR already exists");
+    expect(section).not.toContain("counts as done");
+    expect(section.toLowerCase()).toContain("commits the updated `plan.md` instead of skipping");
+    expect(section).toContain("docs/plan-$SESSION-$N");
   });
 
   it("never blocks the plan and surfaces the PR in the confirmation", () => {
@@ -502,13 +506,12 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
 
   it("guards the jq existing-PR lookup against an empty array printing the literal string 'null'", () => {
     const section = step6d();
-    // `.[0].url` on `[]` raw-outputs the literal text "null" (a non-empty string
-    // that would otherwise satisfy `grep -q .`) — `// empty` must be present on
-    // every `.[0].url` lookup so the branch only matches a genuine URL.
-    const jqLookups = section.match(/-q '\.\[0\]\.url[^']*'/g) ?? [];
+    // `.[0]` on `[]` raw-outputs the literal text "null" (a non-empty string) —
+    // the lookup must `select(.)` so an empty list prints nothing.
+    const jqLookups = section.match(/-q '\.\[0\][^']*'/g) ?? [];
     expect(jqLookups.length).toBeGreaterThan(0);
     for (const lookup of jqLookups) {
-      expect(lookup).toContain("// empty");
+      expect(lookup).toContain("select(.)");
     }
   });
 
@@ -1706,5 +1709,71 @@ describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
     const step1 = prose(content.slice(content.indexOf("## Step 1: Load Context"), content.indexOf("### `--autonomous` Mode")));
     expect(step1).toContain("specs[]");
     expect(step1).toMatch(/`?product-spec\.md`? is spec 1/);
+  });
+});
+
+describe("plan-session.md — planning lock, append-only passes and docs PR (PLU-4.3)", () => {
+  const lower = () => content.toLowerCase();
+
+  function step0(): string {
+    const m = content.match(/## Step 0: Resolve Session, Specs and Repos[\s\S]*?(?=\n## Step 1: Load Context)/);
+    expect(m).not.toBeNull();
+    return m?.[0] ?? "";
+  }
+
+  it("takes the session planning lock before reading the plan and reports the holder and time when held", () => {
+    const sec = step0();
+    expect(sec).toContain("**0.7 Planning lock.**");
+    expect(sec).toContain("/sessions/$SESSION/lock");
+    expect(sec).toMatch(/409\)/);
+    expect(sec).toContain("is already being planned by");
+    expect(sec).toContain("acquiredAt");
+    expect(sec.toLowerCase()).toContain("write nothing");
+    expect(content.indexOf("**0.7 Planning lock.**")).toBeLessThan(content.indexOf("## Step 1: Load Context"));
+  });
+
+  it("releases the lock after the plan is pushed and on every failure or stop path", () => {
+    expect(content).toContain("**Step 6e — Release the planning lock**");
+    expect(content.indexOf("**Step 6e")).toBeGreaterThan(content.indexOf("**Step 6d"));
+    expect(lower()).toContain("every exit from this pass releases the lock");
+    expect(lower()).toContain("every failure or stop path");
+  });
+
+  it("makes passes append-only and forbids rewriting earlier sections", () => {
+    expect(content).toContain("**Append-only passes.**");
+    expect(content).toContain("## Pass {PASS_NUMBER} — {YYYY-MM-DD} — specs {spec numbers planned}");
+    expect(lower()).toContain("never rewrites, reorders, reformats or deletes");
+    expect(lower()).toContain("earlier section");
+  });
+
+  it("treats a legacy PLAN.md as plan 1 and reads existing content from git (docs branch, default branch, local)", () => {
+    expect(content).toMatch(/legacy plan and counts as \*\*plan 1\*\*/);
+    const idx = content.indexOf("6. Read the session's existing plan");
+    expect(idx).toBeGreaterThan(-1);
+    const item = content.slice(idx, content.indexOf("\n", idx));
+    expect(item.indexOf("open docs branch")).toBeLessThan(item.indexOf("default branch"));
+    expect(item.indexOf("default branch")).toBeLessThan(item.indexOf("local checkout"));
+  });
+
+  it("writes an autonomous prd-task spec as the session's next spec, registered with the origin task id", () => {
+    expect(content).toContain("the session's next spec file");
+    expect(content).toContain("SPEC-{NNNN}.md");
+    expect(content).toContain('"originTaskId": "{task-id}"');
+  });
+
+  it("notes a missing owner in the Decision Log without blocking", () => {
+    expect(content).toContain("owner: left empty");
+    expect(lower()).toContain("a missing owner never blocks");
+  });
+
+  it("blocks the task with a named reason when a target repo is uncovered", () => {
+    expect(content).toContain("plan_session_autonomous_hard_contradiction: uncovered repos");
+  });
+
+  it("--initiative also sets planDocumentId, even when the initiative is already closed", () => {
+    const start = content.indexOf("**Step 6c.2");
+    const sec = content.slice(start, content.indexOf("**Step 6d", start));
+    expect(sec).toContain("planDocumentId");
+    expect(sec).toMatch(/already closed[\s\S]*still link the plan/);
   });
 });
