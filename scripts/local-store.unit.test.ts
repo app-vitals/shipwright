@@ -7,7 +7,15 @@
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -18,7 +26,7 @@ function run(args: string[], env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "local-store-"));
   return spawnSync(BASH, [SCRIPT_PATH, ...args], {
     encoding: "utf8",
-    env: { HOME: dir, PATH: dir, ...env },
+    env: { HOME: dir, PATH: dir, SHIPWRIGHT_SKIP_DOCTOR: "1", ...env },
   });
 }
 
@@ -33,8 +41,15 @@ function fakeStack() {
   };
   stub("docker", "exit 0");
   stub("nc", "exit 1");
-  stub("curl", 'case "$*" in *tokens*) echo \'{"rawToken":"tok-secret-123"}\' ;; esac; exit 0');
-  const env = { HOME: home, PATH: `${bin}:/usr/bin:/bin` };
+  stub(
+    "curl",
+    'case "$*" in *tokens*) echo \'{"rawToken":"tok-secret-123"}\' ;; esac; exit 0',
+  );
+  const env = {
+    HOME: home,
+    PATH: `${bin}:/usr/bin:/bin`,
+    SHIPWRIGHT_SKIP_DOCTOR: "1",
+  };
   const envFile = join(home, ".shipwright", "local-store.env");
   const exec = (args: string[] = []) =>
     spawnSync(BASH, [SCRIPT_PATH, ...args], { encoding: "utf8", env });
@@ -44,7 +59,9 @@ function fakeStack() {
 describe("scripts/local-store.sh", () => {
   test("is executable and has a bash shebang", () => {
     expect(statSync(SCRIPT_PATH).mode & 0o111).not.toBe(0);
-    expect(readFileSync(SCRIPT_PATH, "utf8").startsWith("#!/usr/bin/env bash")).toBe(true);
+    expect(
+      readFileSync(SCRIPT_PATH, "utf8").startsWith("#!/usr/bin/env bash"),
+    ).toBe(true);
   });
 
   test("--help prints usage and exits 0", () => {
@@ -63,6 +80,21 @@ describe("scripts/local-store.sh", () => {
     const r = run([]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("Docker is not installed");
+  });
+
+  test("boot runs the doctor first and warns without stopping", () => {
+    const r = run([], { SHIPWRIGHT_SKIP_DOCTOR: "" });
+    expect(r.stderr).toContain("bun is not on PATH");
+    expect(r.stderr).toContain("prerequisite check reported problems");
+    // The doctor is advisory: boot continues to the Docker check.
+    expect(r.stderr).toContain("Docker is not installed");
+    expect(r.stderr).not.toContain("SHIPWRIGHT_TASK_STORE_URL and");
+  });
+
+  test("--down does not run the doctor", () => {
+    const r = run(["--down"], { SHIPWRIGHT_SKIP_DOCTOR: "" });
+    expect(r.stderr).toContain("Docker is not installed");
+    expect(r.stderr).not.toContain("bun is not on PATH");
   });
 
   test("missing Docker fails with a clear error (--down)", () => {
@@ -103,7 +135,9 @@ describe("scripts/local-store.sh", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("tok-secret-123");
     expect(r.stdout.trim().split("\n").pop()).toBe(`source ${envFile}`);
-    expect(readFileSync(envFile, "utf8")).toContain("export SHIPWRIGHT_TASK_STORE_TOKEN=tok-secret-123");
+    expect(readFileSync(envFile, "utf8")).toContain(
+      "export SHIPWRIGHT_TASK_STORE_TOKEN=tok-secret-123",
+    );
     expect(statSync(envFile).mode & 0o777).toBe(0o600);
   });
 

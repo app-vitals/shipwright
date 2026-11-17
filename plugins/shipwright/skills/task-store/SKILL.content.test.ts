@@ -14,8 +14,10 @@ beforeAll(() => {
 });
 
 describe("SKILL.md — local task store setup (CRQ-1.2)", () => {
-  it("contains scripts/local-store.sh in the Setup section", () => {
-    expect(skillContent).toContain("scripts/local-store.sh");
+  it("points at scripts/doctor.sh and docs/task-store.md instead of inlining local setup", () => {
+    expect(skillContent).toContain("scripts/doctor.sh");
+    expect(skillContent).toContain("docs/task-store.md");
+    expect(skillContent).not.toContain("### Local / HITL Setup");
   });
 
   it("does not mention 'contact your administrator' for setup", () => {
@@ -27,23 +29,13 @@ describe("SKILL.md — local task store setup (CRQ-1.2)", () => {
     expect(skillContent).toContain("SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN");
   });
 
-  it("includes example usage: eval '$(./scripts/local-store.sh)'", () => {
-    expect(skillContent).toContain('eval "$(./scripts/local-store.sh)"');
-  });
-
-  it("documents the --down flag for tearing down the local stack", () => {
-    expect(skillContent).toContain("./scripts/local-store.sh --down");
-  });
-
-  it("clarifies that local setup via scripts/local-store.sh does not require admin token minting", () => {
+  it("keeps the Setup env check and the Managed section", () => {
     const setupSection = skillContent.match(
-      /## Setup[\s\S]*?(?=## Authentication)/
+      /## Setup[\s\S]*?(?=## Authentication)/,
     );
     expect(setupSection).not.toBeNull();
     const section = setupSection?.[0] ?? "";
-    // Should mention local-store.sh doesn't require admin token
-    expect(section).toContain("scripts/local-store.sh");
-    // Admin token should only appear in the "Managed" subsection
+    expect(section).toContain("SHIPWRIGHT_TASK_STORE_URL:-(missing)");
     expect(section).toContain("Managed");
   });
 });
@@ -73,9 +65,7 @@ describe("README.md — Task Store section updates (CRQ-1.2)", () => {
   });
 
   it("includes the eval command for local setup", () => {
-    expect(readmeContent).toContain(
-      'eval "$(./scripts/local-store.sh)"'
-    );
+    expect(readmeContent).toContain('eval "$(./scripts/local-store.sh)"');
   });
 
   it("mentions --down for tearing down the local stack", () => {

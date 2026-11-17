@@ -6,7 +6,7 @@ This path takes you from nothing to a **reviewed pull request on your own repo**
 
 Everything in this block and in Step 1 happens in a plain terminal. Claude Code is not opened until Step 2, and you never have to leave it once it is open.
 
-You need [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/) (with the compose plugin), [gh](https://cli.github.com), [git](https://git-scm.com/downloads) and [Bun](https://bun.sh). Run each check below in your terminal; fix any that fails before moving on.
+You need [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://docs.docker.com/get-docker/) (with the compose plugin), [gh](https://cli.github.com), [git](https://git-scm.com/downloads) and [Bun](https://bun.sh). Check Docker below, then run the doctor (Step 0) for the rest; fix anything it reports before moving on.
 
 **Docker** runs the local task store. Check it:
 
@@ -14,24 +14,7 @@ You need [Claude Code](https://www.anthropic.com/claude-code), [Docker](https://
 docker compose version
 ```
 
-**gh** opens the PR in Step 4 and reads it in Step 5. Check it is signed in, and run `gh auth login` if it is not:
-
-```bash
-gh auth status
-```
-
-**Bun** runs the `/shipwright:review` helper scripts. The Bun installer only edits your shell profile, so open a new terminal (or `source` the profile) after installing, then check it is on your PATH:
-
-```bash
-bun --version
-```
-
-**git** needs an identity so dev-task can commit. Both lines must print a value; set any that is empty with `git config --global`:
-
-```bash
-git config user.name
-git config user.email
-```
+**Bun** runs the `/shipwright:review` helper scripts; install it from <https://bun.sh>. The doctor in Step 0 checks that it is on your PATH.
 
 **A small repo you can push to** is where the first PR lands. A scratch repo is ideal. Create one and `cd` into it:
 
@@ -43,6 +26,16 @@ cd first-pr-demo
 To use a repo you already have instead, clone it with `gh repo clone` and `cd` into it. Either way, leave this terminal open: you launch Claude Code from it in Step 2.
 
 If you authenticate `gh` with a fine-grained token instead of `gh auth login`, give it read/write on **Contents** and **Pull requests** for your repo, plus read on **Actions** if the repo has CI. Without Actions read, the CI check on the PR returns a 403 and Shipwright cannot tell whether CI passed.
+
+## Step 0 — Run the doctor (in your terminal)
+
+From inside your target repo (the one you just created or cloned), the doctor checks everything below except Docker in one go: Bun on your PATH, `gh` signed in, a git repo with a GitHub `origin`, and a git `user.name` and `user.email`. It prints nothing when all is well, and one fix line per problem otherwise:
+
+```bash
+~/shipwright/scripts/doctor.sh --skip-task-store
+```
+
+If `~/shipwright` does not exist yet, clone it first with the `git clone` line in Step 1. `--skip-task-store` is needed now because the task-store env vars only exist after Step 1; run it again without the flag once you have sourced the env file.
 
 ## Step 1 — Start the task store and write the spec (in your terminal)
 
@@ -219,8 +212,9 @@ The distinction matters: step 1 is a shell command, step 2 is a slash command th
 Run it from **inside** the cloned repo (the prompt's step 1 clones and `cd`s for you first). It is **idempotent** — safe to re-run:
 
 1. Verifies prerequisites (`git`, `bun`, `task`) and fails with an install pointer if any is missing.
-2. Runs `task setup` (idempotent `bun install` across all workspaces).
-3. Starts the dashboard with `task dev` (the dev supervisor; Ctrl-C stops it) and points you at `http://localhost:3460/dashboard`.
+2. Runs `scripts/doctor.sh --skip-task-store` as an advisory check (the rest of the Shipwright prerequisites: `gh` sign-in, a GitHub `origin`, git identity). Problems are printed but do not stop setup, because the offline dashboard needs none of them. Set `SHIPWRIGHT_SKIP_DOCTOR=1` to skip this step.
+3. Runs `task setup` (idempotent `bun install` across all workspaces).
+4. Starts the dashboard with `task dev` (the dev supervisor; Ctrl-C stops it) and points you at `http://localhost:3460/dashboard`.
 
 ### Offline by default
 

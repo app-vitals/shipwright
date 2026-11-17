@@ -136,10 +136,9 @@ describe("docs/quickstart.md reorder (CRQ-7.1)", () => {
     }
   });
 
-  it("has runnable checks for gh auth, Bun, git identity and the repo", () => {
-    expect(firstPr).toContain("gh auth status");
-    expect(firstPr).toContain("bun --version");
-    expect(firstPr).toContain("git config user.name");
+  it("has the doctor as step 0 and a runnable repo step", () => {
+    expect(firstPr).toMatch(/## Step 0 — Run the doctor/);
+    expect(firstPr).toContain("scripts/doctor.sh");
     expect(firstPr).toMatch(/gh repo (create|clone)/);
   });
 

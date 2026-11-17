@@ -25,37 +25,7 @@ echo "URL:   ${SHIPWRIGHT_TASK_STORE_URL:-(missing)}"
 echo "Token: ${SHIPWRIGHT_TASK_STORE_TOKEN:+(set)}"
 ```
 
-### Local / HITL Setup
-
-For local development or HITL execution, run the setup script from a clone of [app-vitals/shipwright](https://github.com/app-vitals/shipwright) (requires only Docker + curl; idempotent):
-
-```bash
-./scripts/local-store.sh
-```
-
-This script:
-1. Boots a local Postgres + task-store container stack
-2. Mints an unscoped token (reused on re-run)
-3. Prints the env var exports to stdout
-
-Use the exports directly:
-
-```bash
-export SHIPWRIGHT_TASK_STORE_URL=http://localhost:3002
-export SHIPWRIGHT_TASK_STORE_TOKEN=<token>
-```
-
-Or in one command:
-
-```bash
-eval "$(./scripts/local-store.sh)"
-```
-
-To tear down:
-
-```bash
-./scripts/local-store.sh --down
-```
+Missing env vars or other prerequisites? Run `scripts/doctor.sh` from a clone of [app-vitals/shipwright](https://github.com/app-vitals/shipwright); it prints one fix line per problem. For a local task store, see "Local setup" in [docs/task-store.md](../../../../docs/task-store.md).
 
 ### Managed / Deployed Setups
 

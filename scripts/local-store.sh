@@ -8,6 +8,10 @@
 #   ./scripts/local-store.sh --down         # tear down containers, volume, token and env file
 #   ./scripts/local-store.sh --help
 #
+# Runs scripts/doctor.sh --skip-task-store first (boot path only) as an advisory
+# check: problems are printed but do not stop the boot. Set SHIPWRIGHT_SKIP_DOCTOR=1
+# to skip it.
+#
 # What it does:
 #   1. Generates a docker compose file (Postgres + the published task-store image)
 #   2. Starts it and waits for GET /health/ready
@@ -26,6 +30,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+[ "$SCRIPT_DIR" != "${BASH_SOURCE[0]}" ] || SCRIPT_DIR=.
+
 PORT="${SHIPWRIGHT_LOCAL_STORE_PORT:-3002}"
 IMAGE="${SHIPWRIGHT_LOCAL_STORE_IMAGE:-ghcr.io/app-vitals/shipwright-task-store:latest}"
 STATE_DIR="${SHIPWRIGHT_LOCAL_STORE_DIR:-$HOME/.shipwright/local-store}"
@@ -38,7 +45,7 @@ URL="http://localhost:$PORT"
 READY_TIMEOUT="${SHIPWRIGHT_LOCAL_STORE_READY_TIMEOUT:-120}"
 
 usage() {
-  sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 die() {
@@ -108,6 +115,11 @@ if [ "$MODE" = down ]; then
   rm -f "$ENV_FILE"
   echo "Local task store removed."
   exit 0
+fi
+
+if [ -z "${SHIPWRIGHT_SKIP_DOCTOR:-}" ]; then
+  "${BASH:-bash}" "$SCRIPT_DIR/doctor.sh" --skip-task-store \
+    || echo "WARNING: prerequisite check reported problems (see above); continuing — the store itself only needs Docker and curl." >&2
 fi
 
 require_docker

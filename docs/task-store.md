@@ -223,6 +223,40 @@ All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope
 
 ---
 
+## Local setup
+
+For local development or HITL execution, run the setup script from a clone of [app-vitals/shipwright](https://github.com/app-vitals/shipwright) (requires only Docker + curl; idempotent). Run `./scripts/doctor.sh` first to check the other prerequisites (bun, `gh` sign-in, a GitHub remote, git identity); `local-store.sh` runs it for you with `--skip-task-store`, because the task-store env vars do not exist until the store is up.
+
+```bash
+./scripts/local-store.sh
+```
+
+This script:
+1. Boots a local Postgres + task-store container stack
+2. Mints an unscoped token (reused on re-run)
+3. Writes the env var exports to a file (`~/.shipwright/local-store.env` by default, mode 600) and prints the `source` line to run
+
+Use the exports directly:
+
+```bash
+export SHIPWRIGHT_TASK_STORE_URL=http://localhost:3002
+export SHIPWRIGHT_TASK_STORE_TOKEN=<token>
+```
+
+Or in one command:
+
+```bash
+eval "$(./scripts/local-store.sh)"
+```
+
+To tear down:
+
+```bash
+./scripts/local-store.sh --down
+```
+
+---
+
 ## Troubleshooting
 
 ### `?ready=true` returns empty
