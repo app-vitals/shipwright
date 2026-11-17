@@ -152,7 +152,11 @@ export class SystemCronScheduler {
       this.error(`${P} ${cronId}: ${what} failed:`, err);
     };
 
-    const due: { id: string; slots: Date[] }[] = [];
+    const due: {
+      id: string;
+      slots: Date[];
+      scope: Pick<SystemCronDefinitionView, "repoScope" | "repos">;
+    }[] = [];
     for (const def of await this.deps.store.listEnabled()) {
       try {
         const spec = parseCronSchedule(def.schedule);
@@ -163,7 +167,13 @@ export class SystemCronScheduler {
           catchUpBaseline(def, last),
           now,
         );
-        if (slots.length > 0) due.push({ id: def.id, slots });
+        if (slots.length > 0) {
+          due.push({
+            id: def.id,
+            slots,
+            scope: { repoScope: def.repoScope, repos: def.repos },
+          });
+        }
       } catch (err) {
         fail(def.id, "slot computation", err);
       }
@@ -177,15 +187,29 @@ export class SystemCronScheduler {
       );
       return { status: "skipped-unconfigured", fired, errors };
     }
-    const repos = listing.repos
+    const allRepos = listing.repos
       .filter((r) => !r.archived)
       .map((r) => r.fullName);
-    if (repos.length === 0) {
+    if (allRepos.length === 0) {
       this.log(`${P} lookup App lists no unarchived repos; skipping tick`);
       return { status: "skipped-no-repos", fired, errors };
     }
 
-    for (const { id, slots } of due) {
+    const visible = new Set(allRepos);
+    for (const { id, slots, scope } of due) {
+      // 'selected' → intersect with the listing so archived or
+      // no-longer-visible repos drop out; 'all' (or an older task-store
+      // response without repoScope) uses every unarchived repo.
+      const repos =
+        scope.repoScope === "selected"
+          ? (scope.repos ?? []).filter((r) => visible.has(r))
+          : allRepos;
+      if (repos.length === 0) {
+        this.log(
+          `${P} ${id}: none of its selected repos is visible and unarchived; skipping (nothing recorded)`,
+        );
+        continue;
+      }
       for (const slot of slots) {
         const scheduledFor = slot.toISOString();
         try {

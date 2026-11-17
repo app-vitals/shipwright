@@ -62,6 +62,7 @@ import {
   type Session,
 } from "./admin-ui-sessions-list.ts";
 import {
+  type RepositoryLookup,
   registerSystemCronsRoutes,
   type SystemCronsFetchers,
 } from "./admin-ui-system-crons.ts";
@@ -295,6 +296,8 @@ export interface CodingAdminUIDeps extends CodingTaskStoreFetchers {
     path: string,
     init?: RequestInit,
   ) => Response | Promise<Response>;
+  /** The platform's lookup-App repo lister; feeds the system-crons repo checklist (CRS-1.3). */
+  githubLookup?: RepositoryLookup;
 }
 
 /**
@@ -428,6 +431,7 @@ export function createCodingAdminUIApp(
     patchSystemCron,
     setSystemCronEnabled,
     githubEnterpriseApi,
+    githubLookup,
   } = deps;
 
   // Push is enabled only when the service was constructed (VAPID fully set) AND
@@ -1292,6 +1296,7 @@ export function createCodingAdminUIApp(
     patchSystemCron,
     setSystemCronEnabled,
     githubEnterpriseApi,
+    githubLookup,
   });
 
   // ─── PRs ─────────────────────────────────────────────────────────────────

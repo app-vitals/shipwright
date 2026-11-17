@@ -189,4 +189,32 @@ describeOrSkip("system-cron scheduler × task-store (integration)", () => {
       await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID } }),
     ).toBe(0);
   });
+
+  it("a 'selected' definition fires only for its selected, visible, unarchived repos", async () => {
+    await prisma.systemCronDefinition.update({
+      where: { id: CRON_ID },
+      data: {
+        repoScope: "selected",
+        repos: ["acme/widgets", "acme/retired", "acme/gone"],
+      },
+    });
+    const r = await schedulers[0].tick();
+    expect(r.errors).toEqual([]);
+    const tasks = await prisma.task.findMany({
+      where: { id: { startsWith: `SC-${CRON_ID}-` } },
+    });
+    expect(tasks.length).toBe(3);
+    expect(tasks.every((t) => t.id.endsWith("-acme-widgets"))).toBe(true);
+  });
+
+  it("a 'selected' definition with an empty intersection records nothing", async () => {
+    await prisma.systemCronDefinition.update({
+      where: { id: CRON_ID },
+      data: { repoScope: "selected", repos: ["acme/retired"] },
+    });
+    await schedulers[0].tick();
+    expect(
+      await prisma.systemCronTrigger.count({ where: { cronId: CRON_ID } }),
+    ).toBe(0);
+  });
 });
