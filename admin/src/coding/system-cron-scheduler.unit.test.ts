@@ -60,11 +60,13 @@ function lister(
   result:
     | { configured: boolean; repos: { fullName: string; archived: boolean }[] }
     | Error,
-): LookupRepositoryLister & { calls: number } {
+): LookupRepositoryLister & { calls: number; accounts: (string | null)[] } {
   const l = {
     calls: 0,
-    async listRepositories() {
+    accounts: [] as (string | null)[],
+    async listRepositories(accountId?: string | null) {
       l.calls++;
+      l.accounts.push(accountId ?? null);
       if (result instanceof Error) throw result;
       return result;
     },
@@ -485,5 +487,97 @@ describe("createHttpSystemCronStore", () => {
     await expect(
       store.fire("x", "2026-11-14T07:00:00Z", ["a/b"]),
     ).rejects.toThrow("409");
+  });
+});
+
+describe("SystemCronScheduler — per-account listing (CRS-2.2)", () => {
+  type Listing = {
+    configured: boolean;
+    repos: { fullName: string; archived: boolean }[];
+  };
+  const perAccount = (map: Record<string, Listing>) => {
+    const l = {
+      accounts: [] as (string | null)[],
+      async listRepositories(accountId?: string | null) {
+        l.accounts.push(accountId ?? null);
+        return map[accountId ?? ""] ?? { configured: false, repos: [] };
+      },
+    };
+    return l;
+  };
+  const repo = (fullName: string) => ({ fullName, archived: false });
+  const due = { enabledAt: "2026-11-13T08:00:00.000Z" };
+
+  it("fires each definition against its own account's listing, one call per account", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+      a2: { configured: true, repos: [repo("two/y"), repo("two/z")] },
+    });
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+      def({ id: "c3", accountId: "a1", ...due }),
+    ];
+    const result = await scheduler.tick();
+    expect(result.status).toBe("fired");
+    expect(lookup.accounts.sort()).toEqual(["a1", "a2"]);
+    const reposOf = (id: string) => store.fires.find((f) => f.id === id)?.repos;
+    expect(reposOf("c1")).toEqual(["one/x"]);
+    expect(reposOf("c2")).toEqual(["two/y", "two/z"]);
+    expect(reposOf("c3")).toEqual(["one/x"]);
+  });
+
+  it("an unconfigured account skips only its own definitions", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+    });
+    const { store, scheduler, logs } = setup(
+      "2026-11-14T07:00:05Z",
+      lookup as never,
+    );
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["c1"]);
+    expect(logs.some((l) => l.includes("account a2"))).toBe(true);
+  });
+
+  it("an account with no unarchived repos skips only its own definitions", async () => {
+    const lookup = perAccount({
+      a1: { configured: true, repos: [repo("one/x")] },
+      a2: {
+        configured: true,
+        repos: [{ fullName: "two/old", archived: true }],
+      },
+    });
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["c1"]);
+  });
+
+  it("is skipped-* only when every due definition was skipped", async () => {
+    const lookup = perAccount({});
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup as never);
+    store.defs = [
+      def({ id: "c1", accountId: "a1", ...due }),
+      def({ id: "c2", accountId: "a2", ...due }),
+    ];
+    expect((await scheduler.tick()).status).toBe("skipped-unconfigured");
+    expect(store.fires).toEqual([]);
+  });
+
+  it("passes a null account (deployment-wide) when the definition has none", async () => {
+    const lookup = lister(REPOS);
+    const { store, scheduler } = setup("2026-11-14T07:00:05Z", lookup);
+    store.defs = [def(due)];
+    await scheduler.tick();
+    expect(lookup.accounts).toEqual([null]);
   });
 });
