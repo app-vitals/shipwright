@@ -373,8 +373,16 @@ describe("prd.md — numbered specs, repos, owner (PLU-3.2)", () => {
     expect(s).toMatch(/`PRODUCT-SPEC\.md` counts as spec 1/);
     expect(s).toContain("keeps its name");
     expect(s).toContain("`SPEC-0002.md`");
-    expect(s).toContain("`SPEC-0001.md`");
     expect(s).toMatch(/never rename or overwrite the legacy file/);
+  });
+
+  it("writes spec 1 as PRODUCT-SPEC.md until plan-session reads numbered specs", () => {
+    const s = step2c();
+    expect(s).toContain("**Interim spec-1 filename (until PLU-4.2).**");
+    expect(s).toMatch(
+      /spec 1 of a session that has no specs yet is written as `PRODUCT-SPEC\.md`/,
+    );
+    expect(s).toContain("Specs 2 and up use `SPEC-{NNNN}.md`");
   });
 
   it("specifies the read order for existing content: open docs branch, default branch, local", () => {
@@ -436,8 +444,15 @@ describe("prd.md — numbered specs, repos, owner (PLU-3.2)", () => {
     expect(content).toContain("SECRET_PATTERN=");
   });
 
-  it("hands off with NEXT: /plan-session {session}", () => {
-    expect(content).toContain("NEXT: /plan-session $ARGUMENTS");
-    expect(content).not.toContain("NEXT: /plan-session {repo}");
+  it("hands off with the two-argument form plan-session accepts today", () => {
+    expect(content).toContain("NEXT: /plan-session {repo} $ARGUMENTS");
+    expect(content).not.toMatch(/^NEXT: \/plan-session \$ARGUMENTS$/m);
+    expect(content).toContain("The handoff line must contain two arguments");
+  });
+
+  it("warns that plan-session does not read SPEC-NNNN.md specs yet", () => {
+    expect(content).toContain(
+      "⚠ plan-session does not read SPEC-{NNNN}.md files yet (PLU-4.2)",
+    );
   });
 });

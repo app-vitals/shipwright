@@ -91,7 +91,9 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
 
    **Home repo.** The home repo is the repo this command runs in (`{repo}` from step 2b). If the session already has document rows whose `repo` differs from `{repo}`, **stop** and print `Session $ARGUMENTS already lives in {home repo} — its documents are at planning/$ARGUMENTS/ in that repo. Run /shipwright:prd $ARGUMENTS there.` Write nothing.
 
-   **Next spec number.** Take the highest spec number across the document rows and the spec files found in git/local (`PRODUCT-SPEC.md` counts as spec 1 — the legacy file is spec 1 and keeps its name; `SPEC-{NNNN}.md` counts as `NNNN`). The new spec is that number plus one, zero-padded to four digits: `SPEC-{NNNN}.md`. A session with no specs gets `SPEC-0001.md`; a session whose only spec is a legacy `PRODUCT-SPEC.md` gets `SPEC-0002.md` — never rename or overwrite the legacy file. `{SPEC_FILE}` is the new file name.
+   **Next spec number.** Take the highest spec number across the document rows and the spec files found in git/local (`PRODUCT-SPEC.md` counts as spec 1 — the legacy file is spec 1 and keeps its name; `SPEC-{NNNN}.md` counts as `NNNN`). The new spec is that number plus one, zero-padded to four digits: `SPEC-{NNNN}.md`. A session with no specs gets spec 1; a session whose only spec is a legacy `PRODUCT-SPEC.md` gets `SPEC-0002.md` — never rename or overwrite the legacy file. `{SPEC_FILE}` is the new file name.
+
+   **Interim spec-1 filename (until PLU-4.2).** `plan-session` today reads only `planning/{session}/PRODUCT-SPEC.md`, so spec 1 of a session that has no specs yet is written as `PRODUCT-SPEC.md` (header `spec=0001`, registered as number 1) rather than `SPEC-0001.md`. Specs 2 and up use `SPEC-{NNNN}.md`. Once `plan-session` reads numbered specs (PLU-4.2), spec 1 becomes `SPEC-0001.md` too.
 
    **Repos.** `{repos}` = the `--repos` list (trimmed, de-duplicated) plus `{repo}` if absent, home repo first.
 
@@ -507,7 +509,7 @@ Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}  
 Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
 External Blockers: {N items require external resolution before plan-session}
 
-NEXT: /plan-session $ARGUMENTS
+NEXT: /plan-session {repo} $ARGUMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚠ Do NOT skip /plan-session. It is the ONLY command that writes tasks to
@@ -518,7 +520,9 @@ If the work feels trivial, `/plan-session` will produce a single small task —
 that is the correct fast path. "Small" is NOT a reason to skip planning.
 ```
 
-The handoff line is exactly `NEXT: /plan-session {session}` — one argument, the session name.
+Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line must contain two arguments, `{repo}` then the session: `plan-session` still requires `repo` as its first argument. It drops to `NEXT: /plan-session {session}` once `plan-session` takes the session alone (PLU-4.2).
+
+When `{SPEC_FILE}` is a `SPEC-{NNNN}.md` file (spec 2 or later), print one more line under the handoff: `⚠ plan-session does not read SPEC-{NNNN}.md files yet (PLU-4.2) — it plans from PRODUCT-SPEC.md only.`
 
 On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely and
 print `Resolved Decisions:` with only its total (see the two exceptions above the template)
