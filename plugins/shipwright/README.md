@@ -51,6 +51,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/unblock [repo ...]` | Interactive triage for blocked tasks/PRs — discovers escalations, infers origin phase, lets you retry, redirect, or abandon each one |
 | `/refresh-plan {folder}` | Syncs planning doc against current codebase state |
 | `/review` | Auto-detecting multi-agent code review for the current branch; APPROVE reviews include a Low/Medium/High [risk rating](../../docs/review-risk-rating.md) |
+| `/review-lean {org/repo#number}` | Lean variant of `/review` under trial: the same behavior as a short spine plus `references/review-lean/`; reached from the loop only through `SHIPWRIGHT_LOOP_REVIEW_ALT_COMMAND` |
 | `/review-staged` | Walk through staged PR reviews conversationally — APPROVEs first, smallest diff first, owner steers each with verbs |
 | `/research {task}` | Load relevant project docs and web research for a given task |
 | `/research-docs [module|--auto]` | Analyze codebase and generate or update project documentation. `--auto` runs unattended (no prompts) for cron/scheduled use |
@@ -303,7 +304,8 @@ shipwright/
 │   ├── refresh-plan.md          # Planning doc refresh
 │   ├── research.md              # Load project docs and web research
 │   ├── research-docs.md         # Generate/update project documentation
-│   └── review.md                # Multi-agent code review
+│   ├── review.md                # Multi-agent code review
+│   └── review-lean.md           # Lean review variant (spine; mechanics in references/review-lean/)
 ├── skills/
 │   ├── pull-requests/
 │   │   └── SKILL.md             # Query PR records — filter by repo, state, reviewState, staged
