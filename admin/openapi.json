@@ -4253,6 +4253,13 @@
           "null"
         ],
         "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null for the deployment-wide App."
+          },
           "role": {
             "type": "string",
             "example": "installer"
@@ -8770,6 +8777,19 @@
         ],
         "summary": "GitHub Enterprise App status",
         "description": "Admin-only. Metadata and key-set flag per role; never the key. Returns configured=false with null roles when nothing is set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Status",
@@ -8824,6 +8844,17 @@
             "required": true,
             "name": "role",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "requestBody": {
@@ -8907,6 +8938,17 @@
             "required": true,
             "name": "role",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -8956,6 +8998,17 @@
             "required": true,
             "name": "role",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -9010,6 +9063,17 @@
         "summary": "List installable organizations",
         "description": "Admin-only. Lists the enterprise's installable organizations, whether each has the lookup App installed, and (with agentId) whether each has that agent's App installed. Returns configured=false and no orgs when the installer App is not set.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
+          },
           {
             "schema": {
               "type": "string",
@@ -9131,6 +9195,17 @@
             "required": true,
             "name": "org",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "requestBody": {
