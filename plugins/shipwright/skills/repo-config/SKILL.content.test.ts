@@ -183,10 +183,10 @@ describe("repo-config — CI publishes shipwright-coverage lifecycle step", () =
       content.indexOf("## Coverage-check pairing (3-stage lifecycle)"),
     );
 
-  it("lists publishing the artifact before 'coverage must not decrease'", () => {
+  it("lists publishing the artifact as the first lifecycle step, before stage 1", () => {
     const section = getSection();
-    const publish = section.indexOf("CI publishes `shipwright-coverage`");
-    const neverDecrease = section.indexOf("| 2. Never-decrease required");
+    const publish = section.indexOf("| 0. CI publishes `shipwright-coverage`");
+    const neverDecrease = section.indexOf("| 1. Coverage CI job lands");
     expect(publish).toBeGreaterThan(-1);
     expect(publish).toBeLessThan(neverDecrease);
   });
