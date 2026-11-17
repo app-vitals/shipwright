@@ -19,6 +19,8 @@
   let mergedPrsBarChart = null;
   let mergedPrsTrendChart = null;
   let lastMergedPrsTrend = [];
+  let coverageTrendChart = null;
+  let lastCoverageTrend = [];
 
   // Fixed origin taxonomy + colors, shared by the bar and trend charts so
   // legend/tooltip semantics stay identical across both (unknown is grey).
@@ -215,6 +217,17 @@
             return null;
           })
       : null;
+    // Coverage by repo is authenticated-only (no public endpoint); the section
+    // is omitted from the public page, so fetch only when it is present.
+    const coverageEl = document.getElementById("coverage-section");
+    const coverageRes = coverageEl
+      ? await fetch(`${API_BASE}/coverage`)
+          .then((r) => r.json())
+          .catch((err) => {
+            console.error("Coverage fetch failed:", err);
+            return null;
+          })
+      : null;
     return {
       summary,
       trends,
@@ -222,6 +235,7 @@
       queueRes,
       tokensRes,
       mergedPrsRes,
+      coverageRes,
       costEffRes,
     };
   }
@@ -357,7 +371,8 @@
     for (const [idKey, breakdownKey] of phaseMap) {
       const val = breakdown[breakdownKey] || 0;
       $(`val-pr-commits-${idKey}`).textContent = fmtNum(val);
-      $(`bar-pr-commits-${idKey}`).style.width = `${Math.round((val / maxBreakdown) * 100)}%`;
+      $(`bar-pr-commits-${idKey}`).style.width =
+        `${Math.round((val / maxBreakdown) * 100)}%`;
     }
   }
 
@@ -912,6 +927,200 @@
     }
   }
 
+  // ─── Coverage by Repo (CVT-3.2) ──────────────────────────────────────────
+
+  const COVERAGE_COLORS = [
+    "#4f46e5",
+    "#00ccaa",
+    "#cc8844",
+    "#cc44aa",
+    "#4488ff",
+    "#888888",
+  ];
+
+  // Signed percentage-point change; null (single snapshot) renders an em dash.
+  function fmtCoverageDelta(delta) {
+    if (delta === null || delta === undefined) return { text: "—", cls: "" };
+    const n = Number(delta);
+    const fixed = n.toFixed(1);
+    if (Number(fixed) === 0) return { text: "0.0 pp", cls: "" };
+    return n > 0
+      ? { text: `+${fixed} pp`, cls: "good" }
+      : { text: `${fixed} pp`, cls: "critical" };
+  }
+
+  // One dataset per repo (or only the picked repo), one point per snapshot.
+  // Labels are the sorted distinct snapshot timestamps; a repo without a
+  // snapshot at a label gets null there (spanGaps joins its line).
+  function buildCoverageTrend(trendRows, repoFilter) {
+    const rows = repoFilter
+      ? (trendRows || []).filter((r) => r.repo === repoFilter)
+      : trendRows || [];
+    const times = [...new Set(rows.map((r) => r.measuredAt))].sort();
+    const repos = [...new Set(rows.map((r) => r.repo))].sort();
+    const datasets = repos.map((repo, i) => {
+      const byTime = new Map(
+        rows
+          .filter((r) => r.repo === repo)
+          .map((r) => [r.measuredAt, r.linesPct]),
+      );
+      return {
+        ...makeDataset(
+          repo,
+          times.map((t) => (byTime.has(t) ? byTime.get(t) : null)),
+          COVERAGE_COLORS[i % COVERAGE_COLORS.length],
+        ),
+        spanGaps: true,
+      };
+    });
+    return {
+      labels: times.map((t) => t.slice(0, 16).replace("T", " ")),
+      datasets,
+    };
+  }
+
+  function destroyCoverageChart() {
+    if (coverageTrendChart) {
+      coverageTrendChart.destroy();
+      coverageTrendChart = window.coverageTrendChart = null;
+    }
+  }
+
+  function populateCoverageRepoSelect(repos) {
+    const picker = document.getElementById("coverage-repo-picker");
+    const select = document.getElementById("coverage-repo-select");
+    if (!picker || !select) return;
+    if (!repos || repos.length <= 1) {
+      picker.style.display = "none";
+      select.innerHTML = "";
+      return;
+    }
+    const previousValue = select.value;
+    select.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "";
+    allOption.textContent = "All repos";
+    select.appendChild(allOption);
+    for (const r of repos) {
+      const opt = document.createElement("option");
+      opt.value = r.repo;
+      opt.textContent = r.repo;
+      select.appendChild(opt);
+    }
+    select.value = repos.some((r) => r.repo === previousValue)
+      ? previousValue
+      : "";
+    picker.style.display = "";
+  }
+
+  function renderCoverageTable(repos) {
+    const tbody = document.getElementById("coverage-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    for (const r of repos) {
+      const tr = document.createElement("tr");
+      tr.dataset.repo = r.repo;
+      if (r.stale) tr.classList.add("coverage-row-stale");
+      const cells = [r.repo, `${fmtNum(r.linesPct)}%`];
+      for (const text of cells) {
+        const td = document.createElement("td");
+        td.textContent = text;
+        tr.appendChild(td);
+      }
+      const delta = fmtCoverageDelta(r.deltaVsPrevious);
+      const deltaTd = document.createElement("td");
+      deltaTd.textContent = delta.text;
+      if (delta.cls) deltaTd.classList.add(`stat-value`, delta.cls);
+      tr.appendChild(deltaTd);
+      const dateTd = document.createElement("td");
+      dateTd.textContent = String(r.measuredAt).slice(0, 10);
+      if (r.stale) {
+        const badge = document.createElement("span");
+        badge.className = "coverage-stale-badge";
+        badge.textContent = "stale";
+        badge.title = "Last measured more than 14 days ago";
+        dateTd.appendChild(badge);
+      }
+      tr.appendChild(dateTd);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function drawCoverageTrendChart(trendRows, repoFilter) {
+    const canvas = document.getElementById("coverage-trend-chart");
+    if (!canvas) return;
+    destroyCoverageChart();
+    const { labels, datasets } = buildCoverageTrend(trendRows, repoFilter);
+    if (datasets.length === 0) return;
+    const tickStyle = {
+      color: "var(--text-dim)",
+      font: { family: "'JetBrains Mono', monospace", size: 10 },
+    };
+    try {
+      coverageTrendChart = window.coverageTrendChart = new Chart(
+        canvas.getContext("2d"),
+        {
+          type: "line",
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: "var(--text)",
+                  font: { family: "'JetBrains Mono', monospace", size: 11 },
+                  boxWidth: 12,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { ...tickStyle, maxRotation: 45 },
+                grid: { color: "var(--surface-raised)" },
+              },
+              y: { ticks: tickStyle, grid: { color: "var(--surface-raised)" } },
+            },
+          },
+        },
+      );
+    } catch (_err) {
+      showError("Failed to render coverage trend chart");
+    }
+  }
+
+  function updateCoverage(res) {
+    const contentEl = document.getElementById("coverage-content");
+    const emptyEl = document.getElementById("coverage-empty");
+    if (!contentEl) return;
+
+    const data = res && !res.error ? res.data : null;
+    const repos = data?.repos ?? [];
+    lastCoverageTrend = data?.trend ?? [];
+
+    if (!data || repos.length === 0) {
+      contentEl.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "";
+      destroyCoverageChart();
+      return;
+    }
+
+    contentEl.style.display = "";
+    if (emptyEl) emptyEl.style.display = "none";
+    renderCoverageTable(repos);
+    populateCoverageRepoSelect(repos);
+    const select = document.getElementById("coverage-repo-select");
+    drawCoverageTrendChart(lastCoverageTrend, select ? select.value : "");
+  }
+
+  function initCoverageRepoSelect() {
+    const select = document.getElementById("coverage-repo-select");
+    if (!select) return;
+    select.addEventListener("change", () => {
+      drawCoverageTrendChart(lastCoverageTrend, select.value);
+    });
+  }
+
   function drawChart(rows) {
     const canvas = document.getElementById("trends-chart");
     if (!canvas) return;
@@ -1355,6 +1564,7 @@
         queueRes,
         tokensRes,
         mergedPrsRes,
+        coverageRes,
         costEffRes,
       } = await fetchAll(currentRange);
       const firstError = summary.error || trends.error;
@@ -1395,6 +1605,7 @@
       } else {
         updatePRCommits(null);
       }
+      updateCoverage(coverageRes);
       updateCostEfficiency(costEffRes);
     } catch (err) {
       showError(`Failed to load metrics: ${err.message}`);
@@ -1504,6 +1715,7 @@
       initMetricClicks();
       initTokenTrendsToggles();
       initMergedPrsRepoSelect();
+      initCoverageRepoSelect();
       refresh();
     });
   } else {
@@ -1515,6 +1727,8 @@
     globalThis.__dashboardAppTestExports = {
       fetchSequential,
       computeFleetWeightedAvgCommits,
+      buildCoverageTrend,
+      fmtCoverageDelta,
     };
   }
 })();

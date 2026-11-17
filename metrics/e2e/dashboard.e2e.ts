@@ -1111,3 +1111,126 @@ test.describe("Dashboard — Merged PRs by repo panel", () => {
     await expect(page.locator("#merged-prs-trend-chart")).toBeHidden();
   });
 });
+
+// ─── Dashboard — CVT-3.2 Coverage by repo section ────────────────────────────
+//
+// Like the Merged PRs tests, these do NOT mock /metrics/coverage — requests fall
+// through to the real test server's fixture provider, which serves the
+// CVT-3.1 coverage cassette: org/alpha (81 -> 82.5, delta +1.5, fresh) and
+// org/beta (single stale snapshot, delta null).
+
+test.describe("Dashboard — Coverage by repo section", () => {
+  test("renders one table row per fixture repo, a trend canvas, and marks stale rows", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.locator('[aria-label="Coverage by repo"] .section-title'),
+    ).toHaveText("Coverage by repo");
+    await expect(page.locator("#coverage-tbody tr")).toHaveCount(2);
+    await expect(page.locator("#coverage-trend-chart")).toBeVisible();
+
+    const alpha = page.locator('#coverage-tbody tr[data-repo="org/alpha"]');
+    await expect(alpha).toContainText("82.5%");
+    await expect(alpha).toContainText("+1.5 pp");
+    await expect(alpha.locator(".coverage-stale-badge")).toHaveCount(0);
+
+    const beta = page.locator('#coverage-tbody tr[data-repo="org/beta"]');
+    await expect(beta).toHaveClass(/coverage-row-stale/);
+    await expect(beta.locator(".coverage-stale-badge")).toBeVisible();
+  });
+
+  test("selecting a repo restricts the trend chart to that repo's series", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await page.waitForFunction(
+      () => (window.coverageTrendChart?.data?.datasets?.length ?? 0) > 0,
+    );
+    await expect(page.locator("#coverage-repo-select option")).toHaveCount(3);
+    const all = await page.evaluate(() =>
+      window.coverageTrendChart.data.datasets.map(
+        (d: { label: string }) => d.label,
+      ),
+    );
+    expect(all).toEqual(["org/alpha", "org/beta"]);
+
+    await page.locator("#coverage-repo-select").selectOption("org/alpha");
+    const filtered = await page.evaluate(() =>
+      window.coverageTrendChart.data.datasets.map(
+        (d: { label: string }) => d.label,
+      ),
+    );
+    expect(filtered).toEqual(["org/alpha"]);
+  });
+
+  test("shows the empty state with no chart error when there are no snapshots", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => consoleErrors.push(err.message));
+
+    await mockMetricsAPIs(page);
+    await page.route("**/metrics/coverage**", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { repos: [], trend: [] },
+          meta: {
+            dateRange: "today",
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: 5,
+          },
+        }),
+      });
+    });
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(page.locator("#coverage-empty")).toBeVisible();
+    await expect(page.locator("#coverage-empty")).toContainText(
+      "POST /coverage-snapshots",
+    );
+    await expect(page.locator("#coverage-trend-chart")).toBeHidden();
+    await expect(page.locator("#coverage-tbody tr")).toHaveCount(0);
+    expect(consoleErrors.filter((e) => /coverage|chart/i.test(e))).toEqual([]);
+  });
+
+  test("public dashboard omits the section and keeps the Coverage delta panel", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await page.goto(`${BASE_URL}/public/dashboard`, {
+      waitUntil: "networkidle",
+    });
+
+    await expect(page.locator("#coverage-section")).toHaveCount(0);
+    await expect(page.locator("#coverage-trend-chart")).toHaveCount(0);
+    await expect(page.locator("#coverage-reports")).toHaveCount(1);
+    await expect(page.locator("#coverage-delta")).toHaveCount(1);
+  });
+
+  test("existing per-task Coverage delta panel is unchanged on /dashboard", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.locator(".quality-panel .panel-title", { hasText: /^Coverage$/ }),
+    ).toHaveCount(1);
+    await expect(page.locator("#coverage-reports")).toBeVisible();
+    await expect(page.locator("#coverage-delta")).toBeVisible();
+  });
+});

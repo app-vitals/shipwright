@@ -384,6 +384,29 @@ body {
   }
 }
 
+/* ─── Coverage by Repo ──────────────────────────────────────────────────── */
+
+.coverage-table-wrapper {
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.coverage-row-stale td {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.coverage-stale-badge {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  color: var(--warn);
+  font-size: 11px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
 /* ─── Error Toast ───────────────────────────────────────────────────────── */
 
 #error-toast {

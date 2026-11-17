@@ -91,6 +91,40 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         </div>
       </section>`;
 
+  // Coverage by repo reads the authenticated-only /metrics/coverage endpoint
+  // (there is no public variant), so the section is omitted when readOnly.
+  const coverageSection = readOnly
+    ? ""
+    : `      <!-- Coverage by repo -->
+      <section class="section" id="coverage-section" aria-label="Coverage by repo">
+        <div class="section-header">
+          <h2 class="section-title">Coverage by repo</h2>
+        </div>
+        <div id="coverage-content">
+          <div class="coverage-table-wrapper">
+            <table class="token-table" id="coverage-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Lines %</th>
+                  <th>Change${infoIcon("Line-coverage change versus the repo's previous snapshot, in percentage points")}</th>
+                  <th>Last measured${infoIcon("Rows measured more than 14 days ago are marked stale")}</th>
+                </tr>
+              </thead>
+              <tbody id="coverage-tbody"></tbody>
+            </table>
+          </div>
+          <div class="merged-prs-repo-picker" id="coverage-repo-picker" style="display:none">
+            <label for="coverage-repo-select">Repo</label>
+            <select id="coverage-repo-select"></select>
+          </div>
+          <div class="chart-container">
+            <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
+          </div>
+        </div>
+        <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
+      </section>`;
+
   // Cost Efficiency is public-only telemetry — rendered only in the read-only
   // public variant. The authenticated dashboard omits it entirely.
   const costEfficiencySection = readOnly
@@ -271,6 +305,8 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         </div>
         <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
+
+${coverageSection}
 
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
