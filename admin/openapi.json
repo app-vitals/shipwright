@@ -2623,6 +2623,18 @@
             ],
             "example": "main"
           },
+          "rowSource": {
+            "type": "string",
+            "enum": [
+              "template",
+              "custom"
+            ],
+            "example": "custom"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
