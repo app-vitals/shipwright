@@ -27,7 +27,11 @@ import type {
   CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
 import type { Clock } from "../lib/clock.ts";
-import type { PrRecord, TaskRecord } from "../lib/task-store-client.ts";
+import type {
+  CoverageSnapshotRecord,
+  PrRecord,
+  TaskRecord,
+} from "../lib/task-store-client.ts";
 import type { MetricsProvider } from "../metrics-provider.ts";
 import { TaskStoreProvider } from "../providers/task-store-provider.ts";
 import {
@@ -226,8 +230,39 @@ export function createFixtureTaskStoreProvider(repo?: string): MetricsProvider {
     daily: [{ period: ds(1), ...agg(400, 200, 80, 40, 0.6) }],
   };
 
+  // ─── Coverage cassette (CVT-3.1) ────────────────────────────────────────────
+  // org/alpha has two snapshots (delta +1.5), org/beta a single stale one
+  // (delta null, > 14 days old).
+
+  const COVERAGE: CoverageSnapshotRecord[] = [
+    {
+      repo: "org/alpha",
+      commitSha: "a1b2c3d4e5f6",
+      linesPct: 81,
+      branchesPct: 74,
+      functionsPct: 88,
+      measuredAt: d(5),
+    },
+    {
+      repo: "org/alpha",
+      commitSha: "f6e5d4c3b2a1",
+      linesPct: 82.5,
+      branchesPct: 75.5,
+      functionsPct: 90,
+      measuredAt: d(1),
+    },
+    {
+      repo: "org/beta",
+      commitSha: "0a1b2c3d4e5f",
+      linesPct: 64,
+      branchesPct: null,
+      functionsPct: null,
+      measuredAt: d(20),
+    },
+  ];
+
   return new TaskStoreProvider(
-    new RecordedTaskStoreClient(TASKS, PRS),
+    new RecordedTaskStoreClient(TASKS, PRS, COVERAGE),
     new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS),
     clock,
     repo,

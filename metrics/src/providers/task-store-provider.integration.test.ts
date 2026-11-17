@@ -54,6 +54,18 @@ class CountingTaskStoreClient implements TaskStoreClient {
     this.listPrsCallCount++;
     return this.inner.listPrs(params);
   }
+
+  listLatestCoverage(
+    params: Parameters<TaskStoreClient["listLatestCoverage"]>[0],
+  ) {
+    return this.inner.listLatestCoverage(params);
+  }
+
+  listCoverageHistory(
+    params: Parameters<TaskStoreClient["listCoverageHistory"]>[0],
+  ) {
+    return this.inner.listCoverageHistory(params);
+  }
 }
 
 // ─── Cassettes ────────────────────────────────────────────────────────────────
