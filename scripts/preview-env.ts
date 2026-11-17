@@ -80,6 +80,10 @@ export type PreviewSecrets = {
   mcpServerToken: string;
   /** Seeded as the task-store admin token; also used by mcp-server and metrics. */
   taskStoreToken: string;
+  /** Shared by admin (signs the admin_session JWT) and metrics (verifies it). */
+  sessionSecret: string;
+  /** 64 hex chars: admin's SHIPWRIGHT_ENCRYPTION_KEY, in the same Secret as the session secret. */
+  encryptionKey: string;
 };
 
 /** File holding the htpasswd content for the ingress basic-auth gate. */
@@ -165,7 +169,12 @@ export const PORT_FORWARDS: readonly PortForward[] = [
 export function generatePreviewSecrets(
   randomHex: (bytes: number) => string,
 ): PreviewSecrets {
-  return { mcpServerToken: randomHex(24), taskStoreToken: randomHex(24) };
+  return {
+    mcpServerToken: randomHex(24),
+    taskStoreToken: randomHex(24),
+    sessionSecret: randomHex(32),
+    encryptionKey: randomHex(32),
+  };
 }
 
 type SecretFile = { secret: string; key: string; value: string };
@@ -198,6 +207,16 @@ export function previewSecretFiles(
       secret: "shipwright-preview-metrics",
       key: "METRICS_TASK_STORE_TOKEN",
       value: secrets.taskStoreToken,
+    },
+    {
+      secret: "shipwright-preview-admin-keys",
+      key: "SHIPWRIGHT_SESSION_SECRET",
+      value: secrets.sessionSecret,
+    },
+    {
+      secret: "shipwright-preview-admin-keys",
+      key: "SHIPWRIGHT_ENCRYPTION_KEY",
+      value: secrets.encryptionKey,
     },
   ];
   return Object.fromEntries(entries.map((e) => [`${e.secret}.${e.key}`, e]));
