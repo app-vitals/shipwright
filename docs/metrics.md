@@ -7,7 +7,7 @@
 The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
-2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
+2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`, tasks + PRs + coverage snapshots) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
 3. Otherwise (default) → **taskstore** mode (server will error if URLs are missing).
 
 Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460**). The app factory `createMetricsApp()` in `metrics/src/api.ts` is what tests drive via `app.request()`.
@@ -36,7 +36,7 @@ export METRICS_INTERNAL_API_KEY=<admin-internal-key>
 bun metrics/src/server.ts          # serves on :3460 (override with METRICS_API_PORT)
 ```
 
-In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStoreClient` (tasks + PRs) and an `HttpAdminMetricsClient` (token-aggregation stats). Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
+In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStoreClient` (tasks + PRs + coverage snapshots) and an `HttpAdminMetricsClient` (token-aggregation stats). Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
 
 ## API Endpoints
 
@@ -228,8 +228,8 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `metrics/src/api.ts` | App factory `createMetricsApp()`, route + auth middleware registration, dashboard handler. |
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
 | `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "taskstore"` based on `METRICS_OFFLINE` and task-store URL configuration. |
-| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
-| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks + PRs from the task-store HTTP API. |
+| `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs + coverage snapshots) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
+| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks, PRs, and coverage snapshots from the task-store HTTP API. |
 | `metrics/src/lib/admin-metrics-client.ts` | `AdminMetricsClient` interface + `HttpAdminMetricsClient` impl (and `AdminMetricsClientError`) — reads token-aggregation stats from the admin service. |
 | `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. Also includes faulting doubles (`FaultingCronAdminMetricsClient`, `FaultingChatAdminMetricsClient`, `FaultingBothAdminMetricsClient`) for testing graceful degradation when admin stats endpoints fail. |
 | `metrics/src/fixtures/task-store-fixtures.ts` | `createFixtureTaskStoreProvider()` — offline `TaskStoreProvider` over recorded cassettes with a fixed clock; used in offline mode and integration tests. |
