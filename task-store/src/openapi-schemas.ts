@@ -8,12 +8,13 @@
 
 import { z } from "@hono/zod-openapi";
 
+import { ORIGIN_KINDS } from "./origin-kinds.ts";
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
-import { UNBLOCK_TARGETS } from "./task-service.ts";
 import {
   BY_PR_TARGET_STATUSES,
   MAX_BULK_TASKS,
   MAX_PATCH_BY_PR_NUMBERS,
+  UNBLOCK_TARGETS,
 } from "./task-service.ts";
 
 /** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
@@ -25,6 +26,10 @@ const PR_ORIGIN_VALUES = [
   "human",
   "unknown",
 ] as const;
+
+/** PLU-2.5: the registered origin kinds, shared with the write validator. */
+const OriginKindSchema = z.enum(ORIGIN_KINDS);
+const ORIGIN_KIND_DESCRIPTION = `Typed origin of the task: one of ${ORIGIN_KINDS.join(", ")}. Writes and the \`?originKind=\` filter share this one list; any other value is 400.`;
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 
@@ -151,6 +156,28 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+      description:
+        "Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.",
+    }),
+    planDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-plan-1",
+      description: "Id of the plan document this task came from.",
+    }),
+    specDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-spec-1",
+      description: "Id of the spec document this task implements.",
+    }),
+    originKind: OriginKindSchema.nullable().optional().openapi({
+      example: "skill",
+      description: ORIGIN_KIND_DESCRIPTION,
+    }),
+    originRef: z.string().nullable().optional().openapi({
+      example: "plan-session",
+      description:
+        "Names the origin: a document id, skill name, cron name, etc.",
+    }),
     kind: z.enum(["dev", "prd", "initiative", "idea"]).default("dev").openapi({
       example: "dev",
       description:
@@ -898,6 +925,15 @@ export const TaskListQuerySchema = z.object({
         "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
     }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),
+  owner: z.string().optional().openapi({
+    example: "dev@example.com",
+    description:
+      "Only tasks whose owner (requester email) equals this exactly.",
+  }),
+  originKind: OriginKindSchema.optional().openapi({
+    example: "cron",
+    description: `Only tasks with this origin kind. ${ORIGIN_KIND_DESCRIPTION}`,
+  }),
   claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
   pr: z.string().optional().openapi({ example: "42" }),
@@ -968,6 +1004,22 @@ export const CreateTaskBodySchema = z
     priority: z.string().optional().openapi({ example: "high" }),
     type: z.string().optional().openapi({ example: "feature" }),
     source: z.string().optional().openapi({ example: "manual" }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+    }),
+    planDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-plan-1",
+    }),
+    specDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-spec-1",
+    }),
+    originKind: OriginKindSchema.nullable().optional().openapi({
+      example: "skill",
+      description: ORIGIN_KIND_DESCRIPTION,
+    }),
+    originRef: z.string().nullable().optional().openapi({
+      example: "plan-session",
+    }),
     kind: z.enum(["dev", "prd", "initiative", "idea"]).optional().openapi({
       example: "dev",
       description: "What the task is (TKD-1.1). Defaults to `dev`.",

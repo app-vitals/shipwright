@@ -42,6 +42,7 @@ import type {
   SystemCronDefinition,
   Task,
 } from "./index.ts";
+import type { OriginKind } from "./origin-kinds.ts";
 import {
   formatSlot,
   isValidCronId,
@@ -445,6 +446,9 @@ export class SystemCronService implements SystemCronServiceLike {
       assignee: null,
       repo,
       source: SYSTEM_CRON_TASK_SOURCE,
+      // PLU-2.5: typed provenance. No owner — never invented for cron tasks.
+      originKind: "cron" satisfies OriginKind,
+      originRef: def.name,
     }));
 
     try {

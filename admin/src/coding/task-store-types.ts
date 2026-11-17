@@ -27,6 +27,10 @@ export interface paths {
                     /** @description Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter. */
                     org?: string | string[];
                     assignee?: string;
+                    /** @description Only tasks whose owner (requester email) equals this exactly. */
+                    owner?: string;
+                    /** @description Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400. */
+                    originKind?: "document" | "skill" | "cron" | "human";
                     claimedBy?: string;
                     branch?: string;
                     pr?: string;
@@ -3789,6 +3793,32 @@ export interface components {
             /** @example true */
             hitl?: boolean | null;
             /**
+             * @description Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.
+             * @example dev@example.com
+             */
+            owner?: string | null;
+            /**
+             * @description Id of the plan document this task came from.
+             * @example doc-plan-1
+             */
+            planDocumentId?: string | null;
+            /**
+             * @description Id of the spec document this task implements.
+             * @example doc-spec-1
+             */
+            specDocumentId?: string | null;
+            /**
+             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+             * @example skill
+             * @enum {string|null}
+             */
+            originKind?: "document" | "skill" | "cron" | "human" | null;
+            /**
+             * @description Names the origin: a document id, skill name, cron name, etc.
+             * @example plan-session
+             */
+            originRef?: string | null;
+            /**
              * @description What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.
              * @default dev
              * @example dev
@@ -3897,6 +3927,20 @@ export interface components {
             type?: string;
             /** @example manual */
             source?: string;
+            /** @example dev@example.com */
+            owner?: string | null;
+            /** @example doc-plan-1 */
+            planDocumentId?: string | null;
+            /** @example doc-spec-1 */
+            specDocumentId?: string | null;
+            /**
+             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+             * @example skill
+             * @enum {string|null}
+             */
+            originKind?: "document" | "skill" | "cron" | "human" | null;
+            /** @example plan-session */
+            originRef?: string | null;
             /**
              * @description What the task is (TKD-1.1). Defaults to `dev`.
              * @example dev
