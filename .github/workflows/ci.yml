@@ -208,6 +208,14 @@ jobs:
       - name: Test
         run: task test:coverage
 
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shipwright-coverage
+          path: coverage/lcov.info
+          if-no-files-found: warn
+
       - name: Secret scan
         run: |
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" -o gitleaks.tar.gz
