@@ -1257,7 +1257,7 @@ curl -sf -X POST \
   >/dev/null 2>&1 || echo "⚠ ledger POST failed for {candidate.ref} — continuing (non-fatal)"
 ```
 Then append the new entries to `PR_FINDINGS_JSON` and re-run the script (without `--candidates`)
-to recompute `unaddressedFindings` — `isResolvedByLedger` now excludes them, so each is judged
+to recompute `unaddressedFindings` (`--candidates` lists open threads and open review bodies together, so one pass classifies every candidate) — `isResolvedByLedger` now excludes them, so each is judged
 once, never re-litigated. A candidate that raises a concern gets **no** entry and keeps
 `unaddressedFindings` true. These POSTs must complete before Step 11b's `/complete` call, like
 every other ledger write. This adds a judgment only to already-qualified candidates; it never

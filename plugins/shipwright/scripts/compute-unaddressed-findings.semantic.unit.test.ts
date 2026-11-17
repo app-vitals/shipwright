@@ -145,6 +145,19 @@ describe("unclassifiedFindingCandidates (DTA-11.1)", () => {
     ]);
   });
 
+  test("lists a review body AND a thread together (no thread-first hiding)", () => {
+    const t = DESCRIPTIVE_THREAD;
+    const c = unclassifiedFindingCandidates(
+      data({
+        reviews: { nodes: [DESCRIPTIVE_REVIEW] },
+        reviewThreads: { nodes: [t] },
+      }),
+      "the-agent",
+    );
+    expect(c.map((x) => x.kind).sort()).toEqual(["review", "thread"]);
+    expect(c.map((x) => x.ref)).toContain(reviewRef(DESCRIPTIVE_REVIEW));
+  });
+
   test("never lists what a structural exclusion already settled", () => {
     const reply = {
       author: { login: "pr-author" },

@@ -630,6 +630,19 @@ export function unaddressedFindingRefs(
   data: PrReviewData,
   currentUser: string,
 ): string[] {
+  const { threadRefs, reviewRefs } = openFindingRefs(data, currentUser);
+  return threadRefs.length > 0 ? threadRefs : reviewRefs;
+}
+
+/**
+ * Both kinds of open finding, computed independently of the thread-first
+ * short-circuit `unaddressedFindingRefs` applies. `reviewRefs` is the set of
+ * qualifying review bodies that would count if no thread were open.
+ */
+function openFindingRefs(
+  data: PrReviewData,
+  currentUser: string,
+): { threadRefs: string[]; reviewRefs: string[] } {
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const findings = data.findings ?? [];
   const prAuthor = data.prAuthor ?? currentUser;
@@ -647,7 +660,7 @@ export function unaddressedFindingRefs(
       !isRejectedByPatchLedger(reviewRef(r), findings),
   );
 
-  if (qualifyingReviews.length === 0) return [];
+  if (qualifyingReviews.length === 0) return { threadRefs: [], reviewRefs: [] };
 
   // Check for unresolved threads, excluding ones the PR author has already
   // replied to and addressed within the thread itself (URT-1.1).
@@ -662,17 +675,17 @@ export function unaddressedFindingRefs(
     )
     .map((t) => threadRef(t) ?? `thread:${reviewThreads.nodes.indexOf(t)}`);
 
-  if (unresolvedThreadRefs.length > 0) return unresolvedThreadRefs;
-
-  // No unresolved threads — check if any qualifying review has a non-empty
-  // body that hasn't been addressed by a subsequent author reply.
-  return qualifyingReviews
+  // Any qualifying review with a non-empty body that hasn't been addressed by
+  // a subsequent author reply.
+  const reviewRefs = qualifyingReviews
     .filter(
       (r) =>
         r.body.trim().length > 0 &&
         !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
     )
     .map((r) => reviewRef(r));
+
+  return { threadRefs: unresolvedThreadRefs, reviewRefs };
 }
 
 /**
@@ -695,8 +708,9 @@ export interface UnclassifiedCandidate {
 }
 
 /**
- * The qualified-but-unclassified candidates (DTA-11.1): exactly the findings
- * `unaddressedFindingRefs` counts, so every structural/deterministic exclusion
+ * The qualified-but-unclassified candidates (DTA-11.1): every open thread and
+ * every open review body (both kinds, not just the ones
+ * `unaddressedFindingRefs` counts after its thread-first short-circuit), so every structural/deterministic exclusion
  * (state/head, ledger, author reply, supersede) has already been applied —
  * nothing here widens what qualifies. Threads without a node id are skipped:
  * no ledger ref can be derived for them, so a determination could not persist.
@@ -705,7 +719,12 @@ export function unclassifiedFindingCandidates(
   data: PrReviewData,
   currentUser: string,
 ): UnclassifiedCandidate[] {
-  const refs = new Set(unaddressedFindingRefs(data, currentUser));
+  // Offer thread AND review-body candidates together: the thread-first
+  // short-circuit in unaddressedFindingRefs must not hide a review body until
+  // its sibling threads are ledgered, or one classification pass never clears
+  // the gate.
+  const open = openFindingRefs(data, currentUser);
+  const refs = new Set([...open.threadRefs, ...open.reviewRefs]);
   const out: UnclassifiedCandidate[] = [];
   for (const t of data.reviewThreads.nodes) {
     const ref = threadRef(t);
