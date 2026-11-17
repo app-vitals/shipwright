@@ -55,9 +55,7 @@ function recomputeVerdict(
 ): string {
   const gaps: string[] = [];
   if (featurePct < targets.feature) {
-    gaps.push(
-      `feature coverage ${featurePct}% < ${targets.feature}%`,
-    );
+    gaps.push(`feature coverage ${featurePct}% < ${targets.feature}%`);
   }
   if (linePct < targets.line) {
     gaps.push(`line coverage ${linePct}% < ${targets.line}%`);

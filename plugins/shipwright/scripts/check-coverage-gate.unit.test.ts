@@ -241,9 +241,7 @@ describe("parseCliInput", () => {
 
   it("throws when featureSource is missing from the input JSON", () => {
     const { featureSource: _drop, ...rest } = BASE_INPUT;
-    expect(() => parseCliInput(JSON.stringify(rest))).toThrow(
-      /featureSource/,
-    );
+    expect(() => parseCliInput(JSON.stringify(rest))).toThrow(/featureSource/);
   });
 
   it("throws when linePct is missing from the input JSON", () => {

@@ -162,9 +162,7 @@ describe("SKILL.md — Output structure mentions the Coverage Gate block", () =>
 
 describe("SKILL.md — coverage_gate Process step invokes the CLI script", () => {
   function coverageGateStepSection(): string {
-    const idx = content.indexOf(
-      "Compute the coverage_gate block by invoking",
-    );
+    const idx = content.indexOf("Compute the coverage_gate block by invoking");
     const nextStepIdx = content.indexOf(
       "9. **Auto-emit the stage-3 coverage-promotion task",
     );
@@ -173,7 +171,7 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     return content.slice(idx, nextStepIdx);
   }
 
-  it("has a numbered Process step invoking ${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts", () => {
+  it("has a numbered Process step invoking the plugin-root scripts/check-coverage-gate.ts", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("scripts/check-coverage-gate.ts");
   });
@@ -227,9 +225,7 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
 
 describe("SKILL.md — refuses to write test-readiness-plan.md on script failure", () => {
   function coverageGateStepSection(): string {
-    const idx = content.indexOf(
-      "Compute the coverage_gate block by invoking",
-    );
+    const idx = content.indexOf("Compute the coverage_gate block by invoking");
     const nextStepIdx = content.indexOf(
       "9. **Auto-emit the stage-3 coverage-promotion task",
     );
@@ -262,7 +258,9 @@ describe("SKILL.md — refuses to write test-readiness-plan.md on script failure
 
   it("mirrors the existing 'Abort if any missing' failure-mode language used elsewhere in the pipeline", () => {
     const section = coverageGateStepSection();
-    expect(section).toMatch(/mirrors\s+Process step 1's\s+"Abort if any missing"/i);
+    expect(section).toMatch(
+      /mirrors\s+Process step 1's\s+"Abort if any missing"/i,
+    );
   });
 });
 
@@ -293,9 +291,7 @@ describe("SKILL.md — feature-coverage gaps sequenced ahead of line-coverage fi
     const idx = content.indexOf(
       "5. Generate the task list by walking the migration buckets",
     );
-    const nextStepIdx = content.indexOf(
-      "6. **Apply the pairing rule**",
-    );
+    const nextStepIdx = content.indexOf("6. **Apply the pairing rule**");
     expect(idx).toBeGreaterThan(-1);
     expect(nextStepIdx).toBeGreaterThan(idx);
     return content.slice(idx, nextStepIdx);
@@ -319,7 +315,9 @@ describe("SKILL.md — feature-coverage gaps sequenced ahead of line-coverage fi
     const failureModesIdx = content.indexOf("## Failure modes to avoid");
     expect(failureModesIdx).toBeGreaterThan(-1);
     const section = content.slice(failureModesIdx);
-    expect(section).toMatch(/line-coverage filler task ahead of a feature-coverage-closing task/i);
+    expect(section).toMatch(
+      /line-coverage filler task ahead of a feature-coverage-closing task/i,
+    );
   });
 });
 
@@ -522,10 +520,7 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
 
     const filled = coverageGateBlock
       .replaceAll("{{FEATURE_COVERAGE_PCT}}", String(gate.feature_coverage_pct))
-      .replaceAll(
-        "{{FEATURE_COVERAGE_SOURCE}}",
-        gate.feature_coverage_source,
-      )
+      .replaceAll("{{FEATURE_COVERAGE_SOURCE}}", gate.feature_coverage_source)
       .replaceAll("{{LINE_COVERAGE_PCT}}", String(gate.line_coverage_pct))
       .replaceAll("{{LINE_COVERAGE_SOURCE}}", gate.line_coverage_source)
       .replaceAll("{{COVERAGE_VERDICT}}", gate.verdict)
@@ -570,7 +565,9 @@ describe("SKILL.md — step 9b emits the publish-coverage-artifact task", () => 
 
   it("emits the publish task on not_reporting", () => {
     expect(step()).toContain("not_reporting");
-    expect(step()).toContain("Publish the shipwright-coverage artifact from CI");
+    expect(step()).toContain(
+      "Publish the shipwright-coverage artifact from CI",
+    );
   });
 
   it("emits nothing when the repo is reporting", () => {
