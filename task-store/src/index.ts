@@ -7,6 +7,7 @@
  */
 
 export type {
+  CoverageSnapshot,
   PrFinding,
   PullRequest,
   PullRequestEvent,

@@ -3020,6 +3020,187 @@
         }
       }
     },
+    "/coverage-snapshots": {
+      "post": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "Record (upsert) a coverage snapshot for a commit",
+        "description": "Records the measured coverage for one commit. The body carries covered/total counts; the server computes `linesPct` (and `branchesPct`/`functionsPct` when those pairs are supplied). The row is unique on (account, `repo`, `commitSha`): the first POST returns `201`, a repeat POST for the same commit replaces the measurements and returns `200`. `400` when `linesTotal` is not > 0, any covered exceeds its total, `commitSha` is empty, or `repo` is not `owner/repo`. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCoverageSnapshotBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing snapshot for this commit, updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshot"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created coverage snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields or counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "List coverage snapshots, newest first",
+        "description": "Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo",
+              "description": "Only snapshots for this repo."
+            },
+            "required": false,
+            "description": "Only snapshots for this repo.",
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2026-11-01T00:00:00.000Z",
+              "description": "ISO timestamp; only snapshots measured at or after it."
+            },
+            "required": false,
+            "description": "ISO timestamp; only snapshots measured at or after it.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50",
+              "description": "Max records to return"
+            },
+            "required": false,
+            "description": "Max records to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0",
+              "description": "Pagination offset"
+            },
+            "required": false,
+            "description": "Pagination offset",
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage snapshot history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshotListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — `since` is not a valid ISO timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coverage-snapshots/latest": {
+      "get": {
+        "tags": [
+          "Coverage Snapshots"
+        ],
+        "summary": "Latest coverage snapshot per repo",
+        "description": "Returns `{ snapshots }` with exactly one row per repo — the newest by `measuredAt` — across the repos visible to the caller. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest snapshot per repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSnapshotLatestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system-crons": {
       "get": {
         "tags": [
@@ -5853,6 +6034,246 @@
           "total",
           "limit",
           "offset"
+        ]
+      },
+      "CoverageSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxcov1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "branch": {
+            "type": "string",
+            "example": "main"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          "linesCovered": {
+            "type": "integer",
+            "example": 820
+          },
+          "linesTotal": {
+            "type": "integer",
+            "example": 1000
+          },
+          "linesPct": {
+            "type": "number",
+            "example": 82,
+            "description": "Computed server-side: linesCovered / linesTotal * 100."
+          },
+          "branchesCovered": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 40
+          },
+          "branchesTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 50
+          },
+          "branchesPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 80
+          },
+          "functionsCovered": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 90
+          },
+          "functionsTotal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 100
+          },
+          "functionsPct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 90
+          },
+          "tool": {
+            "type": "string",
+            "example": "bun"
+          },
+          "runUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/actions/runs/1"
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:05.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "repo",
+          "branch",
+          "commitSha",
+          "linesCovered",
+          "linesTotal",
+          "linesPct",
+          "branchesCovered",
+          "branchesTotal",
+          "branchesPct",
+          "functionsCovered",
+          "functionsTotal",
+          "functionsPct",
+          "tool",
+          "runUrl",
+          "measuredAt",
+          "createdAt"
+        ]
+      },
+      "CreateCoverageSnapshotBody": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Repository in `owner/repo` form — anything else is 400."
+          },
+          "branch": {
+            "type": "string",
+            "example": "main"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+            "description": "Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row."
+          },
+          "linesCovered": {
+            "type": "integer",
+            "example": 820,
+            "description": "Must be >= 0 and <= linesTotal."
+          },
+          "linesTotal": {
+            "type": "integer",
+            "example": 1000,
+            "description": "Must be > 0."
+          },
+          "branchesCovered": {
+            "type": "integer",
+            "example": 40
+          },
+          "branchesTotal": {
+            "type": "integer",
+            "example": 50,
+            "description": "Optional; branchesCovered/branchesTotal must be given together with covered <= total."
+          },
+          "functionsCovered": {
+            "type": "integer",
+            "example": 90
+          },
+          "functionsTotal": {
+            "type": "integer",
+            "example": 100,
+            "description": "Optional; functionsCovered/functionsTotal must be given together with covered <= total."
+          },
+          "tool": {
+            "type": "string",
+            "example": "bun",
+            "description": "Tool that produced the measurement (bun, c8, nyc, ...)."
+          },
+          "runUrl": {
+            "type": "string",
+            "example": "https://github.com/org/repo/actions/runs/1"
+          },
+          "measuredAt": {
+            "type": "string",
+            "example": "2026-11-17T12:00:00.000Z",
+            "description": "ISO timestamp of the measurement. Defaults to the current time."
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account."
+          }
+        },
+        "required": [
+          "repo",
+          "branch",
+          "commitSha",
+          "linesCovered",
+          "linesTotal",
+          "tool"
+        ]
+      },
+      "CoverageSnapshotListResponse": {
+        "type": "object",
+        "properties": {
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSnapshot"
+            },
+            "description": "Snapshots ordered by `measuredAt` descending (newest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "snapshots",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CoverageSnapshotLatestResponse": {
+        "type": "object",
+        "properties": {
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSnapshot"
+            },
+            "description": "Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo."
+          }
+        },
+        "required": [
+          "snapshots"
         ]
       },
       "SystemCronListResponse": {

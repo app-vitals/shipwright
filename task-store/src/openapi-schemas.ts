@@ -1513,6 +1513,159 @@ export const VerificationCheckListResponseSchema = z
   })
   .openapi("VerificationCheckListResponse");
 
+// ─── Coverage Snapshot (CVT-2.1) ───────────────────────────────────────────────
+
+export const CoverageSnapshotSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxcov1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    branch: z.string().openapi({ example: "main" }),
+    commitSha: z
+      .string()
+      .openapi({ example: "9fceb02d0ae598e95dc970b74767f19372d61af8" }),
+    linesCovered: z.number().int().openapi({ example: 820 }),
+    linesTotal: z.number().int().openapi({ example: 1000 }),
+    linesPct: z.number().openapi({
+      example: 82,
+      description: "Computed server-side: linesCovered / linesTotal * 100.",
+    }),
+    branchesCovered: z.number().int().nullable().openapi({ example: 40 }),
+    branchesTotal: z.number().int().nullable().openapi({ example: 50 }),
+    branchesPct: z.number().nullable().openapi({ example: 80 }),
+    functionsCovered: z.number().int().nullable().openapi({ example: 90 }),
+    functionsTotal: z.number().int().nullable().openapi({ example: 100 }),
+    functionsPct: z.number().nullable().openapi({ example: 90 }),
+    tool: z.string().openapi({ example: "bun" }),
+    runUrl: z
+      .string()
+      .nullable()
+      .openapi({ example: "https://github.com/org/repo/actions/runs/1" }),
+    measuredAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:05.000Z" }),
+  })
+  .openapi("CoverageSnapshot");
+
+export type CoverageSnapshot = z.infer<typeof CoverageSnapshotSchema>;
+
+/** Request body for POST /coverage-snapshots. */
+export const CreateCoverageSnapshotBodySchema = z
+  .object({
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in `owner/repo` form — anything else is 400.",
+    }),
+    branch: z.string().openapi({ example: "main" }),
+    commitSha: z.string().openapi({
+      example: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+      description:
+        "Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row.",
+    }),
+    linesCovered: z.number().int().openapi({
+      example: 820,
+      description: "Must be >= 0 and <= linesTotal.",
+    }),
+    linesTotal: z.number().int().openapi({
+      example: 1000,
+      description: "Must be > 0.",
+    }),
+    branchesCovered: z.number().int().optional().openapi({ example: 40 }),
+    branchesTotal: z.number().int().optional().openapi({
+      example: 50,
+      description:
+        "Optional; branchesCovered/branchesTotal must be given together with covered <= total.",
+    }),
+    functionsCovered: z.number().int().optional().openapi({ example: 90 }),
+    functionsTotal: z.number().int().optional().openapi({
+      example: 100,
+      description:
+        "Optional; functionsCovered/functionsTotal must be given together with covered <= total.",
+    }),
+    tool: z.string().openapi({
+      example: "bun",
+      description: "Tool that produced the measurement (bun, c8, nyc, ...).",
+    }),
+    runUrl: z.string().optional().openapi({
+      example: "https://github.com/org/repo/actions/runs/1",
+    }),
+    measuredAt: z.string().optional().openapi({
+      example: "2026-11-17T12:00:00.000Z",
+      description:
+        "ISO timestamp of the measurement. Defaults to the current time.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account.",
+    }),
+  })
+  .openapi("CreateCoverageSnapshotBody");
+
+/** Query params for GET /coverage-snapshots */
+export const CoverageSnapshotListQuerySchema = z
+  .object({
+    repo: z.string().optional().openapi({
+      example: "org/repo",
+      description: "Only snapshots for this repo.",
+    }),
+    since: z.string().optional().openapi({
+      example: "2026-11-01T00:00:00.000Z",
+      description: "ISO timestamp; only snapshots measured at or after it.",
+    }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+  })
+  .openapi("CoverageSnapshotListQuery");
+
+/** Query params for GET /coverage-snapshots/latest */
+export const CoverageSnapshotLatestQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+  })
+  .openapi("CoverageSnapshotLatestQuery");
+
+/** Response for GET /coverage-snapshots */
+export const CoverageSnapshotListResponseSchema = z
+  .object({
+    snapshots: z.array(CoverageSnapshotSchema).openapi({
+      description:
+        "Snapshots ordered by `measuredAt` descending (newest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("CoverageSnapshotListResponse");
+
+/** Response for GET /coverage-snapshots/latest */
+export const CoverageSnapshotLatestResponseSchema = z
+  .object({
+    snapshots: z.array(CoverageSnapshotSchema).openapi({
+      description:
+        "Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo.",
+    }),
+  })
+  .openapi("CoverageSnapshotLatestResponse");
+
 // ─── System Cron (SCR-1.1) ────────────────────────────────────────────────────
 
 export const SystemCronDefinitionSchema = z

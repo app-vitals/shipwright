@@ -13,7 +13,9 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -188,6 +190,18 @@ const stubVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+const stubCoverageSnapshotService: CoverageSnapshotServiceLike = {
+  async record() {
+    return {} as never;
+  },
+  async list() {
+    return { snapshots: [], total: 0 };
+  },
+  async latest() {
+    return [];
+  },
+};
+
 const stubSystemCronService: SystemCronServiceLike = {
   async list() {
     return [];
@@ -238,6 +252,9 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const verificationChecksApp = createVerificationChecksRoutes(
     stubVerificationCheckService,
   );
+  const coverageSnapshotsApp = createCoverageSnapshotsRoutes(
+    stubCoverageSnapshotService,
+  );
   const systemCronsApp = createSystemCronsRoutes(stubSystemCronService);
 
   const innerDocInfo = {
@@ -251,6 +268,8 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
   const verificationChecksSpec =
     verificationChecksApp.getOpenAPI31Document(innerDocInfo);
+  const coverageSnapshotsSpec =
+    coverageSnapshotsApp.getOpenAPI31Document(innerDocInfo);
   const systemCronsSpec = systemCronsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
@@ -278,6 +297,13 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       "/verification-checks",
     ),
     ...prefixPaths(
+      (coverageSnapshotsSpec.paths ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >,
+      "/coverage-snapshots",
+    ),
+    ...prefixPaths(
       (systemCronsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/system-crons",
     ),
@@ -300,6 +326,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(prsSpec.components?.schemas ?? {}),
         ...(sessionsSpec.components?.schemas ?? {}),
         ...(verificationChecksSpec.components?.schemas ?? {}),
+        ...(coverageSnapshotsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),
       },
     },

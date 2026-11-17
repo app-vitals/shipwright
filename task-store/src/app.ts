@@ -14,6 +14,7 @@
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
  *   * /verification-checks/* — record/list structured per-check verification outcomes
+ *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
  *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
@@ -40,8 +41,10 @@ import {
   type ScopeResolver,
   type TaskStoreAuthEnv,
 } from "./auth.ts";
+import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -128,6 +131,19 @@ const noopVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+/** No-op CoverageSnapshotService used when the feature is not wired up in a test context. */
+const noopCoverageSnapshotService: CoverageSnapshotServiceLike = {
+  async record(_data) {
+    return {} as never;
+  },
+  async list(_opts?) {
+    return { snapshots: [], total: 0 };
+  },
+  async latest() {
+    return [];
+  },
+};
+
 /** Disabled SystemCronService used when the feature is not wired up in a test context. */
 const unwiredSystemCronService: SystemCronServiceLike = {
   async list() {
@@ -159,6 +175,7 @@ export interface TaskStoreDeps {
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
+  coverageSnapshotService?: CoverageSnapshotServiceLike;
   systemCronService?: SystemCronServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: ScopeResolver;
@@ -286,6 +303,12 @@ export function createTaskStoreApp(
     "/verification-checks",
     createVerificationChecksRoutes(
       deps.verificationCheckService ?? noopVerificationCheckService,
+    ),
+  );
+  app.route(
+    "/coverage-snapshots",
+    createCoverageSnapshotsRoutes(
+      deps.coverageSnapshotService ?? noopCoverageSnapshotService,
     ),
   );
   app.route(
