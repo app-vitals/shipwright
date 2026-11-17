@@ -72,13 +72,14 @@ describe("buildPreviewCommands", () => {
     }
   });
 
-  it("creates all three Secrets before the helm install", () => {
+  it("creates all four Secrets before the helm install", () => {
     const cmds = buildPreviewCommands(OPTS, secrets());
     const install = indexOf(cmds, /helm .*upgrade --install/);
     for (const name of [
       "shipwright-preview-mcp",
       "shipwright-preview-task-store-seed",
       "shipwright-preview-metrics",
+      "shipwright-preview-admin-keys",
     ]) {
       const i = indexOf(cmds, new RegExp(`create secret generic ${name}\\b`));
       expect(i).toBeGreaterThanOrEqual(0);
@@ -196,7 +197,12 @@ describe("buildPreviewCommands", () => {
     const s = secrets();
     const cmds = buildPreviewCommands(OPTS, s);
     for (const cmd of cmds) {
-      for (const value of [s.mcpServerToken, s.taskStoreToken]) {
+      for (const value of [
+        s.mcpServerToken,
+        s.taskStoreToken,
+        s.sessionSecret,
+        s.encryptionKey,
+      ]) {
         expect(cmd.label).not.toContain(value);
         expect(cmd.argv.join(" ")).not.toContain(value);
       }
@@ -211,7 +217,7 @@ describe("buildPreviewCommands", () => {
     const create = lines(cmds).filter((l) =>
       l.includes("create secret generic"),
     );
-    expect(create).toHaveLength(3);
+    expect(create).toHaveLength(4);
     for (const l of create) expect(l).toContain("--from-file=");
     expect(create.join("\n")).toContain("/run/preview/");
   });
@@ -287,6 +293,19 @@ describe("secret files", () => {
     const values = Object.values(files).map((f) => f.value);
     expect(values.filter((v) => v === s.taskStoreToken)).toHaveLength(3);
     expect(values).toContain(s.mcpServerToken);
+  });
+
+  it("stores the session secret and a 64-hex encryption key in one admin-keys Secret", () => {
+    const s = secrets();
+    const keys = Object.values(previewSecretFiles(s)).filter(
+      (f) => f.secret === "shipwright-preview-admin-keys",
+    );
+    expect(keys.map((f) => f.key).sort()).toEqual([
+      "SHIPWRIGHT_ENCRYPTION_KEY",
+      "SHIPWRIGHT_SESSION_SECRET",
+    ]);
+    expect(s.encryptionKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(s.sessionSecret).not.toBe(s.encryptionKey);
   });
 
   it("writes files for the callback and removes them afterwards", () => {
