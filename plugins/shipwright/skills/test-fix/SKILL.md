@@ -95,7 +95,7 @@ Before starting, check for flags:
    This runs once, here in Step 2, so both the `--dry-run` preview (Step 6) and the real queue
    path (Step 7) operate on the same already-verified row set.
 6. **Anti-gaming check — reject an uncited line-coverage row.** A `bucket`/`layer` row whose
-   only justification is raising `line_coverage_pct` (a **line-coverage** task, per
+   only justification is raising `line_coverage_pct` (nullable when unmeasured; a **line-coverage** task, per
    `test-roadmap/SKILL.md`'s sequencing rule in its own Process step 5) must cite, in its
    `outcome` column or paired description text, the specific feature or genuine uncovered
    error path it maps to — e.g. a named feature from `test-inventory.md`, or a specific

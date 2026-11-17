@@ -143,6 +143,14 @@ describe("SKILL.md — coverage-check 3-stage lifecycle section", () => {
     expect(section).toMatch(/>=\s*90|≥\s*90/);
   });
 
+  it("documents that a null (not reporting) line_coverage_pct never promotes", () => {
+    const idx = content.indexOf(
+      "## Coverage-check pairing (3-stage lifecycle)",
+    );
+    const section = content.slice(idx, idx + 2500);
+    expect(section).toMatch(/`null`[^|]*not reporting[^|]*never counts/);
+  });
+
   it("states promotion happens without manual intervention", () => {
     const idx = content.indexOf(
       "## Coverage-check pairing (3-stage lifecycle)",

@@ -130,6 +130,40 @@ describe("computeCoverageGate", () => {
     ).toThrow();
   });
 
+  it("returns null line_coverage_pct and a not-reporting verdict when linePct is null and feature is ok", () => {
+    const r = computeCoverageGate({
+      ...BASE_INPUT,
+      linePct: null,
+      lineSource: "no shipwright-coverage artifact",
+    });
+    expect(r.line_coverage_pct).toBeNull();
+    expect(r.line_coverage_source).toBe("no shipwright-coverage artifact");
+    expect(r.verdict).toBe("BLOCKED: line coverage not reporting");
+  });
+
+  it("combines the feature-gap clause with not-reporting when linePct is null and feature is short", () => {
+    const r = computeCoverageGate({
+      ...BASE_INPUT,
+      featurePct: 80,
+      linePct: null,
+      lineSource: "no artifact",
+    });
+    expect(r.verdict).toBe(
+      "BLOCKED: feature coverage 80% < 90%, line coverage not reporting",
+    );
+  });
+
+  it("still throws on a mismatched supplied verdict when linePct is null", () => {
+    expect(() =>
+      computeCoverageGate({
+        ...BASE_INPUT,
+        linePct: null,
+        lineSource: "no artifact",
+        verdict: "READY",
+      }),
+    ).toThrow(/inconsistent/);
+  });
+
   it("throws when featureSource is missing", () => {
     expect(() =>
       computeCoverageGate({
@@ -249,6 +283,13 @@ describe("parseCliInput", () => {
     expect(() => parseCliInput(JSON.stringify(rest))).toThrow(/linePct/);
   });
 
+  it("accepts an explicit null linePct in the input JSON", () => {
+    const input = parseCliInput(
+      JSON.stringify({ ...BASE_INPUT, linePct: null, lineSource: "reason" }),
+    );
+    expect(input.linePct).toBeNull();
+  });
+
   it("throws when lineSource is missing from the input JSON", () => {
     const { lineSource: _drop, ...rest } = BASE_INPUT;
     expect(() => parseCliInput(JSON.stringify(rest))).toThrow(/lineSource/);
@@ -290,6 +331,20 @@ describe("CLI entrypoint (subprocess)", () => {
     );
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("inconsistent");
+  });
+
+  it("exits 0 and prints null line_coverage_pct with a not-reporting verdict for linePct null", async () => {
+    const { exitCode, stdout } = await runCli(
+      JSON.stringify({
+        ...BASE_INPUT,
+        linePct: null,
+        lineSource: "no artifact",
+      }),
+    );
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.line_coverage_pct).toBeNull();
+    expect(parsed.verdict).toContain("line coverage not reporting");
   });
 
   it("accepts the JSON blob as argv[2] instead of stdin", async () => {

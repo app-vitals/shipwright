@@ -11,6 +11,9 @@
 // step in plugins/shipwright/skills/test-roadmap/SKILL.md, which invokes
 // this script via Bash rather than hand-computing the verdict text.
 //
+// linePct may be null (unmeasured, e.g. no shipwright-coverage artifact);
+// the verdict is then "BLOCKED: line coverage not reporting".
+//
 // CLI:
 //   bun run "${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts" '{"featurePct":92,"featureSource":"...","linePct":87,"lineSource":"..."}'
 // or pipe the same JSON blob via stdin.
@@ -23,7 +26,8 @@ type CoverageGateTargets = {
 export type ComputeCoverageGateInput = {
   featurePct: number;
   featureSource: string;
-  linePct: number;
+  /** `null` = line coverage unmeasured (reader returned not_reporting); `lineSource` carries the reason. */
+  linePct: number | null;
   lineSource: string;
   targets?: CoverageGateTargets;
   /** Caller-supplied verdict, checked against the recomputed verdict. */
@@ -33,13 +37,20 @@ export type ComputeCoverageGateInput = {
 type CoverageGate = {
   feature_coverage_pct: number;
   feature_coverage_source: string;
-  line_coverage_pct: number;
+  line_coverage_pct: number | null;
   line_coverage_source: string;
   verdict: string;
   targets: CoverageGateTargets;
 };
 
 const DEFAULT_TARGETS: CoverageGateTargets = { feature: 90, line: 90 };
+
+function requireDefined<T>(value: T | undefined, name: string): T {
+  if (value === undefined) {
+    throw new Error(`computeCoverageGate: missing required field '${name}'`);
+  }
+  return value;
+}
 
 function requireField<T>(value: T | undefined | null, name: string): T {
   if (value === undefined || value === null || value === "") {
@@ -50,14 +61,16 @@ function requireField<T>(value: T | undefined | null, name: string): T {
 
 function recomputeVerdict(
   featurePct: number,
-  linePct: number,
+  linePct: number | null,
   targets: CoverageGateTargets,
 ): string {
   const gaps: string[] = [];
   if (featurePct < targets.feature) {
     gaps.push(`feature coverage ${featurePct}% < ${targets.feature}%`);
   }
-  if (linePct < targets.line) {
+  if (linePct === null) {
+    gaps.push("line coverage not reporting");
+  } else if (linePct < targets.line) {
     gaps.push(`line coverage ${linePct}% < ${targets.line}%`);
   }
 
@@ -77,7 +90,7 @@ export function computeCoverageGate(
 ): CoverageGate {
   const featurePct = requireField(input.featurePct, "featurePct");
   const featureSource = requireField(input.featureSource, "featureSource");
-  const linePct = requireField(input.linePct, "linePct");
+  const linePct = requireDefined(input.linePct, "linePct");
   const lineSource = requireField(input.lineSource, "lineSource");
   const targets = input.targets ?? DEFAULT_TARGETS;
 
@@ -118,8 +131,8 @@ export function parseCliInput(raw: string): ComputeCoverageGateInput {
   if (typeof parsed.featureSource !== "string") {
     throw new Error('Input JSON must have a string "featureSource" field');
   }
-  if (typeof parsed.linePct !== "number") {
-    throw new Error('Input JSON must have a numeric "linePct" field');
+  if (typeof parsed.linePct !== "number" && parsed.linePct !== null) {
+    throw new Error('Input JSON must have a numeric or null "linePct" field');
   }
   if (typeof parsed.lineSource !== "string") {
     throw new Error('Input JSON must have a string "lineSource" field');

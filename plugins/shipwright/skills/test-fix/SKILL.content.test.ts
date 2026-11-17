@@ -97,3 +97,11 @@ describe("PLU-4.4 origin provenance", () => {
     expect(text).toContain('"source": "test-fix"');
   });
 });
+
+describe("test-fix — nullable line_coverage_pct", () => {
+  it("documents line_coverage_pct as nullable when unmeasured", () => {
+    expect(readSkill()).toContain(
+      "`line_coverage_pct` (nullable when unmeasured",
+    );
+  });
+});
