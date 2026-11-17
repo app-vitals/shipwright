@@ -9,6 +9,7 @@ import {
   type ModelBreakdownRow,
   mergeRunRows,
   PATCH_REQUIRED_STEPS,
+  REVIEW_REQUIRED_STEPS,
   parsePrRef,
   REQUIRED_STEPS,
   type RequiredStep,
@@ -1059,5 +1060,63 @@ describe("cost and patch guardrail metrics (DTA-9.3)", () => {
         meanPatchCycles: null,
       });
     });
+  });
+});
+
+describe("review adherence (DTA-10.2)", () => {
+  const review = (usage: SkillUsageRow[], e?: RunEnrichment) =>
+    buildRunAdherence(
+      REVIEW_REQUIRED_STEPS,
+      {
+        id: "1",
+        itemId: "o/r#1",
+        contextFingerprint: null,
+        commandVariant: null,
+      },
+      usage,
+      e,
+      "review",
+    );
+  const status = (r: { steps: { stepNumber: string; status: string }[] }, n: string) =>
+    r.steps.find((s) => s.stepNumber === n)?.status;
+  const base = {
+    task: { startedAt: null, pr: null, prCreatedAt: null },
+    checks: [],
+  };
+
+  it("scores Step 7 as ran when ANY configured reviewer was dispatched", () => {
+    for (const name of ["shipwright:code-reviewer", "x:security-reviewer"]) {
+      expect(status(review([agent(name)]), "7")).toBe("ran");
+    }
+    const none = review([
+      { kind: "skill", name: "shipwright:review", invocations: 1 },
+    ]);
+    expect(status(none, "7")).toBe("skipped");
+    expect(none.missingSteps).toContain("7");
+  });
+
+  it("proves Step 11b from the PR record, else unmeasured", () => {
+    const done = {
+      commitsCiFix: null,
+      reviewState: "commented",
+      reviewedCommitSha: "abc",
+      agentId: "a1",
+    };
+    expect(status(review([agent("a")]), "11b")).toBe("unmeasured");
+    expect(status(review([agent("a")], { ...base, pr: done }), "11b")).toBe("ran");
+    expect(
+      status(review([agent("a")], { ...base, pr: { ...done, reviewedCommitSha: null } }), "11b"),
+    ).toBe("skipped");
+    expect(
+      status(review([agent("a")], { ...base, pr: { ...done, reviewState: "pending" } }), "11b"),
+    ).toBe("skipped");
+    expect(status(review([agent("a")], { ...base, pr: null }), "11b")).toBe("unmeasured");
+  });
+
+  it("leaves marker-only steps unmeasured", () => {
+    const r = review([agent("a")]);
+    for (const n of ["5", "6.1", "9.5", "10.5"]) {
+      expect(status(r, n)).toBe("unmeasured");
+    }
   });
 });

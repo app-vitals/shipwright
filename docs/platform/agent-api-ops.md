@@ -53,6 +53,8 @@ Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily fo
 - **Timing:** `avgDurationMs` and `p50DurationMs` (over non-skipped runs with a `completedAt`; null when none)
 - **Telemetry:** `avgTurns`, `avgToolCalls`, `avgContextTokens` (over non-skipped runs that reported each metric; null when none)
 
+Optional `command` (`dev-task` default, `patch` or `review`) selects the phase cron to score. `review` (DTA-10.2) scores `shipwright-review` runs against `review.json`: Step 7 is proven by any agent dispatch (any configured reviewer in a multi-reviewer list counts) and Step 11b by the PR record carrying a non-pending `reviewState`, `reviewedCommitSha` and `agentId`; the remaining steps are unmeasured. Output is grouped by `commandVariant` like patch, and `command` is echoed in the response. `dev-task` and `patch` output is unchanged.
+
 Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
 
 ### Command step adherence

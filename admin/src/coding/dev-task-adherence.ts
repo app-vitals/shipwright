@@ -83,6 +83,9 @@ import type { PrismaClient } from "@app-vitals/agent-admin/prisma/client/client.
 import requiredStepsFile from "../../../plugins/shipwright/references/required-steps/dev-task.json" with {
   type: "json",
 };
+import reviewStepsFile from "../../../plugins/shipwright/references/required-steps/review.json" with {
+  type: "json",
+};
 import patchStepsFile from "../../../plugins/shipwright/references/required-steps/patch.json" with {
   type: "json",
 };
@@ -126,14 +129,19 @@ export interface RunEnrichment {
     commitSha?: string | null;
     /** Patch guardrails (DTA-9.3); 0 = no CI failure reported to patch. */
     consecutiveCiFailureCount?: number | null;
+    /** Review scoring (DTA-10.2): set when review posts and marks the record. */
+    reviewState?: string | null;
+    reviewedCommitSha?: string | null;
+    agentId?: string | null;
   } | null;
 }
 
 /** Commands the report can score; dev-task is the default. */
-export type AdherenceCommand = "dev-task" | "patch";
+export type AdherenceCommand = "dev-task" | "patch" | "review";
 export const ADHERENCE_COMMANDS: readonly AdherenceCommand[] = [
   "dev-task",
   "patch",
+  "review",
 ];
 
 /** Subset of the task-store fetchers the report uses; all optional. */
@@ -275,11 +283,19 @@ export const ADHERENCE_DISCLAIMER =
 
 export const REQUIRED_STEPS: RequiredStep[] = requiredStepsFile.steps;
 export const PATCH_REQUIRED_STEPS: RequiredStep[] = patchStepsFile.steps;
+export const REVIEW_REQUIRED_STEPS: RequiredStep[] = reviewStepsFile.steps;
+
+/** Required-steps table per non-default command. */
+const COMMAND_STEPS: Partial<Record<AdherenceCommand, RequiredStep[]>> = {
+  patch: PATCH_REQUIRED_STEPS,
+  review: REVIEW_REQUIRED_STEPS,
+};
 
 /** Phase cron name per command (see agent/src/coding/loop-cron-classifier.ts). */
 const PHASE_CRON_NAME: Record<AdherenceCommand, string> = {
   "dev-task": "shipwright-dev-task",
   patch: "shipwright-patch",
+  review: "shipwright-review",
 };
 
 const PATCH_FIX_DISPATCH_STEP = "5b";
@@ -289,7 +305,14 @@ const PATCH_MEASURED_STEPS = new Set([
   PATCH_PUSH_STEP,
 ]);
 
-/** Parses a patch run's "org/repo#N" itemId; null for anything else. */
+const REVIEW_DISPATCH_STEP = "7";
+const REVIEW_RECORD_STEP = "11b";
+const REVIEW_MEASURED_STEPS = new Set([
+  REVIEW_DISPATCH_STEP,
+  REVIEW_RECORD_STEP,
+]);
+
+/** Parses a patch or review run's "org/repo#N" itemId; null for anything else. */
 export function parsePrRef(
   itemId: string | null | undefined,
 ): { repo: string; pr: number } | null {
@@ -327,6 +350,9 @@ function isMeasuredStep(
 ): boolean {
   if (command === "patch") {
     return step.measurable && PATCH_MEASURED_STEPS.has(step.stepNumber);
+  }
+  if (command === "review") {
+    return step.measurable && REVIEW_MEASURED_STEPS.has(step.stepNumber);
   }
   return (
     isDispatchStep(step) ||
@@ -449,6 +475,38 @@ function evaluatePatchRun(
   });
 }
 
+/**
+ * Review evaluation (DTA-10.2): Step 7 = any agent dispatch (the configured
+ * REVIEW_SUBAGENT_TYPE, or any reviewer of a comma-separated multi-reviewer
+ * list — one dispatch is enough); 11b = the PR record carries reviewState,
+ * reviewedCommitSha and agentId, unmeasured without PR enrichment. Everything
+ * else unmeasured.
+ */
+function evaluateReviewRun(
+  steps: RequiredStep[],
+  usage: SkillUsageRow[],
+  enrichment?: RunEnrichment,
+): RunStepResult[] {
+  const dispatched = usage.some((r) => r.kind === "agent" && r.invocations > 0);
+  return steps.map((step) => {
+    let ran: boolean | null = null;
+    if (step.measurable && step.stepNumber === REVIEW_DISPATCH_STEP) {
+      ran = dispatched;
+    } else if (
+      step.measurable &&
+      step.stepNumber === REVIEW_RECORD_STEP &&
+      enrichment?.pr
+    ) {
+      const { reviewState, reviewedCommitSha, agentId } = enrichment.pr;
+      ran = !!reviewState && reviewState !== "pending" && !!reviewedCommitSha && !!agentId;
+    }
+    return {
+      stepNumber: step.stepNumber,
+      status: ran === null ? "unmeasured" : ran ? "ran" : "skipped",
+    };
+  });
+}
+
 export interface CronRunRow {
   id: string;
   itemId: string | null;
@@ -540,7 +598,9 @@ export function buildRunAdherence(
   const results =
     command === "patch"
       ? evaluatePatchRun(steps, usage, enrichment)
-      : evaluateRun(steps, usage, enrichment);
+      : command === "review"
+        ? evaluateReviewRun(steps, usage, enrichment)
+        : evaluateRun(steps, usage, enrichment);
   const missingSteps = results
     .filter(
       (r) =>
@@ -838,7 +898,7 @@ export class DevTaskAdherenceService {
     let pending = cache.get(itemId);
     if (!pending) {
       pending =
-        command === "patch"
+        command !== "dev-task"
           ? this.fetchPatchEnrichment(itemId)
           : this.fetchEnrichment(itemId);
       cache.set(itemId, pending);
@@ -846,7 +906,7 @@ export class DevTaskAdherenceService {
     return pending;
   }
 
-  /** PR-record enrichment for a patch run; undefined on any failure. */
+  /** PR-record enrichment for a patch or review run; undefined on any failure. */
   private async fetchPatchEnrichment(
     itemId: string,
   ): Promise<RunEnrichment | undefined> {
@@ -908,7 +968,7 @@ export class DevTaskAdherenceService {
     agentId?: string,
     command: AdherenceCommand = "dev-task",
   ): Promise<DevTaskAdherenceReport> {
-    const steps = command === "patch" ? PATCH_REQUIRED_STEPS : this.steps;
+    const steps = COMMAND_STEPS[command] ?? this.steps;
     const startedAt: { gte?: Date; lt?: Date } = {};
     if (from) startedAt.gte = new Date(from);
     if (to) startedAt.lt = new Date(to);
