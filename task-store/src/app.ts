@@ -44,7 +44,7 @@ import {
 } from "./auth.ts";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
 import type { DocumentServiceLike } from "./document-service.ts";
-import { ApiError } from "./errors.ts";
+import { ApiError, ConflictError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createDocumentsRoutes } from "./routes/documents.ts";
@@ -265,7 +265,8 @@ export function createTaskStoreApp(
   // Map typed errors to responses; everything else is a 500.
   app.onError((err, c) => {
     if (err instanceof ApiError) {
-      return c.json({ error: err.message }, err.statusCode as 400);
+      const details = err instanceof ConflictError ? err.details : undefined;
+      return c.json({ ...details, error: err.message }, err.statusCode as 400);
     }
     // hono/@hono/zod-openapi throws a bare HTTPException (not an ApiError)
     // when the request body isn't valid JSON at all — e.g.

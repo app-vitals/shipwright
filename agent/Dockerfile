@@ -8,7 +8,7 @@
 # sources all come from the platform image (the Claude Code pin and its Renovate
 # bump live there now).
 #
-# build-agent.yml builds and tags this file as ghcr.io/app-vitals/shipwright-agent
+# release.yml builds and tags this file as ghcr.io/app-vitals/shipwright-agent
 # (agent-vX.Y.Z); the specialists image derives FROM it. ci.yml builds it as
 # shipwright-agent:ci and runs the contract checks against it.
 #

@@ -2,7 +2,7 @@
  * agent-platform-image.content.test.ts
  *
  * AGR-4.3b: agent/Dockerfile builds the Shipwright coding agent FROM the
- * published platform image and is the only shipwright-agent build. build-agent.yml
+ * published platform image and is the only shipwright-agent build. release.yml
  * (the path that tags agent-v* and triggers the poller rollout) builds it, and
  * the old standalone build and the candidate publish workflow are gone.
  */
@@ -16,10 +16,11 @@ const ROOT = import.meta.dir;
 const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 
 describe("platform-based shipwright-agent image (AGR-4.3b)", () => {
-  it("build-agent.yml builds agent/Dockerfile and the candidate machinery is gone", () => {
-    const wf = read(".github/workflows/build-agent.yml");
-    expect(wf).toContain("-f agent/Dockerfile \\");
-    expect(wf).toContain("ghcr.io/app-vitals/shipwright-agent:");
+  it("release.yml builds agent/Dockerfile and the candidate machinery is gone", () => {
+    // The full release.yml contract lives in release.content.test.ts.
+    const wf = read(".github/workflows/release.yml");
+    expect(wf).toContain('"dockerfile":"agent/Dockerfile"');
+    expect(wf).toContain("ghcr.io/app-vitals/shipwright-agent");
     expect(existsSync(join(ROOT, "agent/Dockerfile.platform"))).toBe(false);
     expect(
       existsSync(

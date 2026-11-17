@@ -175,6 +175,12 @@ const stubSessionService: SessionServiceLike = {
   async update() {
     throw new Error("not implemented");
   },
+  async acquirePlanningLock() {
+    throw new Error("not implemented");
+  },
+  async releasePlanningLock() {
+    throw new Error("not implemented");
+  },
 };
 
 const stubDocumentService: DocumentServiceLike = {

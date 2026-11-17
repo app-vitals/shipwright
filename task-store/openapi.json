@@ -117,6 +117,34 @@
           {
             "schema": {
               "type": "string",
+              "example": "dev@example.com",
+              "description": "Only tasks whose owner (requester email) equals this exactly."
+            },
+            "required": false,
+            "description": "Only tasks whose owner (requester email) equals this exactly.",
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "document",
+                "skill",
+                "cron",
+                "human"
+              ],
+              "example": "cron",
+              "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+            },
+            "required": false,
+            "description": "Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.",
+            "name": "originKind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "agent-id-123"
             },
             "required": false,
@@ -2865,6 +2893,234 @@
         }
       }
     },
+    "/sessions/preflight/scope": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Scope preflight for a list of repos",
+        "description": "Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.",
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "example": "org/repo",
+              "description": "A repo (org/repo) to check. Repeatable (?repo=a&repo=b)."
+            },
+            "required": true,
+            "description": "A repo (org/repo) to check. Repeatable (?repo=a&repo=b).",
+            "name": "repo",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Covered and uncovered repos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePreflightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{slug}/lock": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Acquire the session planning lock",
+        "description": "Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLockBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock acquired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLock"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lock held and unexpired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLockConflict"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Release the session planning lock",
+        "description": "Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLockBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLockRelease"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Lock held by someone else",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/documents": {
       "post": {
         "tags": [
@@ -4307,6 +4563,53 @@
             ],
             "example": true
           },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents."
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1",
+            "description": "Id of the plan document this task came from."
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1",
+            "description": "Id of the spec document this task implements."
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session",
+            "description": "Names the origin: a document id, skill name, cron name, etc."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -4569,6 +4872,49 @@
           "source": {
             "type": "string",
             "example": "manual"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "planDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-plan-1"
+          },
+          "specDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "doc-spec-1"
+          },
+          "originKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "document",
+              "skill",
+              "cron",
+              "human",
+              null
+            ],
+            "example": "skill",
+            "description": "Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400."
+          },
+          "originRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "plan-session"
           },
           "kind": {
             "type": "string",
@@ -6244,6 +6590,107 @@
             "description": "Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list."
           }
         }
+      },
+      "ScopePreflightResponse": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/a"
+            ]
+          },
+          "uncovered": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/b"
+            ]
+          }
+        },
+        "required": [
+          "covered",
+          "uncovered"
+        ]
+      },
+      "SessionLock": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "example": "agent-1"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "example": "2026-11-17T10:00:00.000Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-11-17T10:15:00.000Z"
+          }
+        },
+        "required": [
+          "holder",
+          "acquiredAt",
+          "expiresAt"
+        ]
+      },
+      "SessionLockConflict": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "planning lock held by agent-1 since 2026-11-17T10:00:00.000Z"
+          },
+          "holder": {
+            "type": "string",
+            "example": "agent-1"
+          },
+          "acquiredAt": {
+            "type": "string",
+            "example": "2026-11-17T10:00:00.000Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-11-17T10:15:00.000Z"
+          }
+        },
+        "required": [
+          "error",
+          "holder",
+          "acquiredAt",
+          "expiresAt"
+        ]
+      },
+      "SessionLockBody": {
+        "type": "object",
+        "properties": {
+          "holder": {
+            "type": "string",
+            "minLength": 1,
+            "example": "agent-1",
+            "description": "Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder."
+          }
+        }
+      },
+      "SessionLockRelease": {
+        "type": "object",
+        "properties": {
+          "released": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "released"
+        ]
       },
       "RegisterPlanDocumentBody": {
         "type": "object",

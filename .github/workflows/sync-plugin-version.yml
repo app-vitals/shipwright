@@ -2,9 +2,7 @@ name: Sync Plugin Version
 
 # Keeps the git-committed plugin version (package.json / plugin.json /
 # marketplace.json / version.txt — see scripts/sync-version.ts) in step with
-# every agent release, instead of relying on the release.yml semantic-release
-# job (workflow_dispatch-only, requires RELEASE_APP_ID/RELEASE_APP_PRIVATE_KEY
-# secrets that aren't provisioned).
+# every agent release.
 #
 # Why this needs to exist at all: the shipwright Claude Code plugin is
 # installed two ways —
@@ -15,7 +13,7 @@ name: Sync Plugin Version
 #      when that string is unchanged — so a frozen version silently prevents
 #      deployed agents from ever picking up new plugin script content, even
 #      though fresh source is baked into every new image. As of PVS-1.2,
-#      build-agent.yml stamps the correct version straight into the image at
+#      release.yml stamps the correct version straight into the image at
 #      build time (agent/Dockerfile's `ARG AGENT_VERSION` + sync-version.ts
 #      RUN step) — this workflow no longer needs to solve that half of the
 #      problem, it just happens to also do so a cycle behind (see below).
@@ -27,7 +25,7 @@ name: Sync Plugin Version
 #      touches git, so it does nothing for external installs.
 #
 # Flow:
-#   agent-v* tag push (created by build-agent.yml on every merge that could
+#   agent-v* tag push (created by release.yml on every merge that could
 #   plausibly change plugin content — see its own trigger paths)
 #     → this workflow
 #       → bun run scripts/sync-version.ts <version>
@@ -37,7 +35,7 @@ name: Sync Plugin Version
 #       → [skip ci] on the squash commit prevents this merge from
 #         re-triggering ANY push-triggered workflow. This matters more than
 #         it looks: the bump touches root package.json, a trigger path
-#         shared by all five build-*.yml workflows (agent/admin/metrics/
+#         shared by all five services in release.yml (agent/admin/metrics/
 #         task-store/chat) — without [skip ci] the merge could kick off
 #         some or all of them again.
 #
@@ -63,7 +61,7 @@ name: Sync Plugin Version
 #      non-required check (e.g. "Detect changed paths") registers first, the
 #      step must keep polling rather than handing off to `--watch --required`
 #      early and failing with "no required checks reported".
-#   5. After merge, confirm none of the five build-*.yml workflows fired for
+#   5. After merge, confirm none of the five release.yml service builds fired for
 #      that merge commit.
 #   6. Delete the dummy tag to clean up:
 #        git push origin --delete agent-v9.9.9

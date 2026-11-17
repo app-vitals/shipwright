@@ -32,7 +32,7 @@
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
-import { NotFoundError } from "./errors.ts";
+import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
 import type { PlanDocument, Prisma, PrismaClient, Task } from "./index.ts";
 import {
   computeSessionRollup,
@@ -159,6 +159,26 @@ export interface SessionUpdatePatch {
   repos?: string[];
 }
 
+/**
+ * How long a planning lock lives before it expires on its own (PLU-2.4). The
+ * schema stores only the expiry, so "time taken" is derived as expiry - TTL.
+ */
+export const PLANNING_LOCK_TTL_MS = 15 * 60 * 1000;
+
+/** A held planning lock as returned by acquirePlanningLock(). */
+export interface PlanningLock {
+  holder: string;
+  acquiredAt: Date;
+  expiresAt: Date;
+}
+
+/** Structured detail carried by the 409 when a lock is already held. */
+export type PlanningLockHeldDetails = {
+  holder: string;
+  acquiredAt: string;
+  expiresAt: string;
+};
+
 /** The subset of SessionService the routes depend on. */
 export interface SessionServiceLike {
   list(filters?: SessionListFilters): Promise<SessionListResult>;
@@ -173,6 +193,18 @@ export interface SessionServiceLike {
     actor: string,
     accountId?: string,
   ): Promise<SessionListItem>;
+  /** PLU-2.4: take the session's planning lock; 409 when held and unexpired. */
+  acquirePlanningLock(
+    slug: string,
+    holder: string,
+    accountId?: string,
+  ): Promise<PlanningLock>;
+  /** PLU-2.4: release the lock; 403 when held (unexpired) by someone else. */
+  releasePlanningLock(
+    slug: string,
+    holder: string,
+    accountId?: string,
+  ): Promise<void>;
 }
 
 /** Map key joining a Session row to its tasks: same account AND same slug. */
@@ -683,6 +715,88 @@ export class SessionService implements SessionServiceLike {
     );
 
     return updated;
+  }
+
+  // ─── Planning lock (PLU-2.4) ─────────────────────────────────────────────────
+
+  /**
+   * Take the planning lock. One conditional UPDATE (free = no holder, expired,
+   * or already held by the same holder, which just extends it) so two racing
+   * acquirers cannot both win. When nothing matched, a read distinguishes a
+   * missing session (NotFoundError) from a live lock held by someone else
+   * (ConflictError naming the holder and the time it was taken).
+   */
+  async acquirePlanningLock(
+    slug: string,
+    holder: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<PlanningLock> {
+    const now = this.clock.now();
+    const expiresAt = new Date(now.getTime() + PLANNING_LOCK_TTL_MS);
+    const { count } = await this.prisma.session.updateMany({
+      where: {
+        accountId,
+        slug,
+        OR: [
+          { planningLockHolder: null },
+          { planningLockExpiresAt: null },
+          { planningLockExpiresAt: { lte: now } },
+          { planningLockHolder: holder },
+        ],
+      },
+      data: { planningLockHolder: holder, planningLockExpiresAt: expiresAt },
+    });
+    if (count > 0) return { holder, acquiredAt: now, expiresAt };
+
+    const row = await this.prisma.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
+    if (!row) throw new NotFoundError("session not found");
+    const heldExpiry = row.planningLockExpiresAt as Date;
+    const acquiredAt = new Date(heldExpiry.getTime() - PLANNING_LOCK_TTL_MS);
+    const details: PlanningLockHeldDetails = {
+      holder: row.planningLockHolder as string,
+      acquiredAt: acquiredAt.toISOString(),
+      expiresAt: heldExpiry.toISOString(),
+    };
+    throw new ConflictError(
+      `planning lock held by ${details.holder} since ${details.acquiredAt}`,
+      details,
+    );
+  }
+
+  /**
+   * Release the lock. Only the holder may release a live lock (ForbiddenError
+   * otherwise). Releasing a free or expired lock is a no-op, so a pass that
+   * overran its TTL can still clean up. Missing session: NotFoundError.
+   */
+  async releasePlanningLock(
+    slug: string,
+    holder: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<void> {
+    const now = this.clock.now();
+    const { count } = await this.prisma.session.updateMany({
+      where: {
+        accountId,
+        slug,
+        OR: [
+          { planningLockHolder: holder },
+          { planningLockHolder: null },
+          { planningLockExpiresAt: null },
+          { planningLockExpiresAt: { lte: now } },
+        ],
+      },
+      data: { planningLockHolder: null, planningLockExpiresAt: null },
+    });
+    if (count > 0) return;
+    const row = await this.prisma.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
+    if (!row) throw new NotFoundError("session not found");
+    throw new ForbiddenError(
+      `planning lock is held by ${row.planningLockHolder}, not ${holder}`,
+    );
   }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */

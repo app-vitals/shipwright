@@ -60,6 +60,8 @@ Sessions carry the planning fields too (PLU-2.3). `GET /sessions` and `GET /sess
 
 Scoped-token reads widen additively: besides the existing task-based rule, an agent token sees a document, and its session, when the document's home repo or any of its target repos is in the token's scope, so a spec registered before any task exists is readable. A session's `documents` list is filtered to the documents the token can see. Writes keep their rules (`POST /documents` needs the home repo in scope; `PATCH /documents/:id` is still home-repo only).
 
+Planning lock and scope preflight (PLU-2.4). `POST /sessions/:slug/lock` takes a self-expiring (15 minute) planning lock before a pass reads the plan; `DELETE /sessions/:slug/lock` releases it once tasks are written and the plan is pushed. The holder is the optional body `holder`, else the token's agent id (`admin` for admin tokens). Acquiring a held, unexpired lock returns `409` with `error`, `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the holder re-acquiring extends it. Releasing a live lock as a non-holder returns `403`; releasing a free or expired lock is a no-op. `GET /sessions/preflight/scope?repo=a&repo=b` is a read-only credential check (not a permission model): it returns `{ covered, uncovered }` for the calling token, where admin tokens cover everything and an agent token covers the repos in its resolved scope.
+
 The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
 
 #### Nightly reconciler
@@ -191,7 +193,13 @@ To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (adm
 
 `PlanDocument` (PLU-2.1) records one planning file per row: `id`, `accountId`, `session` (slug), `kind` (`spec` | `plan`), `number` (specs 1, 2, 3… per session; plans always 1), `repo` (home repo), `path`, optional `title` and `owner` (email), `repos` (target `org/repo` list, default empty), optional `prUrl`, `state` (`draft` | `pr_open` | `merged` | `abandoned`, default `draft`), optional `commitSha`, `plannedAt` and `originTaskId`, `createdAt`, `updatedAt`. It is unique on `(accountId, session, kind, number)`.
 
-The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The document service and routes ([Planning documents](#planning-documents)) and the session routes read and write the `Session` and `PlanDocument` columns; `Task`'s new columns are accepted by `PATCH /tasks/:id`/`POST /tasks`, and nothing reads the planning lock yet.
+The same migration adds nullable, default-free columns to existing tables, so rows written before it read `NULL`: `Session` gains `owner`, `homeRepo`, `declaredRepos` (string array) and the planning lock (`planningLockHolder`, `planningLockExpiresAt`); `Task` gains `owner`, `planDocumentId`, `specDocumentId`, `originKind` and `originRef`. `session`, `originTaskId` and the Task document ids are plain strings rather than foreign keys, matching `Task.session`. The document service and routes ([Planning documents](#planning-documents)) and the session routes (including the [planning lock](#planning-documents)) read and write the `Session` and `PlanDocument` columns; the task fields are described in [Task provenance](#task-provenance).
+
+### Task provenance
+
+`POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` accept, and every task response returns, `owner` (the requester's email), `planDocumentId`, `specDocumentId`, `originKind` and `originRef` (each a string or `null`). They never reuse `assignee` or `claimedBy`, which identify agents, and `source` is unchanged and still written. `GET /tasks` filters on `owner` (exact match) and `originKind`.
+
+`originKind` comes from one registered list, `ORIGIN_KINDS` in `task-store/src/origin-kinds.ts` (`document`, `skill`, `cron`, `human`). The write validator and the `?originKind=` filter schema both read it, so any value a row can hold is a value the filter accepts, and anything else is a `400` on both. Adding a kind means adding it to that one list (the column is a plain string, so no migration). Tasks filed by a system cron write `originKind: "cron"` with `originRef` set to the cron's name and no `owner`. Existing rows are not backfilled and read `null`.
 
 ### Token management
 

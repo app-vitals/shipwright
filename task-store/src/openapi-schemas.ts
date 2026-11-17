@@ -8,12 +8,13 @@
 
 import { z } from "@hono/zod-openapi";
 
+import { ORIGIN_KINDS } from "./origin-kinds.ts";
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
-import { UNBLOCK_TARGETS } from "./task-service.ts";
 import {
   BY_PR_TARGET_STATUSES,
   MAX_BULK_TASKS,
   MAX_PATCH_BY_PR_NUMBERS,
+  UNBLOCK_TARGETS,
 } from "./task-service.ts";
 
 /** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
@@ -25,6 +26,10 @@ const PR_ORIGIN_VALUES = [
   "human",
   "unknown",
 ] as const;
+
+/** PLU-2.5: the registered origin kinds, shared with the write validator. */
+const OriginKindSchema = z.enum(ORIGIN_KINDS);
+const ORIGIN_KIND_DESCRIPTION = `Typed origin of the task: one of ${ORIGIN_KINDS.join(", ")}. Writes and the \`?originKind=\` filter share this one list; any other value is 400.`;
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 
@@ -151,6 +156,28 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+      description:
+        "Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.",
+    }),
+    planDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-plan-1",
+      description: "Id of the plan document this task came from.",
+    }),
+    specDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-spec-1",
+      description: "Id of the spec document this task implements.",
+    }),
+    originKind: OriginKindSchema.nullable().optional().openapi({
+      example: "skill",
+      description: ORIGIN_KIND_DESCRIPTION,
+    }),
+    originRef: z.string().nullable().optional().openapi({
+      example: "plan-session",
+      description:
+        "Names the origin: a document id, skill name, cron name, etc.",
+    }),
     kind: z.enum(["dev", "prd", "initiative", "idea"]).default("dev").openapi({
       example: "dev",
       description:
@@ -778,6 +805,63 @@ export const SessionPatchBodySchema = z
   })
   .openapi("SessionPatchBody");
 
+// ─── Planning lock + scope preflight (PLU-2.4) ────────────────────────────────
+
+/** Optional body for POST/DELETE /sessions/:slug/lock. */
+export const SessionLockBodySchema = z
+  .object({
+    holder: z.string().min(1).optional().openapi({
+      example: "agent-1",
+      description:
+        "Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.",
+    }),
+  })
+  .openapi("SessionLockBody");
+
+/** A held planning lock. */
+export const SessionLockSchema = z
+  .object({
+    holder: z.string().openapi({ example: "agent-1" }),
+    acquiredAt: z.string().openapi({ example: "2026-11-17T10:00:00.000Z" }),
+    expiresAt: z.string().openapi({ example: "2026-11-17T10:15:00.000Z" }),
+  })
+  .openapi("SessionLock");
+
+/** 409 body when the planning lock is already held and unexpired. */
+export const SessionLockConflictSchema = z
+  .object({
+    error: z.string().openapi({
+      example: "planning lock held by agent-1 since 2026-11-17T10:00:00.000Z",
+    }),
+    holder: z.string().openapi({ example: "agent-1" }),
+    acquiredAt: z.string().openapi({ example: "2026-11-17T10:00:00.000Z" }),
+    expiresAt: z.string().openapi({ example: "2026-11-17T10:15:00.000Z" }),
+  })
+  .openapi("SessionLockConflict");
+
+/** Response for DELETE /sessions/:slug/lock. */
+export const SessionLockReleaseSchema = z
+  .object({ released: z.literal(true) })
+  .openapi("SessionLockRelease");
+
+/** Query for GET /sessions/preflight/scope. */
+export const ScopePreflightQuerySchema = z
+  .object({
+    repo: z.union([z.string(), z.array(z.string())]).openapi({
+      example: "org/repo",
+      description: "A repo (org/repo) to check. Repeatable (?repo=a&repo=b).",
+    }),
+  })
+  .openapi("ScopePreflightQuery");
+
+/** Response for GET /sessions/preflight/scope. */
+export const ScopePreflightResponseSchema = z
+  .object({
+    covered: z.array(z.string()).openapi({ example: ["org/a"] }),
+    uncovered: z.array(z.string()).openapi({ example: ["org/b"] }),
+  })
+  .openapi("ScopePreflightResponse");
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 
 /**
@@ -841,6 +925,15 @@ export const TaskListQuerySchema = z.object({
         "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
     }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),
+  owner: z.string().optional().openapi({
+    example: "dev@example.com",
+    description:
+      "Only tasks whose owner (requester email) equals this exactly.",
+  }),
+  originKind: OriginKindSchema.optional().openapi({
+    example: "cron",
+    description: `Only tasks with this origin kind. ${ORIGIN_KIND_DESCRIPTION}`,
+  }),
   claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
   pr: z.string().optional().openapi({ example: "42" }),
@@ -911,6 +1004,22 @@ export const CreateTaskBodySchema = z
     priority: z.string().optional().openapi({ example: "high" }),
     type: z.string().optional().openapi({ example: "feature" }),
     source: z.string().optional().openapi({ example: "manual" }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+    }),
+    planDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-plan-1",
+    }),
+    specDocumentId: z.string().nullable().optional().openapi({
+      example: "doc-spec-1",
+    }),
+    originKind: OriginKindSchema.nullable().optional().openapi({
+      example: "skill",
+      description: ORIGIN_KIND_DESCRIPTION,
+    }),
+    originRef: z.string().nullable().optional().openapi({
+      example: "plan-session",
+    }),
     kind: z.enum(["dev", "prd", "initiative", "idea"]).optional().openapi({
       example: "dev",
       description: "What the task is (TKD-1.1). Defaults to `dev`.",
