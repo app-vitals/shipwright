@@ -299,7 +299,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `scripts/hitl-log-file-tee-target.ts` (real `LogFileTeeTarget` — patches `process.stdout.write`/`stderr.write`/`console.*`) | 2. Service-boundary code (global-state mutation, deliberately untestable in-process) | integration (exercised only via a subprocess fixture in `hitl.integration.test.ts` — no dedicated test file of its own, by design) | medium (dev-only tooling wiring) | n/a |
 | `plugins/shipwright/scripts/check-helpers.ts` (`isCleanApproveBody`, GitHub wrappers) | 1. Pure business logic (parsing) + 2. service-boundary (`ghJson`) | unit (pure parts) / integration (I/O parts) | critical | n/a |
 | `plugins/shipwright/scripts/check-banned-strings.ts` (`scanForBannedStrings`) | 1. Pure business logic | unit | high | n/a |
-| `plugins/shipwright/scripts/check-docs-freshness.ts`, `check-error-patrol.ts`, `check-learn-dream.ts`, `check-test-readiness.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
+| `plugins/shipwright/scripts/check-error-patrol.ts`, `check-learn-dream.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
 | `plugins/shipwright/scripts/check-consolidation-patrol.ts` (ledger-driven cron precheck) | 2. Service-boundary code | integration | medium | n/a |
 | `plugins/shipwright/scripts/classify_test_layer.ts` (`classifyPath`) | 1. Pure business logic | unit | high | n/a |
 | `plugins/shipwright/scripts/compute-review-verdict.ts` (`computeVerdict`/`validateReviewVerdict` — mechanizes review.md Step 10's verdict truth table) | 1. Pure business logic | unit | high | n/a |
