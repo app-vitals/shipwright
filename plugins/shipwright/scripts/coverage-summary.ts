@@ -23,6 +23,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  CoverageExclusionError,
+  EXCLUSION_FILE_PATH,
+  type ExclusionConfig,
+  findDeadEntries,
+  isExcludedPath,
+  parseExclusionConfig,
+} from "./coverage/exclusions.ts";
 import { normalizeReports, type ReportFile } from "./coverage/normalize.ts";
 import type { NormalizedCoverage } from "./coverage/types.ts";
 
@@ -73,7 +81,17 @@ export type RecordOutcome =
   | { status: "record_skipped" }
   | { status: "record_failed"; error: string };
 
+export interface ExcludedSummary {
+  /** Lines (lcov LF) belonging to excluded files. */
+  lines: number;
+  /** Excluded lines as a percent of all lines, before exclusion. */
+  pct: number;
+}
+
 export type CommitResult = NormalizedCoverage & {
+  excluded: ExcludedSummary;
+  /** Exclusion entries that matched no file in the report; omitted if none. */
+  deadEntries?: string[];
   commitSha: string;
   branch: string;
   runUrl: string;
@@ -166,6 +184,42 @@ function ghJson(run: CommandRunner, args: string[]): unknown {
   if (!res.ok)
     throw new Error(`gh ${args.join(" ")} failed: ${res.stderr.trim()}`);
   return JSON.parse(res.stdout);
+}
+
+/**
+ * Fetches the repo exclusion file at the given commit. A 404 means the
+ * repo has no exclusions (null); any other failure throws.
+ */
+export function fetchExclusionConfig(
+  run: CommandRunner,
+  repo: string,
+  sha: string,
+): ExclusionConfig | null {
+  const res = run([
+    "gh",
+    "api",
+    `repos/${repo}/contents/${EXCLUSION_FILE_PATH}?ref=${sha}`,
+  ]);
+  if (!res.ok) {
+    if (/404|not found/i.test(res.stderr)) return null;
+    throw new CoverageExclusionError(
+      `could not fetch ${EXCLUSION_FILE_PATH} at ${sha}: ${res.stderr.trim()}`,
+    );
+  }
+  let content: unknown;
+  try {
+    content = (JSON.parse(res.stdout) as { content?: unknown }).content;
+  } catch {
+    content = undefined;
+  }
+  if (typeof content !== "string") {
+    throw new CoverageExclusionError(
+      `${EXCLUSION_FILE_PATH} at ${sha}: unexpected contents API response`,
+    );
+  }
+  return parseExclusionConfig(
+    Buffer.from(content.replace(/\s/g, ""), "base64").toString("utf8"),
+  );
 }
 
 function storeConfig(env: ReaderDeps["env"]) {
@@ -303,16 +357,39 @@ export async function readCoverageSummary(
         downloadFailures++;
         continue;
       }
-      const normalized = normalizeReports(deps.readReports(dir));
+      const sha = artifact.workflow_run?.head_sha ?? "";
+      const exclusions = fetchExclusionConfig(deps.run, repo, sha);
+      const normalized = normalizeReports(
+        deps.readReports(dir),
+        exclusions ? (p) => isExcludedPath(exclusions, p) : undefined,
+      );
       if (!normalized) continue;
+      const { excludedLines = 0, paths = [], ...counts } = normalized;
+      const allLines = counts.lines.total + excludedLines;
+      const excluded: ExcludedSummary = {
+        lines: excludedLines,
+        pct: allLines === 0 ? 0 : (excludedLines / allLines) * 100,
+      };
+      let deadEntries: string[] = [];
+      if (exclusions) {
+        if (excluded.pct > exclusions.maxExcludedPct) {
+          throw new CoverageExclusionError(
+            `${EXCLUSION_FILE_PATH} at ${sha}: excluded ${excluded.pct.toFixed(2)}% of lines, above maxExcludedPct ${exclusions.maxExcludedPct}`,
+          );
+        }
+        deadEntries = findDeadEntries(exclusions, paths);
+      }
       results.push({
-        ...normalized,
-        commitSha: artifact.workflow_run?.head_sha ?? "",
+        ...counts,
+        excluded,
+        ...(deadEntries.length > 0 ? { deadEntries } : {}),
+        commitSha: sha,
         branch: defaultBranch,
         runUrl: runInfo.html_url,
         measuredAt: artifact.created_at,
       });
-    } catch {
+    } catch (e) {
+      if (e instanceof CoverageExclusionError) throw e;
       downloadFailures++;
     } finally {
       deps.removeDir(dir);

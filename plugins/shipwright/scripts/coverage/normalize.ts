@@ -10,7 +10,7 @@ import { parseCobertura } from "./cobertura.ts";
 import { detectFormat } from "./detect.ts";
 import { parseGoCover } from "./go-cover.ts";
 import { parseJacoco } from "./jacoco.ts";
-import { parseLcov } from "./lcov.ts";
+import { type LcovScan, parseLcov } from "./lcov.ts";
 import type { CoverageCounts, NormalizedCoverage } from "./types.ts";
 
 export interface ReportFile {
@@ -56,10 +56,15 @@ export function parseShipwrightJson(
   return result;
 }
 
-function parseFile(file: ReportFile): NormalizedCoverage | null {
+type Parsed = NormalizedCoverage & Partial<LcovScan>;
+
+function parseFile(
+  file: ReportFile,
+  exclude?: (path: string) => boolean,
+): Parsed | null {
   switch (detectFormat(file.name, file.content)) {
     case "lcov":
-      return parseLcov(file.content);
+      return parseLcov(file.content, exclude);
     case "cobertura":
       return parseCobertura(file.content);
     case "jacoco":
@@ -79,13 +84,18 @@ function add(a: CoverageCounts | undefined, b: CoverageCounts | undefined) {
   return { covered: a.covered + b.covered, total: a.total + b.total };
 }
 
-/** Sums every recognised report; null when none could be parsed. */
+/**
+ * Sums every recognised report; null when none could be parsed. With
+ * `exclude`, lcov files drop matching SF paths (other formats carry no
+ * per-file data and are unaffected) and the result carries an LcovScan.
+ */
 export function normalizeReports(
   files: ReportFile[],
-): NormalizedCoverage | null {
+  exclude?: (path: string) => boolean,
+): (NormalizedCoverage & Partial<LcovScan>) | null {
   const parsed = files
-    .map(parseFile)
-    .filter((r): r is NormalizedCoverage => r !== null);
+    .map((f) => parseFile(f, exclude))
+    .filter((r): r is Parsed => r !== null);
   if (parsed.length === 0) return null;
 
   let lines: CoverageCounts = { covered: 0, total: 0 };
@@ -98,8 +108,15 @@ export function normalizeReports(
   }
 
   const tool = [...new Set(parsed.map((r) => r.tool))].sort().join("+");
-  const result: NormalizedCoverage = { lines, tool };
+  const result: Parsed = { lines, tool };
   if (branches) result.branches = branches;
   if (functions) result.functions = functions;
+  if (exclude) {
+    result.excludedLines = parsed.reduce(
+      (n, r) => n + (r.excludedLines ?? 0),
+      0,
+    );
+    result.paths = parsed.flatMap((r) => r.paths ?? []);
+  }
   return result;
 }

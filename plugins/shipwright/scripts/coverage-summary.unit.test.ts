@@ -40,6 +40,10 @@ interface Setup {
   downloadFails?: Set<number>;
   env?: Record<string, string>;
   postStatus?: (sha: string) => number;
+  /** Exclusion file content per commit SHA; absent SHA means 404. */
+  exclusionFiles?: Record<string, string>;
+  /** Fail the contents lookup with this stderr instead of 404. */
+  contentsError?: string;
 }
 
 const ENV = {
@@ -66,6 +70,20 @@ function setup(s: Setup) {
             total_count: s.artifacts.length,
             artifacts: s.artifacts,
           });
+        if (
+          path.startsWith(`repos/${REPO}/contents/.shipwright/coverage.json`)
+        ) {
+          const sha = path.split("?ref=")[1] as string;
+          if (s.contentsError)
+            return { ok: false, stdout: "", stderr: s.contentsError };
+          const file = s.exclusionFiles?.[sha];
+          return file === undefined
+            ? { ok: false, stdout: "", stderr: "gh: Not Found (HTTP 404)" }
+            : ok({
+                encoding: "base64",
+                content: Buffer.from(file).toString("base64"),
+              });
+        }
         const m = path.match(/actions\/runs\/(\d+)$/);
         if (m)
           return ok({
@@ -359,6 +377,159 @@ describe("--record", () => {
     expect(reqs.filter((q) => q.method === "POST")).toHaveLength(0);
     expect(r[0]?.record).toBeUndefined();
   });
+});
+
+const MULTI_LCOV = [
+  "SF:src/a.ts\nLF:10\nLH:9\nend_of_record",
+  "SF:src/gen/b.ts\nLF:10\nLH:0\nend_of_record",
+  "SF:vendor/c.ts\nLF:20\nLH:0\nend_of_record",
+  "",
+].join("\n");
+const multi = { reports: () => [{ name: "lcov.info", content: MULTI_LCOV }] };
+const cfg = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    maxExcludedPct: 90,
+    excludePrefixes: [{ path: "vendor/", reason: "third party" }],
+    excludeSubstrings: [{ path: "/gen/", reason: "generated" }],
+    ...over,
+  });
+const one = [art(1, "aaa", "2026-01-01T00:00:00Z")];
+
+describe("coverage exclusions", () => {
+  it("absent file (404): raw totals and zero excluded", async () => {
+    const { deps } = setup({ artifacts: one, ...multi });
+    const r = asResults(await readCoverageSummary(opts, deps));
+    expect(r[0]?.lines).toEqual({ covered: 9, total: 40 });
+    expect(r[0]?.excluded).toEqual({ lines: 0, pct: 0 });
+    expect(r[0]?.deadEntries).toBeUndefined();
+  });
+
+  it("applies prefix and substring exclusions", async () => {
+    const { deps } = setup({
+      artifacts: one,
+      ...multi,
+      exclusionFiles: { aaa: cfg() },
+    });
+    const r = asResults(await readCoverageSummary(opts, deps));
+    expect(r[0]?.lines).toEqual({ covered: 9, total: 10 });
+    expect(r[0]?.excluded).toEqual({ lines: 30, pct: 75 });
+    expect(r[0]?.deadEntries).toBeUndefined();
+  });
+
+  it("prefix entries use startsWith, not includes", async () => {
+    const { deps } = setup({
+      artifacts: one,
+      ...multi,
+      exclusionFiles: {
+        aaa: cfg({
+          excludePrefixes: [{ path: "gen/", reason: "r" }],
+          excludeSubstrings: [],
+        }),
+      },
+    });
+    const r = asResults(await readCoverageSummary(opts, deps));
+    expect(r[0]?.excluded.lines).toBe(0);
+    expect(r[0]?.deadEntries).toEqual(["excludePrefixes: gen/"]);
+  });
+
+  it("looks the file up at each artifact's commit SHA", async () => {
+    const { deps, cmds } = setup({
+      artifacts: [
+        art(1, "aaa", "2026-01-01T00:00:00Z"),
+        art(2, "bbb", "2026-01-02T00:00:00Z"),
+      ],
+      ...multi,
+      exclusionFiles: { bbb: cfg() },
+    });
+    const r = asResults(await readCoverageSummary(opts, deps));
+    expect(r[0]?.excluded.lines).toBe(0);
+    expect(r[1]?.excluded.lines).toBe(30);
+    const paths = cmds.map((c) => c[2]).filter((p) => p?.includes("contents/"));
+    expect(paths).toEqual([
+      `repos/${REPO}/contents/.shipwright/coverage.json?ref=aaa`,
+      `repos/${REPO}/contents/.shipwright/coverage.json?ref=bbb`,
+    ]);
+  });
+
+  it("reports entries that match no file as dead", async () => {
+    const { deps } = setup({
+      artifacts: one,
+      ...multi,
+      exclusionFiles: {
+        aaa: cfg({
+          excludeSubstrings: [{ path: "/gone/", reason: "was generated" }],
+        }),
+      },
+    });
+    const r = asResults(await readCoverageSummary(opts, deps));
+    expect(r[0]?.deadEntries).toEqual(["excludeSubstrings: /gone/"]);
+  });
+
+  it("does not put excluded info in the recorded POST body", async () => {
+    const { deps, reqs } = setup({
+      artifacts: one,
+      ...multi,
+      exclusionFiles: { aaa: cfg() },
+    });
+    await readCoverageSummary({ ...opts, record: true }, deps);
+    const body = JSON.parse(
+      reqs.find((q) => q.method === "POST")?.body as string,
+    );
+    expect(body.excluded).toBeUndefined();
+    expect(body.linesTotal).toBe(10);
+  });
+
+  const rejects = async (s: Partial<Setup>, msg: RegExp) => {
+    const { deps } = setup({ artifacts: one, ...multi, ...s });
+    await expect(readCoverageSummary(opts, deps)).rejects.toThrow(msg);
+  };
+
+  it("fails loudly on invalid JSON", () =>
+    rejects(
+      { exclusionFiles: { aaa: "{nope" } },
+      /coverage\.json.*invalid JSON/,
+    ));
+
+  it("fails loudly on wrong types", () =>
+    rejects(
+      { exclusionFiles: { aaa: cfg({ excludePrefixes: "vendor/" }) } },
+      /"excludePrefixes" must be an array/,
+    ));
+
+  it("fails on a non-numeric maxExcludedPct", () =>
+    rejects(
+      { exclusionFiles: { aaa: cfg({ maxExcludedPct: "10" }) } },
+      /maxExcludedPct/,
+    ));
+
+  it("names the entry that is missing a reason", () =>
+    rejects(
+      {
+        exclusionFiles: {
+          aaa: cfg({ excludeSubstrings: [{ path: "/gen/" }] }),
+        },
+      },
+      /excludeSubstrings\[0\] \(path "\/gen\/"\) is missing a non-empty "reason"/,
+    ));
+
+  it("rejects a whitespace-only reason", () =>
+    rejects(
+      {
+        exclusionFiles: {
+          aaa: cfg({ excludePrefixes: [{ path: "vendor/", reason: "  " }] }),
+        },
+      },
+      /excludePrefixes\[0\]/,
+    ));
+
+  it("fails when excluded pct exceeds maxExcludedPct", () =>
+    rejects(
+      { exclusionFiles: { aaa: cfg({ maxExcludedPct: 50 }) } },
+      /75\.00% .* above maxExcludedPct 50/,
+    ));
+
+  it("fails loudly on a non-404 fetch error", () =>
+    rejects({ contentsError: "HTTP 500 server error" }, /could not fetch/));
 });
 
 describe("parseArgs", () => {
