@@ -131,6 +131,10 @@ describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
     expect(section).toContain("function_coverage_pct");
   });
 
+  it("documents line_coverage_pct as nullable", () => {
+    expect(step4cSection()).toContain("`line_coverage_pct` (nullable)");
+  });
+
   it("mentions feature_coverage_pct and carrying it forward from test-inventory", () => {
     const section = step4cSection();
     expect(section).toContain("feature_coverage_pct");
