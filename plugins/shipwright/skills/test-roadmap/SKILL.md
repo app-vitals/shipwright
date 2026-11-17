@@ -360,6 +360,21 @@ Anything the audit couldn't determine without a human call. Common entries:
    markdown-only (no new task-store write path, no new skill) — it just adds one more row
    to the same Section 5 walk that step 6 already populates, and `test-fix` files it
    exactly like any other paired row.
+9b. **Auto-emit the publish-coverage-artifact task when the repo is not reporting.** Using
+    the reader result from step 8 (contract in `${CLAUDE_PLUGIN_ROOT}/references/coverage-output.md`):
+    - **If the reader returned `not_reporting`:** emit exactly one new `T-NNN` row into the
+      Section 5 task list (Milestone 1, `bucket: infra`) with the outcome "Publish the
+      shipwright-coverage artifact from CI". Skip it if step 4's task-store result set
+      already holds a task with that title (idempotent on re-run). The task body carries:
+      - the artifact upload step, copied from the contract's example upload step;
+      - the native reporter command and report path for the toolchain recorded in
+        `test-system.md`'s **Coverage toolchain:** and **Coverage report path:** fields,
+        taken from the contract's per-language recipe table;
+      - a check that the CI workflow running the upload also runs on pushes to the default
+        branch, since the reader ignores artifacts from any other branch.
+    - **If the reader returned a result (the repo is reporting):** emit nothing.
+    Name no specific repo, workflow, job or step in the task — it is derived from the
+    recorded toolchain and the contract alone.
 10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
     Write to `docs/test-readiness/test-readiness-plan.md`.
     - Fill the `## Coverage Gate` section's seven placeholders

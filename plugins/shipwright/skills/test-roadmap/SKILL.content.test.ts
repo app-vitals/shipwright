@@ -556,3 +556,26 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
     expect(filled).toContain(gate.verdict);
   });
 });
+
+describe("SKILL.md — step 9b emits the publish-coverage-artifact task", () => {
+  const step = () =>
+    content
+      .slice(content.indexOf("9b."), content.indexOf("\n10. Load"))
+      .replace(/\s+/g, " ");
+
+  it("emits the publish task on not_reporting", () => {
+    expect(step()).toContain("not_reporting");
+    expect(step()).toContain("Publish the shipwright-coverage artifact from CI");
+  });
+
+  it("emits nothing when the repo is reporting", () => {
+    expect(step()).toContain("emit nothing");
+  });
+
+  it("body covers upload step, reporter command and default-branch check", () => {
+    expect(step()).toContain("upload step");
+    expect(step()).toContain("native reporter command");
+    expect(step()).toContain("pushes to the default branch");
+    expect(step()).toContain("references/coverage-output.md");
+  });
+});
