@@ -50,6 +50,9 @@ export interface SystemCronDefinitionView {
   enabled: boolean;
   enabledAt: string | null;
   updatedAt: string;
+  /** CRS-1.1 — optional so older task-store responses still parse. */
+  repoScope?: "all" | "selected";
+  repos?: string[];
 }
 
 /** The task-store's system-cron surface the scheduler drives. */

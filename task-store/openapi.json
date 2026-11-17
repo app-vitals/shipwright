@@ -3083,7 +3083,7 @@
           "System Crons"
         ],
         "summary": "Create a system-cron definition — admin-only",
-        "description": "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.",
+        "description": "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.",
         "parameters": [
           {
             "schema": {
@@ -3157,7 +3157,7 @@
           "System Crons"
         ],
         "summary": "Update a system-cron definition — admin-only",
-        "description": "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
+        "description": "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
         "parameters": [
           {
             "schema": {
@@ -5919,6 +5919,25 @@
             "example": "Audit {repo}'s dependencies and open a PR for safe bumps.",
             "description": "Task description template — same `{repo}`-only plain substitution as titleTemplate."
           },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "example": "all",
+            "description": "Which repos the cron fans out to: every repo ('all') or only `repos` ('selected')."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "acme/widgets"
+            ],
+            "description": "org/repo list used when repoScope is 'selected'; always [] when 'all'."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -5940,6 +5959,8 @@
           "enabledAt",
           "titleTemplate",
           "descriptionTemplate",
+          "repoScope",
+          "repos",
           "createdAt",
           "updatedAt"
         ]
@@ -5976,6 +5997,25 @@
           "descriptionTemplate": {
             "type": "string",
             "example": "Audit {repo}'s dependencies."
+          },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ],
+            "example": "all",
+            "description": "Defaults to 'all'."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "acme/widgets"
+            ],
+            "description": "org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500."
           }
         },
         "required": [
@@ -6003,6 +6043,19 @@
           },
           "descriptionTemplate": {
             "type": "string"
+          },
+          "repoScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected"
+            ]
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

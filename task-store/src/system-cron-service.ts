@@ -94,11 +94,18 @@ export interface CreateSystemCronInput {
   enabled?: boolean;
   titleTemplate: string;
   descriptionTemplate: string;
+  /** CRS-1.1: 'all' (default) or 'selected' (requires `repos`). */
+  repoScope?: string;
+  /** org/repo list; only meaningful (and required) when repoScope is 'selected'. */
+  repos?: unknown;
 }
 
 export type UpdateSystemCronInput = Partial<
   Omit<CreateSystemCronInput, "id" | "enabled">
 >;
+
+export const REPO_SCOPES = ["all", "selected"] as const;
+export type RepoScope = (typeof REPO_SCOPES)[number];
 
 export interface FireSystemCronInput {
   scheduledFor: unknown;
@@ -240,6 +247,33 @@ function validateRepos(value: unknown): string[] {
   return repos as string[];
 }
 
+/**
+ * Resolves the stored (repoScope, repos) pair from a create/update input,
+ * falling back to `current` for omitted fields. 'all' always clears repos;
+ * 'selected' requires a valid, non-empty, de-duplicated list.
+ */
+export function resolveRepoScope(
+  input: { repoScope?: unknown; repos?: unknown },
+  current: { repoScope: string; repos: string[] } = {
+    repoScope: "all",
+    repos: [],
+  },
+): { repoScope: RepoScope; repos: string[] } {
+  const scope =
+    input.repoScope === undefined ? current.repoScope : input.repoScope;
+  if (scope !== "all" && scope !== "selected") {
+    throw new BadRequestError("repoScope must be 'all' or 'selected'");
+  }
+  if (scope === "all") return { repoScope: "all", repos: [] };
+  const repos = input.repos === undefined ? current.repos : input.repos;
+  if (!Array.isArray(repos) || repos.length === 0) {
+    throw new BadRequestError(
+      "repos must be a non-empty array of org/repo when repoScope is 'selected'",
+    );
+  }
+  return { repoScope: "selected", repos: validateRepos(repos) };
+}
+
 export class SystemCronService implements SystemCronServiceLike {
   constructor(
     private prisma: PrismaClient,
@@ -271,6 +305,7 @@ export class SystemCronService implements SystemCronServiceLike {
       );
     }
     const enabled = data.enabled ?? true;
+    const scope = resolveRepoScope(data);
     try {
       return await this.prisma.systemCronDefinition.create({
         data: {
@@ -289,6 +324,8 @@ export class SystemCronService implements SystemCronServiceLike {
             "descriptionTemplate",
             data.descriptionTemplate,
           ),
+          repoScope: scope.repoScope,
+          repos: scope.repos,
         },
       });
     } catch (err: unknown) {
@@ -304,8 +341,13 @@ export class SystemCronService implements SystemCronServiceLike {
     patch: UpdateSystemCronInput,
     accountId: string | null,
   ): Promise<SystemCronDefinition> {
-    await this.findScoped(id, accountId);
+    const existing = await this.findScoped(id, accountId);
     const data: Prisma.SystemCronDefinitionUpdateInput = {};
+    if (patch.repoScope !== undefined || patch.repos !== undefined) {
+      const scope = resolveRepoScope(patch, existing);
+      data.repoScope = scope.repoScope;
+      data.repos = scope.repos;
+    }
     if (patch.name !== undefined)
       data.name = requireNonEmpty("name", patch.name);
     if (patch.schedule !== undefined)

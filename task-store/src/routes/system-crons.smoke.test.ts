@@ -34,6 +34,8 @@ const DEF: SystemCronDefinition = {
   enabledAt: new Date("2026-11-14T00:00:00.000Z"),
   titleTemplate: "Audit {repo}",
   descriptionTemplate: "Audit {repo}",
+  repoScope: "all",
+  repos: [],
   createdAt: new Date("2026-11-14T00:00:00.000Z"),
   updatedAt: new Date("2026-11-14T00:00:00.000Z"),
 };
@@ -221,6 +223,54 @@ describe("POST /system-crons", () => {
     );
     expect(res.status).toBe(201);
     expect(service.calls[0].args[1]).toBe("default");
+  });
+});
+
+describe("repoScope / repos passthrough (CRS-1.1)", () => {
+  it("POST forwards repoScope and repos to the service", async () => {
+    const service = fakeService();
+    const res = await makeApp(service).request(
+      req("/system-crons", {
+        method: "POST",
+        body: {
+          id: "dep-audit",
+          name: "Dependency audit",
+          schedule: "0 9 * * 1",
+          titleTemplate: "Audit {repo}",
+          descriptionTemplate: "Audit {repo}",
+          repoScope: "selected",
+          repos: ["acme/widgets"],
+        },
+      }),
+    );
+    expect(res.status).toBe(201);
+    const data = service.calls[0].args[0] as Record<string, unknown>;
+    expect(data.repoScope).toBe("selected");
+    expect(data.repos).toEqual(["acme/widgets"]);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.repoScope).toBe("selected");
+  });
+
+  it("PATCH forwards repoScope and repos; GET exposes both", async () => {
+    const service = fakeService();
+    const app = makeApp(service);
+    const res = await app.request(
+      req("/system-crons/dep-audit", {
+        method: "PATCH",
+        body: { repoScope: "selected", repos: ["acme/widgets"] },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(service.calls[0].args[1]).toEqual({
+      repoScope: "selected",
+      repos: ["acme/widgets"],
+    });
+    const list = await app.request(req("/system-crons"));
+    const { systemCrons } = (await list.json()) as {
+      systemCrons: { repoScope: string; repos: string[] }[];
+    };
+    expect(systemCrons[0].repoScope).toBe("all");
+    expect(systemCrons[0].repos).toEqual([]);
   });
 });
 

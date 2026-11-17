@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
-import { SystemCronService } from "./system-cron-service.ts";
+import { MAX_FIRE_REPOS, SystemCronService } from "./system-cron-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -551,3 +551,129 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     expect(await service.list({ accountId: null })).toHaveLength(2);
   });
 });
+
+describeOrSkip(
+  "SystemCronService repoScope / repos (CRS-1.1, integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: SystemCronService;
+    const base = {
+      name: "Scoped",
+      schedule: "0 9 * * *",
+      titleTemplate: "T {repo}",
+      descriptionTemplate: "D {repo}",
+    };
+
+    beforeEach(async () => {
+      prisma = createPrismaClient(TEST_DB as string);
+      service = new SystemCronService(prisma);
+      await cleanup(prisma);
+    });
+
+    afterEach(async () => {
+      await cleanup(prisma);
+      await prisma.$disconnect();
+    });
+
+    it("defaults to 'all' with no repos (also for rows inserted without the columns)", async () => {
+      const created = await service.create({ id: "crs-default", ...base });
+      expect(created.repoScope).toBe("all");
+      expect(created.repos).toEqual([]);
+
+      const raw = await prisma.systemCronDefinition.create({
+        data: {
+          id: "crs-raw",
+          name: "r",
+          schedule: "* * * * *",
+          titleTemplate: "t",
+          descriptionTemplate: "d",
+        },
+      });
+      expect(raw.repoScope).toBe("all");
+      expect(raw.repos).toEqual([]);
+    });
+
+    it("creates a 'selected' definition with de-duplicated repos", async () => {
+      const def = await service.create({
+        id: "crs-sel",
+        ...base,
+        repoScope: "selected",
+        repos: ["acme/a", "acme/b", "acme/a"],
+      });
+      expect(def.repoScope).toBe("selected");
+      expect(def.repos).toEqual(["acme/a", "acme/b"]);
+      const [listed] = await service.list({ accountId: null });
+      expect(listed.repos).toEqual(["acme/a", "acme/b"]);
+    });
+
+    it("'all' ignores repos on create", async () => {
+      const def = await service.create({
+        id: "crs-all",
+        ...base,
+        repoScope: "all",
+        repos: ["acme/a"],
+      });
+      expect(def.repos).toEqual([]);
+    });
+
+    it("rejects invalid scope, bad repos, empty selection and too many", async () => {
+      const bad = (extra: Record<string, unknown>) =>
+        service.create({ id: "crs-bad", ...base, ...extra } as never);
+      await expect(bad({ repoScope: "some" })).rejects.toThrow(/repoScope/);
+      await expect(bad({ repoScope: "selected" })).rejects.toThrow(/non-empty/);
+      await expect(bad({ repoScope: "selected", repos: [] })).rejects.toThrow(
+        /non-empty/,
+      );
+      await expect(
+        bad({ repoScope: "selected", repos: ["nope"] }),
+      ).rejects.toThrow(/org\/repo/);
+      const many = Array.from(
+        { length: MAX_FIRE_REPOS + 1 },
+        (_, i) => `acme/r${i}`,
+      );
+      await expect(bad({ repoScope: "selected", repos: many })).rejects.toThrow(
+        /at most/,
+      );
+      expect(await prisma.systemCronDefinition.count()).toBe(0);
+    });
+
+    it("update switches scope, keeps/clears repos, and validates", async () => {
+      await service.create({ id: "crs-upd", ...base });
+      // 'selected' without repos fails against an 'all' definition.
+      await expect(
+        service.update("crs-upd", { repoScope: "selected" }, null),
+      ).rejects.toThrow(/non-empty/);
+
+      const sel = await service.update(
+        "crs-upd",
+        { repoScope: "selected", repos: ["acme/a"] },
+        null,
+      );
+      expect(sel.repos).toEqual(["acme/a"]);
+
+      // repos-only patch on a 'selected' definition replaces the list.
+      const next = await service.update(
+        "crs-upd",
+        { repos: ["acme/b", "acme/b"] },
+        null,
+      );
+      expect(next.repoScope).toBe("selected");
+      expect(next.repos).toEqual(["acme/b"]);
+
+      // unrelated patch leaves scope untouched.
+      const same = await service.update("crs-upd", { name: "renamed" }, null);
+      expect(same.repos).toEqual(["acme/b"]);
+
+      await expect(
+        service.update("crs-upd", { repos: [] }, null),
+      ).rejects.toThrow(/non-empty/);
+      await expect(
+        service.update("crs-upd", { repos: ["bad repo"] }, null),
+      ).rejects.toThrow(/org\/repo/);
+
+      const all = await service.update("crs-upd", { repoScope: "all" }, null);
+      expect(all.repoScope).toBe("all");
+      expect(all.repos).toEqual([]);
+    });
+  },
+);

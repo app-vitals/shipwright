@@ -17,7 +17,7 @@
  * Routes:
  *   GET   /system-crons              list (?enabled, ?accountId) → { systemCrons }
  *   POST  /system-crons              create a definition → 201
- *   PATCH /system-crons/:id          update name/schedule/timezone/templates
+ *   PATCH /system-crons/:id          update name/schedule/timezone/templates/repoScope/repos
  *   POST  /system-crons/:id/enable   set enabled=true
  *   POST  /system-crons/:id/disable  set enabled=false
  *   GET   /system-crons/:id/last-trigger → { scheduledFor: ISO | null }
@@ -106,7 +106,7 @@ const createDefRoute = createRoute({
   tags: TAGS,
   summary: "Create a system-cron definition — admin-only",
   description:
-    "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. A duplicate id is `409`.",
+    "Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.",
   request: {
     query: SystemCronAccountQuerySchema,
     body: {
@@ -131,7 +131,7 @@ const patchRoute = createRoute({
   tags: TAGS,
   summary: "Update a system-cron definition — admin-only",
   description:
-    "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`; omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
+    "Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.",
   request: {
     params: SystemCronIdParamSchema,
     query: SystemCronAccountQuerySchema,
@@ -284,6 +284,19 @@ function pickKeys<K extends string>(
   return out;
 }
 
+/** repoScope/repos pass through untyped; the service validates them (400). */
+function pickScope(body: Record<string, unknown>): {
+  repoScope?: string;
+  repos?: unknown;
+} {
+  return {
+    ...(body.repoScope !== undefined
+      ? { repoScope: body.repoScope as string }
+      : {}),
+    ...(body.repos !== undefined ? { repos: body.repos } : {}),
+  };
+}
+
 const PATCHABLE = [
   "name",
   "schedule",
@@ -324,6 +337,7 @@ export function createSystemCronsRoutes(
     const def = await service.create(
       {
         ...(pickKeys(body, ["id", ...PATCHABLE]) as CreateSystemCronInput),
+        ...pickScope(body),
         ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
       },
       resolveWriteAccountId(c),
@@ -336,7 +350,10 @@ export function createSystemCronsRoutes(
     const body = await readJson(c);
     const def = await service.update(
       c.req.param("id"),
-      pickKeys(body, PATCHABLE) as UpdateSystemCronInput,
+      {
+        ...(pickKeys(body, PATCHABLE) as UpdateSystemCronInput),
+        ...pickScope(body),
+      },
       resolveAccountScope(c),
     );
     return c.json(def, 200);

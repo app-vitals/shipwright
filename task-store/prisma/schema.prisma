@@ -71,10 +71,10 @@ enum TaskKind {
 // updatedAt are system-managed DateTime columns.
 
 model Task {
-  id     String     @id @default(cuid())
-  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
-  title  String
-  status TaskStatus
+  id        String     @id @default(cuid())
+  accountId String     @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+  title     String
+  status    TaskStatus
 
   source             String?
   session            String?
@@ -113,8 +113,8 @@ model Task {
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
   // mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts)
   // auto-sets status=blocked + blockedReason so the task stops being re-selected forever.
-  skipCount     Int     @default(0)
-  lastSkippedAt String?
+  skipCount      Int     @default(0)
+  lastSkippedAt  String?
   // lastSkipReason records the skip-reason text ([skip-reason:...] marker, or
   // the server-side "unspecified" default) associated with the current
   // skipCount streak (SRB-1.1). recordSkip() resets skipCount to 1 whenever
@@ -262,7 +262,7 @@ enum PrOrigin {
 
 model PullRequest {
   id                String        @id @default(cuid())
-  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+  accountId         String        @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
   repo              String // org/repo format
   prNumber          Int
   staged            Boolean       @default(false) // true = review written but not yet posted
@@ -549,7 +549,7 @@ enum VerificationCheckReasonCategory {
 // its parent Task/PullRequest row were ever deleted.
 
 model VerificationCheck {
-  id String @id @default(cuid())
+  id        String @id @default(cuid())
   accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
 
   taskId String?
@@ -599,7 +599,7 @@ model Session {
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
   archivedBy String?
-  accountId  String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+  accountId  String    @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
 
   @@unique([accountId, slug])
   @@index([accountId])
@@ -620,18 +620,22 @@ model Session {
 // else in a template is ever evaluated.
 
 model SystemCronDefinition {
-  id                  String  @id
-  accountId           String  @default("default") // SSP-6.1: tenant scope; generated tasks inherit it
+  id                  String    @id
+  accountId           String    @default("default") // SSP-6.1: tenant scope; generated tasks inherit it
   name                String
   schedule            String // 5-field cron expression, interpreted by the external scheduler
-  timezone            String  @default("UTC") // IANA zone the schedule is evaluated in
-  enabled             Boolean @default(true)
+  timezone            String    @default("UTC") // IANA zone the schedule is evaluated in
+  enabled             Boolean   @default(true)
   // SCR-1.3: when the definition last went disabled→enabled (null while
   // disabled). The scheduler's catch-up never fires a slot at or before it,
   // so enabling (or re-enabling) never replays a backlog.
   enabledAt           DateTime?
   titleTemplate       String
   descriptionTemplate String
+  // CRS-1.1: which repos a firing fans out to. 'all' (default; existing rows)
+  // keeps today's behavior; 'selected' restricts to `repos` (org/repo).
+  repoScope           String    @default("all")
+  repos               String[]  @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1553,6 +1553,16 @@ export const SystemCronDefinitionSchema = z
       description:
         "Task description template — same `{repo}`-only plain substitution as titleTemplate.",
     }),
+    repoScope: z.enum(["all", "selected"]).openapi({
+      example: "all",
+      description:
+        "Which repos the cron fans out to: every repo ('all') or only `repos` ('selected').",
+    }),
+    repos: z.array(z.string()).openapi({
+      example: ["acme/widgets"],
+      description:
+        "org/repo list used when repoScope is 'selected'; always [] when 'all'.",
+    }),
     createdAt: z
       .string()
       .datetime()
@@ -1622,6 +1632,18 @@ export const CreateSystemCronBodySchema = z
     descriptionTemplate: z
       .string()
       .openapi({ example: "Audit {repo}'s dependencies." }),
+    repoScope: z
+      .enum(["all", "selected"])
+      .optional()
+      .openapi({ example: "all", description: "Defaults to 'all'." }),
+    repos: z
+      .array(z.string())
+      .optional()
+      .openapi({
+        example: ["acme/widgets"],
+        description:
+          "org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500.",
+      }),
   })
   .openapi("CreateSystemCronBody");
 
@@ -1633,6 +1655,8 @@ export const PatchSystemCronBodySchema = z
     timezone: z.string().optional(),
     titleTemplate: z.string().optional(),
     descriptionTemplate: z.string().optional(),
+    repoScope: z.enum(["all", "selected"]).optional(),
+    repos: z.array(z.string()).optional(),
   })
   .openapi("PatchSystemCronBody");
 
