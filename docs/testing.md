@@ -86,6 +86,8 @@ The coverage gate is an absolute threshold:
 
 **Absolute threshold** (`scripts/check-coverage.ts`): enforced by the main `ci` job on the coverage report produced by `task test:coverage`, requiring 90% lines + 89% functions on an aggregate basis. The script automatically detects the repo's coverage toolchain by reading a `**Coverage toolchain:**` field (if declared in the repo's test-system documentation) and dispatches to the appropriate parser (`lcov`, `jacoco`, `coverage.py`, `c8`/`nyc`, `go-cover`); if no toolchain is declared, it defaults to `lcov`.
 
+**Excluded files** (`.shipwright/coverage.json`, read through the shared parser in `plugins/shipwright/scripts/coverage/exclusions.ts`): files that are not measured by unit or integration tests (process entrypoints, local-dev seed scripts, browser-loaded client code, generated Prisma client) are listed in this file, each with a required `reason`, and are removed before the aggregate is computed. The gate output reports the excluded line count and share next to the aggregate percentages. The gate fails when the excluded share exceeds the file's `maxExcludedPct` ceiling, when an exclusion entry matches no file in the report (dead entry), or when the file is unreadable or invalid, including an entry with a missing reason.
+
 **Coverage artifact:** the `ci` job uploads `coverage/lcov.info` as the `shipwright-coverage` workflow artifact (`if: always()`, so it is published even when the gate fails), see the "Upload coverage artifact" step in `.github/workflows/ci.yml`. The metrics dashboard's "Coverage by repo" section reads the coverage snapshots stored in the task store (see [metrics.md](./metrics.md)).
 
 ## References
