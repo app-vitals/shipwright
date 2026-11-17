@@ -2,7 +2,7 @@
 
 > Coding half. The platform half is the vendored snapshot [`docs/platform/agent-api-resources.md`](./platform/agent-api-resources.md), sourced from `app-vitals/agent`.
 
-Per-agent resource endpoints for the [Agent Admin API](./platform/agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot. See [`docs/platform/agent-api.md`](./platform/agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/platform/agent-api-ops.md`](./platform/agent-api-ops.md) for cron jobs and cron runs.
+Per-agent resource endpoints for the [Agent Admin API](./platform/agent-api.md): phase methodology, the work-queue snapshot, and dev-task adherence reports (the coding extension's routes; the platform's per-agent resources live in the vendored [`agent-api-resources.md`](./platform/agent-api-resources.md)). See [`docs/platform/agent-api.md`](./platform/agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/platform/agent-api-ops.md`](./platform/agent-api-ops.md) for cron jobs and cron runs.
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
@@ -74,3 +74,14 @@ GET /agents/:id/work-queue
 ```
 
 Returns `200` with the latest pushed snapshot in the same `{ snapshot: { id, agentId, computedAt, items, createdAt } }` format, or `404` if the agent has never pushed one.
+
+---
+
+## Dev-task adherence
+
+```
+GET /agents/all/cron-runs/dev-task-adherence
+GET /agents/:id/dev-task-adherence
+```
+
+Admin-only. Scores each task-bearing run of a phase command against its required-steps table (`plugins/shipwright/references/required-steps/{dev-task,patch,review}.json`) and reports per-step adherence overall, per context fingerprint and per `commandVariant`. The optional `command` query parameter (`dev-task` default, `patch`, or `review`) selects the phase; `from`/`to` bound `startedAt`. Response shape, per-command guardrail fields and caveats are in the operation descriptions of [`admin/src/coding/openapi.coding.json`](../admin/src/coding/openapi.coding.json) (implementation: `admin/src/coding/dev-task-adherence.ts`).
