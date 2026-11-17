@@ -19,9 +19,9 @@ import { BadRequestError, ForbiddenError } from "./errors.ts";
 import type { CoverageSnapshot, PrismaClient } from "./index.ts";
 import { isOrgRepo } from "./validate.ts";
 
-/** Caller read scope: `accountId: null` = unrestricted (admin). */
+/** Caller scope: `accountId: null` = unrestricted (admin). */
 export interface CoverageSnapshotScope {
-  /** null = admin (any repo may be written); an array restricts writes. */
+  /** null = admin (any repo); an array restricts both writes and reads. */
   repos: string[] | null;
   /** null = no account restriction (admin); a string restricts reads to it. */
   accountId: string | null;
@@ -196,20 +196,18 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
       repo: data.repo,
       commitSha: data.commitSha,
     };
+    // The upsert owns the write, so concurrent first POSTs for one key can't
+    // race into a unique-constraint 500. The pre-read only decides `created`.
     const existing = await this.prisma.coverageSnapshot.findUnique({
       where: { accountId_repo_commitSha: key },
+      select: { id: true },
     });
-    if (existing) {
-      const snapshot = await this.prisma.coverageSnapshot.update({
-        where: { id: existing.id },
-        data: fields,
-      });
-      return { snapshot, created: false };
-    }
-    const snapshot = await this.prisma.coverageSnapshot.create({
-      data: { ...key, ...fields },
+    const snapshot = await this.prisma.coverageSnapshot.upsert({
+      where: { accountId_repo_commitSha: key },
+      create: { ...key, ...fields },
+      update: fields,
     });
-    return { snapshot, created: true };
+    return { snapshot, created: !existing };
   }
 
   async list(
@@ -218,8 +216,17 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
   ): Promise<ListCoverageSnapshotsResult> {
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
+    // An empty repo scope can see nothing; an out-of-scope ?repo= likewise
+    // returns empty (mirrors verification-checks).
+    if (scope.repos !== null) {
+      if (scope.repos.length === 0) return { snapshots: [], total: 0 };
+      if (opts.repo && !scope.repos.includes(opts.repo)) {
+        return { snapshots: [], total: 0 };
+      }
+    }
     const where = {
       ...(scope.accountId !== null ? { accountId: scope.accountId } : {}),
+      ...(scope.repos !== null ? { repo: { in: scope.repos } } : {}),
       ...(opts.repo ? { repo: opts.repo } : {}),
       ...(opts.since ? { measuredAt: { gte: new Date(opts.since) } } : {}),
     };
@@ -238,8 +245,12 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
   async latest(
     scope: CoverageSnapshotScope = UNRESTRICTED_SCOPE,
   ): Promise<CoverageSnapshot[]> {
+    if (scope.repos !== null && scope.repos.length === 0) return [];
     return this.prisma.coverageSnapshot.findMany({
-      where: scope.accountId !== null ? { accountId: scope.accountId } : {},
+      where: {
+        ...(scope.accountId !== null ? { accountId: scope.accountId } : {}),
+        ...(scope.repos !== null ? { repo: { in: scope.repos } } : {}),
+      },
       // distinct keeps the first row per repo in the given order → newest.
       orderBy: [{ repo: "asc" }, { measuredAt: "desc" }],
       distinct: ["repo"],

@@ -97,6 +97,8 @@ function makePrismaDouble() {
       if (k === "measuredAt") {
         const gte = (v as { gte?: Date }).gte;
         if (gte && r.measuredAt < gte) return false;
+      } else if (k === "repo" && v && typeof v === "object") {
+        if (!(v as { in: string[] }).in.includes(r.repo)) return false;
       } else if (r[k] !== v) return false;
     }
     return true;
@@ -134,6 +136,41 @@ function makePrismaDouble() {
         } as unknown as Row;
         rows.push(row);
         return Promise.resolve(row);
+      },
+      upsert({
+        where,
+        create,
+        update,
+      }: {
+        where: {
+          accountId_repo_commitSha: {
+            accountId: string;
+            repo: string;
+            commitSha: string;
+          };
+        };
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      }) {
+        const k = where.accountId_repo_commitSha;
+        const row = rows.find(
+          (r) =>
+            r.accountId === k.accountId &&
+            r.repo === k.repo &&
+            r.commitSha === k.commitSha,
+        );
+        if (row) {
+          Object.assign(row, update);
+          return Promise.resolve(row);
+        }
+        counter += 1;
+        const made = {
+          id: `cs-${counter}`,
+          createdAt: new Date(),
+          ...create,
+        } as unknown as Row;
+        rows.push(made);
+        return Promise.resolve(made);
       },
       update({
         where,
@@ -488,6 +525,53 @@ describe("/coverage-snapshots routes (smoke)", () => {
         })
       ).json()) as { snapshots: { commitSha: string }[] };
       expect(asAdmin.snapshots.map((s) => s.commitSha)).toEqual(["theirs"]);
+    });
+
+    it("agent token never reads repos outside its scope (list + latest)", async () => {
+      const { app } = makeApp(scopeFor(["org/repo"], "acct-a"));
+      await post(app, validBody({ commitSha: "mine" }), agent);
+      // Same account, repo outside the agent's scope — written by an admin.
+      await post(
+        app,
+        validBody({
+          repo: "org/secret",
+          commitSha: "hidden",
+          accountId: "acct-a",
+        }),
+      );
+
+      const list = (await (
+        await app.request("/coverage-snapshots", { headers: agent })
+      ).json()) as { snapshots: { commitSha: string }[]; total: number };
+      expect(list.snapshots.map((s) => s.commitSha)).toEqual(["mine"]);
+      expect(list.total).toBe(1);
+
+      const forbidden = (await (
+        await app.request("/coverage-snapshots?repo=org/secret", {
+          headers: agent,
+        })
+      ).json()) as { snapshots: unknown[]; total: number };
+      expect(forbidden.snapshots).toEqual([]);
+      expect(forbidden.total).toBe(0);
+
+      const latest = (await (
+        await app.request("/coverage-snapshots/latest", { headers: agent })
+      ).json()) as { snapshots: { repo: string }[] };
+      expect(latest.snapshots.map((s) => s.repo)).toEqual(["org/repo"]);
+    });
+
+    it("agent token with an empty repo scope reads nothing", async () => {
+      const { app } = makeApp(scopeFor([], "acct-a"));
+      await post(app, validBody({ accountId: "acct-a" }));
+      const list = (await (
+        await app.request("/coverage-snapshots", { headers: agent })
+      ).json()) as { snapshots: unknown[]; total: number };
+      expect(list.snapshots).toEqual([]);
+      expect(list.total).toBe(0);
+      const latest = (await (
+        await app.request("/coverage-snapshots/latest", { headers: agent })
+      ).json()) as { snapshots: unknown[] };
+      expect(latest.snapshots).toEqual([]);
     });
   });
 });
