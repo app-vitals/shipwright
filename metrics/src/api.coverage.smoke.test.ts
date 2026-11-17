@@ -7,8 +7,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createMetricsApp, type MetricsDeps } from "./api.ts";
-import { makeAccountsClientMock } from "./lib/test-helpers.ts";
-import { FixedClock } from "./lib/test-helpers.ts";
+import { FixedClock, makeAccountsClientMock } from "./lib/test-helpers.ts";
 import { TaskStoreProvider } from "./providers/task-store-provider.ts";
 import {
   RecordedAdminMetricsClient,

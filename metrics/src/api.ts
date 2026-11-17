@@ -42,9 +42,9 @@ import type {
 } from "./metrics-provider.ts";
 import {
   CostEfficiencyResultSchema,
+  CoverageResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
-  CoverageResultSchema,
   MergedPrsQuerySchema,
   MergedPrsResultSchema,
   PrOutcomesResultSchema,
