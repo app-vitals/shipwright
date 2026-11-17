@@ -2854,6 +2854,237 @@
         }
       }
     },
+    "/documents": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Register a planning document",
+        "description": "Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPlanDocumentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registered (or re-registered) document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "List planning documents",
+        "description": "Returns `{ documents, total }`. `?planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `?planned=true` returns documents with `plannedAt` set. Any query parameter not documented here is rejected with `400`. Agent tokens only see documents in their account whose home repo is in the token's repo scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": false,
+            "name": "session",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spec",
+                "plan"
+              ],
+              "example": "spec"
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dev@example.com"
+            },
+            "required": false,
+            "name": "owner",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "example": "false",
+              "description": "`false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set."
+            },
+            "required": false,
+            "description": "`false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set.",
+            "name": "planned",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account. Ignored for agent tokens."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account. Ignored for agent tokens.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocumentListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — unknown query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{id}": {
+      "patch": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Update a planning document",
+        "description": "Sets any of `plannedAt` (specs only; null clears), `prUrl`, `owner`, `state`. Omitted fields are untouched. `404` when the document does not exist or is outside the caller's scope.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxdoc1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchPlanDocumentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/verification-checks": {
       "post": {
         "tags": [
@@ -5817,6 +6048,287 @@
             "type": "boolean",
             "example": true,
             "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
+          }
+        }
+      },
+      "PlanDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxdoc1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "session": {
+            "type": "string",
+            "example": "shipwright-may-launch"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "example": "spec"
+          },
+          "number": {
+            "type": "integer",
+            "example": 2,
+            "description": "Specs: 1, 2, 3… within the session. Plans: always 1."
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "path": {
+            "type": "string",
+            "example": "planning/shipwright-may-launch/SPEC-0002.md"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Planning documents"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/pull/12"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "draft"
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "plannedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null,
+            "description": "Specs only."
+          },
+          "originTaskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "session",
+          "kind",
+          "number",
+          "repo",
+          "path",
+          "title",
+          "owner",
+          "repos",
+          "prUrl",
+          "state",
+          "commitSha",
+          "plannedAt",
+          "originTaskId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "RegisterPlanDocumentBody": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "example": "shipwright-may-launch"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "example": "spec"
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 2,
+            "description": "Required for specs; plans are always number 1 (omit it or send 1)."
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403)."
+          },
+          "path": {
+            "type": "string",
+            "example": "planning/shipwright-may-launch/SPEC-0002.md"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Spec title"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo",
+              "org/other"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://github.com/org/repo/pull/12"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "pr_open",
+            "description": "Defaults to draft on first registration."
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "originTaskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          }
+        },
+        "required": [
+          "session",
+          "kind",
+          "repo",
+          "path"
+        ]
+      },
+      "PlanDocumentListResponse": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanDocument"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "documents",
+          "total"
+        ]
+      },
+      "PatchPlanDocumentBody": {
+        "type": "object",
+        "properties": {
+          "plannedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-11-17T12:00:00.000Z",
+            "description": "ISO timestamp a planning pass consumed this spec; null clears it. Specs only."
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pr_open",
+              "merged",
+              "abandoned"
+            ],
+            "example": "merged"
           }
         }
       },

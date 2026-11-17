@@ -13,6 +13,7 @@
  *   * /*               — bearer auth middleware (everything else)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
+ *   * /documents/* — register/list/patch planning documents (PLU-2.2)
  *   * /verification-checks/* — record/list structured per-check verification outcomes
  *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
  *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
@@ -42,9 +43,11 @@ import {
   type TaskStoreAuthEnv,
 } from "./auth.ts";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
+import type { DocumentServiceLike } from "./document-service.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
+import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -131,6 +134,19 @@ const noopVerificationCheckService: VerificationCheckServiceLike = {
   },
 };
 
+/** Disabled DocumentService used when the feature is not wired up in a test context. */
+const unwiredDocumentService: DocumentServiceLike = {
+  async register() {
+    throw new Error("documents are not configured");
+  },
+  async list() {
+    return { documents: [], total: 0 };
+  },
+  async patch() {
+    throw new Error("documents are not configured");
+  },
+};
+
 /** No-op CoverageSnapshotService used when the feature is not wired up in a test context. */
 const noopCoverageSnapshotService: CoverageSnapshotServiceLike = {
   async record(_data) {
@@ -175,6 +191,7 @@ export interface TaskStoreDeps {
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
+  documentService?: DocumentServiceLike;
   coverageSnapshotService?: CoverageSnapshotServiceLike;
   systemCronService?: SystemCronServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
@@ -299,6 +316,10 @@ export function createTaskStoreApp(
   app.route("/tokens", createTokensRoutes(deps.tokenService));
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
   app.route("/sessions", createSessionsRoutes(deps.sessionService));
+  app.route(
+    "/documents",
+    createDocumentsRoutes(deps.documentService ?? unwiredDocumentService),
+  );
   app.route(
     "/verification-checks",
     createVerificationChecksRoutes(

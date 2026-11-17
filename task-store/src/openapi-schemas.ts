@@ -1906,3 +1906,148 @@ export const SystemCronTriggersResponseSchema = z
       }),
   })
   .openapi("SystemCronTriggersResponse");
+
+// ─── Planning documents (PLU-2.2) ──────────────────────────────────────────────
+
+const PLAN_DOCUMENT_KIND_VALUES = ["spec", "plan"] as const;
+const PLAN_DOCUMENT_STATE_VALUES = [
+  "draft",
+  "pr_open",
+  "merged",
+  "abandoned",
+] as const;
+
+export const PlanDocumentSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxdoc1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    session: z.string().openapi({ example: "shipwright-may-launch" }),
+    kind: z.enum(PLAN_DOCUMENT_KIND_VALUES).openapi({ example: "spec" }),
+    number: z.number().int().openapi({
+      example: 2,
+      description: "Specs: 1, 2, 3… within the session. Plans: always 1.",
+    }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    path: z
+      .string()
+      .openapi({ example: "planning/shipwright-may-launch/SPEC-0002.md" }),
+    title: z.string().nullable().openapi({ example: "Planning documents" }),
+    owner: z.string().nullable().openapi({ example: "dev@example.com" }),
+    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    prUrl: z
+      .string()
+      .nullable()
+      .openapi({ example: "https://github.com/org/repo/pull/12" }),
+    state: z.enum(PLAN_DOCUMENT_STATE_VALUES).openapi({ example: "draft" }),
+    commitSha: z.string().nullable().openapi({ example: null }),
+    plannedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .openapi({ example: null, description: "Specs only." }),
+    originTaskId: z.string().nullable().openapi({ example: null }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-17T12:00:00.000Z" }),
+  })
+  .openapi("PlanDocument");
+
+/** Request body for POST /documents. */
+export const RegisterPlanDocumentBodySchema = z
+  .object({
+    session: z.string().openapi({ example: "shipwright-may-launch" }),
+    kind: z.enum(PLAN_DOCUMENT_KIND_VALUES).openapi({ example: "spec" }),
+    number: z.number().int().positive().optional().openapi({
+      example: 2,
+      description:
+        "Required for specs; plans are always number 1 (omit it or send 1).",
+    }),
+    repo: z.string().openapi({
+      example: "org/repo",
+      description:
+        "Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403).",
+    }),
+    path: z
+      .string()
+      .openapi({ example: "planning/shipwright-may-launch/SPEC-0002.md" }),
+    title: z.string().nullable().optional().openapi({ example: "Spec title" }),
+    owner: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "dev@example.com" }),
+    repos: z
+      .array(z.string())
+      .optional()
+      .openapi({ example: ["org/repo", "org/other"] }),
+    prUrl: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "https://github.com/org/repo/pull/12" }),
+    state: z.enum(PLAN_DOCUMENT_STATE_VALUES).optional().openapi({
+      example: "pr_open",
+      description: "Defaults to draft on first registration.",
+    }),
+    commitSha: z.string().nullable().optional().openapi({ example: null }),
+    originTaskId: z.string().nullable().optional().openapi({ example: null }),
+  })
+  .openapi("RegisterPlanDocumentBody");
+
+/** Request body for PATCH /documents/:id. */
+export const PatchPlanDocumentBodySchema = z
+  .object({
+    plannedAt: z.string().datetime().nullable().optional().openapi({
+      example: "2026-11-17T12:00:00.000Z",
+      description:
+        "ISO timestamp a planning pass consumed this spec; null clears it. Specs only.",
+    }),
+    prUrl: z.string().nullable().optional().openapi({ example: null }),
+    owner: z.string().nullable().optional().openapi({ example: null }),
+    state: z.enum(PLAN_DOCUMENT_STATE_VALUES).optional().openapi({
+      example: "merged",
+    }),
+  })
+  .openapi("PatchPlanDocumentBody");
+
+/** Query params for GET /documents. Unknown parameters are rejected with 400. */
+export const PlanDocumentListQuerySchema = z
+  .object({
+    session: z
+      .string()
+      .optional()
+      .openapi({ example: "shipwright-may-launch" }),
+    kind: z.enum(PLAN_DOCUMENT_KIND_VALUES).optional().openapi({
+      example: "spec",
+    }),
+    owner: z.string().optional().openapi({ example: "dev@example.com" }),
+    planned: z.enum(["true", "false"]).optional().openapi({
+      example: "false",
+      description:
+        "`false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: narrow to one account. Ignored for agent tokens.",
+    }),
+  })
+  .openapi("PlanDocumentListQuery");
+
+/** Response for GET /documents. */
+export const PlanDocumentListResponseSchema = z
+  .object({
+    documents: z.array(PlanDocumentSchema),
+    total: z.number().int().openapi({ example: 1 }),
+  })
+  .openapi("PlanDocumentListResponse");
+
+/** Path param for PATCH /documents/:id. */
+export const PlanDocumentIdParamSchema = z
+  .object({ id: z.string().openapi({ example: "clxdoc1234567890" }) })
+  .openapi("PlanDocumentIdParam");

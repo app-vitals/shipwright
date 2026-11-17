@@ -8,6 +8,7 @@
 
 export type {
   CoverageSnapshot,
+  PlanDocument,
   PrFinding,
   PullRequest,
   PullRequestEvent,
@@ -20,6 +21,8 @@ export type {
   VerificationCheck,
 } from "../prisma/client/client.ts";
 export {
+  PlanDocumentKind,
+  PlanDocumentState,
   PrFindingDisposition,
   PrFindingSource,
   Prisma,

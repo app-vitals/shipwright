@@ -48,6 +48,16 @@ The task store can notify a downstream service of task writes via a generic `{ t
 
 A `Session` row is upserted automatically whenever a task write sets a non-blank `session` field — only `/shipwright:plan-session` does this; the `*-fix` patrol skills and externally-opened PRs never carry one. See `GET /sessions` / `GET /sessions/:slug` in the OpenAPI spec for the rollup shape and query params, and [`docs/agent-web-ui.md`](./agent-web-ui.md) for the admin UI's Sessions tab.
 
+### Planning documents
+
+A `PlanDocument` row (PLU-2.1 schema) records one numbered spec, or the session's single plan, living as a file in the session's home repo. The document service (`task-store/src/document-service.ts`) and routes (`task-store/src/routes/documents.ts`) expose three endpoints:
+
+- `POST /documents` registers a document. It is idempotent on the unique key `(accountId, session, kind, number)` (plans are always number 1): registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row, and fields omitted from the later request are left as they were. Registering also ensures the `Session` row exists (until now sessions were only created as a side effect of task writes), sets the session's `owner` from the first document that carries one (a later document never overwrites it) and sets `homeRepo` when it is empty. The document's home `repo` must be in the caller's repo scope: an agent token registering outside its scope gets `403`; admin tokens are unrestricted.
+- `GET /documents` filters on `session`, `kind`, `owner` and `planned` (admin tokens may also narrow with `accountId`). `planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `planned=true` returns documents with `plannedAt` set. Unknown query parameters are a `400` via `rejectUnknownQuery()`, like `GET /tasks` and `GET /sessions`. Agent tokens only see documents in their own account whose home repo is in their repo scope.
+- `PATCH /documents/:id` sets `plannedAt` (specs only; `null` clears it), `prUrl`, `owner` and `state`. A document outside the caller's account or repo scope is `404`.
+
+The MCP surface exposes `documents_list` only; `documents_create` and `documents_update` are in the allowlist's exclusion list (see [`docs/mcp-tools.md`](./mcp-tools.md)).
+
 ### Task `pr` field
 
 `Task.pr` is an integer column. `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` normalize a supplied `pr` (`normalizePr` in `task-store/src/validate.ts`) to a positive integer: a positive integer, an integer string, or a `https://github.com/<owner>/<repo>/pull/<n>` URL are all accepted (`null` clears it). Anything else, or a value above the INT4 maximum, is a `400` naming the accepted forms rather than a Prisma `500`.

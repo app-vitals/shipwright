@@ -19,6 +19,7 @@ import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
+import { DocumentService } from "./document-service.ts";
 import {
   createPrismaClientWithPool,
   enablePoolObservability,
@@ -218,6 +219,7 @@ async function startServer(): Promise<void> {
     pullRequestService.lookupBlockedPrNumbers(pairs),
   );
   const verificationCheckService = new VerificationCheckService(prisma);
+  const documentService = new DocumentService(prisma);
   const coverageSnapshotService = new CoverageSnapshotService(prisma);
   const systemCronService = new SystemCronService(
     prisma,
@@ -263,6 +265,7 @@ async function startServer(): Promise<void> {
     pullRequestService,
     sessionService,
     verificationCheckService,
+    documentService,
     coverageSnapshotService,
     systemCronService,
     scopeResolver,

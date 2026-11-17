@@ -14,8 +14,10 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
+import type { DocumentServiceLike } from "./document-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
+import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -175,6 +177,18 @@ const stubSessionService: SessionServiceLike = {
   },
 };
 
+const stubDocumentService: DocumentServiceLike = {
+  async register() {
+    return {} as never;
+  },
+  async list() {
+    return { documents: [], total: 0 };
+  },
+  async patch() {
+    return {} as never;
+  },
+};
+
 const stubVerificationCheckService: VerificationCheckServiceLike = {
   async record() {
     return {} as never;
@@ -249,6 +263,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensApp = createTokensRoutes(stubTokenService);
   const prsApp = createPrsRoutes(stubPrService);
   const sessionsApp = createSessionsRoutes(stubSessionService);
+  const documentsApp = createDocumentsRoutes(stubDocumentService);
   const verificationChecksApp = createVerificationChecksRoutes(
     stubVerificationCheckService,
   );
@@ -266,6 +281,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tokensSpec = tokensApp.getOpenAPI31Document(innerDocInfo);
   const prsSpec = prsApp.getOpenAPI31Document(innerDocInfo);
   const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
+  const documentsSpec = documentsApp.getOpenAPI31Document(innerDocInfo);
   const verificationChecksSpec =
     verificationChecksApp.getOpenAPI31Document(innerDocInfo);
   const coverageSnapshotsSpec =
@@ -288,6 +304,10 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     ...prefixPaths(
       (sessionsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/sessions",
+    ),
+    ...prefixPaths(
+      (documentsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
+      "/documents",
     ),
     ...prefixPaths(
       (verificationChecksSpec.paths ?? {}) as Record<
@@ -325,6 +345,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(tokensSpec.components?.schemas ?? {}),
         ...(prsSpec.components?.schemas ?? {}),
         ...(sessionsSpec.components?.schemas ?? {}),
+        ...(documentsSpec.components?.schemas ?? {}),
         ...(verificationChecksSpec.components?.schemas ?? {}),
         ...(coverageSnapshotsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),
