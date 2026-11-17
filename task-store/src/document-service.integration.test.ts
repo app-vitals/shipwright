@@ -132,6 +132,56 @@ describeOrSkip("DocumentService (integration)", () => {
     expect(await prisma.session.count()).toBe(0);
   });
 
+  it("rejects re-registering a key owned by a repo outside the caller's scope and leaves it unchanged", async () => {
+    const owned = await service.register(
+      spec(1, { repo: "org/b", prUrl: "https://github.com/org/b/pull/1" }),
+      ACCOUNT,
+      ADMIN,
+    );
+    const sessionBefore = await prisma.session.findFirst({
+      where: { slug: "x" },
+    });
+    const scopeA = { repos: ["org/a"], accountId: ACCOUNT };
+
+    await expect(
+      service.register(
+        spec(1, {
+          repo: "org/a",
+          path: "planning/x/HIJACK.md",
+          prUrl: "https://github.com/org/a/pull/9",
+          owner: "evil@x.com",
+          state: "abandoned",
+        }),
+        ACCOUNT,
+        scopeA,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+
+    const after = await prisma.planDocument.findUnique({
+      where: { id: owned.id },
+    });
+    expect(after).toEqual(owned);
+    expect(await prisma.planDocument.count()).toBe(1);
+    expect(await prisma.session.findFirst({ where: { slug: "x" } })).toEqual(
+      sessionBefore,
+    );
+
+    // A key the scoped token does own still upserts in place.
+    const mine = await service.register(
+      spec(2, { repo: "org/a", title: "first" }),
+      ACCOUNT,
+      scopeA,
+    );
+    const again = await service.register(
+      spec(2, { repo: "org/a", title: "second" }),
+      ACCOUNT,
+      scopeA,
+    );
+    expect(again.id).toBe(mine.id);
+    expect(again.title).toBe("second");
+    expect(await prisma.planDocument.count()).toBe(2);
+  });
+
   it("planned=false returns only specs with no plannedAt and excludes abandoned", async () => {
     await service.register(spec(1), ACCOUNT, ADMIN);
     const planned = await service.register(spec(2), ACCOUNT, ADMIN);

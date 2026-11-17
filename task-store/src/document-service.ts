@@ -137,6 +137,29 @@ export class DocumentService implements DocumentServiceLike {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      // The upsert below rewrites `repo` on an existing row, so a scoped token
+      // must also own the existing document — otherwise it could overwrite and
+      // re-home another repo's row. Checked before any write so an
+      // out-of-scope key mutates nothing. The message does not name the owner.
+      if (scope.repos !== null) {
+        const existing = await tx.planDocument.findUnique({
+          where: {
+            accountId_session_kind_number: {
+              accountId,
+              session: slug,
+              kind: input.kind,
+              number,
+            },
+          },
+          select: { repo: true },
+        });
+        if (existing && !scope.repos.includes(existing.repo)) {
+          throw new ForbiddenError(
+            "document is owned by a repo outside the token's repo scope",
+          );
+        }
+      }
+
       // Ensure the session row — target-less ON CONFLICT DO NOTHING, same
       // race-safe shape as SessionService.upsert().
       await tx.session.createMany({

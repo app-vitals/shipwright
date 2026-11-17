@@ -2860,7 +2860,7 @@
           "documents"
         ],
         "summary": "Register a planning document",
-        "description": "Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).",
+        "description": "Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).",
         "requestBody": {
           "required": true,
           "content": {
@@ -2903,7 +2903,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — `repo` is outside the token's repo scope",
+            "description": "Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope",
             "content": {
               "application/json": {
                 "schema": {
