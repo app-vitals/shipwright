@@ -6,6 +6,14 @@
 // on individual low-coverage files regardless of overall coverage — hence
 // this separate aggregate gate.
 
+import {
+  CoverageExclusionError,
+  EXCLUSION_FILE_PATH,
+  type ExclusionConfig,
+  findDeadEntries,
+  isExcludedPath,
+  parseExclusionConfig,
+} from "../plugins/shipwright/scripts/coverage/exclusions.ts";
 import { extractCoverageTool, selectParser } from "./coverage-tool-dispatch";
 
 // Live CI aggregate at the time of the last raise attempt (MTC-1.7, 2026-08-14)
@@ -20,52 +28,6 @@ import { extractCoverageTool, selectParser } from "./coverage-tool-dispatch";
 const THRESHOLD_LINES = 90;
 const THRESHOLD_FUNCTIONS = 89;
 
-const EXCLUDE_PREFIXES = [
-  // Generated / vendor code
-  "node_modules/",
-
-  // Process entrypoints — start a real service or require live
-  // credentials/infra to run (DB connections, Docker, mise, GitHub auth,
-  // etc.); exercised in practice, not under unit/integration test.
-  // Shipwright's admin composition root; the platform admin it boots
-  // (server, startAdmin) ships in @app-vitals/agent-admin (node_modules/).
-  "admin/src/main.ts",
-  "task-store/src/main.ts",
-  "mcp-server/src/serve.ts",
-  "metrics/src/server.ts",
-
-  // Local-dev-only seed scripts — invoked only by `task stack` against a
-  // live database; pure logic they contain is unit-tested and exported,
-  // only the import.meta.main CLI/DB-wiring block is uncovered here.
-  "scripts/seed-task-store-token.ts",
-  "scripts/seed-chat-tokens.ts",
-  "scripts/seed-dev-agent.ts",
-  "scripts/wait-for-agent.ts",
-
-  // hitl.ts's real (production) global-patching target for its log-file
-  // tee (installLogFileTee()) — every line here does nothing but read or
-  // reassign real process.stdout.write/process.stderr.write/console.log/
-  // warn/error, which can't be exercised safely in-process (this repo's
-  // isolation contract forbids patching real process/console state in the
-  // shared `bun test` process; see hitl.integration.test.ts's subprocess
-  // fixture for how it's actually exercised). All of installLogFileTee()'s
-  // own pure logic (the guard, sink-building, wrapping sequencing) is
-  // unit-tested in-process in hitl.unit.test.ts via an injected fake
-  // LogFileTeeTarget — only this one small, dedicated, inherently-untestable
-  // file is excluded, not hitl.ts as a whole (HTL-1.1 / PR review, 2026-08-20).
-  "scripts/hitl-log-file-tee-target.ts",
-
-  // Browser-loaded dashboard client — a plain (non-module) <script>, mostly
-  // DOM manipulation and chart rendering with no in-process request seam to
-  // unit test. Its pure, injectable-fetch logic (fetchSequential) is
-  // unit-tested via a guarded test-only export (see app.unit.test.js); that
-  // export requires importing the whole file, which would otherwise drag
-  // ~1000 lines of untestable DOM code into the aggregate gate.
-  "metrics/src/dashboard/app.js",
-];
-
-// Paths containing this substring are excluded regardless of prefix
-const EXCLUDE_SUBSTRINGS = ["prisma/client/"];
 const LCOV_PATH = "coverage/lcov.info";
 
 export type FileStats = {
@@ -174,20 +136,30 @@ export const JacocoParser: CoverageParser = {
   },
 };
 
-// Filters out files that match an exclude prefix or substring, preserving
-// the input order. Mirrors the EXCLUDE_PREFIXES ("process entrypoints")
-// and EXCLUDE_SUBSTRINGS (e.g. generated Prisma client code) exclusion
-// rules documented above those constants.
+// Filters out files excluded by the declared exclusion file
+// (.shipwright/coverage.json), preserving the input order. Matching
+// semantics (startsWith for prefixes, includes for substrings) are shared
+// with the coverage reader via isExcludedPath.
 export function filterRelevantFiles(
   files: FileStats[],
-  excludePrefixes: string[],
-  excludeSubstrings: string[],
+  config: ExclusionConfig,
 ): FileStats[] {
-  return files.filter(
-    (file) =>
-      !excludePrefixes.some((ex) => file.path.startsWith(ex)) &&
-      !excludeSubstrings.some((sub) => file.path.includes(sub)),
-  );
+  return files.filter((file) => !isExcludedPath(config, file.path));
+}
+
+// Excluded-line share: lines (LF) of excluded files as a percent of all
+// lines before exclusion — the same definition the reader reports.
+export function excludedShare(
+  files: FileStats[],
+  config: ExclusionConfig,
+): { lines: number; pct: number } {
+  let excluded = 0;
+  let all = 0;
+  for (const file of files) {
+    all += file.lf;
+    if (isExcludedPath(config, file.path)) excluded += file.lf;
+  }
+  return { lines: excluded, pct: all === 0 ? 0 : (excluded / all) * 100 };
 }
 
 type AggregateStats = {
@@ -239,20 +211,17 @@ export function computeFailures(
   return failures;
 }
 
-// Applies the same EXCLUDE_PREFIXES/EXCLUDE_SUBSTRINGS filtering as main()'s
-// report, then returns the weighted aggregate line-coverage percentage
-// (sum of LH / sum of LF across relevant files). 100 when there are no
-// relevant files or no lines found, mirroring the "nothing to fail on"
-// convention used throughout this module.
-export function computeAggregateLinePct(files: FileStats[]): number {
-  const relevant = filterRelevantFiles(
-    files,
-    EXCLUDE_PREFIXES,
-    EXCLUDE_SUBSTRINGS,
+// Applies the declared exclusions, then returns the weighted aggregate
+// line-coverage percentage (sum of LH / sum of LF across relevant files).
+// 100 when there are no relevant files or no lines found, mirroring the
+// "nothing to fail on" convention used throughout this module.
+export function computeAggregateLinePct(
+  files: FileStats[],
+  config: ExclusionConfig,
+): number {
+  const { totalLf, totalLh } = aggregateStats(
+    filterRelevantFiles(files, config),
   );
-
-  const { totalLf, totalLh } = aggregateStats(relevant);
-
   return percentOf(totalLh, totalLf);
 }
 
@@ -438,6 +407,7 @@ const COVERAGE_TOOL_DOC_PATH = "docs/test-readiness/test-system.md";
 export type CliDeps = {
   readLcov?: () => Promise<string>;
   readCoverageToolDoc?: () => Promise<string>;
+  readExclusions?: () => Promise<string>;
   log?: (msg: string) => void;
   error?: (msg: string) => void;
 };
@@ -450,6 +420,7 @@ export async function runCli(deps: CliDeps = {}): Promise<number> {
   const {
     readLcov = () => Bun.file(LCOV_PATH).text(),
     readCoverageToolDoc = () => Bun.file(COVERAGE_TOOL_DOC_PATH).text(),
+    readExclusions = () => Bun.file(EXCLUSION_FILE_PATH).text(),
     log = console.log,
     error = console.error,
   } = deps;
@@ -493,11 +464,40 @@ export async function runCli(deps: CliDeps = {}): Promise<number> {
 
   const files = parser.parse(lcov);
 
-  const relevant = filterRelevantFiles(
-    files,
-    EXCLUDE_PREFIXES,
-    EXCLUDE_SUBSTRINGS,
+  // The exclusion file is required: an unreadable or invalid file (or an
+  // entry without a reason) fails the gate loudly, never silently ignored.
+  let config: ExclusionConfig;
+  try {
+    config = parseExclusionConfig(await readExclusions());
+  } catch (e) {
+    if (e instanceof CoverageExclusionError) {
+      error(`❌ ${e.message}`);
+    } else {
+      error(
+        `❌ Could not read ${EXCLUSION_FILE_PATH}. Create it per plugins/shipwright/references/coverage-output.md.`,
+      );
+    }
+    return 1;
+  }
+
+  const share = excludedShare(files, config);
+  const dead = findDeadEntries(
+    config,
+    files.map((f) => f.path),
   );
+  const exclusionFailures: string[] = [];
+  if (share.pct > config.maxExcludedPct) {
+    exclusionFailures.push(
+      `excluded share ${share.pct.toFixed(2)}% > maxExcludedPct ${config.maxExcludedPct}%`,
+    );
+  }
+  for (const d of dead) {
+    exclusionFailures.push(
+      `dead exclusion entry (matches no file in the report) — ${d}`,
+    );
+  }
+
+  const relevant = filterRelevantFiles(files, config);
 
   if (relevant.length === 0) {
     log("No source files in coverage report.");
@@ -515,15 +515,18 @@ export async function runCli(deps: CliDeps = {}): Promise<number> {
   const overallFunctions = percentOf(totalFnh, totalFnf);
 
   log(`
-Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
+Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}, excluding ${share.lines.toLocaleString("en-US")} lines, ${share.pct.toFixed(1)}%) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
-  const failures = computeFailures(
-    overallLines,
-    overallFunctions,
-    THRESHOLD_LINES,
-    THRESHOLD_FUNCTIONS,
-  );
+  const failures = [
+    ...computeFailures(
+      overallLines,
+      overallFunctions,
+      THRESHOLD_LINES,
+      THRESHOLD_FUNCTIONS,
+    ),
+    ...exclusionFailures,
+  ];
 
   if (failures.length > 0) {
     error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
