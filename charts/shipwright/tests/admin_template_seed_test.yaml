@@ -1,0 +1,41 @@
+suite: admin templateSeed env
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: renders no SHIPWRIGHT_TEMPLATE_SEED env by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: SHIPWRIGHT_TEMPLATE_SEED
+
+  - it: renders the seed as JSON when marketplaces and plugins are set
+    set:
+      admin.templateSeed:
+        marketplaces:
+          - name: example-plugins
+            source: example-org/plugins
+            ref: v1.2.0
+        plugins:
+          - some-plugin@example-plugins
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TEMPLATE_SEED
+            value: '{"marketplaces":[{"name":"example-plugins","ref":"v1.2.0","source":"example-org/plugins"}],"plugins":["some-plugin@example-plugins"]}'
+
+  - it: renders the env var for explicit empty lists so seeded items are cleared
+    set:
+      admin.templateSeed:
+        marketplaces: []
+        plugins: []
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TEMPLATE_SEED
+            value: '{"marketplaces":[],"plugins":[]}'
