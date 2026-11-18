@@ -176,6 +176,12 @@ Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<i
 
 The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
 
+### Agent repo scoping on `GET /tasks`
+
+An agent token never sees the whole account's task list. When the token carries an agent id and a repo scope, `TaskService.list` replaces the plain `assignee` filter with an OR clause (`agentScope` in `task-store/src/task-service.ts`, applied at the `if (filters.agentScope)` branch of `list`): tasks assigned to that agent, **or** any task whose `repo` is in the agent's repos. `?repo=` and the other filters still AND-narrow on top, and the account scope applies to every result. An agent token with no repo scope falls back to its own tasks only (`effectiveFilters` drops a caller-supplied `assignee`).
+
+So the same `GET /tasks?source=system-cron` legitimately returns different counts per agent (8, 16 and 22 tasks for three agents in SCM-8's investigation): each agent's repo list differs. These counts are correct for that agent and must not be quoted as totals. Client-facing numbers come from the metrics service, which reads with its own account-wide `METRICS_TASK_STORE_TOKEN` (admin token, no agent scope) and states its repo scope; see [`/metrics/system-crons`](./metrics.md#metricssystem-crons-scope-and-bucket-rules).
+
 ### System crons
 
 `/system-crons` (admin-only; agent tokens get `403`) stores system-cron definitions — `id` (lowercase slug), `name`, `schedule` (5-field cron), `timezone` (IANA, default `UTC`), `enabled`, `enabledAt` (stamped on each disabled→enabled flip, `null` while disabled), `titleTemplate`, `descriptionTemplate`, `repoScope` (`"all"` or `"selected"`, default `"all"`), `repos` (array of `org/repo` entries, only meaningful when `repoScope` is `"selected"`) — managed with `GET /system-crons`, `POST /system-crons`, `PATCH /system-crons/:id`, and `POST /system-crons/:id/enable` / `/disable`. The task store does not schedule anything itself: an external scheduler calls `POST /system-crons/:id/fire` with `{ "scheduledFor": "<ISO with Z or offset>", "repos": ["org/repo", ...] }`.
