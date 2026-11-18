@@ -187,15 +187,23 @@ From the starting phase through phase 5, in the current repo's worktree:
 Run each skill using the Skill tool. If any phase fails for this repo, report
 the failure for that repo and stop running further phases **for that repo
 only** — do not run subsequent phases for it, as each depends on the previous
-artifact. Log the failure and proceed to Step 4.
+artifact. Record the failed phase number, name and its error output, then
+proceed to Step 3.5 — the artifacts of the phases that succeeded are still
+committed and published, not discarded.
 
 After phase 5 (or an early stop due to failure) completes for the current
 repo, proceed to Step 3.5 to commit and open a PR with the refresh results.
 
 ### Step 3.5: Commit and Open PR
 
-After all phases have completed successfully for this repo, push the branch to
-origin and open (or update) a PR for the phase-artifact refresh.
+Runs after phase 5 **and** after an early stop, even when a later phase failed,
+as long as at least one phase produced artifacts for this repo. Commit the
+artifacts of the completed phases, push the branch to origin and open (or
+update) a PR for the phase-artifact refresh. If no phase produced artifacts
+(the first phase failed), skip the commit and PR and go to Step 4.
+
+Let `{failed}` be the failed phase (`{N} {name}`, e.g. `4 test-roadmap`) and
+`{error}` its error output, or empty when every phase succeeded.
 
 **Push the branch:**
 
@@ -213,10 +221,18 @@ Where `{branch-name}` is either:
 gh pr list --repo {org}/{repo} --head {branch-name} --state open --json number
 ```
 
-If this command returns a result (PR already exists for this branch), stop here — the push
-already updated the open PR, and no further action is needed. This handles the reused-branch
-case from Step 1, where an earlier-day PR is still open and absorbs today's updates via the
-merged `origin/main` and the newly-pushed phase artifacts.
+If this command returns a result (PR already exists for this branch), the push
+already updated the open PR. This handles the reused-branch case from Step 1,
+where an earlier-day PR is still open and absorbs today's updates via the
+merged `origin/main` and the newly-pushed phase artifacts. If a phase failed,
+also record it on that PR:
+
+```bash
+gh pr comment {pr-number} --repo {org}/{repo} \
+  --body "Partial refresh: phase {N} {name} failed. Completed phases: {list}. Error: {error}"
+```
+
+Then proceed to Step 4. If no phase failed, no further action is needed.
 
 **If no PR exists (fresh-branch case only), create the label and open the PR:**
 
@@ -241,25 +257,46 @@ gh pr create \
   --label shipwright
 ```
 
+When a phase failed, the title and body must name the failed phase and its
+error instead:
+
+```bash
+gh pr create \
+  --title "docs: test-readiness refresh ({YYYYMMDD}) — partial, phase {N} {name} failed" \
+  --body "Automated test-readiness phase-artifact refresh (partial).
+
+Completed phases: {list}
+Failed phase: {N} {name}
+Error: {error}" \
+  --label shipwright
+```
+
 After the PR is open (or updated in the reused-branch case), proceed to Step 4.
 
 ### Step 4: Report
 
 After the repo has been processed, print one summary: which phases
-ran (or "skipped — all artifacts fresh" / "skipped — reuse-merge conflict, needs manual resolution" for
+ran and, if a phase failed, the failed phase (number and name) and its error
+(or "skipped — all artifacts fresh" / "skipped — reuse-merge conflict, needs manual resolution" for
 the open-PR supersession case above), and the number of task-store tasks
 created or updated (from phase 5 output) for that repo. The reuse-merge
 conflict status is reported distinctly from "skipped — all artifacts
 fresh" — the two mean different things (blocked vs. nothing to do) and must
 not be folded together, so a human scanning the summary can immediately spot
-the repo that needs manual conflict resolution on its open PR.
+the repo that needs manual conflict resolution on its open PR. Likewise a
+repo with a failed phase is reported with its failed phase and error, never
+folded into a clean run.
 
 ## Failure handling
 
 If a phase fails:
 - Log which phase failed and include any error output.
-- Do not run subsequent phases.
-- Exit with a clear summary so the run log shows the failure.
+- Do not run subsequent phases for that repo.
+- Still run Step 3.5 so completed phases' artifacts are committed and a PR is
+  opened or updated, with the failed phase and its error named in the PR
+  title/body (or a comment on an existing open PR).
+- List the failed phase and its error for that repo in the Step 4 summary so
+  the run log shows the failure.
 - A failure in the skill itself is always logged.
 
 ## Notes
