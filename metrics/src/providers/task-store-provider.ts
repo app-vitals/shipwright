@@ -49,8 +49,6 @@ const DASHBOARD_TZ = "America/Los_Angeles";
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A repo's latest coverage snapshot older than this is flagged `stale`. */
 const COVERAGE_STALE_DAYS = 14;
-/** Trailing window of snapshot history returned as the coverage trend. */
-const COVERAGE_TREND_DAYS = 30;
 
 // Completed / terminal statuses (treated as "completed").
 const COMPLETED_STATUSES = new Set(["merged", "done", "deployed", "released"]);
@@ -230,8 +228,10 @@ export class TaskStoreProvider implements MetricsProvider {
   }
 
   async query(q: MetricQuery): Promise<MetricTable> {
-    // Coverage is "latest per repo" and carries no date range.
-    if (q.kind === "coverage") return this.coverage();
+    // Coverage: latest per repo is range-independent; the trend uses `range`.
+    if (q.kind === "coverage") {
+      return this.coverage(resolveQueryRange(q.range ?? "today", this.clock));
+    }
     const win = resolveQueryRange(q.range, this.clock);
     switch (q.kind) {
       case "summary":
@@ -681,8 +681,8 @@ export class TaskStoreProvider implements MetricsProvider {
   }
 
   /**
-   * Coverage (CVT-3.1) — the newest snapshot per repo plus a trailing
-   * COVERAGE_TREND_DAYS history. Emits a flat table with a `kind`
+   * Coverage (CVT-3.1) — the newest snapshot per repo plus a
+   * history over the requested range. Emits a flat table with a `kind`
    * discriminator ("repo" | "trend"); api.ts splits it into repos[]/trend[].
    *
    * `deltaVsPrevious` is linesPct minus the previous snapshot's linesPct
@@ -690,13 +690,20 @@ export class TaskStoreProvider implements MetricsProvider {
    * true when the latest `measuredAt` is more than COVERAGE_STALE_DAYS old by
    * the injected clock.
    */
-  private async coverage(): Promise<MetricTable> {
+  private async coverage(win: {
+    from: string;
+    to: string;
+  }): Promise<MetricTable> {
     const nowMs = this.clock.now().getTime();
-    const since = new Date(nowMs - COVERAGE_TREND_DAYS * DAY_MS).toISOString();
-    const [latest, history] = await Promise.all([
+    const toMs = new Date(win.to).getTime();
+    const [latest, rawHistory] = await Promise.all([
       this.taskStore.listLatestCoverage({ repo: this.repo }),
-      this.taskStore.listCoverageHistory({ repo: this.repo, since }),
+      this.taskStore.listCoverageHistory({ repo: this.repo, since: win.from }),
     ]);
+    // The client only supports a lower bound; enforce the upper bound here.
+    const history = rawHistory.filter(
+      (h) => new Date(h.measuredAt).getTime() <= toMs,
+    );
 
     const rows: unknown[][] = [];
     for (const snap of [...latest].sort((a, b) =>

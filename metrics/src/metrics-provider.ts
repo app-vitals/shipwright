@@ -41,8 +41,9 @@ export type MetricQuery =
       range: QueryDateRange;
       groupBy: MergedPrsGroupBy;
     }
-  // Latest coverage per repo + 30-day trend; windowless (always "now").
-  | { kind: "coverage" }
+  // Latest coverage per repo (always "now") + a trend over `range`
+  // (defaults to "today", like the other endpoints).
+  | { kind: "coverage"; range?: QueryDateRange }
   | { kind: "prOutcomes"; range: QueryDateRange }
   | { kind: "tokensTotals"; range: QueryDateRange }
   | { kind: "tokensBySessionType"; range: QueryDateRange }

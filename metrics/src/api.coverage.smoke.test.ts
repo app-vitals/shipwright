@@ -82,7 +82,7 @@ const devAuthDeps: MetricsDeps = {
 describe("GET /metrics/coverage (CVT-3.1)", () => {
   test("200, body matches CoverageResultSchema with repos + trend", async () => {
     const app = createMetricsApp(new Map(), noopAccountsClient, devAuthDeps);
-    const res = await app.request("/metrics/coverage");
+    const res = await app.request("/metrics/coverage?preset=30d");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(() => CoverageResultSchema.parse(body.data)).not.toThrow();
@@ -109,6 +109,38 @@ describe("GET /metrics/coverage (CVT-3.1)", () => {
     expect(
       body.data.trend.map((t: { commitSha: string }) => t.commitSha),
     ).toEqual(["a1", "a2"]);
+  });
+
+  test("no params defaults to today; preset/custom change the trend and meta", async () => {
+    const app = createMetricsApp(new Map(), noopAccountsClient, devAuthDeps);
+    const get = async (qs: string) => {
+      const res = await app.request(`/metrics/coverage${qs}`);
+      expect(res.status).toBe(200);
+      return res.json();
+    };
+    const none = await get("");
+    expect(none.data.trend).toEqual([]);
+    const d7 = await get("?preset=7d");
+    expect(
+      d7.data.trend.map((t: { commitSha: string }) => t.commitSha),
+    ).toEqual(["a2"]);
+    expect(d7.meta.dateRange.from < d7.meta.dateRange.to).toBe(true);
+    const d90 = await get("?preset=90d");
+    expect(
+      d90.data.trend.map((t: { commitSha: string }) => t.commitSha),
+    ).toEqual(["b1", "a1", "a2"]);
+    const custom = await get("?from=2026-06-01&to=2026-06-12");
+    expect(
+      custom.data.trend.map((t: { commitSha: string }) => t.commitSha),
+    ).toEqual(["a1"]);
+    expect(custom.meta.dateRange.from).toContain("2026-06-01");
+  });
+
+  test("invalid custom range → 400", async () => {
+    const app = createMetricsApp(new Map(), noopAccountsClient, devAuthDeps);
+    expect(
+      (await app.request("/metrics/coverage?from=2026-06-01")).status,
+    ).toBe(400);
   });
 
   test("unauthenticated request → 401", async () => {

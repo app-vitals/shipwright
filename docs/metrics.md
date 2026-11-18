@@ -53,7 +53,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
-| GET | `/metrics/coverage` | Latest test coverage per repo plus a 30-day line-coverage trend (CVT-3.1). Takes no date-window params. See the response shape below. |
+| GET | `/metrics/coverage` | Latest test coverage per repo plus a line-coverage trend over the selected date range (CVT-3.1). Accepts `preset` / `from` / `to` like the other endpoints (defaults to `today`); the per-repo latest rows do not depend on the range. See the response shape below. |
 | GET | `/metrics/pr-outcomes` | Read-only PR outcomes per context fingerprint (PAU-1.8): `reviewState` mix, avg `reviewCycles`/`patchCycles`, median time-to-merge over the window between the fingerprint's first and last seen. Response carries `attribution: "window-correlation"` — a time-window correlation, not per-PR attribution. |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
@@ -102,7 +102,7 @@ Authenticated only — there is deliberately no `/public/metrics/coverage` (it r
 }
 ```
 
-`repos` holds the newest snapshot per repo, ordered by repo. `trend` holds every snapshot from the trailing 30 days, oldest first. Staleness is judged against the service clock.
+`repos` holds the newest snapshot per repo, ordered by repo. `trend` holds every snapshot whose `measuredAt` falls inside the requested date range (`preset` or `from`/`to`, defaulting to `today`), oldest first. Staleness is judged against the service clock.
 
 ### `/metrics/merged-prs` and `/public/metrics/merged-prs` response shape
 
@@ -151,7 +151,7 @@ The dashboard renders commit data in two panels:
 - **"PR Commits"** — fleet-wide weighted-average commits per Shipwright PR (weighted by shipwright PR count per repo), broken down by pipeline phase (docs refresh, review patch, CI fix, implementation). Repos with no shipwright PRs or null `avgCommitCount` are excluded from the calculation.
 - **"Merged PRs by repo"** — breakdown of merged PRs by repo and origin (shipwright, ci, dependency_bot, human, unknown) as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
-- **"Coverage by repo"** (CVT-3.2) — reads `/metrics/coverage`. A table with one row per repo (lines %, change vs. the previous snapshot in percentage points, last measured date; rows flagged `stale` are dimmed and badged), plus a line trend chart with one point per snapshot and a repo picker (all repos, or one) that restricts the chart to that repo's series. When no snapshots exist, the section shows an empty state explaining that a repo starts reporting when its CI posts a coverage report to the task store (`POST /coverage-snapshots`). The section is authenticated-only and is omitted entirely from the public read-only dashboard (the page does not fetch `/metrics/coverage` there). The existing per-task "Coverage" panel in Pipeline Quality (reports count and avg delta from `/metrics/summary`) is unchanged.
+- **"Coverage by repo"** (CVT-3.2) — reads `/metrics/coverage`. A table with one row per repo (lines %, change vs. the previous snapshot in percentage points, last measured date; rows flagged `stale` are dimmed and badged), plus a line trend chart with one point per snapshot within the selected date range and a repo picker (all repos, or one) that restricts the chart to that repo's series. When no snapshots exist, the section shows an empty state explaining that a repo starts reporting when its CI posts a coverage report to the task store (`POST /coverage-snapshots`). The section is authenticated-only and is omitted entirely from the public read-only dashboard (the page does not fetch `/metrics/coverage` there). The existing per-task "Coverage" panel in Pipeline Quality (reports count and avg delta from `/metrics/summary`) is unchanged.
 
 ### Origin classification rules
 

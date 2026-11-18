@@ -221,7 +221,7 @@
     // is omitted from the public page, so fetch only when it is present.
     const coverageEl = document.getElementById("coverage-section");
     const coverageRes = coverageEl
-      ? await fetch(`${API_BASE}/coverage`)
+      ? await fetch(`${API_BASE}/coverage?${q}`)
           .then((r) => r.json())
           .catch((err) => {
             console.error("Coverage fetch failed:", err);

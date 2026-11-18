@@ -292,11 +292,16 @@ const coverageRoute = createRoute({
   path: "/metrics/coverage",
   summary: "Latest test coverage per repo with trend",
   description:
-    "Returns the newest coverage snapshot per repo (with the line-coverage delta vs. the previous snapshot and a stale flag when older than 14 days) plus a trailing 30-day line-coverage trend. Takes no date-window params.",
+    "Returns the newest coverage snapshot per repo (with the line-coverage delta vs. the previous snapshot and a stale flag when older than 14 days) plus a line-coverage trend over the selected range (preset=today|7d|30d|90d or custom from/to; defaults to today). The latest-per-repo rows are independent of the range.",
+  request: { query: DateRangeQuerySchema },
   responses: {
     200: {
       description: "Coverage per repo",
       content: { "application/json": { schema: CoverageResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     401: {
       description: "Unauthorized",
@@ -1175,9 +1180,23 @@ function makeCoverageHandler(
   provider: MetricsProvider,
 ): AppHandler<typeof coverageRoute> {
   return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
     const startMs = Date.now();
     try {
-      const result = await provider.query({ kind: "coverage" });
+      const result = await provider.query({
+        kind: "coverage",
+        range: resolveDateRange(preset, from, to),
+      });
       const col = (name: string) => result.columns.indexOf(name);
       const idx = {
         kind: col("kind"),
@@ -1222,7 +1241,7 @@ function makeCoverageHandler(
         wrapResponse(
           { repos, trend },
           {
-            dateRange: { from: nowIso, to: nowIso },
+            dateRange: dateRangeMeta,
             generatedAt: nowIso,
             queryTimeMs: Date.now() - startMs,
           },

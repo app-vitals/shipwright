@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CoverageSnapshotRecord } from "../lib/task-store-client.ts";
 import { FixedClock } from "../lib/test-helpers.ts";
+import type { QueryDateRange } from "../metrics-provider.ts";
 import { TaskStoreProvider } from "./task-store-provider.ts";
 import {
   RecordedAdminMetricsClient,
@@ -65,8 +66,12 @@ function buildProvider(
 
 type Row = Record<string, unknown>;
 
-async function run(provider: TaskStoreProvider, kind: "repo" | "trend") {
-  const t = await provider.query({ kind: "coverage" });
+async function run(
+  provider: TaskStoreProvider,
+  kind: "repo" | "trend",
+  range: QueryDateRange = "30d",
+) {
+  const t = await provider.query({ kind: "coverage", range });
   return t.results
     .map((r) => Object.fromEntries(t.columns.map((c, i) => [c, r[i]])) as Row)
     .filter((r) => r.kind === kind);
@@ -131,6 +136,50 @@ describe("TaskStoreProvider coverage query", () => {
     const repos = await run(provider, "repo");
     expect(repos.find((r) => r.repo === "org/old")?.stale).toBe(true);
     expect(repos.find((r) => r.repo === "org/edge")?.stale).toBe(false);
+  });
+
+  test("trend window follows the requested range (today/7d/30d/90d/custom)", async () => {
+    const provider = buildProvider(
+      [
+        snap("org/alpha", "d80", 10, "2026-04-01T00:00:00.000Z"),
+        snap("org/alpha", "d20", 70, "2026-05-31T00:00:00.000Z"),
+        snap("org/alpha", "d5", 80, "2026-06-15T00:00:00.000Z"),
+        snap("org/alpha", "d0", 82, "2026-06-20T10:00:00.000Z"),
+      ],
+      NOW,
+    );
+    const shas = async (r: QueryDateRange) =>
+      (await run(provider, "trend", r)).map((x) => x.commitSha);
+    expect(await shas("today")).toEqual(["d0"]);
+    expect(await shas("7d")).toEqual(["d5", "d0"]);
+    expect(await shas("30d")).toEqual(["d20", "d5", "d0"]);
+    expect(await shas("90d")).toEqual(["d80", "d20", "d5", "d0"]);
+    // Custom range is bounded on both ends.
+    expect(await shas({ from: "2026-05-01", to: "2026-06-16" })).toEqual([
+      "d20",
+      "d5",
+    ]);
+  });
+
+  test("omitting range defaults to today, like the other endpoints", async () => {
+    const provider = buildProvider(
+      [
+        snap("org/alpha", "d5", 80, "2026-06-15T00:00:00.000Z"),
+        snap("org/alpha", "d0", 82, "2026-06-20T10:00:00.000Z"),
+      ],
+      NOW,
+    );
+    const t = await provider.query({ kind: "coverage" });
+    const trend = t.results.filter((r) => r[0] === "trend");
+    expect(trend).toHaveLength(1);
+  });
+
+  test("repo rows (latest snapshot) are independent of the range", async () => {
+    const provider = buildProvider(
+      [snap("org/alpha", "a1", 80, "2026-06-10T00:00:00.000Z")],
+      NOW,
+    );
+    expect(await run(provider, "repo", "today")).toHaveLength(1);
   });
 
   test("trend covers the trailing 30 days oldest first", async () => {
