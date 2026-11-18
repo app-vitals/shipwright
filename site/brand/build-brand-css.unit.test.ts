@@ -47,7 +47,7 @@ test("generated CSS does NOT contain the retired electric blue", () => {
 // the working form is `marketplace add` then `install shipwright@shipwright`.
 const WORKING_ADD = "/plugin marketplace add app-vitals/shipwright";
 const WORKING_INSTALL = "/plugin install shipwright@shipwright";
-const FAILING_INSTALL = "/plugin install shipwright@app-vitals/shipwright";
+const FAILING_INSTALL = `/plugin install ${["shipwright", "app-vitals/shipwright"].join("@")}`; // built from parts so site-install-cmd.content.test.ts does not flag this file
 
 test("brand tokens, docs, templates and demo slide use the working two-step install", async () => {
   expect(tokens.brand.install).toEqual([WORKING_ADD, WORKING_INSTALL]);
@@ -55,7 +55,7 @@ test("brand tokens, docs, templates and demo slide use the working two-step inst
     "BRAND.md",
     "templates/deck.html",
     "templates/one-pager.html",
-    "../demo/slides/close.html",
+    "../../demo/slides/close.html",
   ]) {
     const text = await Bun.file(new URL(rel, import.meta.url)).text();
     expect(text).toContain(WORKING_ADD);

@@ -1,6 +1,6 @@
 /**
- * brand/admin-theme-tokens.unit.test.ts
- * Guards drift between admin's own theme token subset and brand/tokens.json.
+ * site/brand/admin-theme-tokens.unit.test.ts
+ * Guards drift between admin's own theme token subset and site/brand/tokens.json.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -20,7 +20,7 @@ function leaves(tree: Tree, prefix = ""): [string, string][] {
 }
 
 describe("admin theme tokens", () => {
-  it("is a non-empty subset of brand/tokens.json with identical values", () => {
+  it("is a non-empty subset of site/brand/tokens.json with identical values", () => {
     const adminLeaves = leaves({ color: adminTokens.color } as Tree);
     expect(adminLeaves.length).toBeGreaterThan(0);
     const brandLookup = new Map(leaves({ color: brandTokens.color } as Tree));

@@ -19,7 +19,7 @@ Shipwright Harness is **the open-source (MIT) autonomous delivery agent for Clau
 
 Supporting surfaces (not phased):
 - `site/` — Astro + Tailwind marketing site (**shipwrightharness.com**). Self-contained; **not** a Bun workspace; Playwright smoke tests.
-- `brand/` — locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/` and brand artifacts. Editing brand artifacts triggers the `shipwright-brand` skill.
+- `site/brand/` — locked dark design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/` and brand artifacts; root `brand/tokens.json` holds the metrics dashboard's own (light) palette. Editing brand artifacts triggers the `shipwright-brand` skill.
 - `state/` — git-ignored local JSON task-store fallback + cached review state (only written when the GitHub backend isn't active).
 
 ## Commands

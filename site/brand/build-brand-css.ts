@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
- * Generates `brand/brand.css` from `brand/tokens.json`.
+ * Generates `site/brand/brand.css` from `site/brand/tokens.json`.
  *
  * tokens.json is the single source of truth; this derives the stylesheet
  * (CSS custom properties + a small set of on-brand utility classes) so every
  * Shipwright Harness artifact inherits the tokens by construction rather than
  * by hand-copied hexes. Re-run after editing tokens.json.
  *
- *   bun brand/build-brand-css.ts        # writes brand/brand.css
+ *   cd site && bun brand/build-brand-css.ts   # writes site/brand/brand.css
  */
 
 import tokens from "./tokens.json";
@@ -69,7 +69,7 @@ export function tokensToCss(t: BrandTokens): string {
     vars.push(`  ${base}-tracking: ${tok.tracking};`);
   }
 
-  return `/* GENERATED from brand/tokens.json by build-brand-css.ts — do not edit by hand. */
+  return `/* GENERATED from site/brand/tokens.json by build-brand-css.ts — do not edit by hand. */
 :root {
   color-scheme: dark;
 ${vars.join("\n")}

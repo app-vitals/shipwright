@@ -77,7 +77,7 @@ export interface NavLink {
  * Single source of truth — was hand-rolled separately in BaseLayout and
  * DocsLayout, which let DocsLayout's copies drift and silently drop the
  * "vs Devin" and "Agent Model" links. Centralized here so every nav surface
- * renders the same list. D10-designated link (brand/MESSAGING.md D10) — one
+ * renders the same list. D10-designated link (site/brand/MESSAGING.md D10) — one
  * "vs Devin" entry only, no additional claim text.
  */
 export const PRIMARY_NAV_LINKS: NavLink[] = [

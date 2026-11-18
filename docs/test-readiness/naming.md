@@ -65,7 +65,7 @@ entry point (canary):
 
 | Pattern | Excludes | Why |
 |---|---|---|
-| `**/site/**` | `site/**/*.spec.ts` | Astro marketing site's Playwright suite; run via `cd site && npm test`, not `bun test`. Bun would otherwise try to execute Playwright specs and crash. |
+| `**/site/**/*.spec.ts` | `site/**/*.spec.ts` | Astro marketing site's Playwright suite; run via `cd site && npm test`, not `bun test`. Bun would otherwise try to execute Playwright specs and crash. |
 | `**/metrics/e2e/**` | `metrics/e2e/*.e2e.ts` | Metrics dashboard's Playwright E2E suite; run via `task e2e` / `bunx playwright test`, not `bun test`. |
 | `**/admin/e2e/**` | `admin/e2e/*.e2e.ts` | Admin UI's Playwright E2E suite; run via `cd admin && bunx playwright test`, not `bun test`. |
 | `**/*.canary.test.ts` | any `*.canary.test.ts` file, anywhere | Deployed-target canary suite (`preview/canary/*.canary.test.ts`, running via `task preview:canary`). Canary tests must never run via the default `bun test` scan — same rationale as the e2e exclusions. Also reserved for the future canary-execution skill (`canary-execution` skill contract) to extend the pattern. |

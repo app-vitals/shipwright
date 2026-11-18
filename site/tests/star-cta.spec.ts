@@ -3,7 +3,7 @@ import { REPO_URL } from "../src/consts";
 
 // STAR-1.1: the star conversion path — a hero CTA, a build-time star count,
 // a desktop-visible docs CTA, and UTM-tagged repo links throughout. See
-// brand/MESSAGING.md-adjacent context in the task brief for why: the site
+// site/brand/MESSAGING.md-adjacent context in the task brief for why: the site
 // barely asked for the star before this.
 
 test.beforeEach(async ({ page }) => {

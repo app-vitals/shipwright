@@ -2,18 +2,18 @@
 // Home page — hero, own-it, two-ways, problem, how-it-works, differentiators,
 // demo, social proof (SWW-2.1 + SWW-2.2).
 // No runtime JS, no hardcoded hex colors. Competitor names are surface-scoped
-// (see brand/MESSAGING.md D10) — only the H1/meta phrase and one linked
+// (see site/brand/MESSAGING.md D10) — only the H1/meta phrase and one linked
 // sentence may name a competitor here.
 import InstallCmd from "../components/InstallCmd.astro";
 import { BOOKING_URL, QUICKSTART_URL, REPO_URL, withUtm } from "../consts";
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 // Devin-alternative repositioning (D1): the new canonical H1/tagline
-// hierarchy. See brand/MESSAGING.md §1.
+// hierarchy. See site/brand/MESSAGING.md §1.
 const heroH1 = "The open source alternative to Devin.";
 const heroSubhead =
   "The only MIT-throughout, spec-to-deploy autonomous delivery agent that runs entirely in your own cloud.";
-// Prior canonical tagline — demoted, not deleted (brand/MESSAGING.md §1).
+// Prior canonical tagline — demoted, not deleted (site/brand/MESSAGING.md §1).
 const priorTagline =
   "The open-source autonomous delivery agent for Claude Code.";
 const pageTitle = "Shipwright — Open Source Autonomous Delivery Agent";

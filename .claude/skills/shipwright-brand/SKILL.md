@@ -5,8 +5,8 @@ description: >-
   marketing or brand artifact — e.g. "make a Shipwright one-pager", "create a Shipwright
   Harness slide deck", "design the OG / social image", "build an on-brand landing-page section",
   "Shipwright marketing material", "is this on-brand?", "generate a Shipwright PDF/deck", or when
-  editing anything under `brand/`, the marketing website, or `brand/templates/`. It enforces the
-  locked design system in `brand/BRAND.md` + `brand/tokens.json` so every artifact (website,
+  editing anything under `site/brand/`, the marketing website, or `site/brand/templates/`. It enforces the
+  locked design system in `site/brand/BRAND.md` + `site/brand/tokens.json` so every artifact (website,
   one-pager, deck, video slides, social card, PDF) is on-brand by construction, not by memory.
 ---
 
@@ -17,10 +17,10 @@ description: >-
 Produce **on-brand Shipwright Harness marketing artifacts** by deriving everything from the locked
 brand system — never by hand-picking colors, fonts, or copy. The system lives in:
 
-- **`brand/tokens.json`** — canonical machine-readable tokens (colors, type scale, radii, gradients). The single source of truth.
-- **`brand/BRAND.md`** — the human narrative: voice, logo rules, component patterns, content rules.
-- **`brand/brand.css`** — generated stylesheet (CSS custom properties + utility classes) derived from `tokens.json`.
-- **`brand/templates/`** — starting points: `one-pager.html`, `deck.html`, `social-card.html`.
+- **`site/brand/tokens.json`** — canonical machine-readable tokens (colors, type scale, radii, gradients). The single source of truth.
+- **`site/brand/BRAND.md`** — the human narrative: voice, logo rules, component patterns, content rules.
+- **`site/brand/brand.css`** — generated stylesheet (CSS custom properties + utility classes) derived from `tokens.json`.
+- **`site/brand/templates/`** — starting points: `one-pager.html`, `deck.html`, `social-card.html`.
 
 ## The lock (non-negotiable)
 
@@ -31,20 +31,20 @@ brand system — never by hand-picking colors, fonts, or copy. The system lives 
 ## Workflow (every artifact)
 
 1. **Refresh the stylesheet** so it matches current tokens:
-   `bun brand/build-brand-css.ts`  → writes `brand/brand.css`.
-2. **Start from the matching template** in `brand/templates/` (copy it; don't author from scratch).
+   `bun site/brand/build-brand-css.ts`  → writes `site/brand/brand.css`.
+2. **Start from the matching template** in `site/brand/templates/` (copy it; don't author from scratch).
 3. **Fill content** following the voice + hard content rules below. Keep the brand-vs-package naming rule.
 4. **Lint the result** — fails on any off-palette color:
-   `bun brand/brand-lint.ts <your-file.html>`  → fix every flagged hex (replace with a token/variable).
-5. **For a single-file deliverable** (PDF, email, embedded): inline `brand/brand.css` into a `<style>` block so the artifact is self-contained. **For a PDF:** open the HTML and print to PDF (or `bunx playwright` screenshot). **For an OG/social PNG:** screenshot the `.og` element at exactly 1280×640.
+   `bun site/brand/brand-lint.ts <your-file.html>`  → fix every flagged hex (replace with a token/variable).
+5. **For a single-file deliverable** (PDF, email, embedded): inline `site/brand/brand.css` into a `<style>` block so the artifact is self-contained. **For a PDF:** open the HTML and print to PDF (or `bunx playwright` screenshot). **For an OG/social PNG:** screenshot the `.og` element at exactly 1280×640.
 
 ## Modes
 
 | Mode | Template | Output |
 |---|---|---|
-| One-pager | `brand/templates/one-pager.html` | Self-contained HTML → PDF (dev- or leader-facing) |
-| Slide deck | `brand/templates/deck.html` | Full-viewport slides; also the source for video slides |
-| Social / OG | `brand/templates/social-card.html` | 1280×640 PNG (link previews, announcements) |
+| One-pager | `site/brand/templates/one-pager.html` | Self-contained HTML → PDF (dev- or leader-facing) |
+| Slide deck | `site/brand/templates/deck.html` | Full-viewport slides; also the source for video slides |
+| Social / OG | `site/brand/templates/social-card.html` | 1280×640 PNG (link previews, announcements) |
 | Web component | `brand.css` variables + utility classes | On-brand section/snippet for the marketing site (map tokens into the site's Tailwind config) |
 
 ## Hard content rules (from BRAND.md §5 — every public artifact)
@@ -58,4 +58,4 @@ brand system — never by hand-picking colors, fonts, or copy. The system lives 
 
 ## Reference
 
-Read `brand/BRAND.md` for the full system (color roles, type scale, logo/mark rules, component patterns, OG spec). Change a token in `brand/tokens.json` → re-run step 1 → every artifact follows. Never hardcode a value that exists as a token.
+Read `site/brand/BRAND.md` for the full system (color roles, type scale, logo/mark rules, component patterns, OG spec). Change a token in `site/brand/tokens.json` → re-run step 1 → every artifact follows. Never hardcode a value that exists as a token.

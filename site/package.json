@@ -10,7 +10,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "test": "playwright test",
-    "brand-lint": "bun ../brand/brand-lint.ts $(find dist -type f \\( -name '*.html' -o -name '*.css' \\) -not -path 'dist/pagefind/*')",
+    "brand-lint": "bun brand/brand-lint.ts $(find dist -type f \\( -name '*.html' -o -name '*.css' \\) -not -path 'dist/pagefind/*')",
     "build:check": "astro build && npm run brand-lint"
   },
   "dependencies": {
