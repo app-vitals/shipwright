@@ -380,7 +380,12 @@ Anything the audit couldn't determine without a human call. Common entries:
         `test-system.md`'s **Coverage toolchain:** and **Coverage report path:** fields,
         taken from the contract's per-language recipe table;
       - a check that the CI workflow running the upload also runs on pushes to the default
-        branch, since the reader ignores artifacts from any other branch.
+        branch, since the reader ignores artifacts from any other branch;
+      - a starter `.shipwright/coverage.json` to create, per the contract's "Path exclusions"
+        section: `maxExcludedPct` set to a conservative `5`, empty `excludePrefixes` and
+        `excludeSubstrings` arrays (no exclusions at the start), and an instruction that the
+        repo's own coverage gate must read this file rather than hardcode its own exclusion
+        list, so the gate and the reader report the same post-exclusion figure.
     - **If the reader returned a result (the repo is reporting):** emit nothing.
     Name no specific repo, workflow, job or step in the task — it is derived from the
     recorded toolchain and the contract alone.

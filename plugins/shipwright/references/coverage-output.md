@@ -109,6 +109,23 @@ post-exclusion figure as the gate.
 }
 ```
 
+### Starter file for a new repo
+
+A repo that starts publishing coverage creates the file up front, with no
+exclusions and a conservative ceiling, and points its CI gate at it instead
+of hardcoding an exclusion list in the gate:
+
+```json
+{
+  "maxExcludedPct": 5,
+  "excludePrefixes": [],
+  "excludeSubstrings": []
+}
+```
+
+Add an entry (with a `reason`) only when the gate genuinely needs to drop a
+path.
+
 ### Semantics
 
 - **Prefix entries** match the lcov `SF:` path with `startsWith`;
