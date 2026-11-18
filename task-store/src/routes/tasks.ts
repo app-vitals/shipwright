@@ -26,7 +26,7 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -1024,6 +1024,7 @@ export function createTasksRoutes(
     // PLU-2.5: same registered-list guarantee for originKind.
     const owner = c.req.query("owner");
     const originKind = c.req.query("originKind") as OriginKind | undefined;
+    const originRef = c.req.query("originRef");
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
@@ -1050,6 +1051,7 @@ export function createTasksRoutes(
           assignee: c.req.query("assignee"),
           owner,
           originKind,
+          originRef,
           hitl,
           kind,
         },
@@ -1075,6 +1077,7 @@ export function createTasksRoutes(
           assignee: c.req.query("assignee"),
           owner,
           originKind,
+          originRef,
           hitl,
           kind,
         },
@@ -1113,6 +1116,7 @@ export function createTasksRoutes(
       branch: c.req.query("branch"),
       owner,
       originKind,
+      originRef,
       hitl,
       kind,
       limit:

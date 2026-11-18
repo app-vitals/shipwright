@@ -92,6 +92,40 @@ describeOrSkip("task provenance (integration)", () => {
     ).toBe(0);
   });
 
+  it("list filters on originRef (exact) and combines with originKind", async () => {
+    await service.create({
+      id: "r-a",
+      title: "A",
+      status: "pending",
+      repo: null,
+      originKind: "cron",
+      originRef: "test-readiness",
+    });
+    await service.create({
+      id: "r-b",
+      title: "B",
+      status: "pending",
+      repo: null,
+      originKind: "cron",
+      originRef: "docs-freshness",
+    });
+    await service.create({
+      id: "r-c",
+      title: "C",
+      status: "pending",
+      repo: null,
+      originKind: "skill",
+      originRef: "test-readiness",
+    });
+    const ids = async (f: Parameters<TaskService["list"]>[0]) =>
+      (await service.list(f)).tasks.map((t) => t.id).sort();
+    expect(
+      await ids({ originKind: "cron", originRef: "test-readiness" }),
+    ).toEqual(["r-a"]);
+    expect(await ids({ originRef: "test-readiness" })).toEqual(["r-a", "r-c"]);
+    expect(await ids({ originRef: "Test readiness" })).toEqual([]);
+  });
+
   it("listReady and listBlocked honor the filters", async () => {
     await seed();
     const ready = await service.listReady(undefined, undefined, {
