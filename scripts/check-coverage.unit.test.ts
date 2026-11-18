@@ -19,19 +19,22 @@
  * instead of real file reads, so no process.exit or filesystem I/O is involved.
  * main()'s thin I/O/CLI wiring beyond runCli is intentionally left uncovered,
  * consistent with this repo's process-entrypoint exclusion convention (see
- * EXCLUDE_PREFIXES in check-coverage.ts).
+ * the excludePrefixes in .shipwright/coverage.json).
  *
  * extractCoverageTool and selectParser (the MTC-1.6 per-repo coverage-tool
  * dispatch) live in and are tested by coverage-tool-dispatch.ts /
  * coverage-tool-dispatch.unit.test.ts.
  */
 import { describe, expect, test } from "bun:test";
+import type { ExclusionConfig } from "../plugins/shipwright/scripts/coverage/exclusions.ts";
+import { parseExclusionConfig } from "../plugins/shipwright/scripts/coverage/exclusions.ts";
 import type { FileStats } from "./check-coverage";
 import {
   aggregateStats,
   CoveragePyParser,
   computeAggregateLinePct,
   computeFailures,
+  excludedShare,
   filterRelevantFiles,
   GoCoverParser,
   IstanbulParser,
@@ -40,6 +43,18 @@ import {
   percentOf,
   runCli,
 } from "./check-coverage";
+
+const cfg = (
+  prefixes: string[] = [],
+  substrings: string[] = [],
+  maxExcludedPct = 100,
+): ExclusionConfig => ({
+  maxExcludedPct,
+  excludePrefixes: prefixes.map((path) => ({ path, reason: "test" })),
+  excludeSubstrings: substrings.map((path) => ({ path, reason: "test" })),
+});
+const NO_EXCLUSIONS = JSON.stringify(cfg());
+const exclusionsJson = (c: ExclusionConfig) => JSON.stringify(c);
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -346,7 +361,7 @@ describe("filterRelevantFiles", () => {
   ];
 
   test("excludes files matching an exclude prefix", () => {
-    const result = filterRelevantFiles(files, ["admin/src/main.ts"], []);
+    const result = filterRelevantFiles(files, cfg(["admin/src/main.ts"]));
     expect(result.map((f) => f.path)).toEqual([
       "node_modules/foo/index.js",
       "admin/prisma/client/index.ts",
@@ -355,7 +370,7 @@ describe("filterRelevantFiles", () => {
   });
 
   test("excludes files matching an exclude substring regardless of prefix", () => {
-    const result = filterRelevantFiles(files, [], ["prisma/client/"]);
+    const result = filterRelevantFiles(files, cfg([], ["prisma/client/"]));
     expect(result.map((f) => f.path)).toEqual([
       "node_modules/foo/index.js",
       "admin/src/main.ts",
@@ -366,8 +381,7 @@ describe("filterRelevantFiles", () => {
   test("applies both prefix and substring exclusions together", () => {
     const result = filterRelevantFiles(
       files,
-      ["node_modules/"],
-      ["prisma/client/"],
+      cfg(["node_modules/"], ["prisma/client/"]),
     );
     expect(result.map((f) => f.path)).toEqual([
       "admin/src/main.ts",
@@ -378,19 +392,18 @@ describe("filterRelevantFiles", () => {
   test("keeps files that match neither prefix nor substring exclusions", () => {
     const result = filterRelevantFiles(
       files,
-      ["some/other/prefix.ts"],
-      ["some-other-substring"],
+      cfg(["some/other/prefix.ts"], ["some-other-substring"]),
     );
     expect(result).toEqual(files);
   });
 
   test("returns an empty array when every file is excluded", () => {
-    const result = filterRelevantFiles(files, [""], []);
+    const result = filterRelevantFiles(files, cfg([""]));
     expect(result).toEqual([]);
   });
 
   test("returns an empty array for empty input", () => {
-    expect(filterRelevantFiles([], ["node_modules/"], [])).toEqual([]);
+    expect(filterRelevantFiles([], cfg(["node_modules/"]))).toEqual([]);
   });
 });
 
@@ -488,10 +501,10 @@ describe("computeAggregateLinePct", () => {
     ];
 
     // (38 + 30) / (40 + 60) * 100 = 68
-    expect(computeAggregateLinePct(files)).toBe(68);
+    expect(computeAggregateLinePct(files, cfg())).toBe(68);
   });
 
-  test("excludes files matching EXCLUDE_PREFIXES from the aggregate", () => {
+  test("excludes files matching an excluded prefix from the aggregate", () => {
     const files = [
       { path: "agent/src/foo.ts", lf: 40, lh: 40, fnf: 4, fnh: 4 },
       {
@@ -504,10 +517,10 @@ describe("computeAggregateLinePct", () => {
     ];
 
     // node_modules/ is excluded, so only foo.ts counts: 40/40 = 100
-    expect(computeAggregateLinePct(files)).toBe(100);
+    expect(computeAggregateLinePct(files, cfg(["node_modules/"]))).toBe(100);
   });
 
-  test("excludes files matching EXCLUDE_SUBSTRINGS from the aggregate", () => {
+  test("excludes files matching an excluded substring from the aggregate", () => {
     const files = [
       { path: "agent/src/foo.ts", lf: 10, lh: 5, fnf: 1, fnh: 1 },
       {
@@ -520,18 +533,20 @@ describe("computeAggregateLinePct", () => {
     ];
 
     // prisma/client/ is excluded, so only foo.ts counts: 5/10 = 50
-    expect(computeAggregateLinePct(files)).toBe(50);
+    expect(computeAggregateLinePct(files, cfg([], ["prisma/client/"]))).toBe(
+      50,
+    );
   });
 
   test("returns 100 when there are no relevant files (no lines found, not a failure)", () => {
-    expect(computeAggregateLinePct([])).toBe(100);
+    expect(computeAggregateLinePct([], cfg())).toBe(100);
   });
 
   test("returns 100 when total lines-found across relevant files is zero", () => {
     const files = [
       { path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 },
     ];
-    expect(computeAggregateLinePct(files)).toBe(100);
+    expect(computeAggregateLinePct(files, cfg())).toBe(100);
   });
 });
 
@@ -928,6 +943,7 @@ describe("runCli", () => {
   test("returns 1 and logs an error when the lcov file can't be read", async () => {
     const { fn: error, messages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.reject(new Error("ENOENT")),
       log: () => {},
       error,
@@ -947,6 +963,8 @@ describe("runCli", () => {
       "end_of_record",
     ].join("\n");
     const exitCode = await runCli({
+      readExclusions: () =>
+        Promise.resolve(exclusionsJson(cfg(["node_modules/"]))),
       readLcov: () => Promise.resolve(excludedOnlyLcov),
       log,
     });
@@ -959,6 +977,7 @@ describe("runCli", () => {
   test("returns 0 and logs success when lines and functions both meet threshold", async () => {
     const { fn: log, messages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(PASSING_LCOV),
       log,
     });
@@ -973,6 +992,7 @@ describe("runCli", () => {
   test("returns 1 and logs the failure reason when line coverage is below threshold", async () => {
     const { fn: error, messages: errMessages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(FAILING_LCOV),
       log: () => {},
       error,
@@ -995,6 +1015,7 @@ describe("runCli", () => {
       "end_of_record",
     ].join("\n");
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(bothFailingLcov),
       log: () => {},
       error,
@@ -1011,6 +1032,7 @@ describe("runCli", () => {
   test("uses LcovParser (default behavior) when readCoverageToolDoc is not provided", async () => {
     const { fn: log, messages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(PASSING_LCOV),
       log,
     });
@@ -1023,6 +1045,7 @@ describe("runCli", () => {
   test("uses LcovParser when readCoverageToolDoc resolves to content with no tool field", async () => {
     const { fn: log, messages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(PASSING_LCOV),
       readCoverageToolDoc: () =>
         Promise.resolve("- **Some other field:** `not-a-tool-field`"),
@@ -1037,6 +1060,7 @@ describe("runCli", () => {
   test("uses LcovParser when readCoverageToolDoc throws (e.g. missing doc file)", async () => {
     const { fn: log, messages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(PASSING_LCOV),
       readCoverageToolDoc: () => Promise.reject(new Error("ENOENT")),
       log,
@@ -1050,6 +1074,7 @@ describe("runCli", () => {
   test("still fails the gate correctly using LcovParser when readCoverageToolDoc records lcov explicitly", async () => {
     const { fn: error, messages: errMessages } = makeLogSpy();
     const exitCode = await runCli({
+      readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
       readLcov: () => Promise.resolve(FAILING_LCOV),
       readCoverageToolDoc: () =>
         Promise.resolve(
@@ -1079,6 +1104,7 @@ describe("runCli", () => {
       const exitCode = await runCli({
         // lcov content — the report file check-coverage.ts always reads,
         // regardless of the recorded tool — fed to a mismatched parser.
+        readExclusions: () => Promise.resolve(NO_EXCLUSIONS),
         readLcov: () => Promise.resolve(PASSING_LCOV),
         readCoverageToolDoc: () => Promise.resolve(toolDoc),
         log,
@@ -1098,4 +1124,192 @@ describe("runCli", () => {
       );
     },
   );
+});
+
+// Fixture with an excluded entrypoint and an excluded generated file.
+// Counted: 90/100 (lines). Excluded: 8 + 12 = 20 of 120 total (16.67%).
+const EXCLUSION_LCOV = [
+  "SF:agent/src/example.ts",
+  "FNF:2",
+  "FNH:2",
+  "LF:100",
+  "LH:90",
+  "end_of_record",
+  "SF:admin/src/main.ts",
+  "FNF:1",
+  "FNH:0",
+  "LF:8",
+  "LH:0",
+  "end_of_record",
+  "SF:task-store/prisma/client/index.js",
+  "FNF:1",
+  "FNH:0",
+  "LF:12",
+  "LH:0",
+  "end_of_record",
+].join("\n");
+
+describe("excludedShare", () => {
+  test("reports excluded lines and their percent of all lines", () => {
+    const files = LcovParser.parse(EXCLUSION_LCOV);
+    const share = excludedShare(
+      files,
+      cfg(["admin/src/main.ts"], ["prisma/client/"]),
+    );
+    expect(share.lines).toBe(20);
+    expect(share.pct).toBeCloseTo(16.667, 2);
+  });
+
+  test("is zero with no exclusions or no lines", () => {
+    expect(excludedShare(LcovParser.parse(EXCLUSION_LCOV), cfg())).toEqual({
+      lines: 0,
+      pct: 0,
+    });
+    expect(excludedShare([], cfg(["x"]))).toEqual({ lines: 0, pct: 0 });
+  });
+});
+
+describe("runCli exclusion gate", () => {
+  const run = async (exclusions: () => Promise<string>) => {
+    const { fn: log, messages: logs } = makeLogSpy();
+    const { fn: error, messages: errors } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(EXCLUSION_LCOV),
+      readExclusions: exclusions,
+      log,
+      error,
+    });
+    return { exitCode, logs, errors };
+  };
+  const json = (c: ExclusionConfig) => () => Promise.resolve(exclusionsJson(c));
+
+  test("prints the excluded share next to Lines", async () => {
+    const { exitCode, logs } = await run(
+      json(cfg(["admin/src/main.ts"], ["prisma/client/"], 20)),
+    );
+    expect(exitCode).toBe(0);
+    expect(
+      logs.some((m) =>
+        m.includes("Lines:     90.00% (90/100, excluding 20 lines, 16.7%)"),
+      ),
+    ).toBe(true);
+  });
+
+  test("fails when the excluded share exceeds maxExcludedPct", async () => {
+    const { exitCode, errors } = await run(
+      json(cfg(["admin/src/main.ts"], ["prisma/client/"], 10)),
+    );
+    expect(exitCode).toBe(1);
+    expect(errors.some((m) => m.includes("maxExcludedPct 10%"))).toBe(true);
+  });
+
+  test("passes when the share equals maxExcludedPct", async () => {
+    const files = LcovParser.parse(EXCLUSION_LCOV);
+    const c = cfg(["admin/src/main.ts"], ["prisma/client/"]);
+    c.maxExcludedPct = excludedShare(files, c).pct;
+    const { exitCode } = await run(json(c));
+    expect(exitCode).toBe(0);
+  });
+
+  test("fails on a dead entry that matches no file in the report", async () => {
+    const { exitCode, errors } = await run(
+      json(cfg(["admin/src/main.ts", "gone/file.ts"], ["prisma/client/"], 100)),
+    );
+    expect(exitCode).toBe(1);
+    expect(
+      errors.some((m) => m.includes("dead") && m.includes("gone/file.ts")),
+    ).toBe(true);
+  });
+
+  test("fails on an entry without a reason, naming the entry", async () => {
+    const bad = JSON.stringify({
+      maxExcludedPct: 100,
+      excludePrefixes: [{ path: "admin/src/main.ts" }],
+      excludeSubstrings: [],
+    });
+    const { exitCode, errors } = await run(() => Promise.resolve(bad));
+    expect(exitCode).toBe(1);
+    expect(
+      errors.some(
+        (m) => m.includes("admin/src/main.ts") && m.includes("reason"),
+      ),
+    ).toBe(true);
+  });
+
+  test("fails on an entry with a blank reason", async () => {
+    const bad = JSON.stringify({
+      maxExcludedPct: 100,
+      excludePrefixes: [{ path: "admin/src/main.ts", reason: "  " }],
+      excludeSubstrings: [],
+    });
+    const { exitCode } = await run(() => Promise.resolve(bad));
+    expect(exitCode).toBe(1);
+  });
+
+  test("fails on invalid JSON", async () => {
+    const { exitCode, errors } = await run(() => Promise.resolve("{nope"));
+    expect(exitCode).toBe(1);
+    expect(errors.some((m) => m.includes("invalid JSON"))).toBe(true);
+  });
+
+  test("fails on wrong types", async () => {
+    const bad = JSON.stringify({
+      maxExcludedPct: "lots",
+      excludePrefixes: [],
+      excludeSubstrings: [],
+    });
+    const { exitCode, errors } = await run(() => Promise.resolve(bad));
+    expect(exitCode).toBe(1);
+    expect(errors.some((m) => m.includes("maxExcludedPct"))).toBe(true);
+  });
+
+  test("fails when the exclusion file is missing", async () => {
+    const { exitCode, errors } = await run(() =>
+      Promise.reject(new Error("ENOENT")),
+    );
+    expect(exitCode).toBe(1);
+    expect(errors.some((m) => m.includes(".shipwright/coverage.json"))).toBe(
+      true,
+    );
+  });
+});
+
+describe("repo exclusion file (.shipwright/coverage.json)", () => {
+  test("parses, and every entry has a non-empty reason", async () => {
+    const config = parseExclusionConfig(
+      await Bun.file(".shipwright/coverage.json").text(),
+    );
+    const entries = [...config.excludePrefixes, ...config.excludeSubstrings];
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) expect(e.reason.trim()).not.toBe("");
+  });
+});
+
+describe("gate/reader parity", () => {
+  test("gate and reader report the same line percentage for one lcov fixture", async () => {
+    const config = cfg(["admin/src/main.ts"], ["prisma/client/"], 100);
+    const gatePct = computeAggregateLinePct(
+      LcovParser.parse(EXCLUSION_LCOV),
+      config,
+    );
+
+    const { normalizeReports } = await import(
+      "../plugins/shipwright/scripts/coverage/normalize.ts"
+    );
+    const { isExcludedPath } = await import(
+      "../plugins/shipwright/scripts/coverage/exclusions.ts"
+    );
+    const reader = normalizeReports(
+      [{ name: "lcov.info", content: EXCLUSION_LCOV }],
+      (p) => isExcludedPath(config, p),
+    );
+    expect(reader).not.toBeNull();
+    const readerPct =
+      ((reader?.lines.covered ?? 0) / (reader?.lines.total ?? 1)) * 100;
+
+    expect(gatePct).toBeCloseTo(readerPct, 10);
+    expect(reader?.excludedLines).toBe(
+      excludedShare(LcovParser.parse(EXCLUSION_LCOV), config).lines,
+    );
+  });
 });

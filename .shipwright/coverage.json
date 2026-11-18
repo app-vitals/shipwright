@@ -1,0 +1,43 @@
+{
+  "maxExcludedPct": 6,
+  "excludePrefixes": [
+    {
+      "path": "admin/src/main.ts",
+      "reason": "Process entrypoint — starts a real service or needs live credentials/infra (DB, Docker, mise, GitHub auth); exercised in practice, not under unit/integration test. Admin composition root; the platform admin it boots ships in @app-vitals/agent-admin (node_modules/)."
+    },
+    {
+      "path": "task-store/src/main.ts",
+      "reason": "Process entrypoint — starts a real service or needs live credentials/infra (DB, Docker, mise, GitHub auth); exercised in practice, not under unit/integration test. Admin composition root; the platform admin it boots ships in @app-vitals/agent-admin (node_modules/)."
+    },
+    {
+      "path": "scripts/seed-task-store-token.ts",
+      "reason": "Local-dev-only seed script — invoked only by `task stack` against a live database; pure logic is unit-tested and exported, only the import.meta.main CLI/DB-wiring block is uncovered."
+    },
+    {
+      "path": "scripts/seed-chat-tokens.ts",
+      "reason": "Local-dev-only seed script — invoked only by `task stack` against a live database; pure logic is unit-tested and exported, only the import.meta.main CLI/DB-wiring block is uncovered."
+    },
+    {
+      "path": "scripts/seed-dev-agent.ts",
+      "reason": "Local-dev-only seed script — invoked only by `task stack` against a live database; pure logic is unit-tested and exported, only the import.meta.main CLI/DB-wiring block is uncovered."
+    },
+    {
+      "path": "scripts/wait-for-agent.ts",
+      "reason": "Local-dev-only seed script — invoked only by `task stack` against a live database; pure logic is unit-tested and exported, only the import.meta.main CLI/DB-wiring block is uncovered."
+    },
+    {
+      "path": "scripts/hitl-log-file-tee-target.ts",
+      "reason": "hitl.ts's real (production) global-patching target for its log-file tee (installLogFileTee()) — every line only reads or reassigns real process.stdout.write/process.stderr.write/console.*, which can't be exercised safely in-process (the repo's isolation contract forbids patching real process/console state in the shared `bun test` process; see hitl.integration.test.ts's subprocess fixture). installLogFileTee()'s own pure logic is unit-tested in hitl.unit.test.ts via an injected fake LogFileTeeTarget; only this small dedicated file is excluded, not hitl.ts as a whole (HTL-1.1 / PR review, 2026-08-20)."
+    },
+    {
+      "path": "metrics/src/dashboard/app.js",
+      "reason": "Browser-loaded dashboard client — a plain (non-module) <script>, mostly DOM manipulation and chart rendering with no in-process request seam to unit test. Its pure, injectable-fetch logic (fetchSequential) is unit-tested via a guarded test-only export (see app.unit.test.js); that export requires importing the whole file, which would otherwise drag ~1000 lines of untestable DOM code into the aggregate gate."
+    }
+  ],
+  "excludeSubstrings": [
+    {
+      "path": "prisma/client/",
+      "reason": "Generated Prisma client code"
+    }
+  ]
+}

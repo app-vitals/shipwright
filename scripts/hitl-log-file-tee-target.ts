@@ -2,7 +2,7 @@
  * scripts/hitl-log-file-tee-target.ts
  * The real (production) LogFileTeeTarget for hitl.ts's installLogFileTee() —
  * split into its own file so it can be excluded from the aggregate coverage
- * gate (scripts/check-coverage.ts's EXCLUDE_PREFIXES) without hiding any of
+ * gate (.shipwright/coverage.json's excludePrefixes) without hiding any of
  * hitl.ts's actual pure logic from that gate.
  *
  * Every line in this file does nothing but read or reassign real global
@@ -15,7 +15,7 @@
  * hitl.integration.test.ts instead.
  *
  * Mirrors the existing "process entrypoints" precedent in
- * check-coverage.ts's EXCLUDE_PREFIXES (e.g. admin/src/main.ts,
+ * .shipwright/coverage.json's excludePrefixes (e.g. admin/src/main.ts,
  * task-store/src/main.ts): a thin file whose only content is unavoidably
  * untestable wiring, with all the actual pure logic (createTeeWriter,
  * buildTeeConsoleMethod, createAppendLineSink, installLogFileTee's own
