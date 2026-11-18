@@ -50,7 +50,7 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 - `app-vitals/shipwright`: prose/comment consumers listed under Requirements — update path wording
 - `app-vitals/shipwright`: `plugins/shipwright/` (shipwright-brand skill) — update path resolution
 
-**Testing Strategy**: Layer: unit — pure path/content move, existing unit tests re-run at new location with no logic change.
+**Testing Strategy**: Layer: unit — pure path/content move, existing unit tests re-run at new location with no logic change beyond one relative-path fix (`build-brand-css.unit.test.ts` reads `../demo/slides/close.html`, which becomes `../../demo/slides/close.html`).
 
 ---
 
@@ -185,7 +185,7 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 
 | Feature | Layer | Rationale |
 |---------|-------|-----------|
-| Feature 1: Relocate dark brand | unit | Pure path/content move; existing unit tests re-run unchanged at new location |
+| Feature 1: Relocate dark brand | unit | Pure path/content move; existing unit tests re-run at new location; only `build-brand-css.unit.test.ts`'s `../demo/slides/close.html` path needs a one-line fix |
 | Feature 2: PWA-manifest source decision | unit | Existing `pwa.unit.test.ts` is sufficient coverage; no new logic |
 | Feature 3: New shipwright tokens.json | unit | Static JSON content check against live CSS, no I/O |
 | Feature 4: New agent/admin/src/brand-tokens.json | unit | Static JSON content check against live styles, no I/O |
@@ -200,7 +200,7 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 
 ## Success Criteria
 
-- The old `shipwright/brand/` contents no longer exist at repo root; they're at `shipwright/site/brand/` with identical content, and every prior consumer still works unchanged.
+- The old `shipwright/brand/` contents no longer exist at repo root; they're at `shipwright/site/brand/` with identical content, and every prior consumer still works with its path updated (including the one relative `../demo/slides/close.html` path in `build-brand-css.unit.test.ts`).
 - `shipwright/brand/tokens.json` exists at the repo root with `color`(+`font`) values matching the live metrics dashboard exactly.
 - `agent/admin/src/brand-tokens.json` exists, exported via `@app-vitals/agent-admin`, with values matching the live admin UI exactly.
 - A drift test fails if the shared-base values between the two new files and `toolbar.ts` disagree.
