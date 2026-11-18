@@ -141,4 +141,49 @@ describe("registerPlanningSessions", () => {
     const res = await run(store.client);
     expect(res.errors).toEqual(["x: store down"]);
   });
+
+  it("skips documents homed in another repo and still links tasks", async () => {
+    const task: TaskRow = { id: "T-1", source: "planning/x/PLAN.md", planDocumentId: null };
+    const store = fakeStore([task]);
+    await run(store.client); // repo A ("org/repo") registers first
+    const rootB = mkdtempSync(join(tmpdir(), "plan-reg-b-"));
+    try {
+      const dir = join(rootB, "planning", "x");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "PLAN.md"), "# Other title\n");
+      const runB = () =>
+        registerPlanningSessions({
+          client: store.client,
+          source: localContentSource(rootB),
+          repo: "org/other",
+          clock,
+        });
+      const before = store.docs.map((d) => ({ ...d }));
+      const res = await runB();
+      expect(res.created).toBe(0);
+      expect(res.updated).toBe(0);
+      expect(res.reported).toEqual([
+        {
+          path: "planning/x/PLAN.md",
+          reason: "skipped: document homed in another repo (org/repo)",
+        },
+      ]);
+      expect(store.docs).toEqual(before);
+      expect(store.docs.find((d) => d.kind === "plan")?.title).toBe("The plan");
+      const again = await runB();
+      expect(again.created + again.updated).toBe(0);
+      const rerunA = await run(store.client);
+      expect(rerunA.created + rerunA.updated).toBe(0);
+      // Repo A's run already linked T-1 to the existing document; a task still
+      // unlinked is linked from repo B too.
+      task.planDocumentId = null;
+      const linkRes = await runB();
+      expect(linkRes.linked).toBe(1);
+      expect<string | null>(task.planDocumentId).toBe(
+        store.docs.find((d) => d.kind === "plan")?.id ?? null,
+      );
+    } finally {
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
 });
