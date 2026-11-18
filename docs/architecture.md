@@ -92,7 +92,7 @@ The chat service (web chat threads, messages, and scoped agent tokens) is hosted
 | Surface | Directory | Notes |
 |---|---|---|
 | Marketing site | `site/` | Astro + Tailwind (**shipwrightharness.com**). **Not** a Bun workspace; Playwright smoke tests (`*.spec.ts`). |
-| Brand system | `brand/` | Locked design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. |
+| Brand system | `site/brand/` | Locked dark design system (`BRAND.md`, `tokens.json`) + CSS build + lint, consumed by `site/`. Root `brand/tokens.json` documents the metrics dashboard's palette. |
 | Preview environment | `scripts/preview-env.ts`, `preview/canary/` | Throwaway full-stack cluster for CI (`task preview:up`, `task preview:canary`) using `charts/shipwright/examples/values-preview.yaml`. See [deploy-kubernetes-providers.md](./deploy-kubernetes-providers.md#preview-throwaway-ci-clusters). |
 | Local state | `state/` | Git-ignored JSON fallback (local-only, used when the Postgres task-store service is unavailable) + cached review state. |
 
@@ -109,7 +109,7 @@ shipwright/
 ├── task-store/           D — Task queue service: Postgres + Prisma, exports @shipwright/task-store
 ├── mcp-server/           D — MCP server: exposes task-store API as Model Context Protocol tools (generated from OpenAPI spec)
 ├── site/                 marketing site (Astro, separate toolchain)
-├── brand/                locked design system
+├── brand/                dashboard palette tokens (dark design system: site/brand/)
 ├── state/                local task-store / review-cache fallback
 ├── docs/                 this documentation
 └── Taskfile.yml          single local entrypoint (task setup / ci / test / …)
