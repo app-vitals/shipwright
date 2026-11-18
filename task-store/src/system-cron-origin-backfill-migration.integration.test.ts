@@ -56,6 +56,7 @@ describeOrSkip("system-cron origin backfill migration (integration)", () => {
     for (const [id, name] of [
       ["test-readiness", "Test readiness"],
       ["docs-freshness", "Docs freshness"],
+      ["docs", "Docs"], // hyphen-prefix of docs-freshness: longest id must win
     ]) {
       await prisma.systemCronDefinition.create({
         data: {
