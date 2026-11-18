@@ -235,3 +235,63 @@ describe("test-readiness — Step 1.5 records coverage before the phase loop", (
     expect(section).not.toContain("shipwright-coverage");
   });
 });
+
+describe("test-readiness — SCM-8.1 partial-refresh PR on early stop", () => {
+  const content = readSkill();
+  const s35Idx = content.indexOf("### Step 3.5:");
+  const s4Idx = content.indexOf("### Step 4:");
+  const failIdx = content.indexOf("## Failure handling");
+  const step35 = content.slice(s35Idx, s4Idx);
+  const step4 = content.slice(s4Idx, failIdx);
+  const failure = content.slice(failIdx);
+
+  it("does not gate Step 3.5 on all phases completing successfully", () => {
+    expect(step35).not.toMatch(/after all phases have completed successfully/i);
+    expect(step35).toMatch(/even when a (later )?phase failed/i);
+    expect(step35).toMatch(/at least one phase produced artifacts/i);
+  });
+
+  it("Step 3 routes an early stop to Step 3.5", () => {
+    const step3 = content.slice(content.indexOf("### Step 3:"), s35Idx);
+    expect(step3).toMatch(/early stop[\s\S]*Step 3\.5/);
+  });
+
+  it("names the failed phase and error in the PR title and body", () => {
+    expect(step35).toMatch(/partial, phase \{N\} \{name\} failed/);
+    expect(step35).toMatch(/completed phases/i);
+    expect(step35).toMatch(/failed phase/i);
+    expect(step35).toMatch(/error/i);
+  });
+
+  it("handles an existing open PR by commenting the failure", () => {
+    expect(step35).toContain("gh pr comment");
+    expect(step35).toContain("gh pr edit");
+  });
+
+  it("resets a reused PR's title and body to the non-partial form when no phase failed", () => {
+    expect(step35).toMatch(/If no phase failed, reset that PR's title and body/);
+    expect(step35).toMatch(
+      /gh pr edit \{pr-number\}[^\n]*\n\s*--title "docs: test-readiness refresh \(\{YYYYMMDD\}\)"\s*\\\n\s*--body "Automated test-readiness phase-artifact refresh"/,
+    );
+    expect(step35).not.toMatch(/no further action is needed/);
+  });
+
+  it("commits only completed phases' artifacts and discards the failed phase's output", () => {
+    expect(step35).toMatch(/Commit only\s+the artifacts of the completed phases/);
+    expect(step35).toMatch(/Discard the failed phase's output before committing/);
+    expect(step35).toContain("git checkout --");
+    expect(step35).toContain("git clean");
+    expect(step35).toMatch(/mtime-based/);
+  });
+
+  it("Step 4 summary lists the failed phase and error per repo", () => {
+    expect(step4).toMatch(/failed phase/i);
+    expect(step4).toMatch(/error/i);
+  });
+
+  it("Failure handling goes through Step 3.5 and Step 4 with the failed phase", () => {
+    expect(failure).toContain("Step 3.5");
+    expect(failure).not.toMatch(/Exit with a clear summary so the run log/);
+    expect(failure).toMatch(/failed phase/i);
+  });
+});
