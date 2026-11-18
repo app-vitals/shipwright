@@ -253,7 +253,7 @@ describe("test-readiness — SCM-8.1 partial-refresh PR on early stop", () => {
 
   it("Step 3 routes an early stop to Step 3.5", () => {
     const step3 = content.slice(content.indexOf("### Step 3:"), s35Idx);
-    expect(step3).toMatch(/early stop[^]*Step 3\.5/);
+    expect(step3).toMatch(/early stop[\s\S]*Step 3\.5/);
   });
 
   it("names the failed phase and error in the PR title and body", () => {
