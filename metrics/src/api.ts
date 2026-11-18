@@ -48,6 +48,7 @@ import {
   MergedPrsQuerySchema,
   MergedPrsResultSchema,
   PrOutcomesResultSchema,
+  SystemCronsResultSchema,
   QueueResultSchema,
   SummaryResultSchema,
   TokensResultSchema,
@@ -336,6 +337,37 @@ const prOutcomesRoute = createRoute({
     },
     500: {
       description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const systemCronsRoute = createRoute({
+  method: "get",
+  path: "/metrics/system-crons",
+  summary: "System-cron work metrics, one row per registered cron",
+  description:
+    "Per registered system cron: fires (distinct slots), SC- tasks created, and buckets derived from task status and linked-PR state only (shipped, inFlight <24h, stuck >=24h or blocked, failed = cancelled, noOp = done without a PR, pending), plus follow-on tasks (originKind=cron, same originRef, source != system-cron) created and shipped. Crons that created nothing report 0. Each count carries its drill-down filter params.",
+  request: { query: DateRangeQuerySchema },
+  responses: {
+    200: {
+      description: "System-cron work metrics",
+      content: { "application/json": { schema: SystemCronsResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    501: {
+      description: "Provider does not support system-cron metrics",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -994,6 +1026,36 @@ function makePrOutcomesHandler(
   };
 }
 
+// ─── /metrics/system-crons (SCM-8.3) ──────────────────────────────────────
+
+function makeSystemCronsHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof systemCronsRoute> {
+  return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+    if (!provider.systemCrons) {
+      return c.json({ error: "system-cron metrics not supported" }, 501);
+    }
+
+    try {
+      const result = await provider.systemCrons(
+        resolveDateRange(preset, from, to),
+      );
+      return c.json(result, 200);
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
 // ─── /metrics/merged-prs (POM-2.1) ────────────────────────────────────────
 
 const ORIGIN_KEYS = [
@@ -1592,6 +1654,12 @@ export function createMetricsApp(
     prOutcomesRoute,
     metricsPolicy,
     makePrOutcomesHandler(provider),
+  );
+  registerWithAuthz(
+    app,
+    systemCronsRoute,
+    metricsPolicy,
+    makeSystemCronsHandler(provider),
   );
 
   // ─── Dashboard static files ───────────────────────────────────────────────

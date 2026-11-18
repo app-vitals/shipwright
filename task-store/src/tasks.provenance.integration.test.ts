@@ -126,6 +126,38 @@ describeOrSkip("task provenance (integration)", () => {
     expect(await ids({ originRef: "Test readiness" })).toEqual([]);
   });
 
+  it("list filters on createdAt range (createdFrom/createdTo, inclusive)", async () => {
+    for (const [id, createdAt] of [
+      ["c-old", "2026-01-01T00:00:00.000Z"],
+      ["c-mid", "2026-01-10T00:00:00.000Z"],
+      ["c-new", "2026-01-20T00:00:00.000Z"],
+    ] as const) {
+      await service.create({
+        id,
+        title: id,
+        status: "pending",
+        repo: null,
+        createdAt: new Date(createdAt),
+      } as Parameters<TaskService["create"]>[0]);
+    }
+    const ids = async (f: Parameters<TaskService["list"]>[0]) =>
+      (await service.list(f)).tasks.map((t) => t.id).sort();
+    expect(
+      await ids({
+        createdFrom: "2026-01-05T00:00:00.000Z",
+        createdTo: "2026-01-15T00:00:00.000Z",
+      }),
+    ).toEqual(["c-mid"]);
+    expect(await ids({ createdFrom: "2026-01-10T00:00:00.000Z" })).toEqual([
+      "c-mid",
+      "c-new",
+    ]);
+    expect(await ids({ createdTo: "2026-01-10T00:00:00.000Z" })).toEqual([
+      "c-mid",
+      "c-old",
+    ]);
+  });
+
   it("listReady and listBlocked honor the filters", async () => {
     await seed();
     const ready = await service.listReady(undefined, undefined, {

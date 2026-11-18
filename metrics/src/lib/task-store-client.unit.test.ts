@@ -294,3 +294,64 @@ describe("HttpTaskStoreClient coverage snapshots (CVT-3.1)", () => {
     expect(calls[0]).toContain("since=2026-06-01");
   });
 });
+
+describe("HttpTaskStoreClient system-cron reads (SCM-8.3)", () => {
+  test("listSystemCrons unwraps { systemCrons }", async () => {
+    const fetch: FetchLike = async (input) => {
+      expect(new URL(input).pathname).toBe("/system-crons");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => "",
+        json: async () => ({
+          systemCrons: [
+            {
+              id: "a",
+              accountId: "x",
+              name: "A",
+              schedule: "* * * * *",
+              enabled: true,
+            },
+          ],
+        }),
+      };
+    };
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+    expect((await client.listSystemCrons()).map((c) => c.id)).toEqual(["a"]);
+  });
+
+  test("listCronTasks sends originKind/originRef/createdFrom/createdTo and pages", async () => {
+    const rows: TaskRecord[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `SC-a-${i}`,
+      status: "pending",
+    }));
+    const { fetch, calls } = pagingFetch("tasks", rows);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+    const got = await client.listCronTasks({
+      originRef: "a",
+      createdFrom: "2026-11-01T00:00:00.000Z",
+      createdTo: "2026-11-02T00:00:00.000Z",
+    });
+    expect(got).toHaveLength(60);
+    const u = new URL(calls[0]);
+    expect(u.pathname).toBe("/tasks");
+    expect(u.searchParams.get("originKind")).toBe("cron");
+    expect(u.searchParams.get("originRef")).toBe("a");
+    expect(u.searchParams.get("createdFrom")).toBe("2026-11-01T00:00:00.000Z");
+    expect(u.searchParams.get("createdTo")).toBe("2026-11-02T00:00:00.000Z");
+  });
+
+  test("listPrsUpdatedSince passes updatedSince and does not window-filter", async () => {
+    const prs = [
+      { id: "p", mergedAt: "2020-01-01T00:00:00.000Z" },
+    ] as PrRecord[];
+    const { fetch, calls } = pagingFetch("prs", prs);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+    expect(
+      await client.listPrsUpdatedSince("2026-11-01T00:00:00.000Z"),
+    ).toHaveLength(1);
+    expect(new URL(calls[0]).searchParams.get("updatedSince")).toBe(
+      "2026-11-01T00:00:00.000Z",
+    );
+  });
+});

@@ -55,6 +55,18 @@ class CountingTaskStoreClient implements TaskStoreClient {
     return this.inner.listPrs(params);
   }
 
+  listSystemCrons() {
+    return this.inner.listSystemCrons();
+  }
+
+  listCronTasks(params: Parameters<TaskStoreClient["listCronTasks"]>[0]) {
+    return this.inner.listCronTasks(params);
+  }
+
+  listPrsUpdatedSince(since: string) {
+    return this.inner.listPrsUpdatedSince(since);
+  }
+
   listLatestCoverage(
     params: Parameters<TaskStoreClient["listLatestCoverage"]>[0],
   ) {

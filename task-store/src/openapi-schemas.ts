@@ -962,6 +962,16 @@ export const TaskListQuerySchema = z.object({
     description:
       "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
   }),
+  createdFrom: z.string().optional().openapi({
+    example: "2026-11-01T00:00:00.000Z",
+    description:
+      "Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`.",
+  }),
+  createdTo: z.string().optional().openapi({
+    example: "2026-11-08T00:00:00.000Z",
+    description:
+      "Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`.",
+  }),
 });
 
 /** Response for GET /tasks */
