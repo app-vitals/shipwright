@@ -682,18 +682,31 @@ body {
   color: var(--surface);
   font-size: 11px;
   font-family: var(--sans);
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 2rem));
+  white-space: normal;
   padding: 4px 8px;
   border-radius: 4px;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
   z-index: 100;
+  /* Not rendered until shown: an invisible but laid-out tooltip widens the
+     page and makes narrow screens scroll sideways. */
+  display: none;
 }
 
 [data-tooltip]:hover::after,
 [data-tooltip]:focus-visible::after {
-  opacity: 1;
+  display: block;
+  animation: tooltip-in 0.15s ease-out;
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ─── Metric Graph Modal ─────────────────────────────────────── */
