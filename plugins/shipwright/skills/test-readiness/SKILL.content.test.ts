@@ -249,4 +249,11 @@ describe("SCM-8.2 — phase 5 passes its cron id to test-fix", () => {
     expect(text).toContain("system-cron definition id");
     expect(text.toLowerCase()).toContain("manual");
   });
+
+  it("states the originKind/originRef stamp for the test-readiness-driven path", () => {
+    const phase5 = readSkill().slice(readSkill().indexOf("- Phase 5:"));
+    expect(phase5).toContain('originKind: "cron"');
+    expect(phase5).toContain('originRef: "test-readiness"');
+    expect(phase5).not.toContain('originKind: "skill"');
+  });
 });
