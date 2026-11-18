@@ -55,7 +55,7 @@ test("brand tokens, docs, templates and demo slide use the working two-step inst
     "BRAND.md",
     "templates/deck.html",
     "templates/one-pager.html",
-    "../demo/slides/close.html",
+    "../../demo/slides/close.html",
   ]) {
     const text = await Bun.file(new URL(rel, import.meta.url)).text();
     expect(text).toContain(WORKING_ADD);

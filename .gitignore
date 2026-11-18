@@ -42,8 +42,8 @@ dist/
 build/
 
 # --- Rendered marketing artifacts (regenerable via the shipwright-brand skill) ---
-# Committed assets live in proper homes: assets/, site/public/, brand/assets/.
-brand/out/
+# Committed assets live in proper homes: assets/, site/public/, site/brand/assets/.
+site/brand/out/
 
 # --- Test & coverage artifacts ---
 coverage/
