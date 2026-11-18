@@ -1069,7 +1069,16 @@
     if (!canvas) return;
     destroyCoverageChart();
     const { labels, datasets } = buildCoverageTrend(trendRows, repoFilter);
-    if (datasets.length === 0) return;
+    // The repo table is range-independent but the trend is not: a range with
+    // no snapshots (e.g. "today" before any CI run) would otherwise leave a
+    // blank canvas, so swap it for an explicit message.
+    const hasTrend = datasets.length > 0;
+    const trendEmptyEl = document.getElementById("coverage-trend-empty");
+    if (canvas.parentElement) {
+      canvas.parentElement.style.display = hasTrend ? "" : "none";
+    }
+    if (trendEmptyEl) trendEmptyEl.style.display = hasTrend ? "none" : "";
+    if (!hasTrend) return;
     const tickStyle = {
       color: "var(--text-dim)",
       font: { family: "'JetBrains Mono', monospace", size: 10 },

@@ -1131,7 +1131,14 @@ test.describe("Dashboard — Coverage by repo section", () => {
       page.locator('[aria-label="Coverage by repo"] .section-title'),
     ).toHaveText("Coverage by repo");
     await expect(page.locator("#coverage-tbody tr")).toHaveCount(2);
+    // The table is range-independent, but the trend follows the selected
+    // range (default "today") and the fixture snapshots are days old: the
+    // chart gives way to a message instead of rendering a blank canvas.
+    await expect(page.locator("#coverage-trend-empty")).toBeVisible();
+    await expect(page.locator("#coverage-trend-chart")).toBeHidden();
+    await page.locator('.date-btn[data-range="30d"]').click();
     await expect(page.locator("#coverage-trend-chart")).toBeVisible();
+    await expect(page.locator("#coverage-trend-empty")).toBeHidden();
 
     const alpha = page.locator('#coverage-tbody tr[data-repo="org/alpha"]');
     await expect(alpha).toContainText("82.5%");
