@@ -21,12 +21,13 @@ Hiding the link is cosmetic; `/admin/settings` enforces access itself.
    required). Also asserts the public render has no gated links. New upstream nav items
    fail it until metrics opts in or exempts them.
 3. **Upstream (app-vitals/agent):** expand/migrate/contract.
-   - Expand: required-by-type `audience: "admin" | "member" | "public"` option plus exported
-     `TOOLBAR_NAV_ITEMS` manifest (item -> audiences). Legacy booleans stay. The admin
+   - Expand: optional `audience: "admin" | "member" | "public"` option (legacy booleans remain the
+     fallback when absent, keeping the export additive-only) plus exported
+     `TOOLBAR_NAV_ITEMS` manifest (item -> audiences). The admin
      bridge (`admin/src/admin-ui-account-nav.ts`, `admin-ui-styles.ts`) lives in the same
      repo and is migrated in the same task.
    - Release gate, then migrate shipwright metrics to `audience` and point the guard at the manifest.
-   - Contract: remove legacy visibility booleans.
+   - Contract (2.4): make `audience` required and remove legacy visibility booleans.
 
 ## Tasks
 | Task | Repo | Depends on | Model |
@@ -36,9 +37,10 @@ Hiding the link is cosmetic; `/admin/settings` enforces access itself.
 | MNAV-2.1 feat: audience-based toolbar API in agent-lib | agent | - | opus |
 | MNAV-2.2 chore: wait for @app-vitals/agent-lib >= X in shipwright | shipwright | 2.1 | haiku |
 | MNAV-2.3 refactor: migrate metrics toolbar to audience API | shipwright | 2.2, 1.2 | sonnet |
-| MNAV-2.4 refactor: remove legacy toolbar visibility flags | agent | 2.3 | sonnet |
+| MNAV-2.4 refactor: require audience and remove legacy toolbar visibility flags | agent | 2.3 | sonnet |
 
-Breaking-change safety: 1.1/1.2/2.1 additive. 2.4 removes booleans only after 2.3 migrates
+Breaking-change safety: 1.1/1.2/2.1 additive (`audience` is optional in 2.1). 2.4 makes
+`audience` required and removes booleans only after 2.3 migrates
 all known consumers (metrics; admin migrated in 2.1). Consumers outside these repos are
 not visible to grep — 2.4 must confirm none before removal.
 
