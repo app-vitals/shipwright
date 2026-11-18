@@ -378,7 +378,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.201.1
+    tag: metrics-v1.201.2
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
