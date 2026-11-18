@@ -16,6 +16,7 @@
  *  - anything else      -> reported, never registered
  *  - the session's home repo is set (by the register call); owner is left empty
  *  - tasks whose `source` is the plan path gain `planDocumentId` and nothing else
+ *  - a document homed in another repo is skipped (not created/updated), reported
  *  - idempotent: an unchanged tree makes zero creates and zero updates
  */
 
@@ -272,8 +273,16 @@ async function registerSession(
 
   for (const d of docs) {
     const path = `planning/${session}/${d.name}`;
-    const title = extractTitle(await source.read(path));
     const row = byKey.get(`${d.kind}:${d.number}`);
+    if (row && row.repo !== repo) {
+      // Homed in another repo: never touch its title/path; links still use its id.
+      result.reported.push({
+        path,
+        reason: `skipped: document homed in another repo (${row.repo})`,
+      });
+      continue;
+    }
+    const title = extractTitle(await source.read(path));
     let current = row;
     if (!row || row.path !== path || row.title !== title) {
       if (!dryRun) {
