@@ -154,6 +154,27 @@ The dashboard renders commit data in two panels:
 
 - **"Coverage by repo"** (CVT-3.2) — reads `/metrics/coverage`. A table with one row per repo (lines %, change vs. the previous snapshot in percentage points, last measured date; rows flagged `stale` are dimmed and badged), plus a line trend chart with one point per snapshot within the selected date range and a repo picker (all repos, or one) that restricts the chart to that repo's series. When no snapshots exist, the section shows an empty state explaining that a repo starts reporting when its CI posts a coverage report to the task store (`POST /coverage-snapshots`). The section is authenticated-only and is omitted entirely from the public read-only dashboard (the page does not fetch `/metrics/coverage` there). The existing per-task "Coverage" panel in Pipeline Quality (reports count and avg delta from `/metrics/summary`) is unchanged.
 
+### `/metrics/system-crons` scope and bucket rules
+
+**Scope and token.** The tile counts system-cron tasks (`source=system-cron`) account-wide, across every repo the account has, using the service's own `METRICS_TASK_STORE_TOKEN`. An agent token would return only its assignee-or-repo slice (see [Agent repo scoping on `GET /tasks`](./task-store.md#agent-repo-scoping-on-get-tasks)), so counts from an agent's `GET /tasks` will differ from the tile by design. `meta.repoCount` and `meta.accountId` state the scope of each response; quote them with any client-facing number.
+
+**Bucket rules.** A task lands in exactly one bucket, derived from task status and the linked PR's state only (`metrics/src/lib/system-cron-buckets.ts`). First match wins:
+
+| Order | Bucket | Condition |
+|---|---|---|
+| 1 | `shipped` | PR merged, or task `merged` / `deployed` / `released` |
+| 2 | `failed` | task `cancelled` |
+| 3 | `stuck` | task `blocked`, or PR open for 24h or more |
+| 4 | `inFlight` | PR open for under 24h |
+| 5 | `noOp` | task `done` with no PR |
+| 6 | `pending` | everything else |
+
+**Known limits.**
+
+- Buckets ignore PR size and outcome, so a trivial PR (a one-line or version-bump change) counts as `shipped` like any other.
+- `followOn.created` / `followOn.shipped` count tasks with `originKind=cron` and the same `originRef` whose `source` is not `system-cron`. They are computed per cron and per date range: a follow-on created outside the selected range is not counted, and the same follow-on appears under only the cron that filed it.
+- Tasks filed before the `20261118000000_backfill_system_cron_origin` migration are matched by task-id prefix; other pre-origin rows have no `originKind` and are never counted as follow-ons.
+
 ### Origin classification rules
 
 `PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, `agent/src/coding/pr-census.ts`, the POM-4.1 census sweep) mirrors the same eight steps (POF-1.2), with the census sweep supplying `is_bot` and label data from `gh pr list --json`:
