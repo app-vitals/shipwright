@@ -17,6 +17,8 @@ build
 **/build
 coverage
 **/coverage
+# ...but plugins/shipwright/scripts/coverage/ is tracked source, not output
+!plugins/shipwright/scripts/coverage
 .turbo
 test-results
 **/test-results
