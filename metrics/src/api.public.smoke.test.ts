@@ -289,3 +289,10 @@ describe("public dashboard — static assets", () => {
     });
   }
 });
+
+describe("public dashboard — Settings nav", () => {
+  test("does not render Settings link", async () => {
+    const html = await (await buildApp().request("/public/dashboard")).text();
+    expect(html).not.toContain("/admin/settings");
+  });
+});

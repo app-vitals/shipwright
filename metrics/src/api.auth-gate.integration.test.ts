@@ -146,8 +146,10 @@ function makeAccountsClientStub(
 
 async function makeSessionCookie(
   secret: string = TEST_SESSION_SECRET,
+  extra: Record<string, unknown> = {},
 ): Promise<string> {
   const payload = {
+    ...extra,
     userId: "user-123",
     email: "test@example.com",
     name: "Test User",
@@ -427,5 +429,68 @@ describe("dashboard HTML — no dead nav links", () => {
     expect(html).not.toMatch(/href=["'][^"']*\/cal["']/);
     expect(html).not.toMatch(/href=["'][^"']*\/time["']/);
     expect(html).not.toMatch(/href=["'][^"']*\/billing["']/);
+  });
+});
+
+// ─── Settings nav link visibility ─────────────────────────────────────────────
+
+describe("dashboard Settings nav link", () => {
+  async function dashboardHtml(
+    accounts: AccountsClient,
+    extra: Record<string, unknown> = {},
+    requireOwnerRole = false,
+  ): Promise<{ status: number; html: string }> {
+    const cookie = await makeSessionCookie(TEST_SESSION_SECRET, extra);
+    const app = createMetricsApp(apiKeys, accounts, {
+      provider: makeMockProvider(),
+      sessionSecret: TEST_SESSION_SECRET,
+      requireOwnerRole,
+    });
+    const res = await app.request("/dashboard", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    return { status: res.status, html: await res.text() };
+  }
+
+  test("admin (isAdmin JWT claim, MEMBER role) sees Settings", async () => {
+    const { html } = await dashboardHtml(makeAccountsClientStub("MEMBER"), {
+      isAdmin: true,
+    });
+    expect(html).toContain("/admin/settings");
+  });
+
+  test("OWNER sees Settings", async () => {
+    const { html } = await dashboardHtml(makeAccountsClientStub("OWNER"));
+    expect(html).toContain("/admin/settings");
+  });
+
+  test("plain MEMBER does not see Settings", async () => {
+    const { status, html } = await dashboardHtml(
+      makeAccountsClientStub("MEMBER"),
+    );
+    expect(status).toBe(200);
+    expect(html).not.toContain("/admin/settings");
+  });
+
+  test("non-owner 403 page does not render Settings", async () => {
+    const { status, html } = await dashboardHtml(
+      makeAccountsClientStub("MEMBER"),
+      {},
+      true,
+    );
+    expect(status).toBe(403);
+    expect(html).not.toContain("/admin/settings");
+  });
+
+  test("failed role lookup hides Settings without failing the page", async () => {
+    const failing: AccountsClient = {
+      ...makeAccountsClientStub("OWNER"),
+      getUser: async () => {
+        throw new Error("accounts down");
+      },
+    };
+    const { status, html } = await dashboardHtml(failing);
+    expect(status).toBe(200);
+    expect(html).not.toContain("/admin/settings");
   });
 });
