@@ -222,7 +222,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.360.1
+    tag: admin-v1.360.2
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -378,7 +378,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.199.3
+    tag: metrics-v1.199.4
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -989,7 +989,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.258.1
+    tag: task-store-v1.258.2
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
