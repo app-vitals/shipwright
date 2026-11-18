@@ -26,8 +26,11 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
- *                              returns { tasks, total, scopeDegraded } — scopeDegraded
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?cursor, ?sort, ?ready=true)
+ *                              returns { tasks, total, nextCursor, scopeDegraded } — scopeDegraded
+ *                              nextCursor is an opaque keyset cursor (createdAt,id) for the next
+ *                              page, null on the last page (and always null for ?ready/?state=blocked);
+ *                              ?cursor and ?offset together are a 400. scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
  *                              failed upstream; see auth.ts)
@@ -434,7 +437,7 @@ const listRoute = createRoute({
   tags: ["tasks"],
   summary: "List tasks",
   description:
-    "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
+    "Returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400), and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
   request: {
     query: TaskListQuerySchema,
   },
@@ -1057,7 +1060,10 @@ export function createTasksRoutes(
         },
         accountId,
       );
-      return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
+      return c.json(
+        { tasks, total: tasks.length, nextCursor: null, scopeDegraded },
+        200,
+      );
     }
 
     // ?state=blocked delegates to listBlocked().
@@ -1083,7 +1089,10 @@ export function createTasksRoutes(
         },
         accountId,
       );
-      return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
+      return c.json(
+        { tasks, total: tasks.length, nextCursor: null, scopeDegraded },
+        200,
+      );
     }
 
     const limitRaw = c.req.query("limit");
@@ -1104,8 +1113,14 @@ export function createTasksRoutes(
       throw new BadRequestError(`invalid status: '${statusRaw}'`);
     }
 
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+
     const result = await taskService.list({
       status: statusRaw,
+      cursor,
       state,
       source: c.req.query("source"),
       session: c.req.query("session"),
@@ -1148,7 +1163,10 @@ export function createTasksRoutes(
           }
         : { assignee: agentId ?? c.req.query("assignee") }),
     });
-    return c.json({ ...result, scopeDegraded }, 200);
+    return c.json(
+      { ...result, nextCursor: result.nextCursor ?? null, scopeDegraded },
+      200,
+    );
   });
 
   // ─── Create ────────────────────────────────────────────────────────────────

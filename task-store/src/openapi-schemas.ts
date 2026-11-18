@@ -944,6 +944,10 @@ export const TaskListQuerySchema = z.object({
   pr: z.string().optional().openapi({ example: "42" }),
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
+  cursor: z.string().optional().openapi({
+    description:
+      "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only.",
+  }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   accountId: z.string().optional().openapi({
     example: "default",
@@ -979,6 +983,11 @@ export const TaskListResponseSchema = z
   .object({
     tasks: z.array(TaskSchema),
     total: z.number().int().openapi({ example: 10 }),
+    nextCursor: z.string().nullable().openapi({
+      example: null,
+      description:
+        "Opaque cursor for the next page (pass as `?cursor=`); null on the last page and for `?ready=true` / `?state=blocked`.",
+    }),
     scopeDegraded: z.boolean().openapi({
       example: false,
       description:

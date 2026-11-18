@@ -18,7 +18,7 @@
           "tasks"
         ],
         "summary": "List tasks",
-        "description": "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
+        "description": "Returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400), and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
         "parameters": [
           {
             "schema": {
@@ -196,6 +196,16 @@
             },
             "required": false,
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only."
+            },
+            "required": false,
+            "description": "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only.",
+            "name": "cursor",
             "in": "query"
           },
           {
@@ -4341,6 +4351,14 @@
             "type": "integer",
             "example": 10
           },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page and for `?ready=true` / `?state=blocked`."
+          },
           "scopeDegraded": {
             "type": "boolean",
             "example": false,
@@ -4350,6 +4368,7 @@
         "required": [
           "tasks",
           "total",
+          "nextCursor",
           "scopeDegraded"
         ]
       },

@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List tasks
-         * @description Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
+         * @description Returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400), and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
          */
         get: {
             parameters: {
@@ -31,11 +31,15 @@ export interface paths {
                     owner?: string;
                     /** @description Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400. */
                     originKind?: "document" | "skill" | "cron" | "human";
+                    /** @description Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id. */
+                    originRef?: string;
                     claimedBy?: string;
                     branch?: string;
                     pr?: string;
                     limit?: string;
                     offset?: string;
+                    /** @description Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only. */
+                    cursor?: string;
                     ready?: "true" | "false";
                     /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
                     accountId?: string;
@@ -45,6 +49,10 @@ export interface paths {
                     sort?: "asc" | "desc";
                     /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
                     updatedSince?: string;
+                    /** @description Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
+                    createdFrom?: string;
+                    /** @description Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
+                    createdTo?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3706,6 +3714,11 @@ export interface components {
             tasks: components["schemas"]["Task"][];
             /** @example 10 */
             total: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page and for `?ready=true` / `?state=blocked`.
+             * @example null
+             */
+            nextCursor: string | null;
             /**
              * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
              * @example false
