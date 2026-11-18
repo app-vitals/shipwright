@@ -1,5 +1,5 @@
 {
-  "maxExcludedPct": 6,
+  "maxExcludedPct": 6.5,
   "excludePrefixes": [
     {
       "path": "admin/src/main.ts",

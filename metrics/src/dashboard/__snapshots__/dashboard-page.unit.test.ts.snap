@@ -339,6 +339,30 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
 
+      <!-- System crons -->
+      <section class="section" id="system-crons-section" aria-label="System crons">
+        <div class="section-header">
+          <h2 class="section-title">System crons</h2>
+          <span class="section-badge" id="system-crons-meta"></span>
+        </div>
+        <div id="system-crons-content">
+          <table class="token-table" id="system-crons-table">
+            <thead>
+              <tr>
+                <th>Cron</th>
+                <th>Shipped<span class="info-icon" data-tooltip="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range" tabindex="0" aria-label="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range">i</span></th>
+                <th>Stuck<span class="info-icon" data-tooltip="Blocked, or PR open for 24h or more" tabindex="0" aria-label="Blocked, or PR open for 24h or more">i</span></th>
+                <th>Failed<span class="info-icon" data-tooltip="Cancelled tasks" tabindex="0" aria-label="Cancelled tasks">i</span></th>
+                <th>Follow-ons<span class="info-icon" data-tooltip="Cron-origin tasks not created by the cron itself: created / shipped" tabindex="0" aria-label="Cron-origin tasks not created by the cron itself: created / shipped">i</span></th>
+                <th>Other<span class="info-icon" data-tooltip="No-op (done without a PR), in flight (PR open under 24h), pending" tabindex="0" aria-label="No-op (done without a PR), in flight (PR open under 24h), pending">i</span></th>
+              </tr>
+            </thead>
+            <tbody id="system-crons-tbody"></tbody>
+          </table>
+        </div>
+        <p id="system-crons-empty" class="empty-state" style="display:none">No system crons are registered for this account.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -554,7 +578,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
 
   </div>
 
-  <script>window.__METRICS_BASE__ = "";</script>
+  <script>window.__METRICS_BASE__ = ""; window.__ADMIN_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -900,6 +924,30 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
 
+      <!-- System crons -->
+      <section class="section" id="system-crons-section" aria-label="System crons">
+        <div class="section-header">
+          <h2 class="section-title">System crons</h2>
+          <span class="section-badge" id="system-crons-meta"></span>
+        </div>
+        <div id="system-crons-content">
+          <table class="token-table" id="system-crons-table">
+            <thead>
+              <tr>
+                <th>Cron</th>
+                <th>Shipped<span class="info-icon" data-tooltip="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range" tabindex="0" aria-label="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range">i</span></th>
+                <th>Stuck<span class="info-icon" data-tooltip="Blocked, or PR open for 24h or more" tabindex="0" aria-label="Blocked, or PR open for 24h or more">i</span></th>
+                <th>Failed<span class="info-icon" data-tooltip="Cancelled tasks" tabindex="0" aria-label="Cancelled tasks">i</span></th>
+                <th>Follow-ons<span class="info-icon" data-tooltip="Cron-origin tasks not created by the cron itself: created / shipped" tabindex="0" aria-label="Cron-origin tasks not created by the cron itself: created / shipped">i</span></th>
+                <th>Other<span class="info-icon" data-tooltip="No-op (done without a PR), in flight (PR open under 24h), pending" tabindex="0" aria-label="No-op (done without a PR), in flight (PR open under 24h), pending">i</span></th>
+              </tr>
+            </thead>
+            <tbody id="system-crons-tbody"></tbody>
+          </table>
+        </div>
+        <p id="system-crons-empty" class="empty-state" style="display:none">No system crons are registered for this account.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -1115,7 +1163,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
 
   </div>
 
-  <script>window.__METRICS_BASE__ = "";</script>
+  <script>window.__METRICS_BASE__ = ""; window.__ADMIN_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -1461,6 +1509,30 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
 
+      <!-- System crons -->
+      <section class="section" id="system-crons-section" aria-label="System crons">
+        <div class="section-header">
+          <h2 class="section-title">System crons</h2>
+          <span class="section-badge" id="system-crons-meta"></span>
+        </div>
+        <div id="system-crons-content">
+          <table class="token-table" id="system-crons-table">
+            <thead>
+              <tr>
+                <th>Cron</th>
+                <th>Shipped<span class="info-icon" data-tooltip="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range" tabindex="0" aria-label="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range">i</span></th>
+                <th>Stuck<span class="info-icon" data-tooltip="Blocked, or PR open for 24h or more" tabindex="0" aria-label="Blocked, or PR open for 24h or more">i</span></th>
+                <th>Failed<span class="info-icon" data-tooltip="Cancelled tasks" tabindex="0" aria-label="Cancelled tasks">i</span></th>
+                <th>Follow-ons<span class="info-icon" data-tooltip="Cron-origin tasks not created by the cron itself: created / shipped" tabindex="0" aria-label="Cron-origin tasks not created by the cron itself: created / shipped">i</span></th>
+                <th>Other<span class="info-icon" data-tooltip="No-op (done without a PR), in flight (PR open under 24h), pending" tabindex="0" aria-label="No-op (done without a PR), in flight (PR open under 24h), pending">i</span></th>
+              </tr>
+            </thead>
+            <tbody id="system-crons-tbody"></tbody>
+          </table>
+        </div>
+        <p id="system-crons-empty" class="empty-state" style="display:none">No system crons are registered for this account.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -1676,7 +1748,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
 
   </div>
 
-  <script>window.__METRICS_BASE__ = "";</script>
+  <script>window.__METRICS_BASE__ = ""; window.__ADMIN_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -2022,6 +2094,30 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
 
+      <!-- System crons -->
+      <section class="section" id="system-crons-section" aria-label="System crons">
+        <div class="section-header">
+          <h2 class="section-title">System crons</h2>
+          <span class="section-badge" id="system-crons-meta"></span>
+        </div>
+        <div id="system-crons-content">
+          <table class="token-table" id="system-crons-table">
+            <thead>
+              <tr>
+                <th>Cron</th>
+                <th>Shipped<span class="info-icon" data-tooltip="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range" tabindex="0" aria-label="Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range">i</span></th>
+                <th>Stuck<span class="info-icon" data-tooltip="Blocked, or PR open for 24h or more" tabindex="0" aria-label="Blocked, or PR open for 24h or more">i</span></th>
+                <th>Failed<span class="info-icon" data-tooltip="Cancelled tasks" tabindex="0" aria-label="Cancelled tasks">i</span></th>
+                <th>Follow-ons<span class="info-icon" data-tooltip="Cron-origin tasks not created by the cron itself: created / shipped" tabindex="0" aria-label="Cron-origin tasks not created by the cron itself: created / shipped">i</span></th>
+                <th>Other<span class="info-icon" data-tooltip="No-op (done without a PR), in flight (PR open under 24h), pending" tabindex="0" aria-label="No-op (done without a PR), in flight (PR open under 24h), pending">i</span></th>
+              </tr>
+            </thead>
+            <tbody id="system-crons-tbody"></tbody>
+          </table>
+        </div>
+        <p id="system-crons-empty" class="empty-state" style="display:none">No system crons are registered for this account.</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -2237,7 +2333,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
 
   </div>
 
-  <script>window.__METRICS_BASE__ = "";</script>
+  <script>window.__METRICS_BASE__ = ""; window.__ADMIN_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>
@@ -2544,6 +2640,8 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
 
 
 
+
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -2746,7 +2844,7 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
 
   </div>
 
-  <script>window.__METRICS_BASE__ = "";</script>
+  <script>window.__METRICS_BASE__ = ""; window.__ADMIN_BASE__ = "";</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/dashboard/app.js"></script>
 </body>

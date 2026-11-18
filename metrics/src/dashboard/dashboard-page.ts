@@ -134,6 +134,34 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>`;
 
+  // System-cron work reads the authenticated-only /metrics/system-crons
+  // endpoint (SCM-8.4), so the tile is omitted when readOnly.
+  const systemCronsSection = readOnly
+    ? ""
+    : `      <!-- System crons -->
+      <section class="section" id="system-crons-section" aria-label="System crons">
+        <div class="section-header">
+          <h2 class="section-title">System crons</h2>
+          <span class="section-badge" id="system-crons-meta"></span>
+        </div>
+        <div id="system-crons-content">
+          <table class="token-table" id="system-crons-table">
+            <thead>
+              <tr>
+                <th>Cron</th>
+                <th>Shipped${infoIcon("Tasks the cron created that reached a merged PR (or merged/deployed/released status) in this range")}</th>
+                <th>Stuck${infoIcon("Blocked, or PR open for 24h or more")}</th>
+                <th>Failed${infoIcon("Cancelled tasks")}</th>
+                <th>Follow-ons${infoIcon("Cron-origin tasks not created by the cron itself: created / shipped")}</th>
+                <th>Other${infoIcon("No-op (done without a PR), in flight (PR open under 24h), pending")}</th>
+              </tr>
+            </thead>
+            <tbody id="system-crons-tbody"></tbody>
+          </table>
+        </div>
+        <p id="system-crons-empty" class="empty-state" style="display:none">No system crons are registered for this account.</p>
+      </section>`;
+
   // Cost Efficiency is public-only telemetry — rendered only in the read-only
   // public variant. The authenticated dashboard omits it entirely.
   const costEfficiencySection = readOnly
@@ -317,6 +345,8 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
 
 ${coverageSection}
 
+${systemCronsSection}
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -484,7 +514,7 @@ ${costEfficiencySection}
 
   </div>
 
-  <script>window.__METRICS_BASE__ = ${JSON.stringify(base)};</script>
+  <script>window.__METRICS_BASE__ = ${JSON.stringify(base)}; window.__ADMIN_BASE__ = ${JSON.stringify(opts.adminBaseUrl ?? "")};</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="${base}/dashboard/app.js"></script>
 </body>
