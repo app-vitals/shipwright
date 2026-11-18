@@ -105,3 +105,25 @@ describe("test-fix — nullable line_coverage_pct", () => {
     );
   });
 });
+
+describe("SCM-8.2 cron origin override", () => {
+  const read = () => readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
+
+  it("documents the internal --origin-cron <id> flag in Setup", () => {
+    const text = read();
+    expect(text).toContain("--origin-cron <id>");
+  });
+
+  it("stamps originKind cron and originRef = the passed id when --origin-cron is present", () => {
+    const text = read();
+    expect(text).toContain('"originKind": "cron"');
+    expect(text).toContain('"originRef": "<origin-cron id>"');
+  });
+
+  it("keeps standalone values (skill / test-fix) when --origin-cron is absent", () => {
+    const text = read();
+    expect(text).toContain('"originKind": "skill"');
+    expect(text).toContain('"originRef": "test-fix"');
+    expect(text).toContain("without `--origin-cron`");
+  });
+});

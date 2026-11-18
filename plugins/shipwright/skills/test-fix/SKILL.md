@@ -26,6 +26,9 @@ This is the **Phase 5** replacement for the former GitHub-issue publish skill.
 
 Before starting, check for flags:
 
+- `--origin-cron <id>` — internal arg, passed by `/shipwright:test-readiness` phase 5 (e.g.
+  `--origin-cron test-readiness`). When present, Step 5 stamps `originKind: "cron"` and
+  `originRef: <id>` on every task instead of the standalone skill origin. Not for manual use.
 - `--dry-run` — print what would be queued (including hitl classification) without querying
   the task store for dedup and without writing anything.
 
@@ -319,6 +322,17 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
   "description": "<see 5.3>"
 }
 ```
+
+**Origin stamp:** the JSON above shows the standalone values. When run without `--origin-cron`
+(standalone run), keep `"originKind": "skill"` / `"originRef": "test-fix"` exactly as shown.
+When `--origin-cron <id>` was passed, replace those two fields with:
+
+```json
+  "originKind": "cron",
+  "originRef": "<origin-cron id>",
+```
+
+`source` stays `"test-fix"` either way.
 
 `{t-nnn}`: lowercase the row's task ID (e.g. `T-104` → `t-104`). `{t-nnn-lower}`: same value,
 used in the branch name.

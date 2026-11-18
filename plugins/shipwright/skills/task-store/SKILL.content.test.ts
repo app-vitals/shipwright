@@ -82,3 +82,16 @@ describe("README.md — Task Store section updates (CRQ-1.2)", () => {
     expect(section).toMatch(/Managed|Deployed/);
   });
 });
+
+describe("SKILL.md — cron origin convention (SCM-8.2)", () => {
+  it("documents originKind cron + originRef = system-cron definition id for cron follow-on tasks", () => {
+    const section = skillContent.slice(
+      skillContent.indexOf("### Append new tasks"),
+    );
+    expect(section).toContain('originKind: "cron"');
+    expect(section).toContain("system-cron definition id");
+    expect(section).toContain("test-readiness");
+    expect(section).toContain("docs-freshness");
+    expect(section).toContain("--origin-cron");
+  });
+});
