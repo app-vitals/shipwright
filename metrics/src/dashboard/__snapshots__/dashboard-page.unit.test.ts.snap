@@ -335,6 +335,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
           <div class="chart-container">
             <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
           </div>
+          <p id="coverage-trend-empty" class="empty-state" style="display:none">No coverage snapshots in the selected date range. Pick a wider range to see the trend.</p>
         </div>
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
@@ -920,6 +921,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
           <div class="chart-container">
             <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
           </div>
+          <p id="coverage-trend-empty" class="empty-state" style="display:none">No coverage snapshots in the selected date range. Pick a wider range to see the trend.</p>
         </div>
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
@@ -1505,6 +1507,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
           <div class="chart-container">
             <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
           </div>
+          <p id="coverage-trend-empty" class="empty-state" style="display:none">No coverage snapshots in the selected date range. Pick a wider range to see the trend.</p>
         </div>
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
@@ -2090,6 +2093,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
           <div class="chart-container">
             <canvas id="coverage-trend-chart" aria-label="Line coverage trend by repo, one point per snapshot"></canvas>
           </div>
+          <p id="coverage-trend-empty" class="empty-state" style="display:none">No coverage snapshots in the selected date range. Pick a wider range to see the trend.</p>
         </div>
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>
