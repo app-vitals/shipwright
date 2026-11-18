@@ -703,6 +703,50 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
     expect(where?.updatedAt).toEqual({ gte: new Date(updatedSince) });
   });
 
+  it("list({ createdFrom, createdTo }) sets where.createdAt = { gte, lte }", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({
+      createdFrom: "2026-07-01T00:00:00.000Z",
+      createdTo: "2026-07-08T00:00:00.000Z",
+    });
+
+    const where = prisma._findManyCalls[0].where as
+      | { createdAt?: { gte?: Date; lte?: Date } }
+      | undefined;
+    expect(where?.createdAt).toEqual({
+      gte: new Date("2026-07-01T00:00:00.000Z"),
+      lte: new Date("2026-07-08T00:00:00.000Z"),
+    });
+  });
+
+  it("list({ createdFrom }) alone sets only the gte bound; list({}) omits createdAt", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ createdFrom: "2026-07-01T00:00:00.000Z" });
+    await service.list({});
+
+    const [first, second] = prisma._findManyCalls.map(
+      (c) => c.where as { createdAt?: unknown } | undefined,
+    );
+    expect(first?.createdAt).toEqual({
+      gte: new Date("2026-07-01T00:00:00.000Z"),
+    });
+    expect(second?.createdAt).toBeUndefined();
+  });
+
+  it("list({ createdFrom: 'nope' }) / createdTo throw BadRequestError", async () => {
+    const service = new TaskService(makeListPrismaDouble());
+    await expect(service.list({ createdFrom: "nope" })).rejects.toThrow(
+      BadRequestError,
+    );
+    await expect(service.list({ createdTo: "nope" })).rejects.toThrow(
+      BadRequestError,
+    );
+  });
+
   it("list({ updatedSince: 'not-a-date' }) throws BadRequestError instead of passing Invalid Date to Prisma", async () => {
     const prisma = makeListPrismaDouble();
     const service = new TaskService(prisma);

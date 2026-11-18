@@ -17,10 +17,12 @@ import {
 } from "../lib/admin-metrics-client.ts";
 import {
   type CoverageSnapshotRecord,
+  type CronTaskQuery,
   inWindow,
   matchesRepo,
   type PrRecord,
   prAnchor,
+  type SystemCronRecord,
   type TaskRecord,
   type TaskStoreClient,
   taskAnchor,
@@ -38,7 +40,27 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     private readonly tasks: TaskRecord[],
     private readonly prs: PrRecord[],
     private readonly coverage: CoverageSnapshotRecord[] = [],
+    private readonly systemCrons: SystemCronRecord[] = [],
   ) {}
+
+  async listSystemCrons(): Promise<SystemCronRecord[]> {
+    return this.systemCrons;
+  }
+
+  async listCronTasks(query: CronTaskQuery): Promise<TaskRecord[]> {
+    const from = Date.parse(query.createdFrom);
+    const to = Date.parse(query.createdTo);
+    return this.tasks.filter((t) => {
+      if (t.originKind !== "cron" || t.originRef !== query.originRef)
+        return false;
+      const created = t.createdAt ? Date.parse(t.createdAt) : Number.NaN;
+      return created >= from && created <= to;
+    });
+  }
+
+  async listPrsUpdatedSince(_since: string): Promise<PrRecord[]> {
+    return this.prs;
+  }
 
   async listTasks(params: {
     from?: string;

@@ -26,7 +26,7 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -1129,6 +1129,8 @@ export function createTasksRoutes(
           : undefined,
       sort: c.req.query("sort") === "desc" ? "desc" : undefined,
       updatedSince: c.req.query("updatedSince"),
+      createdFrom: c.req.query("createdFrom"),
+      createdTo: c.req.query("createdTo"),
       accountId,
       // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
       // Under agentScope, an explicit caller-supplied ?assignee= further narrows

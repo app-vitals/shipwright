@@ -256,6 +256,17 @@ function parseUpdatedSince(value: string): Date {
   return date;
 }
 
+/** Parses a `createdFrom`/`createdTo` bound; an unparseable value is a 400. */
+function parseCreatedBound(name: string, value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestError(
+      `${name} '${value}' is not a valid ISO timestamp`,
+    );
+  }
+  return date;
+}
+
 /**
  * In-memory equivalent of buildRepoOrgWhere's repo/org matching, evaluated
  * against a single already-resolved Task rather than built as a Prisma
@@ -493,6 +504,10 @@ export interface TaskListFilters {
    * rationale. Omitting it preserves current (unfiltered) behavior.
    */
   updatedSince?: string;
+  /** SCM-8.3: only tasks with createdAt >= this ISO timestamp (inclusive). */
+  createdFrom?: string;
+  /** SCM-8.3: only tasks with createdAt <= this ISO timestamp (inclusive). */
+  createdTo?: string;
   /**
    * Repo-scoped visibility for agent tokens.
    * When set, replaces the simple `assignee` filter with an OR clause:
@@ -628,6 +643,16 @@ export class TaskService implements TaskServiceLike {
     if (filters.originRef !== undefined) where.originRef = filters.originRef;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
+    }
+    if (filters.createdFrom || filters.createdTo) {
+      where.createdAt = {
+        ...(filters.createdFrom
+          ? { gte: parseCreatedBound("createdFrom", filters.createdFrom) }
+          : {}),
+        ...(filters.createdTo
+          ? { lte: parseCreatedBound("createdTo", filters.createdTo) }
+          : {}),
+      };
     }
 
     if (filters.agentScope) {

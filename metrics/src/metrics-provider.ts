@@ -55,6 +55,52 @@ export type MetricQuery =
   | { kind: "tokensByAgentByCronModel"; range: QueryDateRange }
   | { kind: "costEfficiency"; range: QueryDateRange };
 
+// ─── System-cron work metrics (SCM-8.3) ─────────────────────────────────────
+
+/** Task-store `GET /tasks` params that list exactly the rows behind a count. */
+export type DrillDownFilter = Record<string, string>;
+
+/** A count plus the filter params of its drill-down list. */
+export interface FilteredCount {
+  count: number;
+  filter: DrillDownFilter;
+}
+
+/** One registered system cron's work over the queried range. */
+export interface SystemCronMetricsRow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: string;
+  /** Distinct fired slots that created at least one task in range. */
+  fires: FilteredCount;
+  /** SC- tasks created in range. Equals the sum of `buckets`. */
+  tasksCreated: FilteredCount;
+  buckets: {
+    shipped: FilteredCount;
+    inFlight: FilteredCount;
+    stuck: FilteredCount;
+    failed: FilteredCount;
+    noOp: FilteredCount;
+    pending: FilteredCount;
+  };
+  /** Cron-origin tasks (same originRef) whose source is not system-cron. */
+  followOn: { created: FilteredCount; shipped: FilteredCount };
+}
+
+export interface SystemCronMetrics {
+  from: string;
+  to: string;
+  crons: SystemCronMetricsRow[];
+  meta: {
+    generatedAt: string;
+    /** Distinct repos across the cron-origin tasks in range. */
+    repoCount: number;
+    /** The account every registered cron belongs to; null when mixed/none. */
+    accountId: string | null;
+  };
+}
+
 /**
  * Read seam: every backend serves every query kind.
  *
@@ -66,4 +112,10 @@ export type MetricQuery =
  */
 export interface MetricsProvider {
   query(q: MetricQuery): Promise<MetricTable>;
+  /**
+   * System-cron work metrics (SCM-8.3). Optional: only the task-store-backed
+   * provider implements it; the /metrics/system-crons route answers 501
+   * otherwise.
+   */
+  systemCrons?(range: QueryDateRange): Promise<SystemCronMetrics>;
 }

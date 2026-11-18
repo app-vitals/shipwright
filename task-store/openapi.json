@@ -275,6 +275,28 @@
             "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
             "name": "updatedSince",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2026-11-01T00:00:00.000Z",
+              "description": "Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`."
+            },
+            "required": false,
+            "description": "Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`.",
+            "name": "createdFrom",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2026-11-08T00:00:00.000Z",
+              "description": "Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`."
+            },
+            "required": false,
+            "description": "Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`.",
+            "name": "createdTo",
+            "in": "query"
           }
         ],
         "responses": {

@@ -63,6 +63,9 @@ export type TaskRecord = Pick<
   | "simplifyComplexity"
   | "simplifyConsistency"
   | "pr"
+  | "source"
+  | "originKind"
+  | "originRef"
 > &
   Partial<TaskOptionalOverrides>;
 
@@ -124,6 +127,28 @@ export interface CoverageSnapshotRecord {
   measuredAt: string;
 }
 
+/**
+ * Slim system-cron definition (GET /system-crons, admin-only) — the registry
+ * the system-cron metrics list one row per.
+ */
+export interface SystemCronRecord {
+  id: string;
+  accountId: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+}
+
+/** Filters for the cron-task read: originKind=cron + originRef + createdAt range. */
+export interface CronTaskQuery {
+  /** SystemCronDefinition id (Task.originRef). */
+  originRef: string;
+  /** Inclusive ISO lower bound on Task.createdAt. */
+  createdFrom: string;
+  /** Inclusive ISO upper bound on Task.createdAt. */
+  createdTo: string;
+}
+
 // ─── Error type ───────────────────────────────────────────────────────────────
 
 export class TaskStoreClientError extends Error {
@@ -152,6 +177,24 @@ export interface TaskStoreClient {
     repo?: string;
     state?: string;
   }): Promise<PrRecord[]>;
+  /**
+   * Every registered system-cron definition (GET /system-crons). Needs a
+   * token with account-wide visibility (an admin token): agent tokens are
+   * rejected, and scoped tokens see only a slice of the tasks.
+   */
+  listSystemCrons(): Promise<SystemCronRecord[]>;
+  /**
+   * Cron-origin tasks (GET /tasks?originKind=cron&originRef=&createdFrom=
+   * &createdTo=), every page. Filtered server-side on createdAt, so — unlike
+   * listTasks — no anchor-based client windowing is applied.
+   */
+  listCronTasks(query: CronTaskQuery): Promise<TaskRecord[]>;
+  /**
+   * PRs updated at/after `since` (GET /prs?updatedSince=), every page, with no
+   * anchor-based client windowing — the caller joins them to tasks by
+   * repo + prNumber.
+   */
+  listPrsUpdatedSince(since: string): Promise<PrRecord[]>;
   /** Newest snapshot per repo (GET /coverage-snapshots/latest). */
   listLatestCoverage(params: {
     repo?: string;
@@ -382,6 +425,28 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     return prs.filter(
       (p) => matchesRepo(p.repo, params.repo) && inWindow(prAnchor(p), params),
     );
+  }
+
+  async listSystemCrons(): Promise<SystemCronRecord[]> {
+    const res = await this.fetch<{ systemCrons?: SystemCronRecord[] }>(
+      "/system-crons",
+    );
+    return res.systemCrons ?? [];
+  }
+
+  async listCronTasks(query: CronTaskQuery): Promise<TaskRecord[]> {
+    return this.fetchAllPages<TaskRecord>("/tasks", "tasks", {
+      originKind: "cron",
+      originRef: query.originRef,
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
+    });
+  }
+
+  async listPrsUpdatedSince(since: string): Promise<PrRecord[]> {
+    return this.fetchAllPages<PrRecord>("/prs", "prs", {
+      updatedSince: since,
+    });
   }
 
   async listLatestCoverage(params: {

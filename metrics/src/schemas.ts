@@ -273,6 +273,62 @@ export const PrOutcomesResultSchema = z
   })
   .openapi("PrOutcomesResult");
 
+// ─── System-cron work metrics (SCM-8.3) ───────────────────────────────────────
+
+const FilteredCountSchema = z
+  .object({
+    count: z.number().int().openapi({ example: 12 }),
+    filter: z.record(z.string(), z.string()).openapi({
+      description:
+        "Task-store GET /tasks params for this count's drill-down list. `bucket` is the metrics-side derivation rule (status + PR state) and `sourceNot` means source != that value; both are applied by the caller, not the task store.",
+      example: {
+        originKind: "cron",
+        originRef: "test-readiness",
+        createdFrom: "2026-11-11T08:00:00.000Z",
+        createdTo: "2026-11-18T07:59:59.999Z",
+        source: "system-cron",
+        bucket: "shipped",
+      },
+    }),
+  })
+  .openapi("FilteredCount");
+
+const SystemCronRowSchema = z
+  .object({
+    id: z.string().openapi({ example: "test-readiness" }),
+    name: z.string().openapi({ example: "Test readiness" }),
+    enabled: z.boolean(),
+    schedule: z.string().openapi({ example: "0 7 * * *" }),
+    fires: FilteredCountSchema,
+    tasksCreated: FilteredCountSchema,
+    buckets: z.object({
+      shipped: FilteredCountSchema,
+      inFlight: FilteredCountSchema,
+      stuck: FilteredCountSchema,
+      failed: FilteredCountSchema,
+      noOp: FilteredCountSchema,
+      pending: FilteredCountSchema,
+    }),
+    followOn: z.object({
+      created: FilteredCountSchema,
+      shipped: FilteredCountSchema,
+    }),
+  })
+  .openapi("SystemCronRow");
+
+export const SystemCronsResultSchema = z
+  .object({
+    from: z.string().openapi({ example: "2026-11-11T08:00:00.000Z" }),
+    to: z.string().openapi({ example: "2026-11-18T07:59:59.999Z" }),
+    crons: z.array(SystemCronRowSchema),
+    meta: z.object({
+      generatedAt: z.string().openapi({ example: "2026-11-18T12:00:00.000Z" }),
+      repoCount: z.number().int(),
+      accountId: z.string().nullable(),
+    }),
+  })
+  .openapi("SystemCronsResult");
+
 // ─── Tokens schemas ───────────────────────────────────────────────────────────
 
 const TokenTotalsSchema = z

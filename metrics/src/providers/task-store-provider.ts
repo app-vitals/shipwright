@@ -32,6 +32,13 @@ import {
 import { type Clock, SystemClock } from "../lib/clock.ts";
 import { CoalescingCache } from "../lib/coalescing-cache.ts";
 import {
+  CRON_BUCKETS,
+  type CronBucket,
+  classifyCronTask,
+  isShipped,
+  slotOf,
+} from "../lib/system-cron-buckets.ts";
+import {
   inWindow,
   type PrRecord,
   prAnchor,
@@ -39,9 +46,14 @@ import {
   type TaskStoreClient,
 } from "../lib/task-store-client.ts";
 import type {
+  DrillDownFilter,
+  FilteredCount,
   MetricQuery,
   MetricsProvider,
   MetricTable,
+  QueryDateRange,
+  SystemCronMetrics,
+  SystemCronMetricsRow,
 } from "../metrics-provider.ts";
 
 const DASHBOARD_TZ = "America/Los_Angeles";
@@ -275,6 +287,111 @@ export class TaskStoreProvider implements MetricsProvider {
       case "costEfficiency":
         return this.costEfficiency(win);
     }
+  }
+
+  /**
+   * System-cron work metrics (SCM-8.3): one row per registered cron, derived
+   * from task status and linked-PR state only. Reads go through the metrics
+   * service's own account-wide token (agent tokens would see only
+   * assignee=agent OR repo IN agent repos), never the repo-scoped public
+   * provider — so `this.repo` is deliberately not applied.
+   */
+  async systemCrons(range: QueryDateRange): Promise<SystemCronMetrics> {
+    const win = resolveQueryRange(range, this.clock);
+    const now = this.clock.now();
+    const nowMs = now.getTime();
+
+    const [defs, prs] = await Promise.all([
+      this.taskStore.listSystemCrons(),
+      this.taskStore.listPrsUpdatedSince(win.from),
+    ]);
+    const prByKey = new Map<string, PrRecord>();
+    for (const p of prs) prByKey.set(`${p.repo}#${p.prNumber}`, p);
+    const prFor = (t: TaskRecord) =>
+      t.repo && t.pr != null ? prByKey.get(`${t.repo}#${t.pr}`) : undefined;
+
+    const perCron = await Promise.all(
+      defs.map(async (def) => ({
+        def,
+        tasks: await this.taskStore.listCronTasks({
+          originRef: def.id,
+          createdFrom: win.from,
+          createdTo: win.to,
+        }),
+      })),
+    );
+
+    const repos = new Set<string>();
+    const crons: SystemCronMetricsRow[] = perCron.map(({ def, tasks }) => {
+      const base: DrillDownFilter = {
+        originKind: "cron",
+        originRef: def.id,
+        createdFrom: win.from,
+        createdTo: win.to,
+      };
+      const counted = (
+        count: number,
+        extra: DrillDownFilter = {},
+      ): FilteredCount => ({ count, filter: { ...base, ...extra } });
+
+      for (const t of tasks) if (t.repo) repos.add(t.repo);
+      const own = tasks.filter((t) => t.source === "system-cron");
+      const followOn = tasks.filter((t) => t.source !== "system-cron");
+
+      const bucketCounts = Object.fromEntries(
+        CRON_BUCKETS.map((b) => [b, 0]),
+      ) as Record<CronBucket, number>;
+      const slots = new Set<string>();
+      for (const t of own) {
+        bucketCounts[classifyCronTask(t, prFor(t), nowMs)]++;
+        const slot = slotOf(t.id, def.id);
+        if (slot) slots.add(slot);
+      }
+      // Buckets are derived, so their drill-down is the cron's own-task list
+      // plus the bucket name (the rule, not a stored column).
+      const bucket = (b: CronBucket): FilteredCount =>
+        counted(bucketCounts[b], {
+          source: "system-cron",
+          bucket: b,
+          ...(b === "failed" ? { status: "cancelled" } : {}),
+        });
+
+      return {
+        id: def.id,
+        name: def.name,
+        enabled: def.enabled,
+        schedule: def.schedule,
+        fires: counted(slots.size, { source: "system-cron" }),
+        tasksCreated: counted(own.length, { source: "system-cron" }),
+        buckets: {
+          shipped: bucket("shipped"),
+          inFlight: bucket("inFlight"),
+          stuck: bucket("stuck"),
+          failed: bucket("failed"),
+          noOp: bucket("noOp"),
+          pending: bucket("pending"),
+        },
+        followOn: {
+          created: counted(followOn.length, { sourceNot: "system-cron" }),
+          shipped: counted(
+            followOn.filter((t) => isShipped(t, prFor(t))).length,
+            { sourceNot: "system-cron", bucket: "shipped" },
+          ),
+        },
+      };
+    });
+
+    const accounts = new Set(defs.map((d) => d.accountId));
+    return {
+      from: win.from,
+      to: win.to,
+      crons,
+      meta: {
+        generatedAt: now.toISOString(),
+        repoCount: repos.size,
+        accountId: accounts.size === 1 ? [...accounts][0] : null,
+      },
+    };
   }
 
   // ─ Task reads ─
