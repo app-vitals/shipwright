@@ -179,7 +179,9 @@ describe("registerPlanningSessions", () => {
       task.planDocumentId = null;
       const linkRes = await runB();
       expect(linkRes.linked).toBe(1);
-      expect(task.planDocumentId).toBe(store.docs.find((d) => d.kind === "plan")?.id ?? null);
+      expect<string | null>(task.planDocumentId).toBe(
+        store.docs.find((d) => d.kind === "plan")?.id ?? null,
+      );
     } finally {
       rmSync(rootB, { recursive: true, force: true });
     }
