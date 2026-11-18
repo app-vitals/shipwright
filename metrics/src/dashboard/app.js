@@ -100,14 +100,20 @@
 
   // ─── Freshness / Countdown ────────────────────────────────────────────────
 
-  function updateFreshness(generatedAt) {
-    const el = document.getElementById("freshness-indicator");
+  function updateFreshness(
+    generatedAt,
+    elId = "freshness-indicator",
+    prefix = "",
+  ) {
+    const el = document.getElementById(elId);
     if (!el || !generatedAt) return;
     const ageSec = Math.round(
       (Date.now() - new Date(generatedAt).getTime()) / 1000,
     );
-    el.textContent =
-      ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`;
+    el.textContent = `${prefix}${
+      ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`
+    }`;
+    el.title = String(generatedAt);
   }
 
   function startCountdown() {
@@ -228,6 +234,17 @@
             return null;
           })
       : null;
+    // System-cron work (SCM-8.4) is authenticated-only like coverage; refetched
+    // with the selected range on every refresh / range toggle.
+    const systemCronsEl = document.getElementById("system-crons-section");
+    const systemCronsRes = systemCronsEl
+      ? await fetch(`${API_BASE}/system-crons?${q}`)
+          .then((r) => r.json())
+          .catch((err) => {
+            console.error("System crons fetch failed:", err);
+            return null;
+          })
+      : null;
     return {
       summary,
       trends,
@@ -236,6 +253,7 @@
       tokensRes,
       mergedPrsRes,
       coverageRes,
+      systemCronsRes,
       costEffRes,
     };
   }
@@ -1552,6 +1570,129 @@
     if (closeBtn) closeBtn.addEventListener("click", closeMetricModal);
   }
 
+  // ─── System crons (SCM-8.4) ──────────────────────────────────────────────
+
+  /**
+   * Maps a FilteredCount.filter (task-store GET /tasks params, plus the
+   * metrics-side `bucket` / `sourceNot` derivation rules) to an admin tasks
+   * list URL. Pure.
+   *
+   * Params the admin /admin/tasks route honors today: `source`, `status`
+   * (plus `repo`, `org`, `session`, `hitl`, `kind`, `owner`, `view`).
+   * Params it does NOT yet honor: `originKind`, `originRef`, `createdFrom`,
+   * `createdTo`, `sourceNot` and `bucket`. They are still forwarded verbatim so
+   * the URL fully describes the row set and starts narrowing as soon as the
+   * admin list reads them; until then the list shows the wider
+   * source/status-filtered set. `view=table` (the default board hides closed
+   * tasks, which shipped rows are) and `owner=all` (skip the Mine default)
+   * are added so the list is not silently narrowed.
+   */
+  function buildAdminTasksHref(adminBase, filter) {
+    const params = new URLSearchParams({ view: "table", owner: "all" });
+    for (const [k, v] of Object.entries(filter ?? {})) params.set(k, v);
+    return `${String(adminBase ?? "").replace(/\/+$/, "")}/admin/tasks?${params.toString()}`;
+  }
+
+  function fmtAsOfMeta(meta) {
+    const n = meta?.repoCount ?? 0;
+    return `${n} ${n === 1 ? "repo" : "repos"}`;
+  }
+
+  function countLink(label, fc, cls, field) {
+    const a = document.createElement("a");
+    a.className = cls;
+    a.dataset.field = field;
+    a.textContent = fmtInt(fc?.count);
+    a.href = buildAdminTasksHref(window.__ADMIN_BASE__ || "", fc?.filter);
+    a.title = `${label}: ${fmtInt(fc?.count)}`;
+    return a;
+  }
+
+  function renderSystemCronsTable(crons) {
+    const tbody = document.getElementById("system-crons-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    for (const c of crons) {
+      const tr = document.createElement("tr");
+      tr.dataset.cron = c.id;
+      const nameTd = document.createElement("td");
+      nameTd.textContent = c.name || c.id;
+      if (!c.enabled) nameTd.title = "disabled";
+      tr.appendChild(nameTd);
+
+      const lead = document.createElement("td");
+      lead.appendChild(
+        countLink("Shipped", c.buckets.shipped, "stat-value good", "shipped"),
+      );
+      tr.appendChild(lead);
+      for (const key of ["stuck", "failed"]) {
+        const td = document.createElement("td");
+        const cls = c.buckets[key].count > 0 ? "stat-value warn" : "stat-value";
+        td.appendChild(countLink(key, c.buckets[key], cls, key));
+        tr.appendChild(td);
+      }
+
+      const fo = document.createElement("td");
+      fo.appendChild(
+        countLink(
+          "Follow-ons created",
+          c.followOn.created,
+          "stat-value",
+          "followOnCreated",
+        ),
+      );
+      fo.appendChild(document.createTextNode(" / "));
+      fo.appendChild(
+        countLink(
+          "Follow-ons shipped",
+          c.followOn.shipped,
+          "stat-value",
+          "followOnShipped",
+        ),
+      );
+      tr.appendChild(fo);
+
+      const other = document.createElement("td");
+      other.className = "stat-label";
+      [
+        ["noOp", "no-op"],
+        ["inFlight", "in flight"],
+        ["pending", "pending"],
+      ].forEach(([key, label], i) => {
+        if (i > 0) other.appendChild(document.createTextNode(" \u00b7 "));
+        other.appendChild(document.createTextNode(`${label} `));
+        other.appendChild(countLink(label, c.buckets[key], "stat-label", key));
+      });
+      tr.appendChild(other);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function updateSystemCrons(res) {
+    const contentEl = document.getElementById("system-crons-content");
+    const emptyEl = document.getElementById("system-crons-empty");
+    const metaEl = document.getElementById("system-crons-meta");
+    if (!contentEl || !emptyEl) return;
+    if (!res || res.error || !Array.isArray(res.crons)) {
+      if (res?.error) console.error("System crons error:", res.error);
+      contentEl.style.display = "none";
+      emptyEl.style.display = "none";
+      if (metaEl) metaEl.textContent = "";
+      return;
+    }
+    const empty = res.crons.length === 0;
+    contentEl.style.display = empty ? "none" : "";
+    emptyEl.style.display = empty ? "" : "none";
+    if (metaEl) {
+      metaEl.textContent = `${fmtAsOfMeta(res.meta)} \u00b7 as of `;
+      const asOf = document.createElement("span");
+      asOf.id = "system-crons-asof";
+      metaEl.appendChild(asOf);
+      updateFreshness(res.meta?.generatedAt, "system-crons-asof");
+    }
+    renderSystemCronsTable(res.crons);
+  }
+
   // ─── Main Refresh ─────────────────────────────────────────────────────────
 
   async function refresh() {
@@ -1565,6 +1706,7 @@
         tokensRes,
         mergedPrsRes,
         coverageRes,
+        systemCronsRes,
         costEffRes,
       } = await fetchAll(currentRange);
       const firstError = summary.error || trends.error;
@@ -1606,6 +1748,7 @@
         updatePRCommits(null);
       }
       updateCoverage(coverageRes);
+      updateSystemCrons(systemCronsRes);
       updateCostEfficiency(costEffRes);
     } catch (err) {
       showError(`Failed to load metrics: ${err.message}`);
@@ -1729,6 +1872,8 @@
       computeFleetWeightedAvgCommits,
       buildCoverageTrend,
       fmtCoverageDelta,
+      buildAdminTasksHref,
+      fmtAsOfMeta,
     };
   }
 })();

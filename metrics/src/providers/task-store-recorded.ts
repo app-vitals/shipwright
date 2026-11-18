@@ -41,6 +41,11 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     private readonly prs: PrRecord[],
     private readonly coverage: CoverageSnapshotRecord[] = [],
     private readonly systemCrons: SystemCronRecord[] = [],
+    /**
+     * Cron-origin tasks served only by listCronTasks (SCM-8.4), kept apart
+     * from `tasks` so they don't perturb the task-window metrics.
+     */
+    private readonly cronTasks: TaskRecord[] = [],
   ) {}
 
   async listSystemCrons(): Promise<SystemCronRecord[]> {
@@ -50,7 +55,7 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
   async listCronTasks(query: CronTaskQuery): Promise<TaskRecord[]> {
     const from = Date.parse(query.createdFrom);
     const to = Date.parse(query.createdTo);
-    return this.tasks.filter((t) => {
+    return [...this.tasks, ...this.cronTasks].filter((t) => {
       if (t.originKind !== "cron" || t.originRef !== query.originRef)
         return false;
       const created = t.createdAt ? Date.parse(t.createdAt) : Number.NaN;

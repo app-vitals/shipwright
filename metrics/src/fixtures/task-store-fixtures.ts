@@ -30,6 +30,7 @@ import type { Clock } from "../lib/clock.ts";
 import type {
   CoverageSnapshotRecord,
   PrRecord,
+  SystemCronRecord,
   TaskRecord,
 } from "../lib/task-store-client.ts";
 import type { MetricsProvider } from "../metrics-provider.ts";
@@ -261,8 +262,45 @@ export function createFixtureTaskStoreProvider(repo?: string): MetricsProvider {
     },
   ];
 
+  // ─── System-cron cassette (SCM-8.4) ─────────────────────────────────────────
+  // One registered cron with a shipped, a stuck (blocked), a cancelled and a
+  // no-op SC- task, plus one shipped follow-on. Served only to listCronTasks.
+
+  const SYSTEM_CRONS: SystemCronRecord[] = [
+    {
+      id: "test-readiness",
+      accountId: "default",
+      name: "Test readiness",
+      schedule: "0 7 * * *",
+      enabled: true,
+    },
+  ];
+  const cronTask = (
+    suffix: string,
+    status: string,
+    extra: Partial<TaskRecord> = {},
+  ): TaskRecord =>
+    ({
+      id: `SC-test-readiness-20260101T070000Z-${suffix}`,
+      status,
+      source: "system-cron",
+      originKind: "cron",
+      originRef: "test-readiness",
+      repo: "org/alpha",
+      createdAt: d(0, 2),
+      ...extra,
+    }) as TaskRecord;
+  const CRON_TASKS: TaskRecord[] = [
+    cronTask("a", "merged"),
+    cronTask("b", "blocked"),
+    cronTask("c", "cancelled"),
+    cronTask("d", "done", { pr: null }),
+    cronTask("e", "pending", { source: "plan", id: "FO-1", repo: "org/beta" }),
+    cronTask("f", "merged", { source: "plan", id: "FO-2", repo: "org/beta" }),
+  ];
+
   return new TaskStoreProvider(
-    new RecordedTaskStoreClient(TASKS, PRS, COVERAGE),
+    new RecordedTaskStoreClient(TASKS, PRS, COVERAGE, SYSTEM_CRONS, CRON_TASKS),
     new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS),
     clock,
     repo,

@@ -718,3 +718,28 @@ describe("renderDashboardPage — CVT-3.2 Coverage by repo section", () => {
     }
   });
 });
+
+describe("renderDashboardPage system crons tile (SCM-8.4)", () => {
+  test("renders the section with table, meta and empty state for authenticated viewers", () => {
+    const html = renderDashboardPage({ userName: "T" });
+    expect(html).toContain('id="system-crons-section"');
+    expect(html).toContain('id="system-crons-table"');
+    expect(html).toContain('id="system-crons-tbody"');
+    expect(html).toContain('id="system-crons-meta"');
+    expect(html).toContain('id="system-crons-empty"');
+  });
+
+  test("is omitted from the read-only public variant", () => {
+    const html = renderDashboardPage({ userName: "T", readOnly: true });
+    expect(html).not.toContain('id="system-crons-section"');
+  });
+
+  test("exposes adminBaseUrl to app.js as window.__ADMIN_BASE__", () => {
+    expect(
+      renderDashboardPage({ userName: "T", adminBaseUrl: "http://a:3001" }),
+    ).toContain('window.__ADMIN_BASE__ = "http://a:3001";');
+    expect(renderDashboardPage({ userName: "T" })).toContain(
+      'window.__ADMIN_BASE__ = "";',
+    );
+  });
+});

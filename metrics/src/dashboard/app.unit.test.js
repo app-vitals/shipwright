@@ -14,6 +14,8 @@ let fetchSequential;
 let computeFleetWeightedAvgCommits;
 let buildCoverageTrend;
 let fmtCoverageDelta;
+let buildAdminTasksHref;
+let fmtAsOfMeta;
 
 beforeAll(async () => {
   await import("./app.js");
@@ -22,6 +24,8 @@ beforeAll(async () => {
     computeFleetWeightedAvgCommits,
     buildCoverageTrend,
     fmtCoverageDelta,
+    buildAdminTasksHref,
+    fmtAsOfMeta,
   } = globalThis.__dashboardAppTestExports);
 });
 
@@ -450,5 +454,59 @@ describe("fmtCoverageDelta", () => {
 
   test("null delta renders an em dash", () => {
     expect(fmtCoverageDelta(null)).toEqual({ text: "—", cls: "" });
+  });
+});
+
+describe("buildAdminTasksHref (SCM-8.4)", () => {
+  const filter = {
+    originKind: "cron",
+    originRef: "test-readiness",
+    createdFrom: "2026-11-11T08:00:00.000Z",
+    createdTo: "2026-11-18T07:59:59.999Z",
+    source: "system-cron",
+    bucket: "shipped",
+  };
+
+  test("targets /admin/tasks on the admin base with table view and all owners", () => {
+    const url = new URL(buildAdminTasksHref("http://admin:3001/", filter));
+    expect(url.origin).toBe("http://admin:3001");
+    expect(url.pathname).toBe("/admin/tasks");
+    expect(url.searchParams.get("view")).toBe("table");
+    expect(url.searchParams.get("owner")).toBe("all");
+  });
+
+  test("forwards every filter param verbatim, including metrics-side bucket/sourceNot", () => {
+    const url = new URL(
+      buildAdminTasksHref("", {
+        ...filter,
+        sourceNot: "system-cron",
+        status: "cancelled",
+      }),
+      "http://x",
+    );
+    for (const [k, v] of Object.entries({
+      ...filter,
+      sourceNot: "system-cron",
+      status: "cancelled",
+    })) {
+      expect(url.searchParams.get(k)).toBe(v);
+    }
+  });
+
+  test("empty admin base yields a same-origin relative href; missing filter is tolerated", () => {
+    expect(buildAdminTasksHref("", filter).startsWith("/admin/tasks?")).toBe(
+      true,
+    );
+    expect(buildAdminTasksHref(undefined, undefined)).toBe(
+      "/admin/tasks?view=table&owner=all",
+    );
+  });
+});
+
+describe("fmtAsOfMeta (SCM-8.4)", () => {
+  test("pluralizes repo scope", () => {
+    expect(fmtAsOfMeta({ repoCount: 3 })).toBe("3 repos");
+    expect(fmtAsOfMeta({ repoCount: 1 })).toBe("1 repo");
+    expect(fmtAsOfMeta(undefined)).toBe("0 repos");
   });
 });
