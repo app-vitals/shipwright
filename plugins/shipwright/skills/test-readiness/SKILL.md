@@ -225,9 +225,16 @@ If this command returns a result (PR already exists for this branch), the push
 already updated the open PR. This handles the reused-branch case from Step 1,
 where an earlier-day PR is still open and absorbs today's updates via the
 merged `origin/main` and the newly-pushed phase artifacts. If a phase failed,
-also record it on that PR:
+also name it in that PR's title and body, and record it as a comment:
 
 ```bash
+gh pr edit {pr-number} --repo {org}/{repo} \
+  --title "docs: test-readiness refresh ({YYYYMMDD}) — partial, phase {N} {name} failed" \
+  --body "Automated test-readiness phase-artifact refresh (partial).
+
+Completed phases: {list}
+Failed phase: {N} {name}
+Error: {error}"
 gh pr comment {pr-number} --repo {org}/{repo} \
   --body "Partial refresh: phase {N} {name} failed. Completed phases: {list}. Error: {error}"
 ```

@@ -265,6 +265,7 @@ describe("test-readiness — SCM-8.1 partial-refresh PR on early stop", () => {
 
   it("handles an existing open PR by commenting the failure", () => {
     expect(step35).toContain("gh pr comment");
+    expect(step35).toContain("gh pr edit");
   });
 
   it("Step 4 summary lists the failed phase and error per repo", () => {
