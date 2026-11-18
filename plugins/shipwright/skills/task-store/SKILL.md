@@ -189,6 +189,14 @@ agent ID.
 
 Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 
+**Cron origin convention:** follow-on tasks created by the system-cron skills carry
+`originKind: "cron"` and `originRef` = the cron's system-cron definition id (the same value
+the `SC-` tasks get), so they can be counted per cron. Ids are hard-coded in each skill — the
+scheduler passes nothing. `research-docs --auto` stamps `originRef: "docs-freshness"` (plus
+`repo` and `source: "docs-freshness"`); `test-readiness` passes `--origin-cron test-readiness`
+to `test-fix`, which then stamps `originRef: "test-readiness"`. Standalone `test-fix` keeps
+`originKind: "skill"` / `originRef: "test-fix"`.
+
 ---
 
 ## `?ready=true` semantics

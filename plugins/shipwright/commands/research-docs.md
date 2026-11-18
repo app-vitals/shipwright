@@ -104,6 +104,8 @@ curl -sf -X POST \
   --data-binary @/tmp/quality-pass-tasks.json | jq .
 ```
 
+**Cron origin stamp (every A5.5 task, including the size-governance tasks below):** each task payload also carries `originKind: "cron"`, `originRef: "docs-freshness"` (the `docs-freshness` system-cron definition id — hard-coded here, nothing is passed in by the scheduler), `source: "docs-freshness"`, and `repo` (the `org/repo` from `--repo`) — add `source` and `repo` if missing. This lets follow-on tasks be counted per cron.
+
 Task titles, one shape per check:
 
 - 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
@@ -157,6 +159,8 @@ curl -sf -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
   --data-binary @/tmp/missing-docs-tasks.json | jq .
 ```
+
+Every A7 task payload (structural and concern-based) also carries the same cron origin stamp as Step A5.5: `originKind: "cron"`, `originRef: "docs-freshness"`, `source: "docs-freshness"`, and `repo` — add `source` and `repo` if missing.
 
 Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased: lowercased, with every `/` and run of whitespace collapsed to a single `-`, so the slug is always one flat segment and never a nested git ref (e.g. `api/billing` → `api-billing`, giving `docs/api-billing-20260909`). `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
 

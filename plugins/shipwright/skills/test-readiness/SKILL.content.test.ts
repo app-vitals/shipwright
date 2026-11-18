@@ -236,6 +236,28 @@ describe("test-readiness — Step 1.5 records coverage before the phase loop", (
   });
 });
 
+describe("SCM-8.2 — phase 5 passes its cron id to test-fix", () => {
+  it("passes --origin-cron test-readiness to /shipwright:test-fix in both modes", () => {
+    const text = readSkill();
+    expect(text).toContain("--origin-cron test-readiness");
+    const phase5 = text.slice(text.indexOf("- Phase 5:"));
+    expect(phase5.slice(0, 900)).toContain("--origin-cron test-readiness");
+  });
+
+  it("explains the cron id matches the system-cron definition id and manual runs are stamped too", () => {
+    const text = readSkill();
+    expect(text).toContain("system-cron definition id");
+    expect(text.toLowerCase()).toContain("manual");
+  });
+
+  it("states the originKind/originRef stamp for the test-readiness-driven path", () => {
+    const phase5 = readSkill().slice(readSkill().indexOf("- Phase 5:"));
+    expect(phase5).toContain('originKind: "cron"');
+    expect(phase5).toContain('originRef: "test-readiness"');
+    expect(phase5).not.toContain('originKind: "skill"');
+  });
+});
+
 describe("test-readiness — SCM-8.1 partial-refresh PR on early stop", () => {
   const content = readSkill();
   const s35Idx = content.indexOf("### Step 3.5:");

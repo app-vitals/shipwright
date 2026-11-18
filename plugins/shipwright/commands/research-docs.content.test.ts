@@ -79,3 +79,30 @@ describe("research-docs.md — explicit --repo input", () => {
     expect(a0).toContain("git remote get-url origin");
   });
 });
+
+describe("SCM-8.2 — auto-mode follow-on tasks carry the cron origin", () => {
+  function autoSection(): string {
+    const c = readResearchDocs();
+    return c.slice(c.indexOf("### Step A5.5:"), c.indexOf("### Step A7.5:"));
+  }
+
+  it("stamps originKind cron and originRef docs-freshness", () => {
+    const s = autoSection();
+    expect(s).toContain('`originKind: "cron"`');
+    expect(s).toContain('`originRef: "docs-freshness"`');
+  });
+
+  it("adds repo and source docs-freshness if missing", () => {
+    const s = autoSection();
+    expect(s).toContain('`source: "docs-freshness"`');
+    expect(s).toContain("`repo`");
+  });
+
+  it("applies to both Step A5.5 and Step A7 payloads", () => {
+    const c = readResearchDocs();
+    const a55 = c.slice(c.indexOf("### Step A5.5:"), c.indexOf("### Step A6:"));
+    const a7 = c.slice(c.indexOf("### Step A7:"), c.indexOf("### Step A7.5:"));
+    expect(a55).toContain('originRef: "docs-freshness"');
+    expect(a7).toContain('originRef: "docs-freshness"');
+  });
+});

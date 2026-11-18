@@ -180,9 +180,12 @@ From the starting phase through phase 5, in the current repo's worktree:
 - Phase 2: `/shipwright:test-design`
 - Phase 3: `/shipwright:test-migration`
 - Phase 4: `/shipwright:test-roadmap`
-- Phase 5: `/shipwright:test-fix` — pass no extra flag (real queue) when
-  this skill was invoked with `--publish`; otherwise pass `--dry-run`
-  (preview only, no task-store writes).
+- Phase 5: `/shipwright:test-fix --origin-cron test-readiness` — add no further
+  flag (real queue) when this skill was invoked with `--publish`; otherwise add
+  `--dry-run` (preview only, no task-store writes). `test-readiness` is the
+  system-cron definition id, hard-coded here (the scheduler passes nothing), so
+  follow-on tasks are stamped `originKind: "cron"` / `originRef: "test-readiness"`
+  and can be counted per cron. Manual runs of this skill are stamped the same way.
 
 Run each skill using the Skill tool. If any phase fails for this repo, report
 the failure for that repo and stop running further phases **for that repo
