@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@playwright/test": "^1.49.0",
     "openapi-fetch": "^0.17.0",
     "openapi-typescript": "^7",
     "prisma": "^7.0.0",

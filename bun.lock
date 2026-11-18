@@ -13,6 +13,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.5.13",
+        "@playwright/test": "^1.49.0",
         "openapi-fetch": "^0.17.0",
         "openapi-typescript": "^7",
         "prisma": "^7.0.0",
@@ -37,7 +38,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.499.4",
+      "version": "1.499.5",
       "dependencies": {
         "@app-vitals/agent-admin": "1.70.0",
         "@app-vitals/agent-lib": "1.70.0",
@@ -76,7 +77,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.499.4",
+      "version": "1.499.5",
       "dependencies": {
         "@app-vitals/agent-lib": "1.70.0",
         "@hono/zod-openapi": "^1.0.0",
@@ -94,7 +95,7 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.499.4",
+      "version": "1.499.5",
       "dependencies": {
         "@app-vitals/agent-runtime": "1.70.0",
         "js-yaml": "^5.0.0",
