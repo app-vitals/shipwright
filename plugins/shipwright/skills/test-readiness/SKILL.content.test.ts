@@ -268,6 +268,22 @@ describe("test-readiness — SCM-8.1 partial-refresh PR on early stop", () => {
     expect(step35).toContain("gh pr edit");
   });
 
+  it("resets a reused PR's title and body to the non-partial form when no phase failed", () => {
+    expect(step35).toMatch(/If no phase failed, reset that PR's title and body/);
+    expect(step35).toMatch(
+      /gh pr edit \{pr-number\}[^\n]*\n\s*--title "docs: test-readiness refresh \(\{YYYYMMDD\}\)"\s*\\\n\s*--body "Automated test-readiness phase-artifact refresh"/,
+    );
+    expect(step35).not.toMatch(/no further action is needed/);
+  });
+
+  it("commits only completed phases' artifacts and discards the failed phase's output", () => {
+    expect(step35).toMatch(/Commit only\s+the artifacts of the completed phases/);
+    expect(step35).toMatch(/Discard the failed phase's output before committing/);
+    expect(step35).toContain("git checkout --");
+    expect(step35).toContain("git clean");
+    expect(step35).toMatch(/mtime-based/);
+  });
+
   it("Step 4 summary lists the failed phase and error per repo", () => {
     expect(step4).toMatch(/failed phase/i);
     expect(step4).toMatch(/error/i);

@@ -197,10 +197,23 @@ repo, proceed to Step 3.5 to commit and open a PR with the refresh results.
 ### Step 3.5: Commit and Open PR
 
 Runs after phase 5 **and** after an early stop, even when a later phase failed,
-as long as at least one phase produced artifacts for this repo. Commit the
-artifacts of the completed phases, push the branch to origin and open (or
+as long as at least one phase produced artifacts for this repo. Commit only
+the artifacts of the completed phases, push the branch to origin and open (or
 update) a PR for the phase-artifact refresh. If no phase produced artifacts
 (the first phase failed), skip the commit and PR and go to Step 4.
+
+**Discard the failed phase's output before committing.** A phase that dies
+mid-write can leave a truncated or partial artifact on disk. Never commit it:
+committing it would publish a broken artifact, and because Step 2's freshness
+gate is mtime-based the file would also read as fresh, so the broken phase
+would be skipped on the next run. Restore or remove whatever the failed phase
+left behind, then stage only the completed phases' artifacts:
+
+```bash
+git checkout -- {failed-phase-artifact-paths}   # restore tracked files it modified
+git clean -f -- {failed-phase-artifact-paths}   # remove untracked files it created
+git add {completed-phase-artifact-paths}
+```
 
 Let `{failed}` be the failed phase (`{N} {name}`, e.g. `4 test-roadmap`) and
 `{error}` its error output, or empty when every phase succeeded.
@@ -239,7 +252,17 @@ gh pr comment {pr-number} --repo {org}/{repo} \
   --body "Partial refresh: phase {N} {name} failed. Completed phases: {list}. Error: {error}"
 ```
 
-Then proceed to Step 4. If no phase failed, no further action is needed.
+If no phase failed, reset that PR's title and body to the non-partial form,
+since an earlier-day run may have marked it partial and the PR would otherwise
+keep misreporting a failure its artifacts no longer have:
+
+```bash
+gh pr edit {pr-number} --repo {org}/{repo} \
+  --title "docs: test-readiness refresh ({YYYYMMDD})" \
+  --body "Automated test-readiness phase-artifact refresh"
+```
+
+Then proceed to Step 4.
 
 **If no PR exists (fresh-branch case only), create the label and open the PR:**
 
