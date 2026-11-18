@@ -12,11 +12,11 @@ import { join } from "node:path";
 /** Constants allowed to multiply DAY_MS (freshness markers, not windows). */
 const ALLOWED_DAY_CONSTANTS = new Set(["COVERAGE_STALE_DAYS"]);
 
-/** Return `NAME` for each `NAME_DAYS * DAY_MS` / `DAY_MS * NAME_DAYS` usage. */
+/** Return `NAME` for each `NAME_DAYS * DAY_MS` / `30 * DAY_MS` (either order) usage. */
 function findHardCodedWindows(source: string): string[] {
   const found: string[] = [];
   const re =
-    /\b([A-Z][A-Z0-9_]*_DAYS)\s*\*\s*(?:\w+\.)?DAY_MS\b|\b(?:\w+\.)?DAY_MS\s*\*\s*([A-Z][A-Z0-9_]*_DAYS)\b/g;
+    /\b([A-Z][A-Z0-9_]*_DAYS|\d+)\s*\*\s*(?:\w+\.)?DAY_MS\b|\b(?:\w+\.)?DAY_MS\s*\*\s*([A-Z][A-Z0-9_]*_DAYS|\d+)\b/g;
   for (const m of source.matchAll(re)) {
     const name = m[1] ?? m[2];
     if (name && !ALLOWED_DAY_CONSTANTS.has(name)) found.push(name);
@@ -30,6 +30,7 @@ describe("window-constants guard", () => {
       findHardCodedWindows("const s = now - TREND_DAYS * DAY_MS;"),
     ).toEqual(["TREND_DAYS"]);
     expect(findHardCodedWindows("DAY_MS * TREND_DAYS")).toEqual(["TREND_DAYS"]);
+    expect(findHardCodedWindows("now - 30 * DAY_MS")).toEqual(["30"]);
     expect(findHardCodedWindows("x > COVERAGE_STALE_DAYS * DAY_MS")).toEqual(
       [],
     );
