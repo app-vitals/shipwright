@@ -1166,6 +1166,9 @@ test.describe("Dashboard — Coverage by repo section", () => {
     await mockMetricsAPIs(page);
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+    // The trend follows the selected range (default "today"); the fixture
+    // snapshots are days old, so widen to 30D first.
+    await page.locator('.date-btn[data-range="30d"]').click();
 
     await page.waitForFunction(
       () => (window.coverageTrendChart?.data?.datasets?.length ?? 0) > 0,
