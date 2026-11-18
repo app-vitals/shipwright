@@ -4,10 +4,10 @@
  *
  * This is the enforcement backstop: artifacts should use CSS variables from
  * brand.css (so they carry no raw hexes at all), but if a hardcoded color slips
- * in, this flags it. The allowlist is derived from brand/tokens.json, so it can
+ * in, this flags it. The allowlist is derived from site/brand/tokens.json, so it can
  * never drift from the brand system.
  *
- *   bun brand/brand-lint.ts <file...>   # exit 1 if any off-brand color found
+ *   cd site && bun brand/brand-lint.ts <file...>   # exit 1 if any off-brand color found
  */
 
 import tokens from "./tokens.json";

@@ -2,7 +2,7 @@
  * scripts/domain-guard.unit.test.ts
  *
  * Regression guard: ensures shipwright-harness.com (hyphenated domain) appears
- * ONLY in the two allowed files (site/vercel.json for redirects and brand/BRAND.md
+ * ONLY in the two allowed files (site/vercel.json for redirects and site/brand/BRAND.md
  * to document the redirect mapping). The canonical domain is shipwrightharness.com
  * (no hyphen), and all internal references should use the canonical form.
  *
@@ -24,7 +24,7 @@ describe("domain-guard: shipwright-harness.com references", () => {
     const projectRoot = getProjectRoot();
     const ALLOWED_FILES = [
       "site/vercel.json", // redirect source (hyphenated domain)
-      "brand/BRAND.md", // documents redirect mapping
+      "site/brand/BRAND.md", // documents redirect mapping
     ];
 
     // Grep the entire repo for the hyphenated domain, excluding .git, node_modules, and this test file

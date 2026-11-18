@@ -10,7 +10,7 @@
 #   bash demo/brand-overlay.sh demo/output/inside-a-task.mp4
 # Produces demo/output/inside-a-task.mp4 in place (via a temp file).
 #
-# Brand values come from brand/tokens.json: base #080E1E, brand green #34C77B.
+# Brand values come from site/brand/tokens.json: base #080E1E, brand green #34C77B.
 set -euo pipefail
 
 IN="${1:-demo/output/inside-a-task.mp4}"

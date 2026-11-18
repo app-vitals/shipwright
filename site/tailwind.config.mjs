@@ -1,7 +1,7 @@
 /** @type {import('tailwindcss').Config} */
-// Colors + fonts mirror brand/tokens.json (single source of truth).
+// Colors + fonts mirror site/brand/tokens.json (single source of truth).
 // CSS variables live in src/styles/brand.css; these utilities expose the same
-// values to Tailwind classes. Keep hex values in sync with brand/tokens.json.
+// values to Tailwind classes. Keep hex values in sync with site/brand/tokens.json.
 export default {
   content: ["./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}"],
   theme: {

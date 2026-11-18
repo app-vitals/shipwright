@@ -41,7 +41,7 @@ describe("README.md Project status section", () => {
   });
 });
 
-describe("README.md competitor-naming policy (brand/MESSAGING.md D10)", () => {
+describe("README.md competitor-naming policy (site/brand/MESSAGING.md D10)", () => {
   const content = readFileSync(join(repoRoot, "README.md"), "utf8");
 
   it("does not name a competitor", () => {

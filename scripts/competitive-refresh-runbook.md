@@ -33,7 +33,7 @@ own findings list names.
 ## 2. Read the competitor-naming policy first
 
 Before touching any competitor claim — reading it for context is fine,
-editing or re-verifying it is not — read `brand/MESSAGING.md` section
+editing or re-verifying it is not — read `site/brand/MESSAGING.md` section
 **"2. Competitor-naming policy (D10)"** in full. It is the binding policy for
 everything this runbook touches:
 
@@ -143,7 +143,7 @@ A change counts as material if it touches any of:
 
 When this happens: update the claim's text, update or add the citation(s)
 it needs (per step 3's two citation shapes), bump `verifiedDate` to today,
-and re-check the new wording against `brand/MESSAGING.md` D10 (designated
+and re-check the new wording against `site/brand/MESSAGING.md` D10 (designated
 surfaces, cited + date-stamped, safe-to-print register, never-print list)
 before finalizing it. **Do not commit this directly to main** — open a PR so
 a human reviews the content change before it ships, same as any other
@@ -174,7 +174,7 @@ cat > "$TASKS_FILE" <<'EOF'
     "layer": "Background",
     "status": "pending",
     "hitl": false,
-    "description": "The `src.pricing` citation on site/src/pages/vs/devin.astro (comparisonRows 'Economics' row) is unreachable/ambiguous as of 2026-09-25: https://devin.ai/pricing returned <error/ambiguous result>. Left the existing claim in place per brand/MESSAGING.md D10 (never fabricate an unverified competitor claim). Re-verify this citation and refresh verifiedDate once resolved."
+    "description": "The `src.pricing` citation on site/src/pages/vs/devin.astro (comparisonRows 'Economics' row) is unreachable/ambiguous as of 2026-09-25: https://devin.ai/pricing returned <error/ambiguous result>. Left the existing claim in place per site/brand/MESSAGING.md D10 (never fabricate an unverified competitor claim). Re-verify this citation and refresh verifiedDate once resolved."
   }
 ]
 EOF

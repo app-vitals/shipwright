@@ -2,7 +2,7 @@
 
 **Status:** canonical · **Session:** `devin-alternative-repositioning` · **Last updated:** 2026-07-15
 **Source of truth for claims:** `goals/drafts/devin-alternative-positioning-research.md` (2 adversarially-verified deep-research passes, 47 confirmed claims, all fetches dated 2026-07-14). No comparison claim ships without checking this register first.
-**Conflict rule:** `brand/BRAND.md` wins on visual/voice conflicts. This document wins on messaging/copy-policy conflicts (tagline, competitor naming, pricing, claims discipline). Where `brand/BRAND.md` still encodes the old blanket "no competitor names" rule, it is superseded by D10 below and must be amended to match.
+**Conflict rule:** `site/brand/BRAND.md` wins on visual/voice conflicts. This document wins on messaging/copy-policy conflicts (tagline, competitor naming, pricing, claims discipline). Where `site/brand/BRAND.md` still encodes the old blanket "no competitor names" rule, it is superseded by D10 below and must be amended to match.
 
 ---
 
@@ -24,7 +24,7 @@ The defensible one-liner, used as hero subhead and general reinforcement copy:
 
 > "The only MIT-throughout, spec-to-deploy autonomous delivery agent that runs entirely in your own cloud."
 
-The eyebrow "Built on Claude Code" is retained above the H1 on all surfaces that carry it today — Claude Code is the platform, not a competitor, and stays featured prominently per `brand/BRAND.md`.
+The eyebrow "Built on Claude Code" is retained above the H1 on all surfaces that carry it today — Claude Code is the platform, not a competitor, and stays featured prominently per `site/brand/BRAND.md`.
 
 ## 2. Competitor-naming policy (D10)
 

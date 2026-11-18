@@ -18,7 +18,7 @@
 
 > **Do not market "the loop."** The `/dev-loop` (autonomous queue-drain) is an internal/power-user workflow, not a public message. Outward materials lead with the **agent** and the **system** — never "the delivery loop." (Marketing **Slack** as the interaction surface and **cron** as the autonomy mechanism is fine and encouraged; "the loop" as a named concept is what stays internal.)
 
-**Category & competitive frame:** Shipwright is the **free, open-source, own-it** alternative to closed, hosted autonomous coding agents. The wedge is price, ownership, and control: the closed agents are rented and run on someone else's infrastructure; Shipwright is **free and MIT**, runs in *your* environment, on *your* codebase, deployed to *your* cloud — and the people who built it can operate it alongside you. Lead with **free · open-source · you own it · your cloud · same quality bar as human code** when contrasting. **Competitor naming is surface-scoped, not blanket-banned** — see `brand/MESSAGING.md`'s competitor-naming policy (D10) for which surfaces may name a competitor and under what conditions.
+**Category & competitive frame:** Shipwright is the **free, open-source, own-it** alternative to closed, hosted autonomous coding agents. The wedge is price, ownership, and control: the closed agents are rented and run on someone else's infrastructure; Shipwright is **free and MIT**, runs in *your* environment, on *your* codebase, deployed to *your* cloud — and the people who built it can operate it alongside you. Lead with **free · open-source · you own it · your cloud · same quality bar as human code** when contrasting. **Competitor naming is surface-scoped, not blanket-banned** — see `site/brand/MESSAGING.md`'s competitor-naming policy (D10) for which surfaces may name a competitor and under what conditions.
 
 **Claude Code is the platform — feature it proudly (it is NOT a competitor).** Shipwright is built **on** and **for** Claude Code; "for Claude Code" anchors the tagline and every hero. Lean into it: it's a large, directly-relevant audience and a real discovery/SEO driver, and we're genuinely proud Claude Code users. "Built on Claude Code" / "for Claude Code" should appear prominently and positively across materials.
 
@@ -167,7 +167,7 @@ Honest, direct, engineer-to-engineer, metric-first. No hype, no client names, no
 
 **Hard content rules (every public artifact):**
 - **No client / customer / partner names.** Anonymize by role or industry if a story is needed.
-- **Competitor names are surface-scoped, not blanket-banned.** Default to positioning generically as the free, open-source, own-it alternative to closed, hosted agents. Where a competitor name is used, follow `brand/MESSAGING.md`'s competitor-naming policy (D10) — it governs which surfaces may name a competitor, citation/date-stamping requirements, and the never-print list. **Exception: Claude Code** is the *platform* Shipwright is built on and for, **not** a competitor — feature it prominently and proudly (it's also a major discovery/SEO driver).
+- **Competitor names are surface-scoped, not blanket-banned.** Default to positioning generically as the free, open-source, own-it alternative to closed, hosted agents. Where a competitor name is used, follow `site/brand/MESSAGING.md`'s competitor-naming policy (D10) — it governs which surfaces may name a competitor, citation/date-stamping requirements, and the never-print list. **Exception: Claude Code** is the *platform* Shipwright is built on and for, **not** a competitor — feature it prominently and proudly (it's also a major discovery/SEO driver).
 - **No pricing, rates, or tiers.** The tool is free/MIT; services are discussed in conversation, not published.
 - **No email-capture forms.** The only CTA off the page is the discovery call: `https://vitals-os.com/cal/book/discovery`.
 - **No secrets, internal infra identifiers, or local file paths** in anything committed (the repo is public).
@@ -193,9 +193,9 @@ The shared visual vocabulary (reused from the App Vitals one-pager / discovery-r
 
 ## 7. Assets & conventions
 
-Brand-system assets live under `brand/assets/` (colocated with this doc):
+Brand-system assets live under `site/brand/assets/` (colocated with this doc):
 ```
-brand/
+site/brand/
   BRAND.md            ← this file (human narrative)
   tokens.json         ← canonical machine-readable tokens (skill reads this)
   assets/
@@ -210,7 +210,7 @@ brand/
 
 **Fonts:** Space Grotesk + JetBrains Mono via Google Fonts; General Sans via Fontshare. Self-host or link per surface; keep the stack order in `tokens.json → font`.
 
-> The repo already has a root `assets/` directory; brand-system source-of-truth assets belong under `brand/assets/` so they sit next to the system that governs them.
+> The repo already has a root `assets/` directory; brand-system source-of-truth assets belong under `site/brand/assets/` so they sit next to the system that governs them.
 
 ---
 
