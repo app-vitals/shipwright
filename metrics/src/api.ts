@@ -1604,6 +1604,7 @@ export function createMetricsApp(
       const body = renderDashboardPage({
         userName: offlineMode ? "Offline User" : "Dev User",
         isOwner: true,
+        audience: "member",
         basePath,
         adminBaseUrl,
       });
@@ -1640,9 +1641,9 @@ export function createMetricsApp(
     // Settings link is cosmetic (/admin/settings enforces access itself):
     // show it only for admins (session isAdmin claim) or OWNER-role users.
     // No resolvable signal → hidden.
-    let showSettings = jwtIsAdmin;
+    let isAdminViewer = jwtIsAdmin;
     let user: UserRecord | undefined;
-    if (accountsClient && userId && (requireOwnerRole || !showSettings)) {
+    if (accountsClient && userId && (requireOwnerRole || !isAdminViewer)) {
       try {
         user = await accountsClient.getUser(userId);
       } catch (err) {
@@ -1650,13 +1651,14 @@ export function createMetricsApp(
         // Cosmetic lookup failed — leave Settings hidden.
       }
     }
-    if (user?.role === "OWNER") showSettings = true;
+    if (user?.role === "OWNER") isAdminViewer = true;
 
     if (requireOwnerRole && accountsClient && userId && user) {
       if (user.role !== "OWNER") {
         const body = renderDashboardPage({
           userName,
           isOwner: false,
+          audience: "member",
           basePath,
           adminBaseUrl,
         });
@@ -1672,7 +1674,7 @@ export function createMetricsApp(
       isOwner: true,
       basePath,
       adminBaseUrl,
-      showSettings,
+      audience: isAdminViewer ? "admin" : "member",
     });
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -1928,6 +1930,7 @@ export function createPublicMetricsApp(
       userName: "Public",
       isOwner: false,
       readOnly: true,
+      audience: "public",
       basePath: publicBase,
     });
     return new Response(body, {

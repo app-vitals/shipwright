@@ -28,14 +28,19 @@ describe("renderDashboardPage — snapshot", () => {
   });
 });
 
-describe("renderDashboardPage — Settings nav link", () => {
-  test("renders Settings link when showSettings is true", () => {
-    const html = renderDashboardPage({ ...BASE_OPTS, showSettings: true });
+describe("renderDashboardPage — Settings nav link (audience)", () => {
+  test("renders Settings link for the admin audience", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, audience: "admin" });
     expect(html).toContain("/admin/settings");
   });
 
-  test("omits Settings link when showSettings is false", () => {
-    const html = renderDashboardPage({ ...BASE_OPTS, showSettings: false });
+  test("omits Settings link for the member audience", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, audience: "member" });
+    expect(html).not.toContain("/admin/settings");
+  });
+
+  test("omits Settings link for the public audience", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, audience: "public" });
     expect(html).not.toContain("/admin/settings");
   });
 
