@@ -31,20 +31,23 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 - As an engineer, I want the dark/green brand file to live where it's actually true (the marketing site) so it stops being auto-detected against unrelated surfaces.
 
 **Requirements**:
-- Move `tokens.json`, `BRAND.md`, `brand-lint.ts`, `build-brand-css.ts` (and their tests) from `shipwright/brand/` to `shipwright/site/brand/`.
+- Move the entire `shipwright/brand/` directory wholesale to `shipwright/site/brand/` — `tokens.json`, `BRAND.md`, `MESSAGING.md`, `brand.css`, `brand-lint.ts`, `build-brand-css.ts`, their unit tests, `admin-theme-tokens.unit.test.ts`, `assets/` (og, videos) and `templates/`. Nothing is left behind except Feature 3's new `brand/tokens.json`.
+- Update every reference to the old path, including prose/comment references (`CLAUDE.md`, `docs/architecture.md`, `scripts/competitive-refresh-runbook.md`, `demo/brand-overlay.sh`, `site/tailwind.config.mjs`, `site/README.md`, and `brand/MESSAGING.md` comment references in `site/src/`); verified by a `git grep -n 'brand/'` sweep.
 - Re-point `admin-theme-tokens.unit.test.ts`'s import of `./tokens.json` to the new path; it keeps comparing against the dark brand per Feature 2's decision.
 - Re-point the `shipwright-brand` skill's path resolution to the new location.
 - No value changes — verified by diffing file content before/after the move.
 
 **Acceptance Criteria**:
-- [ ] `shipwright/brand/` no longer exists at repo root
+- [ ] The old `shipwright/brand/` contents no longer exist at repo root (only Feature 3's new `tokens.json` occupies `brand/` afterward)
+- [ ] `git grep -n 'brand/'` shows no stale references to the old location
 - [ ] `shipwright/site/brand/tokens.json` has byte-identical `color`/`font`/`type`/`gradient`/`glow`/`layout`/`links` values to the pre-move file
 - [ ] `bun test` passes in `shipwright/site/` and `shipwright/brand/admin-theme-tokens.unit.test.ts` (at its new path) still passes
 
 **Technical Considerations**: `@app-vitals/agent-admin`'s published package still points at the old shipwright path conceptually (it's a hand-copied subset, not a live import, so no republish is required for this feature alone — only Feature 4/5's new export needs a publish).
 
 **Source Map**:
-- `app-vitals/shipwright`: `brand/tokens.json`, `brand/BRAND.md`, `brand/brand-lint.ts`, `brand/build-brand-css.ts`, `brand/build-brand-css.unit.test.ts`, `brand/admin-theme-tokens.unit.test.ts` — relocate to `site/brand/`
+- `app-vitals/shipwright`: all of `brand/` (`tokens.json`, `BRAND.md`, `MESSAGING.md`, `brand.css`, `brand-lint.ts`, `build-brand-css.ts`, the three `*.unit.test.ts` files, `assets/`, `templates/`) — relocate to `site/brand/`
+- `app-vitals/shipwright`: prose/comment consumers listed under Requirements — update path wording
 - `app-vitals/shipwright`: `plugins/shipwright/` (shipwright-brand skill) — update path resolution
 
 **Testing Strategy**: Layer: unit — pure path/content move, existing unit tests re-run at new location with no logic change.
@@ -136,7 +139,7 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 **Requirements**:
 - Lives in `shipwright` (mirrors the existing `admin-theme-tokens.unit.test.ts` pattern, which already reads an `agent`-published package from shipwright).
 - Imports `@app-vitals/agent-admin`'s new `brand-tokens.json` export and compares its shared-base leaves against shipwright's own local `brand/tokens.json` (Feature 3's file) — the exact same import pattern the existing `admin-theme-tokens.unit.test.ts` already uses, just a second instance pointed at the new export.
-- Depends on Feature 3 and Feature 4 both existing, and on shipwright's `@app-vitals/agent-admin` dependency being bumped to a version that includes Feature 4's new export.
+- Depends on Feature 3 and Feature 4 both existing, and on shipwright's `@app-vitals/agent-admin` dependency being bumped to the first published version whose `exports` map contains `./brand-tokens.json` (verified against the published package, not a hard-coded version number).
 
 **Acceptance Criteria**:
 - [ ] A new unit test in `shipwright/brand/` fails if the shared-base color values disagree between the two new files
@@ -197,7 +200,7 @@ Primary users are App Vitals engineers (and any Shipwright agent running autonom
 
 ## Success Criteria
 
-- `shipwright/brand/` no longer exists at repo root; it's at `shipwright/site/brand/` with identical content, and every prior consumer still works unchanged.
+- The old `shipwright/brand/` contents no longer exist at repo root; they're at `shipwright/site/brand/` with identical content, and every prior consumer still works unchanged.
 - `shipwright/brand/tokens.json` exists at the repo root with `color`(+`font`) values matching the live metrics dashboard exactly.
 - `agent/admin/src/brand-tokens.json` exists, exported via `@app-vitals/agent-admin`, with values matching the live admin UI exactly.
 - A drift test fails if the shared-base values between the two new files and `toolbar.ts` disagree.
