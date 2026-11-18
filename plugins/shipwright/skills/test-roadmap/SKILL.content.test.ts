@@ -611,6 +611,13 @@ describe("SKILL.md — step 9b emits the publish-coverage-artifact task", () => 
     );
   });
 
+  it("body tells the implementer to create a starter exclusion file the gate reads", () => {
+    expect(step()).toContain(".shipwright/coverage.json");
+    expect(step()).toContain("`maxExcludedPct` set to a conservative `5`");
+    expect(step()).toContain("empty `excludePrefixes` and `excludeSubstrings`");
+    expect(step()).toContain("gate must read this file");
+  });
+
   it("emits nothing when the repo is reporting", () => {
     expect(step()).toContain("emit nothing");
   });

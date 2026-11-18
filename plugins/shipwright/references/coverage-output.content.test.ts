@@ -107,6 +107,13 @@ describe("coverage-output.md — exclusion contract", () => {
     expect(content).toContain("lcov only");
   });
 
+  it("documents the starter exclusion file for a new repo", () => {
+    expect(content).toContain("Starter file for a new repo");
+    expect(content).toContain('"excludePrefixes": []');
+    expect(content).toContain('"excludeSubstrings": []');
+    expect(content).toContain('"maxExcludedPct": 5');
+  });
+
   it("no longer claims the reader applies no excludes", () => {
     expect(content).not.toContain("Raw total, no path excludes");
   });
