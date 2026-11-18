@@ -145,6 +145,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "test-readiness",
+              "description": "Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id."
+            },
+            "required": false,
+            "description": "Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id.",
+            "name": "originRef",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "agent-id-123"
             },
             "required": false,

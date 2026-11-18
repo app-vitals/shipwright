@@ -934,6 +934,11 @@ export const TaskListQuerySchema = z.object({
     example: "cron",
     description: `Only tasks with this origin kind. ${ORIGIN_KIND_DESCRIPTION}`,
   }),
+  originRef: z.string().optional().openapi({
+    example: "test-readiness",
+    description:
+      "Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id.",
+  }),
   claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
   pr: z.string().optional().openapi({ example: "42" }),

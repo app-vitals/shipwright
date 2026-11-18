@@ -452,7 +452,7 @@ export class SystemCronService implements SystemCronServiceLike {
         source: SYSTEM_CRON_TASK_SOURCE,
         // PLU-2.5: typed provenance. No owner — never invented for cron tasks.
         originKind: "cron" satisfies OriginKind,
-        originRef: def.name,
+        originRef: def.id,
       };
     });
 

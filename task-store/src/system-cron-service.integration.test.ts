@@ -110,7 +110,7 @@ describeOrSkip("SystemCronService.fire (integration)", () => {
     });
     // PLU-2.5: system-cron tasks carry typed origin provenance.
     expect(task.originKind).toBe("cron");
-    expect(task.originRef).toBe("Dependency audit");
+    expect(task.originRef).toBe(CRON_ID);
     expect(task.owner).toBeNull();
     expect(task.title).toBe("Dependency audit: acme/widgets");
     expect(task.description).toBe(

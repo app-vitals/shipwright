@@ -341,6 +341,8 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
     task.originKind !== filters.originKind
   )
     return false;
+  if (filters.originRef !== undefined && task.originRef !== filters.originRef)
+    return false;
   if (filters.hitl !== undefined && task.hitl !== filters.hitl) return false;
   if (filters.kind !== undefined && task.kind !== filters.kind) return false;
   if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
@@ -442,6 +444,8 @@ interface TaskListPostFilters {
   owner?: string;
   /** PLU-2.5: exact match on Task.originKind (a registered OriginKind). */
   originKind?: OriginKind;
+  /** SCM-2.2: exact match on Task.originRef (cron id for cron tasks). */
+  originRef?: string;
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1). Note `kind: "prd"` always yields an empty
    * ready set — ready.ts excludes that slice structurally. */
@@ -474,6 +478,7 @@ export interface TaskListFilters {
   branch?: string;
   owner?: string;
   originKind?: OriginKind;
+  originRef?: string;
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1) — `?kind=dev` / `?kind=prd`. */
   kind?: TaskKind;
@@ -620,6 +625,7 @@ export class TaskService implements TaskServiceLike {
     if (filters.kind !== undefined) where.kind = filters.kind;
     if (filters.owner !== undefined) where.owner = filters.owner;
     if (filters.originKind !== undefined) where.originKind = filters.originKind;
+    if (filters.originRef !== undefined) where.originRef = filters.originRef;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
