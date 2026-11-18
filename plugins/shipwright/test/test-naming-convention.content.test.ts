@@ -34,7 +34,7 @@ const ESTABLISHED_SUFFIXES = [
 const RESERVED_SUFFIX = ".canary.";
 
 const REQUIRED_IGNORE_PATTERNS = [
-  "**/site/**",
+  "**/site/**/*.spec.ts",
   "**/metrics/e2e/**",
   "**/admin/e2e/**",
   "**/*.canary.test.ts",
