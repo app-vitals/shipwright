@@ -7,6 +7,7 @@
 import {
   baseStyles,
   renderShipwrightToolbar,
+  type ToolbarAudience,
 } from "@app-vitals/agent-lib/web/toolbar.ts";
 
 export interface DashboardPageOptions {
@@ -27,8 +28,12 @@ export interface DashboardPageOptions {
    * controls. All pipeline metric panels remain visible. Default false.
    */
   readOnly?: boolean;
-  /** Render the toolbar's Settings link (admins/owners only). Default false. */
-  showSettings?: boolean;
+  /**
+   * Who is viewing the toolbar (admin/owner → "admin", other signed-in →
+   * "member", unauthenticated → "public"). Defaults to "public" when
+   * `readOnly`, otherwise "member".
+   */
+  audience?: ToolbarAudience;
 }
 
 function infoIcon(tip: string): string {
@@ -38,6 +43,8 @@ function infoIcon(tip: string): string {
 export function renderDashboardPage(opts: DashboardPageOptions): string {
   const base = opts.basePath ?? "";
   const readOnly = opts.readOnly ?? false;
+  const audience: ToolbarAudience =
+    opts.audience ?? (readOnly ? "public" : "member");
 
   // Token usage is owner-only telemetry — omitted entirely in the read-only
   // public variant. Pipeline panels above/below are unaffected.
@@ -178,7 +185,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
 <body>
-  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard`, adminBaseUrl: opts.adminBaseUrl, readOnly, showSettings: opts.showSettings ?? false, tasksUrl: `${base}/tasks` })}
+  ${renderShipwrightToolbar({ userName: opts.userName, activePath: `${base}/dashboard`, logoutAction: "/admin/logout", metricsUrl: `${base}/dashboard`, adminBaseUrl: opts.adminBaseUrl, audience, tasksUrl: `${base}/tasks` })}
   <div class="app">
 
     <!-- Page Controls -->
