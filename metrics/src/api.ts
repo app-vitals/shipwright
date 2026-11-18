@@ -21,7 +21,7 @@ import {
   validateCustomRange,
   wrapResponse,
 } from "./formatters.ts";
-import type { AccountsClient } from "./lib/accounts-client.ts";
+import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
 import {
   type AppHandler,
   type AuthEnv,
@@ -1615,6 +1615,7 @@ export function createMetricsApp(
     const sessionToken = getCookie(c, SESSION_COOKIE);
     let userName = "Unknown";
     let userId: string | undefined;
+    let jwtIsAdmin = false;
     if (sessionToken && sessionSecret) {
       try {
         const p = (await verify(
@@ -1625,6 +1626,7 @@ export function createMetricsApp(
         if (typeof p.userId === "string" && p.userId) {
           userId = p.userId;
         }
+        jwtIsAdmin = p.isAdmin === true;
         if (typeof p.name === "string" && p.name) {
           userName = p.name;
         } else if (typeof p.email === "string" && p.email) {
@@ -1635,8 +1637,22 @@ export function createMetricsApp(
       }
     }
 
-    if (requireOwnerRole && accountsClient && userId) {
-      const user = await accountsClient.getUser(userId);
+    // Settings link is cosmetic (/admin/settings enforces access itself):
+    // show it only for admins (session isAdmin claim) or OWNER-role users.
+    // No resolvable signal → hidden.
+    let showSettings = jwtIsAdmin;
+    let user: UserRecord | undefined;
+    if (accountsClient && userId && (requireOwnerRole || !showSettings)) {
+      try {
+        user = await accountsClient.getUser(userId);
+      } catch (err) {
+        if (requireOwnerRole) throw err;
+        // Cosmetic lookup failed — leave Settings hidden.
+      }
+    }
+    if (user?.role === "OWNER") showSettings = true;
+
+    if (requireOwnerRole && accountsClient && userId && user) {
       if (user.role !== "OWNER") {
         const body = renderDashboardPage({
           userName,
@@ -1656,6 +1672,7 @@ export function createMetricsApp(
       isOwner: true,
       basePath,
       adminBaseUrl,
+      showSettings,
     });
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },

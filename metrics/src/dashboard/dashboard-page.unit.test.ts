@@ -28,6 +28,22 @@ describe("renderDashboardPage — snapshot", () => {
   });
 });
 
+describe("renderDashboardPage — Settings nav link", () => {
+  test("renders Settings link when showSettings is true", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, showSettings: true });
+    expect(html).toContain("/admin/settings");
+  });
+
+  test("omits Settings link when showSettings is false", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, showSettings: false });
+    expect(html).not.toContain("/admin/settings");
+  });
+
+  test("omits Settings link by default", () => {
+    expect(renderDashboardPage(BASE_OPTS)).not.toContain("/admin/settings");
+  });
+});
+
 describe("renderDashboardPage — structural invariants", () => {
   test("returns a valid HTML document", () => {
     const html = renderDashboardPage(BASE_OPTS);
