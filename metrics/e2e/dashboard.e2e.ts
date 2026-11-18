@@ -1143,6 +1143,23 @@ test.describe("Dashboard — Coverage by repo section", () => {
     await expect(beta.locator(".coverage-stale-badge")).toBeVisible();
   });
 
+  test("toggling the date range refetches coverage with the selected preset", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+    for (const preset of ["7d", "90d"] as const) {
+      const [req] = await Promise.all([
+        page.waitForRequest((r) =>
+          r.url().includes(`/metrics/coverage?preset=${preset}`),
+        ),
+        page.locator(`.date-btn[data-range="${preset}"]`).click(),
+      ]);
+      expect(req.url()).toContain(`preset=${preset}`);
+    }
+  });
+
   test("selecting a repo restricts the trend chart to that repo's series", async ({
     page,
   }) => {
