@@ -43,6 +43,17 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+// Fixture tasks are created ~2h before "now"; the default "today" range can
+// start after that (00:00-02:00 PT), so pin a wide range to stay time-stable.
+async function selectWideRange(page: Awaited<ReturnType<Browser["newPage"]>>) {
+  await Promise.all([
+    page.waitForResponse((r) =>
+      r.url().includes("/metrics/system-crons?preset=7d"),
+    ),
+    page.click('.date-btn[data-range="7d"]'),
+  ]);
+}
+
 describe("dashboard system crons tile", () => {
   test("renders one row per cron with shipped, stuck, failed, follow-ons, as-of and repo scope", async () => {
     if (!browser || !server) return;
@@ -51,6 +62,7 @@ describe("dashboard system crons tile", () => {
       await page.goto(`http://localhost:${server.port}/dashboard`, {
         waitUntil: "networkidle",
       });
+      await selectWideRange(page);
       await page.waitForSelector('tr[data-cron="test-readiness"]');
       expect(await page.locator("#system-crons-tbody tr").count()).toBe(1);
       const text = (field: string) =>
@@ -78,6 +90,7 @@ describe("dashboard system crons tile", () => {
       await page.goto(`http://localhost:${server.port}/dashboard`, {
         waitUntil: "networkidle",
       });
+      await selectWideRange(page);
       await page.waitForSelector('tr[data-cron="test-readiness"]');
       const href = async (field: string) =>
         new URL(
