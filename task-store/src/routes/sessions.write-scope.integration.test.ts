@@ -174,16 +174,31 @@ describeOrSkip("PATCH /sessions/:slug write scope (integration)", () => {
     expect(denied.status).toBe(403);
   });
 
-  it("an agent cannot widen declared repos beyond its scope", async () => {
-    await seed("s", { taskRepos: [{ repo: "org/a" }] });
-    const res = await patch(appFor("agent-1", ["org/a"]), "s", {
-      repos: ["org/a", "org/secret"],
+  it("a stale `repos` key in the PATCH body is ignored, not rejected; session repos derive from tasks and documents only", async () => {
+    await seed("s", {
+      taskRepos: [{ repo: "org/a" }],
+      docRepo: { repo: "org/docs", repos: ["org/a"] },
     });
-    expect(res.status).toBe(403);
-    const ok = await patch(appFor("agent-1", ["org/a"]), "s", {
-      repos: ["org/a"],
+    const app = appFor(null, null);
+    const res = await patch(app, "s", {
+      title: "kept",
+      repos: ["org/ghost", "org/secret"],
     });
-    expect(ok.status).toBe(200);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { title: string; repos: string[] };
+    expect(body.title).toBe("kept");
+    expect(body.repos).toEqual(["org/a"]);
+    expect(body.repos).not.toContain("org/ghost");
+
+    const got = await sessions.get("s");
+    expect(got?.repos).toEqual(["org/a"]);
+    expect(got?.documents.map((d) => d.repo)).toEqual(["org/docs"]);
+
+    // Even an out-of-scope `repos` value is no longer a 403 for an agent.
+    const agent = await patch(appFor("agent-1", ["org/a", "org/docs"]), "s", {
+      repos: ["org/secret"],
+    });
+    expect(agent.status).toBe(200);
   });
 
   it("a session the agent cannot see is 404, not 403 (no existence leak)", async () => {

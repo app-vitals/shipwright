@@ -173,7 +173,6 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
       if ("title" in patch) record.title = patch.title ?? null;
       if ("owner" in patch) record.owner = patch.owner ?? null;
       if ("homeRepo" in patch) record.homeRepo = patch.homeRepo ?? null;
-      if (patch.repos !== undefined) record.repos = patch.repos;
       if (patch.archived === true) {
         record.archivedAt = new Date("2026-02-01T00:00:00.000Z");
         record.archivedBy = actor;
@@ -861,7 +860,7 @@ describe("GET /sessions unknown query parameters (PLU-1.1)", () => {
   });
 });
 
-// ─── PLU-2.3: owner, home repo, declared repos ───────────────────────────────
+// ─── PLU-2.3: owner, home repo ───────────────────────────────
 
 describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
   const records = () => [
@@ -881,7 +880,7 @@ describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
     expect(body.sessions[0].documents).toEqual([]);
   });
 
-  it("PATCH accepts owner, homeRepo and repos and returns them", async () => {
+  it("PATCH accepts owner and homeRepo, and ignores a stale repos key", async () => {
     const parent = makeAdminParent(makeApp(records()));
     const res = await parent.request("/unowned", {
       method: "PATCH",
@@ -896,7 +895,7 @@ describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
     const body = (await res.json()) as SessionListItem;
     expect(body.owner).toBe("a@example.com");
     expect(body.homeRepo).toBe("org/home");
-    expect(body.repos).toEqual(["org/a", "org/b"]);
+    expect(body.repos).toEqual([]);
   });
 
   it("PATCH owner: null clears the owner", async () => {
@@ -910,14 +909,9 @@ describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
     expect(((await res.json()) as SessionListItem).owner).toBeNull();
   });
 
-  it("PATCH rejects a non-string owner, non-string homeRepo and a malformed repos", async () => {
+  it("PATCH rejects a non-string owner, non-string homeRepo", async () => {
     const parent = makeAdminParent(makeApp(records()));
-    for (const body of [
-      { owner: 5 },
-      { homeRepo: false },
-      { repos: "org/a" },
-      { repos: ["org/a", 3] },
-    ]) {
+    for (const body of [{ owner: 5 }, { homeRepo: false }]) {
       const res = await parent.request("/mine", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

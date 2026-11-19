@@ -49,8 +49,10 @@ const MIGRATION_SQL_PATH = join(
 const LATER_SESSION_MIGRATION_DIRS = [
   "20261008000000_add_account_id",
   "20261008130000_drop_session_slug_pk",
-  // PLU-2.1: nullable owner / homeRepo / declaredRepos / planning-lock columns.
+  // PLU-2.1: nullable owner / homeRepo / planning-lock columns.
   "20261117180000_add_planning_documents",
+  // PWE-2.1: drops Session.declaredRepos again.
+  "20261119000000_drop_session_declared_repos",
 ];
 
 function makePrisma(): PrismaClient {

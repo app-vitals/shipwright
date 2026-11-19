@@ -12,7 +12,7 @@
  *      conditional UPDATE, so it row-locks the session for the rest of the
  *      transaction and a concurrent acquire waits for this write to finish;
  *   3. for agent tokens, every repo the session already spans (task repos,
- *      declared repos, document home and target repos) must be in scope;
+ *      document home and target repos) must be in scope;
  *   4. register the plan document (number 1, idempotent) — this also sets
  *      the session's owner (first one wins) and homeRepo (when empty), the
  *      same way POST /documents does;
@@ -235,10 +235,6 @@ export class SessionPlanService implements SessionPlanServiceLike {
     scope: string[],
   ): Promise<void> {
     // Sequential: an interactive transaction runs on one connection.
-    const session = await tx.session.findUnique({
-      where: { accountId_slug: { accountId, slug } },
-      select: { declaredRepos: true },
-    });
     const tasks = await tx.task.findMany({
       where: { accountId, session: slug, repo: { not: null } },
       select: { repo: true },
@@ -248,7 +244,7 @@ export class SessionPlanService implements SessionPlanServiceLike {
       where: { accountId, session: slug },
       select: { repo: true, repos: true },
     });
-    const repos = new Set<string>(session?.declaredRepos ?? []);
+    const repos = new Set<string>();
     for (const t of tasks) if (t.repo) repos.add(t.repo);
     for (const d of docs) {
       repos.add(d.repo);

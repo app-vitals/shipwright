@@ -2332,7 +2332,7 @@ export interface paths {
         };
         /**
          * List sessions
-         * @description Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+         * @description Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the distinct task repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -2451,8 +2451,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Update a session (title, archive, owner, homeRepo, repos)
-         * @description Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
+         * Update a session (title, archive, owner, homeRepo)
+         * @description Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear. A `repos` key is not part of the body and is ignored (a session's repos derive from its tasks and documents). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
          */
         patch: {
             parameters: {
@@ -4737,7 +4737,7 @@ export interface components {
              */
             agentIds: string[];
             /**
-             * @description Union of the session's task repos and its declared repos (PATCH `repos`).
+             * @description The session's task repos (derived; not writable).
              * @example [
              *       "org/repo"
              *     ]
@@ -4839,13 +4839,6 @@ export interface components {
              * @example org/repo
              */
             homeRepo?: string | null;
-            /**
-             * @description Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list.
-             * @example [
-             *       "org/repo"
-             *     ]
-             */
-            repos?: string[];
         };
         ScopePreflightResponse: {
             /**

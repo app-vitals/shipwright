@@ -160,6 +160,10 @@ describeOrSkip("add planning documents migration (integration)", () => {
     await clear(prisma);
     await revert(prisma);
     await runMigration(prisma);
+    // PWE-2.1: the later migration drops the column this one adds.
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "Session" DROP COLUMN IF EXISTS "declaredRepos";',
+    );
     await prisma.$disconnect();
   });
 
@@ -333,15 +337,11 @@ describeOrSkip("add planning documents migration (integration)", () => {
         slug: "plu-sess",
         owner: "dev@example.com",
         homeRepo: "app-vitals/shipwright",
-        declaredRepos: ["app-vitals/shipwright", "app-vitals/squadron"],
         planningLockHolder: "agent-1",
         planningLockExpiresAt: lockExpiry,
       },
     });
-    expect(session.declaredRepos).toEqual([
-      "app-vitals/shipwright",
-      "app-vitals/squadron",
-    ]);
+    expect(session.homeRepo).toBe("app-vitals/shipwright");
     expect(session.planningLockExpiresAt?.toISOString()).toBe(
       lockExpiry.toISOString(),
     );

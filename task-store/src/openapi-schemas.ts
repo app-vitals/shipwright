@@ -691,8 +691,7 @@ export const SessionSchema = z
     agentIds: z.array(z.string()).openapi({ example: ["agent-1"] }),
     repos: z.array(z.string()).openapi({
       example: ["org/repo"],
-      description:
-        "Union of the session's task repos and its declared repos (PATCH `repos`).",
+      description: "The session's task repos (derived; not writable).",
     }),
     waitingTasks: z
       .array(
@@ -811,14 +810,6 @@ export const SessionPatchBodySchema = z
       example: "org/repo",
       description: "Omitted: untouched. A string: set. null: clears.",
     }),
-    repos: z
-      .array(z.string())
-      .optional()
-      .openapi({
-        example: ["org/repo"],
-        description:
-          "Declared target repos, stored as `declaredRepos` and unioned into the response's `repos`. Omitted: untouched. An array replaces the stored list.",
-      }),
   })
   .openapi("SessionPatchBody");
 
