@@ -2010,9 +2010,9 @@ describe("buildReviewStateProductionDeps", () => {
 describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", () => {
   /**
    * Fake fetchFn that simulates the task-store's GET /tasks?status=<status>
-   * pagination contract: returns up to `limit` records starting at `offset`
-   * from a fixed per-status backing array. Records every request's status,
-   * limit, and offset so tests can assert the full paging sequence.
+   * pagination contract: returns up to `limit` records after the request's
+   * `cursor` from a fixed per-status backing array. Records every request's
+   * status, limit, and cursor so tests can assert the full paging sequence.
    * `updatedSince` is recorded when present but is never sent by the pr_open
    * list call path (RCB-1.1) — present here only so a caller could assert its
    * absence (`hasUpdatedSince: false`).
