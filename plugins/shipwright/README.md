@@ -16,10 +16,9 @@ Inside Claude Code, run these one at a time (pasting both together fails silentl
 /plugin install shipwright@shipwright
 ```
 
-The plugin's version (`.claude-plugin/plugin.json`) advances automatically on
-every agent release — `.github/workflows/sync-plugin-version.yml` syncs it
-from each `agent-v*` tag, so `claude plugin update` can detect and pull new
-plugin content instead of comparing against a frozen version string.
+The plugin and marketplace manifests carry no `version`, so Claude Code versions
+the plugin by git commit SHA: every commit to `main` is an update that
+`claude plugin update` detects and pulls.
 
 ## The Pipeline
 

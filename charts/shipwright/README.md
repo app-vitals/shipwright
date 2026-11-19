@@ -91,7 +91,7 @@ Every publish also creates an annotated git tag `chart-<version>` on the source
 commit; its message records the version, source SHA, stamped pins and library
 pin. **Changing the chart needs no version bump, CHANGELOG entry or
 `artifacthub.io/changes` edit.** `CHANGELOG.md` is historical (last entry
-1.32.304).
+1.32.306).
 
 ## Quick start (Minikube)
 

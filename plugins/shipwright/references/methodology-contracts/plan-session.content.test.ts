@@ -151,8 +151,8 @@ describe("plan-session.md — scope", () => {
     );
   });
 
-  it("clarifies the wrapper owns writing PLAN.md, the bulk POST, and the plan PR", () => {
-    expect(content).toContain("/tasks/bulk");
+  it("clarifies the wrapper owns writing PLAN.md, the plan POST, and the plan PR", () => {
+    expect(content).toContain("/sessions/{session}/plan");
     expect(content.toLowerCase()).toContain("plan pr");
   });
 });

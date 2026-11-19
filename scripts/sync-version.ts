@@ -19,6 +19,7 @@ const PACKAGE_JSON_PATHS = [
   "agent/package.json",
 ] as const;
 
+const PLUGIN_MANIFEST_SUFFIX = ".claude-plugin/plugin.json";
 const VERSION_TXT_PATH = "version.txt";
 const MARKETPLACE_JSON_PATH = ".claude-plugin/marketplace.json";
 
@@ -100,7 +101,10 @@ export function checkVersionSync(cwd?: string): void {
   for (const rel of PACKAGE_JSON_PATHS) {
     const raw = readFileSync(resolve(root, rel), "utf8");
     const pkg = JSON.parse(raw) as Record<string, unknown>;
-    const actual = pkg.version as string;
+    const actual = pkg.version as string | undefined;
+    // The plugin manifest is committed versionless (external installs are
+    // versioned by commit SHA); only the build-time stamp adds a version.
+    if (actual === undefined && rel.endsWith(PLUGIN_MANIFEST_SUFFIX)) continue;
     if (actual !== expected) {
       mismatches.push(`  ${rel}: expected ${expected}, got ${actual}`);
     }
@@ -108,8 +112,9 @@ export function checkVersionSync(cwd?: string): void {
 
   const marketplaceRaw = readFileSync(resolve(root, MARKETPLACE_JSON_PATH), "utf8");
   const marketplace = JSON.parse(marketplaceRaw) as Record<string, unknown>;
-  const marketplaceActual = marketplace.version as string;
-  if (marketplaceActual !== expected) {
+  const marketplaceActual = marketplace.version as string | undefined;
+  // Committed versionless; present only after a build-time stamp.
+  if (marketplaceActual !== undefined && marketplaceActual !== expected) {
     mismatches.push(
       `  ${MARKETPLACE_JSON_PATH}: expected ${expected}, got ${marketplaceActual}`,
     );

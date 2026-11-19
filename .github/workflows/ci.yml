@@ -12,12 +12,12 @@ permissions:
   contents: read
 
 jobs:
-  # Detects whether this run only touches the files sync-plugin-version.yml
-  # commits — plugin-version syncs (package.json across workspaces,
-  # plugin.json, marketplace.json, version.txt). It is a fully automated,
-  # bot-authored, version-string-only change that never touch application
-  # logic — so the app/docker/site jobs below are gated on this and skipped
-  # when nothing else changed. helm.yml (separately path-filtered on
+  # Bot-only skip gate. No workflow commits version-string-only changes to
+  # main any more: chart-release.yml publishes the chart without a bump PR
+  # (ADR 0001) and the plugin-version sync bot is gone (manifests are
+  # versionless). The allowlist below is therefore empty and every run sets
+  # app=true; the job is kept so the app/docker/site jobs' wiring and check
+  # names stay stable. helm.yml (separately path-filtered on
   # charts/**) still runs and is what actually validates a chart change.
   #
   # Fails open on purpose: any inability to compute the diff (unresolvable
@@ -62,16 +62,16 @@ jobs:
           echo "Changed files (${BASE}...${HEAD_SHA}):"
           echo "$CHANGED"
 
-          # Exact allowlist — the full set of files sync-plugin-version.yml
-          # ever touches. Anything else in the diff
-          # means real code changed, so the full suite runs.
-          PATTERN='^(package\.json|plugins/shipwright/package\.json|plugins/shipwright/\.claude-plugin/plugin\.json|metrics/package\.json|agent/package\.json|version\.txt|\.claude-plugin/marketplace\.json)$'
+          # Exact allowlist of bot-committed files that may skip the app jobs.
+          # Empty: no workflow commits version-only changes any more, so any
+          # changed file means the full suite runs.
+          PATTERN='^$'
 
           if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE "$PATTERN"; then
             echo "app=true" >> "$GITHUB_OUTPUT"
           else
             echo "app=false" >> "$GITHUB_OUTPUT"
-            echo "Only automated plugin-version-sync files changed — skipping app-level CI jobs."
+            echo "Only automated bot-commit files changed — skipping app-level CI jobs."
           fi
 
   ci:
@@ -160,9 +160,8 @@ jobs:
       # The chart shell suites test the logic that chart-release.yml,
       # library-chart-release.yml and check-chart-drift.yml source from
       # .github/workflows/lib/. They run in this required job (no new check
-      # name). The `changes` allowlist above only skips this job for pure
-      # plugin-version-sync diffs, so a PR touching only those workflows, the
-      # test scripts or lib/ still runs them.
+      # name). The `changes` allowlist above is empty, so a PR touching only
+      # those workflows, the test scripts or lib/ still runs them.
       - name: Chart shell tests
         run: |
           bash .github/workflows/test-chart-release.sh

@@ -71,6 +71,7 @@ Manual test scenarios for each command across different project types.
 | 49 | `prompt-audit-maintenance` cron preCheck | Any | `check-prompt-audit.ts` gating | Missing ledger or `lastRun` 7+ days old exits 0; fresh ledger with no `proposed` findings exits 1 |
 | 58 | `/plan-session` Step 5 | Any (spec with `Success Criteria` and `Priorities & Sequence`) | Spec-level carry-through | Every Success Criteria statement appears in a task's acceptance criteria and every ordering/gating statement in a `dependencies` edge or a task; anything left out is listed under `Not carried:` with a reason (in the `## Decision Log` under `--autonomous`); a spec with neither section plans as before |
 | 59 | `/review-lean org/repo#N` | Any (open PR; `/review` run on the same PR for comparison) | Lean variant parity | Same outcome as `/review`: one posted review whose body leads with the same `Verdict:` label, the same `[skip-reason:review:deferred:...]` stops, `/prs/{id}/complete` after every ledger POST; prints the Step 5.5, 6.1, 9.5 and 10.5 proof lines; with no argument it answers `[silent]` and queries nothing |
+| 60 | `/plan-session` Step 6a.2 to 6b.2 | Any (task store with document endpoints; session with one unplanned spec) | Single plan write (PWE-3.2) | One `POST /sessions/{session}/plan` creates the plan document, the tasks and `plannedAt` on the planned specs; no `POST /documents`, `PATCH /documents/{id}` or `PATCH /sessions/{session}` calls; response `planDocumentId` is reused for the initiative close-out; a 409 (lock held or task id taken) leaves no session row, plan document or tasks and releases the lock; with `DOCS_API=off` the tasks go through `POST /tasks/bulk` instead |
 
 ---
 
@@ -1318,18 +1319,17 @@ genuine uncovered error path (e.g. an untested `catch` block) files normally.
 
 ## Versioning Checklist (for every PR to this repo)
 
-**Version is owned by automation — do not manually bump it in a feature PR.**
-`plugins/shipwright/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and
-`version.txt` are synced exclusively by `.github/workflows/sync-plugin-version.yml`,
-triggered off `agent-v*` tags (which `scripts/sync-version.ts` derives from
-semantic-release's conventional-commit analysis). See the `marketplace-dev` skill's
-"Version Ownership" section for the full mechanism.
+**Do not add a `version` to the plugin or marketplace manifests.**
+`plugins/shipwright/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` are
+committed versionless: a git-hosted marketplace plugin with no version uses the commit SHA,
+so every commit is an update for external installs. The agent image gets its version
+stamped at build time (`release.yml` `AGENT_VERSION` → `scripts/sync-version.ts`).
 
 - [ ] Does this PR change any file under `commands/`, `skills/`, `agents/`, or `hooks/`?
-  - **Yes** → write a `fix:`/`feat:`/`feat!:` commit so semantic-release derives the
-    correct bump automatically — do **not** hand-edit `plugin.json`, `README.md`'s
-    version heading, `marketplace.json`, or `version.txt` in this PR
+  - **Yes** → write a `fix:`/`feat:`/`feat!:` commit so the release derives the
+    correct bump automatically — do **not** add a version to `plugin.json` or
+    `marketplace.json`, or hand-edit `version.txt`, in this PR
   - **No** (docs-only, like ADOPTION-ROADMAP.md) → no commit-prefix action needed beyond
     normal Conventional Commits hygiene
 - [ ] After merging: verify `/plugin marketplace update` + `/plugin update shipwright`
-  picks up the new version once the sync-plugin-version PR has landed on `main`
+  picks up the new commit once it has landed on `main`

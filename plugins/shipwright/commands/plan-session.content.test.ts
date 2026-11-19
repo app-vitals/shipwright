@@ -1581,8 +1581,8 @@ describe("plan-session.md — --initiative close-out (ICO-1.1)", () => {
     expect(s).toMatch(/never fail/i);
   });
 
-  it("only runs when the bulk write succeeded", () => {
-    expect(extractCloseout()).toMatch(/bulk (write|POST) (fails|failed)|failed or partial/);
+  it("only runs when the plan write succeeded", () => {
+    expect(extractCloseout()).toMatch(/(plan|bulk) (write|POST) (fails|failed)|write fails|failed or partial/);
   });
 
   it("states that both the built-in and Configured Methodology Dispatch paths converge on it", () => {
@@ -1683,26 +1683,54 @@ describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
     expect(step0).toMatch(/decision log/);
   });
 
-  it("Step 6b tasks carry planDocumentId, specDocumentId, owner, originKind document and originRef = plan document id (AC4)", () => {
+  it("Step 6b tasks carry specDocumentId and owner; the store stamps planDocumentId, originKind and originRef (PWE-3.2)", () => {
     const section = extractStep6bSection(content);
     const block = section.match(/```json[\s\S]*?```/)?.[0] ?? "";
     expect(block).toContain('"source": "planning/{session}/PLAN.md"');
-    expect(block).toContain('"planDocumentId": "{PLAN_DOC_ID}"');
     expect(block).toContain('"specDocumentId": "{SPEC_DOC_ID}"');
     expect(block).toContain('"owner": "{owner}"');
-    expect(block).toContain('"originKind": "document"');
-    expect(block).toContain('"originRef": "{PLAN_DOC_ID}"');
+    expect(block).not.toContain("planDocumentId");
+    expect(block).not.toContain("originKind");
+    expect(block).not.toContain("originRef");
     const lower = prose(section);
+    expect(lower).toMatch(/store stamps/);
     expect(lower).toMatch(/spec's owner|owner of the spec/);
     expect(lower).toMatch(/omit `?owner`? when (empty|none|unset)/);
   });
 
-  it("marks planned specs with plannedAt and widens the session's declared repos after the bulk POST", () => {
+  it("writes plan, tasks and planned specs with one POST /sessions/{session}/plan and keeps the plan response id (PWE-3.2)", () => {
     const section = extractStep6bSection(content);
-    expect(section).toContain("plannedAt");
-    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}");
-    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}");
-    expect(prose(section)).toMatch(/widen/);
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/sessions/{session}/plan"');
+    expect(section).toContain("planDocumentId");
+    expect(section).toMatch(/PLAN_DOC_ID/);
+    expect(prose(section)).toMatch(/all-or-nothing/);
+    expect(prose(section)).toMatch(/release the planning lock/);
+  });
+
+  it("Step 6 no longer registers the plan document, PATCHes plannedAt, or PATCHes session repos (PWE-3.2)", () => {
+    const step6 = content.slice(content.indexOf("## Step 6: Write to Queue"), content.indexOf("**Step 6c — Autonomous mode"));
+    expect(step6).not.toContain("POST $SHIPWRIGHT_TASK_STORE_URL/documents");
+    expect(step6).not.toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/");
+    expect(step6).not.toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/");
+    expect(step6).not.toContain("Register the plan document");
+    expect(prose(step6)).toMatch(/no separate .*sessions\/\{session\}`? to widen|no separate `patch/);
+  });
+
+  it("keeps POST /tasks/bulk only on the DOCS_API=off path (PWE-3.2)", () => {
+    const section = extractStep6bSection(content);
+    const offIdx = section.indexOf("`DOCS_API=off` path");
+    expect(offIdx).toBeGreaterThan(-1);
+    const bulkIdx = section.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk"');
+    expect(bulkIdx).toBeGreaterThan(offIdx);
+    expect(section.indexOf("/sessions/{session}/plan")).toBeLessThan(offIdx);
+  });
+
+  it("Step 6b.2 says specs are marked planned and the session repos derived inside the Step 6b write (PWE-3.2)", () => {
+    const idx = content.indexOf("**Step 6b.2");
+    expect(idx).toBeGreaterThan(-1);
+    const sec = prose(content.slice(idx, content.indexOf("**Step 6c — Autonomous mode")));
+    expect(sec).toContain("plannedat");
+    expect(sec).toMatch(/inside the step 6b transaction/);
   });
 
   it("no longer ties the input to a single PRODUCT-SPEC.md: Step 1 reads specs[] with the legacy file as spec 1", () => {

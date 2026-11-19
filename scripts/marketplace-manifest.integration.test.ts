@@ -21,7 +21,7 @@ interface MarketplaceManifest {
   name: string;
   description: string;
   owner: { name: string; url: string };
-  version: string;
+  version?: string;
   plugins: PluginEntry[];
 }
 
@@ -35,7 +35,7 @@ describe("marketplace.json", () => {
     expect(() => JSON.parse(raw)).not.toThrow();
   });
 
-  it("has required top-level fields: name (string), owner (object), version (string), plugins (array)", () => {
+  it("has required top-level fields: name (string), owner (object), plugins (array)", () => {
     const raw = readFileSync(MANIFEST_PATH, "utf8");
     const manifest = JSON.parse(raw) as MarketplaceManifest;
     expect(typeof manifest.name).toBe("string");
@@ -45,8 +45,6 @@ describe("marketplace.json", () => {
     expect(manifest.owner.name.length).toBeGreaterThan(0);
     expect(typeof manifest.owner.url).toBe("string");
     expect(manifest.owner.url.length).toBeGreaterThan(0);
-    expect(typeof manifest.version).toBe("string");
-    expect(manifest.version.length).toBeGreaterThan(0);
     expect(Array.isArray(manifest.plugins)).toBe(true);
     expect(manifest.plugins.length).toBeGreaterThan(0);
   });
@@ -88,12 +86,9 @@ describe("marketplace.json", () => {
     }
   });
 
-  it("version is a valid semver string", () => {
-    const raw = readFileSync(MANIFEST_PATH, "utf8");
-    const manifest = JSON.parse(raw) as MarketplaceManifest;
-    const semverRe =
-      /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-    expect(semverRe.test(manifest.version)).toBe(true);
+  it("carries no committed version (external installs are versioned by commit SHA)", () => {
+    const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as MarketplaceManifest;
+    expect(manifest.version).toBeUndefined();
   });
 
   it("preserves 2-space indent and trailing newline", () => {

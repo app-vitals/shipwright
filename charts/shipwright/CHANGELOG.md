@@ -5,11 +5,23 @@ All notable changes to the **shipwright** Helm chart are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Historical.** Up to 1.32.304 each chart version was bumped by a committed PR
+**Historical.** Up to 1.32.306 each chart version was bumped by a committed PR
 and logged here. Since ADR 0001 the chart version is derived at publish time
 and no longer committed: see the README "Versioning" section, and the annotated
 `chart-<version>` git tags (message = release record) for what each version
 shipped.
+
+## [1.32.306] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.306 triggered by release tag(s): `agent-v1.506.0`
+
+## [1.32.305] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.305 triggered by release tag(s): `admin-v1.365.1`, `agent-v1.505.0`, `metrics-v1.203.0`, `task-store-v1.264.1`
 
 ## [1.32.304] - 2026-11-19
 
