@@ -657,13 +657,10 @@ model Session {
   // ─── Planning (PLU-2.1) ───
   // All nullable and default-free so existing rows are untouched. owner is an
   // email set from the session's first document; homeRepo is the org/repo the
-  // planning files live in; declaredRepos are the declared target repos (the
-  // `repos` field in session responses stays the derived union of task repos
-  // and these). declaredRepos has no DEFAULT on purpose — adding one would
-  // backfill every existing row — so pre-existing sessions read as NULL.
+  // planning files live in. The `repos` field in session responses is derived
+  // from task repos and document repos.
   owner                 String?
   homeRepo              String?
-  declaredRepos         String[]
   // Short-lived, self-expiring planning lock: a planning pass holds it while it
   // reads and appends to the session's PLAN.md. Free when the holder is null
   // or the expiry has passed.

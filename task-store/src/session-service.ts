@@ -167,8 +167,6 @@ export interface SessionUpdatePatch {
   owner?: string | null;
   /** PLU-2.3: home repo (org/repo); null clears. */
   homeRepo?: string | null;
-  /** PLU-2.3: declared target repos (stored as `declaredRepos`). */
-  repos?: string[];
 }
 
 /**
@@ -288,11 +286,6 @@ function documentVisible(
     agentScope.repos.includes(doc.repo) ||
     doc.repos.some((r) => agentScope.repos.includes(r))
   );
-}
-
-/** Union of task repos and declared repos, first-seen order, no duplicates. */
-function unionRepos(taskRepos: string[], declared: string[] | null): string[] {
-  return [...new Set([...taskRepos, ...(declared ?? [])])];
 }
 
 /** -Infinity for null (sorts last in a descending sort); otherwise epoch ms. */
@@ -494,7 +487,6 @@ export class SessionService implements SessionServiceLike {
       return {
         ...session,
         ...rollup,
-        repos: unionRepos(rollup.repos, session.declaredRepos),
         documents:
           documentsBySession.get(sessionKey(session.accountId, session.slug)) ??
           [],
@@ -635,7 +627,6 @@ export class SessionService implements SessionServiceLike {
     return {
       ...session,
       ...rollup,
-      repos: unionRepos(rollup.repos, session.declaredRepos),
       documents,
     };
   }
@@ -740,9 +731,6 @@ export class SessionService implements SessionServiceLike {
     }
     if ("owner" in patch) data.owner = patch.owner ?? null;
     if ("homeRepo" in patch) data.homeRepo = patch.homeRepo ?? null;
-    if (patch.repos !== undefined) {
-      data.declaredRepos = [...new Set(patch.repos)];
-    }
     if (patch.archived === true) {
       data.archivedAt = this.clock.now();
       data.archivedBy = actor;

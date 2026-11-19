@@ -2,7 +2,7 @@
  * task-store/src/session-planning.integration.test.ts
  *
  * Integration tests (real Postgres) for PLU-2.3: session owner / homeRepo /
- * declaredRepos, the `repos` union, the `owner` list filter, the session's
+ * the derived `repos`, the `owner` list filter, the session's
  * documents, and document-based scoped-token visibility.
  *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
@@ -129,30 +129,23 @@ describeOrSkip("session planning fields and visibility (integration)", () => {
     expect(none.total).toBe(0);
   });
 
-  it("repos is the union of task repos and declared repos, and repo/org filters apply to it", async () => {
+  it("repos derive from tasks only (document repos are reported on documents), and repo/org filters apply to them", async () => {
     await tasks.create({
       title: "t",
       status: "pending",
       session: "s1",
       repo: "org/task-repo",
     });
-    await sessions.update(
-      "s1",
-      { repos: ["org/declared", "org/task-repo", "other/x"] },
-      "admin",
-    );
+    await registerSpec("s1", "org/home", ["org/target"]);
 
     const got = await sessions.get("s1");
-    expect([...(got?.repos ?? [])].sort()).toEqual([
-      "org/declared",
-      "org/task-repo",
-      "other/x",
-    ]);
+    expect(got?.repos).toEqual(["org/task-repo"]);
+    expect(got?.documents.map((d) => d.repo)).toEqual(["org/home"]);
 
-    const byRepo = await sessions.list({ repo: "org/declared", state: "all" });
+    const byRepo = await sessions.list({ repo: "org/task-repo", state: "all" });
     expect(byRepo.sessions.map((s) => s.slug)).toEqual(["s1"]);
-    const byOrg = await sessions.list({ org: "other", state: "all" });
-    expect(byOrg.sessions.map((s) => s.slug)).toEqual(["s1"]);
+    const byOrg = await sessions.list({ org: "nope", state: "all" });
+    expect(byOrg.sessions).toEqual([]);
     const miss = await sessions.list({ repo: "org/nope", state: "all" });
     expect(miss.sessions).toEqual([]);
   });
@@ -168,18 +161,21 @@ describeOrSkip("session planning fields and visibility (integration)", () => {
     expect(res.sessions[0].homeRepo).toBe("org/home");
   });
 
-  it("update persists owner, homeRepo and repos (declaredRepos) and can clear owner/homeRepo", async () => {
-    await tasks.create({ title: "t", status: "pending", session: "s1" });
+  it("update persists owner and homeRepo and can clear owner/homeRepo", async () => {
+    await tasks.create({
+      title: "t",
+      status: "pending",
+      session: "s1",
+      repo: "org/a",
+    });
     const updated = await sessions.update(
       "s1",
-      { owner: OWNER, homeRepo: "org/home", repos: ["org/a", "org/a"] },
+      { owner: OWNER, homeRepo: "org/home" },
       "admin",
     );
     expect(updated.owner).toBe(OWNER);
     expect(updated.homeRepo).toBe("org/home");
     expect(updated.repos).toEqual(["org/a"]);
-    const row = await prisma.session.findFirst({ where: { slug: "s1" } });
-    expect(row?.declaredRepos).toEqual(["org/a"]);
 
     const cleared = await sessions.update(
       "s1",
@@ -191,7 +187,7 @@ describeOrSkip("session planning fields and visibility (integration)", () => {
     expect(cleared.repos).toEqual(["org/a"]);
   });
 
-  it("sessions with no declared repos or documents keep their previous shape (empty documents)", async () => {
+  it("sessions with no documents keep their previous shape (empty documents)", async () => {
     await tasks.create({
       title: "t",
       status: "pending",

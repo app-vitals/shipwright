@@ -33,7 +33,7 @@
  *                          repo involved must be in an agent token's scope
  *                          (403), a lock held by someone else is 409, a task
  *                          id collision is 409 and rolls everything back.
- *   PATCH /sessions/:slug  rename/archive/owner/homeRepo/repos (SESH-3.1,
+ *   PATCH /sessions/:slug  rename/archive/owner/homeRepo (SESH-3.1,
  *                          PWE-1.1) — follows task-store scope: admin tokens
  *                          are unrestricted; an agent token may write when
  *                          every repo in the session (task repos + document
@@ -92,7 +92,7 @@ const listRoute = createRoute({
   tags: ["sessions"],
   summary: "List sessions",
   description:
-    "Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.",
+    "Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the distinct task repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -139,9 +139,9 @@ const patchRoute = createRoute({
   method: "patch",
   path: "/:slug",
   tags: ["sessions"],
-  summary: "Update a session (title, archive, owner, homeRepo, repos)",
+  summary: "Update a session (title, archive, owner, homeRepo)",
   description:
-    "Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+    "Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear. A `repos` key is not part of the body and is ignored (a session's repos derive from its tasks and documents). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -367,9 +367,9 @@ async function assertSessionVisible(
  * PWE-1.1: gate a session write on the caller's scope. Admin tokens pass.
  * For an agent token: not visible (GET rule, own account only) => 404 so
  * existence never leaks; visible => every repo in the session (task repos,
- * declared repos, document home + target repos) must be in the token's scope,
+ * document home + target repos) must be in the token's scope,
  * and a session with no repos is admin-only => 403. Returns the agent's repo
- * scope (null for admin) so the caller can vet a `repos` patch against it.
+ * scope (null for admin).
  */
 async function assertSessionWritable(
   sessionService: SessionServiceLike,
@@ -489,7 +489,7 @@ export function createSessionsRoutes(
   app.openapi(patchRoute, async (c): Promise<any> => {
     // Scope is checked before the body so an out-of-scope caller learns
     // nothing from validation errors.
-    const writeScope = await assertSessionWritable(sessionService, c);
+    await assertSessionWritable(sessionService, c);
 
     const body = await readJson(c);
     const patch: SessionUpdatePatch = {};
@@ -513,25 +513,6 @@ export function createSessionsRoutes(
         patch[field] = body[field] as string | null;
       }
     }
-    if ("repos" in body) {
-      if (
-        !Array.isArray(body.repos) ||
-        !body.repos.every((r) => typeof r === "string" && r.length > 0)
-      ) {
-        throw new BadRequestError(
-          "repos must be an array of non-empty strings",
-        );
-      }
-      patch.repos = body.repos as string[];
-      // An agent may not declare repos it has no scope over.
-      if (
-        writeScope !== null &&
-        patch.repos.some((r) => !writeScope.includes(r))
-      ) {
-        throw new ForbiddenError("repos must be within this token's scope");
-      }
-    }
-
     const updated = await sessionService.update(
       c.req.param("slug"),
       patch,

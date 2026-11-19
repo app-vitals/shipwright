@@ -40,7 +40,6 @@ const MIGRATION_SQL_PATH = join(
 const NEW_SESSION_COLUMNS = [
   "owner",
   "homeRepo",
-  "declaredRepos",
   "planningLockHolder",
   "planningLockExpiresAt",
 ] as const;
@@ -228,9 +227,10 @@ describeOrSkip("add planning documents migration (integration)", () => {
       expect(column?.is_nullable).toBe("YES");
       expect(column?.column_default).toBeNull();
     }
+    // PWE-2.1: a later migration drops the column again.
     expect(
-      sessionColumns.find((c) => c.column_name === "declaredRepos")?.data_type,
-    ).toBe("ARRAY");
+      sessionColumns.find((c) => c.column_name === "declaredRepos"),
+    ).toBeUndefined();
   });
 
   it("creates PlanDocument with the [accountId, session, kind, number] unique key", async () => {
@@ -333,15 +333,11 @@ describeOrSkip("add planning documents migration (integration)", () => {
         slug: "plu-sess",
         owner: "dev@example.com",
         homeRepo: "app-vitals/shipwright",
-        declaredRepos: ["app-vitals/shipwright", "app-vitals/squadron"],
         planningLockHolder: "agent-1",
         planningLockExpiresAt: lockExpiry,
       },
     });
-    expect(session.declaredRepos).toEqual([
-      "app-vitals/shipwright",
-      "app-vitals/squadron",
-    ]);
+    expect(session.homeRepo).toBe("app-vitals/shipwright");
     expect(session.planningLockExpiresAt?.toISOString()).toBe(
       lockExpiry.toISOString(),
     );
