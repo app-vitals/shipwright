@@ -10,6 +10,7 @@ import { z } from "@hono/zod-openapi";
 
 import { ORIGIN_KINDS } from "./origin-kinds.ts";
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
+import { TASK_COLUMNS } from "./statuses.ts";
 import {
   BY_PR_TARGET_STATUSES,
   MAX_BULK_TASKS,
@@ -962,6 +963,11 @@ export const TaskListQuerySchema = z.object({
   pr: z.string().optional().openapi({ example: "42" }),
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
+  column: z.enum(TASK_COLUMNS).optional().openapi({
+    example: "blocked",
+    description:
+      "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
+  }),
   cursor: z.string().optional().openapi({
     description:
       "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only.",
