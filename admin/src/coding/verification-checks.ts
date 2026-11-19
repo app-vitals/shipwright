@@ -24,43 +24,50 @@ import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 const VERIFICATION_CHECKS_PAGE_LIMIT = 200;
 
 /** Shape of the optional task-store verification-check fetcher (see AdminUIDeps). */
-export type FetchVerificationChecks = (
-  params: URLSearchParams,
-) => Promise<{ checks: VerificationCheckItem[]; total?: number }>;
+export type FetchVerificationChecks = (params: URLSearchParams) => Promise<{
+  checks: VerificationCheckItem[];
+  total?: number;
+  nextCursor?: string | null;
+}>;
+
+/**
+ * Upper bound on cursor hops when walking to the newest window. A task/PR with
+ * more than PAGE_LIMIT * this many checks gets the newest window we reached
+ * rather than an unbounded request chain.
+ */
+const MAX_VERIFICATION_CHECK_PAGES = 100;
 
 /**
  * Fetches the most RECENT window of a task's/PR's verification-check history,
  * so mostRecentVerificationChecksByCheckName()/buildVerificationActivityRollup()
  * reduce over rows that actually contain each checkName's latest run.
  *
- * GET /verification-checks exposes no `order=desc` option — only `limit`/
- * `offset` over an ascending scan — so "the newest page" is expressed as "the
- * LAST page": request `limit` rows, and if the response's `total` says the
- * history is longer than what came back, re-request at
- * `offset = total - limit`. That second round-trip only happens for a task/PR
- * with more than VERIFICATION_CHECKS_PAGE_LIMIT recorded checks; every other
- * call stays a single request. (If rows are appended between the two calls the
- * window shifts by at most that many rows — harmless for a "latest per
- * checkName" reduction over a 200-row window.)
+ * GET /verification-checks exposes no `order=desc` option for the task/PR
+ * modes — only an ascending scan paged by `?cursor=` / `nextCursor` — so "the
+ * newest page" is expressed as "the LAST page": request `limit` rows and keep
+ * following `nextCursor` until it is null, returning the final page. A
+ * task/PR with at most VERIFICATION_CHECKS_PAGE_LIMIT recorded checks (nearly
+ * all of them) still costs a single request. (Rows appended mid-walk simply
+ * extend the walk — harmless for a "latest per checkName" reduction.)
  */
 export async function fetchRecentVerificationChecks(
   fetchVerificationChecks: FetchVerificationChecks,
   parent: { taskId: string } | { prId: string },
 ): Promise<VerificationCheckItem[]> {
-  const buildParams = () =>
-    new URLSearchParams({
+  let cursor: string | undefined;
+  let last: VerificationCheckItem[] = [];
+  for (let i = 0; i < MAX_VERIFICATION_CHECK_PAGES; i++) {
+    const params = new URLSearchParams({
       ...parent,
       limit: String(VERIFICATION_CHECKS_PAGE_LIMIT),
     });
-
-  const first = await fetchVerificationChecks(buildParams());
-  const total = typeof first.total === "number" ? first.total : 0;
-  if (total <= first.checks.length) return first.checks;
-
-  const tailParams = buildParams();
-  tailParams.set("offset", String(total - VERIFICATION_CHECKS_PAGE_LIMIT));
-  const tail = await fetchVerificationChecks(tailParams);
-  return tail.checks;
+    if (cursor) params.set("cursor", cursor);
+    const page = await fetchVerificationChecks(params);
+    last = page.checks;
+    if (!page.nextCursor) return last;
+    cursor = page.nextCursor;
+  }
+  return last;
 }
 
 /**
