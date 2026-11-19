@@ -47,6 +47,13 @@ describe("agent/workspace — coding template set", () => {
     }
   });
 
+  it("SOUL.md.template Vibe points at brief, ask-last Slack Style replies", () => {
+    const body = readFileSync(join(templatesDir, "SOUL.md.template"), "utf-8");
+    expect(body).toContain("Slack Style");
+    expect(body).toContain("headline first, ask last");
+    expect(body).not.toContain("thorough when");
+  });
+
   it("the agent Dockerfile ships the whole templates dir into the image", () => {
     const df = readFileSync(join(templatesDir, "..", "Dockerfile"), "utf-8");
     expect(df).toContain(
