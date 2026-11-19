@@ -40,6 +40,7 @@ const MIGRATION_SQL_PATH = join(
 const NEW_SESSION_COLUMNS = [
   "owner",
   "homeRepo",
+  "declaredRepos",
   "planningLockHolder",
   "planningLockExpiresAt",
 ] as const;
@@ -159,6 +160,10 @@ describeOrSkip("add planning documents migration (integration)", () => {
     await clear(prisma);
     await revert(prisma);
     await runMigration(prisma);
+    // PWE-2.1: the later migration drops the column this one adds.
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "Session" DROP COLUMN IF EXISTS "declaredRepos";',
+    );
     await prisma.$disconnect();
   });
 
@@ -227,10 +232,9 @@ describeOrSkip("add planning documents migration (integration)", () => {
       expect(column?.is_nullable).toBe("YES");
       expect(column?.column_default).toBeNull();
     }
-    // PWE-2.1: a later migration drops the column again.
     expect(
-      sessionColumns.find((c) => c.column_name === "declaredRepos"),
-    ).toBeUndefined();
+      sessionColumns.find((c) => c.column_name === "declaredRepos")?.data_type,
+    ).toBe("ARRAY");
   });
 
   it("creates PlanDocument with the [accountId, session, kind, number] unique key", async () => {
