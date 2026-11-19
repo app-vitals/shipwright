@@ -163,6 +163,26 @@ jobs:
           fetch_all_tags: true
           dry_run: true
 
+      # 1b. Upstream record. Agent only: the released upstream is the
+      #     `ARG PLATFORM_VERSION` pin in agent/Dockerfile at the source commit,
+      #     written as `agent=<version>` (release standard form). Every other
+      #     service is not built on a released upstream and keeps an empty record.
+      #     Fails closed: an unreadable pin stops the job before any build, push
+      #     or tag, so a tag never carries a wrong record.
+      - name: Read upstream record
+        id: upstream
+        run: |
+          UPSTREAM=""
+          if [ "$SERVICE" = agent ]; then
+            PIN="$(git show "$SOURCE_SHA:agent/Dockerfile" | sed -n 's/^ARG PLATFORM_VERSION=\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')"
+            if [ "$(printf '%s\n' "$PIN" | grep -c .)" -ne 1 ]; then
+              echo "::error::cannot read a single semver 'ARG PLATFORM_VERSION' from agent/Dockerfile at $SOURCE_SHA"
+              exit 1
+            fi
+            UPSTREAM="agent=$PIN"
+          fi
+          echo "versions=$UPSTREAM" >> "$GITHUB_OUTPUT"
+
       # 2. Build locally; nothing is pushed yet.
       - name: Build Docker image
         env:
@@ -170,6 +190,7 @@ jobs:
           DOCKERFILE: ${{ matrix.dockerfile }}
           LATEST: ${{ matrix.latest }}
           WORKFLOW_RUN: ${{ github.run_id }}
+          UPSTREAM_VERSIONS: ${{ steps.upstream.outputs.versions }}
         run: |
           ARGS=()
           if [ "$SERVICE" = agent ]; then
@@ -191,7 +212,7 @@ jobs:
             --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
             --label com.app-vitals.release.version="$NEW_TAG" \
             --label com.app-vitals.release.source-sha="$SOURCE_SHA" \
-            --label com.app-vitals.release.upstream-versions= \
+            --label com.app-vitals.release.upstream-versions="$UPSTREAM_VERSIONS" \
             --label com.app-vitals.release.run-id= \
             --label com.app-vitals.release.workflow-run="$WORKFLOW_RUN" \
             -t "$IMAGE:$NEW_TAG" \
@@ -240,6 +261,7 @@ jobs:
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
           WORKFLOW_RUN: ${{ github.run_id }}
+          UPSTREAM_VERSIONS: ${{ steps.upstream.outputs.versions }}
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
@@ -249,7 +271,7 @@ jobs:
 
           Release-Version: $NEW_TAG
           Source-Sha: $SOURCE_SHA
-          Upstream-Versions:
+          Upstream-Versions: $UPSTREAM_VERSIONS
           Release-Run:
           Workflow-Run: $WORKFLOW_RUN
           MSG
