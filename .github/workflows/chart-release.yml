@@ -64,6 +64,9 @@ env:
   # Public GitHub Pages URL the gh-pages branch is served from. Every newly
   # packaged chart's index entry resolves to <PAGES_URL>/<name>-<version>.tgz.
   PAGES_URL: https://app-vitals.github.io/shipwright
+  # Last chart version published before chart-<version> tags began (RCN-9.10).
+  # Must match check-chart-drift.yml's CHART_TAG_FLOOR.
+  CHART_TAG_FLOOR: 1.32.306
 
 jobs:
   # Absorbs a burst of near-simultaneous release tags into one publish. Does no
@@ -86,7 +89,9 @@ jobs:
           echo "Tag ${GITHUB_REF_NAME} landed; waiting ${DEBOUNCE_SECONDS}s for other releases before publishing the chart."
           sleep "${DEBOUNCE_SECONDS}"
 
-  # Publish job: never runs on pull_request.
+  # Publish job: never runs on pull_request, and only from main or a release
+  # tag: a workflow_dispatch picked on any other branch must not publish that
+  # branch's chart to the public index or tag a non-main commit.
   #
   # Serialized by a concurrency group: two chart releases can never run at once,
   # so two runs cannot derive the same version or corrupt the gh-pages index.
@@ -98,6 +103,7 @@ jobs:
     needs: debounce
     if: >-
       ${{ !cancelled() && github.event_name != 'pull_request'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
       && (needs.debounce.result == 'success' || needs.debounce.result == 'skipped') }}
     timeout-minutes: 15
     runs-on: ubuntu-latest
@@ -232,32 +238,19 @@ jobs:
           git push origin gh-pages
 
       # LAST, after the gh-pages push: a tag implies a published version. Also
-      # runs when nothing was published, so the latest version gets the tag a
-      # failed earlier run missed. Idempotent: same SHA exits 0, different SHA
-      # fails; never moves a tag. Versions published before records existed
-      # have no record and are skipped.
+      # runs when nothing was published. Tags EVERY published version above
+      # CHART_TAG_FLOOR still missing its chart-<version> tag (not just this
+      # run's), so a version whose run failed before tagging is recovered even
+      # after a later run published a newer one. Idempotent: same SHA exits 0,
+      # different SHA fails; never moves a tag. Versions published before
+      # records existed have no record and are skipped.
       - name: Create chart tag
-        env:
-          NEW_VERSION: ${{ steps.derive.outputs.version }}
-          PUBLISHED: ${{ steps.package.outputs.publish }}
         run: |
           set -euo pipefail
           source .github/workflows/lib/chart-tag-utils.sh
           source .github/workflows/lib/chart-drift-check.sh
           source .github/workflows/lib/chart-release.sh
-          if [ "$PUBLISHED" = "true" ]; then
-            TAG_VERSION="$NEW_VERSION"
-          else
-            TAG_VERSION=$(latest_chart_version gh-pages/index.yaml)
-          fi
-          RECORD=$(recorded_release gh-pages "$TAG_VERSION")
-          if [ -z "$RECORD" ]; then
-            echo "No release record for ${TAG_VERSION}; nothing to tag."
-            exit 0
-          fi
-          printf '%s\n' "$RECORD" > "${RUNNER_TEMP}/chart-tag-message"
-          publish_chart_tag "$TAG_VERSION" "$(record_field "$RECORD" Source-Commit)" \
-            "${RUNNER_TEMP}/chart-tag-message" origin
+          tag_missing_chart_versions gh-pages "$CHART_TAG_FLOOR" origin
 
   # Dry-run validation: only on pull_request. Exercises derive + stamp + package
   # + the index merge with the production --url and checks the index diff is

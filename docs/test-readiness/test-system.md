@@ -269,8 +269,9 @@ PR opened / synchronized
   │       8. coverage gate    — scripts/check-coverage.ts against the merged lcov report
   │       9. secret scan (gitleaks)
   │
-  ├─▶ shell   — bash .github/workflows/test-check-chart-drift.sh
-  │            bash .github/workflows/test-auto-bump-chart.sh
+  ├─▶ shell   — bash .github/workflows/test-chart-release.sh
+  │            bash .github/workflows/test-library-pin.sh
+  │            bash .github/workflows/test-check-chart-drift.sh
   │
   ├─▶ site        — Astro build → brand-lint → Playwright (*.spec.ts), path-filtered to site/**
   │

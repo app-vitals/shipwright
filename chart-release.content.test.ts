@@ -71,6 +71,12 @@ describe("chart-release.yml triggers", () => {
     expect(publish.needs).toBe("debounce");
   });
 
+  it("publishes only from main or a release tag (a dispatch on another branch never publishes)", () => {
+    expect(publish.if).toContain("github.event_name != 'pull_request'");
+    expect(publish.if).toContain("github.ref == 'refs/heads/main'");
+    expect(publish.if).toContain("startsWith(github.ref, 'refs/tags/')");
+  });
+
   it("serializes publishes without cancelling an in-flight one", () => {
     expect(publish.concurrency).toEqual({
       group: "chart-release",
@@ -144,13 +150,26 @@ describe("chart-release.yml chart tag", () => {
     );
   });
 
-  it("uses the idempotent publish_chart_tag with the release record as the message", () => {
-    expect(tag.run).toContain("publish_chart_tag");
-    expect(tag.run).toContain("recorded_release");
-    expect(tag.run).toContain("Source-Commit");
+  it("tags every untagged published version via the idempotent publish_chart_tag", () => {
+    expect(tag.run).toContain(
+      'tag_missing_chart_versions gh-pages "$CHART_TAG_FLOOR" origin',
+    );
+    expect(tag.run).toContain("lib/chart-drift-check.sh");
+    const lib = read(".github/workflows/lib/chart-release.sh");
+    const fn = lib.slice(lib.indexOf("tag_missing_chart_versions() {"));
+    expect(fn).toContain("versions_missing_chart_tag");
+    expect(fn).toContain("recorded_release");
+    expect(fn).toContain("Source-Commit");
+    expect(fn).toContain("publish_chart_tag");
     const commit = step("Commit and push to gh-pages");
     expect(commit.run).toContain("release_record");
     expect(commit.run).toContain('-m "$RECORD"');
+  });
+
+  it("uses the same chart tag floor as check-chart-drift.yml", () => {
+    const floor = (t: string) => (Bun.YAML.parse(t) as { env?: Record<string, unknown> }).env?.CHART_TAG_FLOOR;
+    expect(floor(text)).toBeDefined();
+    expect(floor(text)).toBe(floor(read(".github/workflows/check-chart-drift.yml")));
   });
 
   it("checks out full history and tags, and keeps credentials for the tag push", () => {

@@ -195,3 +195,32 @@ recorded_release() {
 record_field() {
   printf '%s\n' "$1" | sed -n "s/^$2: //p" | head -n1
 }
+
+# tag_missing_chart_versions <gh-pages-dir> <floor> [remote=origin]
+# Creates chart-<version> for EVERY published version above <floor> that has
+# no tag yet and has a release record, not only the current run's version: a
+# run that published N but failed before tagging is recovered by any later run,
+# even one that publishes N+1. Versions without a record are skipped. Tries
+# every version, then returns 1 if any tag failed (e.g. would move a tag).
+# Needs lib/chart-drift-check.sh sourced (versions_missing_chart_tag).
+tag_missing_chart_versions() {
+  local dir="$1" floor="$2" remote="${3:-origin}" missing v record msg rc=0
+  missing=$(versions_missing_chart_tag "$dir/index.yaml" "$floor") || return 1
+  if [ -z "$missing" ]; then
+    echo "Every published chart version above ${floor} has a chart-<version> tag."
+    return 0
+  fi
+  msg=$(mktemp)
+  while IFS= read -r v; do
+    [ -z "$v" ] && continue
+    record=$(recorded_release "$dir" "$v")
+    if [ -z "$record" ]; then
+      echo "No release record for ${v}; nothing to tag."
+      continue
+    fi
+    printf '%s\n' "$record" > "$msg"
+    publish_chart_tag "$v" "$(record_field "$record" Source-Commit)" "$msg" "$remote" || rc=1
+  done <<< "$missing"
+  rm -f "$msg"
+  return $rc
+}

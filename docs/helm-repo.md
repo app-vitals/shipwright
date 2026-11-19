@@ -30,7 +30,8 @@ The publish job runs on:
   `ghcr.io/app-vitals/agent-chat` image; the pin is credited as
   `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`);
 - a push to `main` touching `charts/shipwright/**`;
-- a manual `workflow_dispatch`.
+- a manual `workflow_dispatch` on `main` (a dispatch from any other branch
+  skips the publish job, so an unmerged branch can never publish or be tagged).
 
 A run whose stamped chart equals the latest published chart publishes nothing,
 so there are no empty versions.
@@ -60,9 +61,12 @@ so there are no empty versions.
 8. **Last**, creates and pushes the annotated tag `chart-<version>` on the
    source commit with that release record as its message. A tag implies a
    published version. A re-run is idempotent: an existing tag at the same SHA
-   exits 0, at a different SHA the run fails, and a tag is never moved. If the
-   push to `gh-pages` succeeded but tagging failed, a re-run publishes nothing
-   and creates the missing tag from the record in the gh-pages commit.
+   exits 0, at a different SHA the run fails, and a tag is never moved. Every
+   run tags **every** published version above the tag floor that is still
+   missing its `chart-<version>` tag and has a release record, not only its own
+   version. So if the push to `gh-pages` succeeded but tagging failed, the next
+   run (a re-run, or a later run that publishes a newer version) creates the
+   missing tag from the record in the gh-pages commit.
 
 The publish job declares a `concurrency: { group: chart-release }` guard with
 `cancel-in-progress: false`. Two chart releases can therefore never run at once,

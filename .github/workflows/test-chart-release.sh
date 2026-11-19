@@ -3,7 +3,8 @@
 # .github/workflows/test-chart-release.sh
 #
 # Tests lib/chart-release.sh (version derivation, pin stamping, no-op guard,
-# release record and the idempotent chart-<version> tag) used by
+# release record, the idempotent chart-<version> tag and the recovery of
+# every untagged published version) used by
 # chart-release.yml. Pure bash + git + tar; no network.
 #
 # Run: bash .github/workflows/test-chart-release.sh
@@ -27,6 +28,8 @@ assert_fails() {  # assert_fails <label> <cmd...>
 source "$SCRIPT_DIR/lib/chart-tag-utils.sh"
 # shellcheck source=lib/library-pin.sh
 source "$SCRIPT_DIR/lib/library-pin.sh"
+# shellcheck source=lib/chart-drift-check.sh
+source "$SCRIPT_DIR/lib/chart-drift-check.sh"
 # shellcheck source=lib/chart-release.sh
 source "$SCRIPT_DIR/lib/chart-release.sh"
 
@@ -189,6 +192,48 @@ assert_eq "tag not moved after conflicting run" "$TAGOBJ" "$(git -C "$BARE" rev-
 # Locally missing, remote present at same sha: tag exists only remotely.
 ( cd "$W" && git tag -d chart-1.32.305 >/dev/null && publish_chart_tag 1.32.305 "$SHA2" "$T/msg" origin ) >/dev/null
 assert_eq "local tag missing but remote same sha: exits 0, remote unchanged" "$TAGOBJ" "$(git -C "$BARE" rev-parse chart-1.32.305)"
+
+echo "=== tag_missing_chart_versions (recovers every untagged published version) ==="
+# Run A published 1.32.307 but failed before tagging; run B then published
+# 1.32.308. B must tag 307 as well as 308.
+SHA3=$( cd "$W" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m three && git rev-parse HEAD )
+( cd "$W" && git push -q origin HEAD:refs/heads/main 2>/dev/null )
+GP2="$T/ghpages2"; git init -q "$GP2"
+{
+  printf 'apiVersion: v1\nentries:\n  shipwright:\n'
+  for v in 1.32.300 1.32.306 1.32.307 1.32.308 1.32.309; do
+    printf '  - name: shipwright\n    version: %s\n' "$v"
+  done
+  printf 'generated: "2026-11-19T00:00:00Z"\n'
+} > "$GP2/index.yaml"
+( cd "$GP2" \
+  && git commit -q --allow-empty -m "chart: publish shipwright 1.32.306" \
+  && git commit -q --allow-empty -m "chart: publish shipwright 1.32.307" -m "$(release_record 1.32.307 "$SHA1" "" 0.9.0 r/7)" \
+  && git commit -q --allow-empty -m "chart: publish shipwright 1.32.308" -m "$(release_record 1.32.308 "$SHA3" "" 0.9.0 r/8)" \
+  && git commit -q --allow-empty -m "chart: publish shipwright 1.32.309" )
+OUT=$( cd "$W" && tag_missing_chart_versions "$GP2" 1.32.306 origin 2>&1 ); RC=$?
+assert_eq "recovery run exits 0" "0" "$RC"
+assert_eq "earlier untagged version (run A) is tagged" "$SHA1" "$(git -C "$BARE" rev-parse 'chart-1.32.307^{commit}' 2>/dev/null)"
+assert_eq "current version (run B) is tagged" "$SHA3" "$(git -C "$BARE" rev-parse 'chart-1.32.308^{commit}' 2>/dev/null)"
+assert_eq "recovered tag message is its own release record" "1" "$(git -C "$BARE" tag -l --format='%(contents)' chart-1.32.307 | grep -c "^Source-Commit: ${SHA1}$")"
+assert_eq "version without a record is skipped" "0" "$(git -C "$BARE" tag -l chart-1.32.309 | wc -l | tr -d ' ')"
+assert_eq "skip is reported" "1" "$(echo "$OUT" | grep -c 'No release record for 1.32.309')"
+assert_eq "floor and older versions are never tagged" "0" "$(git -C "$BARE" tag -l chart-1.32.306 chart-1.32.300 | wc -l | tr -d ' ')"
+T307=$(git -C "$BARE" rev-parse chart-1.32.307)
+( cd "$W" && tag_missing_chart_versions "$GP2" 1.32.306 origin ) >/dev/null 2>&1
+assert_eq "second run is a no-op (exit 0)" "0" "$?"
+assert_eq "second run does not move a recovered tag" "$T307" "$(git -C "$BARE" rev-parse chart-1.32.307)"
+# A record whose tag already exists remotely at another SHA fails the run,
+# but every other missing version is still tagged.
+( cd "$W" && git tag -d chart-1.32.307 >/dev/null )
+git -C "$BARE" tag -d chart-1.32.307 >/dev/null
+git -C "$BARE" tag chart-1.32.307 "$SHA2"
+( cd "$W" && git tag -d chart-1.32.308 >/dev/null )
+git -C "$BARE" tag -d chart-1.32.308 >/dev/null
+assert_fails "a tag that would move fails the run" bash -c "cd '$W' && source '$SCRIPT_DIR/lib/chart-tag-utils.sh' && source '$SCRIPT_DIR/lib/chart-drift-check.sh' && source '$SCRIPT_DIR/lib/chart-release.sh' && tag_missing_chart_versions '$GP2' 1.32.306 origin"
+assert_eq "conflicting tag is not moved" "$SHA2" "$(git -C "$BARE" rev-parse 'chart-1.32.307^{commit}')"
+assert_eq "other missing versions are still tagged after a failure" "$SHA3" "$(git -C "$BARE" rev-parse 'chart-1.32.308^{commit}' 2>/dev/null)"
+assert_fails "unreadable gh-pages index fails" tag_missing_chart_versions "$T/nope" 1.32.306 origin
 
 echo ""
 echo "================================"
