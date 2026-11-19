@@ -79,7 +79,7 @@
  * on GitHub's MERGED confirmation, as before.
  *
  * RCB-1.1 replaces `reconcilePrOpenTasks`'s own `updatedSince` recency filter
- * (PSR-1.1 above) with a batch + rotating-offset cursor, because that filter
+ * (PSR-1.1 above) with a batch + rotating keyset cursor, because that filter
  * has a permanent-exclusion failure mode this pass in particular is exposed
  * to: nothing ever bumps a pr_open task's `updatedAt` while it just sits
  * waiting on human review, so a PR that takes longer than the recency window
@@ -97,16 +97,17 @@
  * the pass exists to serve. Each call to `reconcilePrOpenTasks()` now fetches
  * up to `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks (default 200, paginated in
  * the usual `DEFAULT_PAGE_LIMIT` chunks) starting at a module-level rotating
- * offset cursor; when the fetched total is less than the batch size (the end
- * of the list was reached before the batch filled), the cursor wraps back to
- * 0 for the next call, so a round-robin sweep across ticks still eventually
+ * keyset cursor (the opaque `nextCursor` string the task-store returned at
+ * the point the previous batch stopped); when the list's `nextCursor` comes
+ * back null (the end of the list was reached before the batch filled), the
+ * cursor resets to the start for the next call, so a round-robin sweep across ticks still eventually
  * covers the entire list — including a task the very next tick after it was
  * last visited, once the round-robin comes back around — rather than
  * permanently dropping anything. The cursor lives as in-process module state
  * (not part of `PrStateReconcilerDeps`) since `buildProductionDeps()` is
  * constructed once and reused for the process lifetime (see
  * `reconcilerDeps ??= ...` in agent/src/index.ts); a process restart simply
- * resets the cursor to 0 and the round-robin starts over, which is
+ * resets the cursor to the start and the round-robin starts over, which is
  * acceptable since nothing here depends on cursor continuity for
  * correctness, only for eventually covering the full list.
  *
@@ -213,6 +214,16 @@ export interface PrOpenTaskRecord {
   startedAt?: string | null;
 }
 
+/**
+ * One keyset page from a task-store list route: the page's items plus the
+ * opaque `nextCursor` to pass back as `?cursor=` (null on the last page —
+ * the only completeness signal).
+ */
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
 export interface PrStateReconcilerDeps {
   /**
    * Returns the local-clone repo list, read fresh on every call so repos
@@ -239,9 +250,9 @@ export interface PrStateReconcilerDeps {
   listOpenPrRecords: (
     repo: string,
     limit: number,
-    offset: number,
+    cursor: string | null,
     updatedSince?: string,
-  ) => Promise<PrStateRecord[]>;
+  ) => Promise<CursorPage<PrStateRecord>>;
   /** PATCH a task-store PR record's fields. */
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
   /** Fetch live GitHub state for a single PR. Throws on lookup failure. */
@@ -249,14 +260,14 @@ export interface PrStateReconcilerDeps {
   /**
    * List one page of task-store Tasks with status "pr_open" (DSR-1.1).
    * Deliberately NOT recency-filtered (RCB-1.1) — unlike `listOpenPrRecords`
-   * above, this list is scanned via a batch + rotating-offset cursor instead
+   * above, this list is scanned via a batch + rotating keyset cursor instead
    * of an `updatedSince` window; see the module doc comment's RCB-1.1
    * paragraph for the full rationale.
    */
   listPrOpenTasks: (
     limit: number,
-    offset: number,
-  ) => Promise<PrOpenTaskRecord[]>;
+    cursor: string | null,
+  ) => Promise<CursorPage<PrOpenTaskRecord>>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
   updateTaskStatus: (
     id: string,
@@ -394,9 +405,9 @@ export interface PrReviewStateReconcilerDeps {
   listPendingReviewRecords: (
     repo: string,
     limit: number,
-    offset: number,
+    cursor: string | null,
     updatedSince: string,
-  ) => Promise<PrReviewStateRecord[]>;
+  ) => Promise<CursorPage<PrReviewStateRecord>>;
   /**
    * List one page of state:"open" && reviewState:"posted" PR records for a
    * repo (CHU-2.4) — mirrors `listPendingReviewRecords`'s exact signature,
@@ -407,8 +418,8 @@ export interface PrReviewStateReconcilerDeps {
   listPostedReviewRecords: (
     repo: string,
     limit: number,
-    offset: number,
-  ) => Promise<PrReviewStateRecord[]>;
+    cursor: string | null,
+  ) => Promise<CursorPage<PrReviewStateRecord>>;
   /** Fetch head commit + reviews + review threads for a single PR. Throws on lookup failure. */
   fetchPrReviews: (
     org: string,
@@ -504,18 +515,19 @@ const RECONCILER_PR_OPEN_TASK_BATCH_SIZE = Number(
 );
 
 /**
- * Rotating offset cursor for `reconcilePrOpenTasks`'s batch scan (RCB-1.1).
+ * Rotating keyset cursor for `reconcilePrOpenTasks`'s batch scan (RCB-1.1).
  * Module-level (not part of `PrStateReconcilerDeps`) — deliberately: this
  * pass's production deps object is constructed once and reused for the
  * process lifetime (`reconcilerDeps ??= ...` in agent/src/index.ts), so
- * in-process state here is safe and needs no persistence layer. Advances by
- * the number of tasks actually fetched each call; wraps back to 0 once a
- * call's fetch comes up short of `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` (the
- * end of the list was reached before the batch filled). A process restart
- * resets this to 0, restarting the round-robin from the beginning — see the
+ * in-process state here is safe and needs no persistence layer. Holds the
+ * opaque `nextCursor` string the task-store returned where the previous
+ * batch stopped (never parsed or built here); resets to null (start of the
+ * list) once a call reaches a null `nextCursor` (the end of the list was
+ * reached before the batch filled). A process restart resets this to null,
+ * restarting the round-robin from the beginning — see the
  * module doc comment's RCB-1.1 paragraph.
  */
-let prOpenTasksCursor = 0;
+let prOpenTasksCursor: string | null = null;
 
 /**
  * Test-only reset for `prOpenTasksCursor` above, so each test can start from
@@ -523,7 +535,7 @@ let prOpenTasksCursor = 0;
  * other module-level mutable state that needs an equivalent seam.
  */
 export function __resetPrOpenTasksCursorForTests(): void {
-  prOpenTasksCursor = 0;
+  prOpenTasksCursor = null;
 }
 
 /**
@@ -640,8 +652,7 @@ const ORPHANED_PR_PATCH_FIELDS: Record<string, unknown> = {
 
 /**
  * List every state:"open" PR record for a repo, paging through the
- * task-store's default 50-record page until a page returns fewer than
- * `limit` records. No longer recency-filtered (RPS-1.1) — see the module doc
+ * task-store's keyset pages (following `nextCursor`) until it is null. No longer recency-filtered (RPS-1.1) — see the module doc
  * comment's RPS-1.1 paragraph and `listOpenPrRecords`'s own doc comment for
  * the full rationale.
  */
@@ -651,14 +662,17 @@ async function listAllOpenRecords(
 ): Promise<PrStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrStateRecord[] = [];
-  let offset = 0;
+  let cursor: string | null = null;
 
-  for (;;) {
-    const page = await deps.listOpenPrRecords(repo, limit, offset);
-    records.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
-  }
+  do {
+    const page: CursorPage<PrStateRecord> = await deps.listOpenPrRecords(
+      repo,
+      limit,
+      cursor,
+    );
+    records.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
 
   return records;
 }
@@ -666,35 +680,37 @@ async function listAllOpenRecords(
 /**
  * Fetch one batch (up to `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks) of
  * task-store Tasks with status "pr_open" (DSR-1.1, RCB-1.1), starting at
- * `prOpenTasksCursor` and paging through the task-store's default 50-record
- * page (same loop shape as `listAllOpenRecords` above — TCR-1.2 follow-up:
- * this dep was previously unpaginated) until either a page returns fewer
- * than `limit` records (end of the whole list reached) or the batch cap is
- * hit. Advances `prOpenTasksCursor` by the number of tasks actually fetched;
- * wraps it back to 0 when the fetch came up short of the batch cap (end of
- * list reached before the batch filled) — see the module doc comment's
+ * `prOpenTasksCursor` and following the task-store's `nextCursor` (same loop
+ * shape as `listAllOpenRecords` above) until either `nextCursor` is null
+ * (end of the whole list reached) or the batch cap is hit. Stores the last
+ * `nextCursor` in `prOpenTasksCursor`; null (reset to the start) when the end
+ * of the list was reached before the batch filled — see the module doc comment's
  * RCB-1.1 paragraph and `prOpenTasksCursor`'s own doc comment for the full
  * rationale. Does NOT advance the cursor when the underlying list call
  * throws — the batch didn't complete cleanly, so re-attempting from the same
- * offset next tick is safer than skipping ahead blind.
+ * cursor next tick is safer than skipping ahead blind.
  */
 async function fetchPrOpenTasksBatch(
   deps: PrStateReconcilerDeps,
 ): Promise<PrOpenTaskRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const tasks: PrOpenTaskRecord[] = [];
-  let offset = prOpenTasksCursor;
+  let cursor = prOpenTasksCursor;
 
   for (;;) {
-    const page = await deps.listPrOpenTasks(limit, offset);
-    tasks.push(...page);
-    offset += page.length;
-    if (page.length < limit) break; // end of the whole list reached
+    const page: CursorPage<PrOpenTaskRecord> = await deps.listPrOpenTasks(
+      limit,
+      cursor,
+    );
+    tasks.push(...page.items);
+    cursor = page.nextCursor;
+    if (cursor === null) break; // end of the whole list reached
     if (tasks.length >= RECONCILER_PR_OPEN_TASK_BATCH_SIZE) break; // batch cap reached
   }
 
-  prOpenTasksCursor =
-    tasks.length < RECONCILER_PR_OPEN_TASK_BATCH_SIZE ? 0 : offset;
+  // null (end of list reached) restarts the rotation from the beginning;
+  // otherwise resume from where this batch stopped.
+  prOpenTasksCursor = cursor;
 
   return tasks;
 }
@@ -1091,19 +1107,22 @@ async function listAllReviewRecords(
   listFn: (
     repo: string,
     limit: number,
-    offset: number,
-  ) => Promise<PrReviewStateRecord[]>,
+    cursor: string | null,
+  ) => Promise<CursorPage<PrReviewStateRecord>>,
 ): Promise<PrReviewStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrReviewStateRecord[] = [];
-  let offset = 0;
+  let cursor: string | null = null;
 
-  for (;;) {
-    const page = await listFn(repo, limit, offset);
-    records.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
-  }
+  do {
+    const page: CursorPage<PrReviewStateRecord> = await listFn(
+      repo,
+      limit,
+      cursor,
+    );
+    records.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
 
   return records;
 }
@@ -1220,8 +1239,8 @@ export async function reconcileReviewState(
   for (const repo of scopedRepos) {
     let records: PrReviewStateRecord[];
     try {
-      records = await listAllReviewRecords(deps, repo, (r, limit, offset) =>
-        deps.listPendingReviewRecords(r, limit, offset, updatedSince),
+      records = await listAllReviewRecords(deps, repo, (r, limit, cursor) =>
+        deps.listPendingReviewRecords(r, limit, cursor, updatedSince),
       );
     } catch (err) {
       console.error(
@@ -1300,16 +1319,12 @@ export async function reconcileReviewState(
 
 interface PrListResponseJson {
   prs: PrStateRecord[];
-  total: number;
-  limit: number;
-  offset: number;
+  nextCursor?: string | null;
 }
 
 interface PrReviewListResponseJson {
   prs: PrReviewStateRecord[];
-  total: number;
-  limit: number;
-  offset: number;
+  nextCursor?: string | null;
 }
 
 interface ReviewGraphqlResponse {
@@ -1342,11 +1357,12 @@ function makePatchPrRecord(opts: {
 /** GET /tasks response shape — mirrors createTaskStoreClient's own legacy-bare-array tolerance. */
 interface TaskListResponseJson {
   tasks: PrOpenTaskRecord[];
+  nextCursor?: string | null;
 }
 
 /**
- * Shared GET /tasks?status=<status>&limit=<limit>&offset=<offset>[&updatedSince=<updatedSince>]
- * helper backing `listPrOpenTasks`. `limit`/`offset` are passed straight
+ * Shared GET /tasks?status=<status>&limit=<limit>[&cursor=<cursor>][&updatedSince=<updatedSince>]
+ * helper backing `listPrOpenTasks`. `limit`/`cursor` are passed straight
  * through, same as `listOpenPrRecords`'s own GET /prs helper, so the
  * module-level `fetchPrOpenTasksBatch` pagination loop above can page to
  * completion instead of only ever seeing the task-store's default first
@@ -1364,20 +1380,20 @@ function makeListTasksByStatus(opts: {
 }): (
   status: string,
   limit: number,
-  offset: number,
+  cursor: string | null,
   updatedSince?: string,
-) => Promise<PrOpenTaskRecord[]> {
+) => Promise<CursorPage<PrOpenTaskRecord>> {
   const { baseUrl, headers, doFetch } = opts;
   return async (
     status: string,
     limit: number,
-    offset: number,
+    cursor: string | null,
     updatedSince?: string,
   ) => {
     const params = new URLSearchParams({
       status,
       limit: String(limit),
-      offset: String(offset),
+      ...(cursor !== null ? { cursor } : {}),
       ...(updatedSince !== undefined ? { updatedSince } : {}),
     });
     const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
@@ -1386,8 +1402,11 @@ function makeListTasksByStatus(opts: {
     }
     const data = (await res.json()) as unknown;
     // Same legacy-bare-array tolerance as createTaskStoreClient's query().
-    if (Array.isArray(data)) return data as PrOpenTaskRecord[];
-    return (data as TaskListResponseJson).tasks;
+    if (Array.isArray(data)) {
+      return { items: data as PrOpenTaskRecord[], nextCursor: null };
+    }
+    const parsed = data as TaskListResponseJson;
+    return { items: parsed.tasks, nextCursor: parsed.nextCursor ?? null };
   };
 }
 
@@ -1403,10 +1422,12 @@ interface TasksByBranchPage {
    * matching that field's own documented default semantics.
    */
   scopeDegraded: boolean;
+  /** Opaque keyset cursor for the next page; null on the last page. */
+  nextCursor: string | null;
 }
 
 /**
- * GET /tasks?repo=<repo>&branch=<branch>&limit=<limit>&offset=<offset> helper
+ * GET /tasks?repo=<repo>&branch=<branch>&limit=<limit>[&cursor=<cursor>] helper
  * for `listAllTasksForBranch` (BBR-1.1's bundle-mate guard) — same request
  * shape/response handling as `makeListTasksByStatus` above, but filtered by
  * repo+branch instead of status. `repo=` scoping mirrors
@@ -1427,20 +1448,20 @@ function makeListTasksByBranch(opts: {
   repo: string,
   branch: string,
   limit: number,
-  offset: number,
+  cursor: string | null,
 ) => Promise<TasksByBranchPage> {
   const { baseUrl, headers, doFetch } = opts;
   return async (
     repo: string,
     branch: string,
     limit: number,
-    offset: number,
+    cursor: string | null,
   ) => {
     const params = new URLSearchParams({
       repo,
       branch,
       limit: String(limit),
-      offset: String(offset),
+      ...(cursor !== null ? { cursor } : {}),
     });
     const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
     if (!res.ok) {
@@ -1449,12 +1470,17 @@ function makeListTasksByBranch(opts: {
     const data = (await res.json()) as unknown;
     // Same legacy-bare-array tolerance as createTaskStoreClient's query().
     if (Array.isArray(data)) {
-      return { tasks: data as PrOpenTaskRecord[], scopeDegraded: false };
+      return {
+        tasks: data as PrOpenTaskRecord[],
+        scopeDegraded: false,
+        nextCursor: null,
+      };
     }
     const parsed = data as TaskListResponseJson & { scopeDegraded?: boolean };
     return {
       tasks: parsed.tasks,
       scopeDegraded: parsed.scopeDegraded ?? false,
+      nextCursor: parsed.nextCursor ?? null,
     };
   };
 }
@@ -1559,24 +1585,26 @@ export function buildProductionDeps(opts: {
   ): Promise<PrOpenTaskRecord[] | typeof SCOPE_DEGRADED> => {
     const limit = DEFAULT_PAGE_LIMIT;
 
-    let firstPage = await listTasksByBranch(repo, branch, limit, 0);
+    let firstPage = await listTasksByBranch(repo, branch, limit, null);
     if (firstPage.scopeDegraded) {
       await deps.delay(SCOPE_DEGRADED_RETRY_DELAY_MS);
-      firstPage = await listTasksByBranch(repo, branch, limit, 0);
+      firstPage = await listTasksByBranch(repo, branch, limit, null);
       if (firstPage.scopeDegraded) {
         return SCOPE_DEGRADED;
       }
     }
 
     const tasks: PrOpenTaskRecord[] = [...firstPage.tasks];
-    if (firstPage.tasks.length < limit) return tasks;
-
-    let offset = limit;
-    for (;;) {
-      const page = await listTasksByBranch(repo, branch, limit, offset);
+    let cursor = firstPage.nextCursor;
+    while (cursor !== null) {
+      const page: TasksByBranchPage = await listTasksByBranch(
+        repo,
+        branch,
+        limit,
+        cursor,
+      );
       tasks.push(...page.tasks);
-      if (page.tasks.length < limit) break;
-      offset += limit;
+      cursor = page.nextCursor;
     }
 
     return tasks;
@@ -1592,14 +1620,14 @@ export function buildProductionDeps(opts: {
     listOpenPrRecords: async (
       repo: string,
       limit: number,
-      offset: number,
+      cursor: string | null,
       updatedSince?: string,
     ) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
         limit: String(limit),
-        offset: String(offset),
+        ...(cursor !== null ? { cursor } : {}),
         ...(updatedSince !== undefined ? { updatedSince } : {}),
       });
       const res = await doFetch(`${baseUrl}/prs?${params}`, { headers });
@@ -1607,7 +1635,7 @@ export function buildProductionDeps(opts: {
         throw new Error(`task-store GET /prs?${params} → ${res.status}`);
       }
       const data = (await res.json()) as PrListResponseJson;
-      return data.prs;
+      return { items: data.prs, nextCursor: data.nextCursor ?? null };
     },
     patchPrRecord: makePatchPrRecord({ baseUrl, headers, doFetch }),
     ghViewPr: async (repo: string, prNumber: number) => {
@@ -1627,8 +1655,8 @@ export function buildProductionDeps(opts: {
         ownerOfRepo(repo),
       );
     },
-    listPrOpenTasks: (limit: number, offset: number) =>
-      listTasksByStatus("pr_open", limit, offset),
+    listPrOpenTasks: (limit: number, cursor: string | null) =>
+      listTasksByStatus("pr_open", limit, cursor),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
@@ -1764,13 +1792,13 @@ export function buildReviewStateProductionDeps(opts: {
   ): ((
     repo: string,
     limit: number,
-    offset: number,
+    cursor: string | null,
     updatedSince?: string,
-  ) => Promise<PrReviewStateRecord[]>) => {
+  ) => Promise<CursorPage<PrReviewStateRecord>>) => {
     return async (
       repo: string,
       limit: number,
-      offset: number,
+      cursor: string | null,
       updatedSince?: string,
     ) => {
       const params = new URLSearchParams({
@@ -1778,7 +1806,7 @@ export function buildReviewStateProductionDeps(opts: {
         state: "open",
         reviewState,
         limit: String(limit),
-        offset: String(offset),
+        ...(cursor !== null ? { cursor } : {}),
         ...(updatedSince !== undefined ? { updatedSince } : {}),
       });
       const res = await doFetch(`${baseUrl}/prs?${params}`, { headers });
@@ -1786,7 +1814,7 @@ export function buildReviewStateProductionDeps(opts: {
         throw new Error(`task-store GET /prs?${params} → ${res.status}`);
       }
       const data = (await res.json()) as PrReviewListResponseJson;
-      return data.prs;
+      return { items: data.prs, nextCursor: data.nextCursor ?? null };
     };
   };
 

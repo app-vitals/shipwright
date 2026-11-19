@@ -47,12 +47,16 @@ export interface ClaimInvariantReconcilerDeps {
   getScopedRepos: () => string[];
   /** Page size for listPendingTasks pagination. Defaults to DEFAULT_PAGE_LIMIT when omitted. */
   pageLimit?: number;
-  /** GET /tasks?status=pending&repo=<repo>&limit=<limit>&offset=<offset> — one page. */
+  /**
+   * GET /tasks?status=pending&repo=<repo>&limit=<limit>[&cursor=<cursor>] — one
+   * keyset page. `cursor` is `null` for the first page; `nextCursor` is `null`
+   * on the last page.
+   */
   listPendingTasks: (
     repo: string,
     limit: number,
-    offset: number,
-  ) => Promise<PendingTaskRecord[]>;
+    cursor: string | null,
+  ) => Promise<{ tasks: PendingTaskRecord[]; nextCursor: string | null }>;
   /** POST /tasks/:id/release — unclaims a task back to pending. */
   releaseTask: (id: string) => Promise<void>;
 }
@@ -100,14 +104,13 @@ async function listAllPendingTasks(
 ): Promise<PendingTaskRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const tasks: PendingTaskRecord[] = [];
-  let offset = 0;
+  let cursor: string | null = null;
 
-  for (;;) {
-    const page = await deps.listPendingTasks(repo, limit, offset);
-    tasks.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
-  }
+  do {
+    const page = await deps.listPendingTasks(repo, limit, cursor);
+    tasks.push(...page.tasks);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
 
   return tasks;
 }
@@ -167,6 +170,7 @@ export async function reconcileClaimInvariant(
 /** GET /tasks response shape — tolerates both the modern `{tasks:[...]}` and legacy bare-array shapes. */
 interface TaskListResponseJson {
   tasks: PendingTaskRecord[];
+  nextCursor?: string | null;
 }
 
 /**
@@ -190,12 +194,16 @@ export function buildProductionDeps(opts: {
 
   return {
     getScopedRepos: opts.getScopedRepos,
-    listPendingTasks: async (repo: string, limit: number, offset: number) => {
+    listPendingTasks: async (
+      repo: string,
+      limit: number,
+      cursor: string | null,
+    ) => {
       const params = new URLSearchParams({
         status: "pending",
         repo,
         limit: String(limit),
-        offset: String(offset),
+        ...(cursor !== null ? { cursor } : {}),
       });
       const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok) {
@@ -204,8 +212,11 @@ export function buildProductionDeps(opts: {
       const data = (await res.json()) as unknown;
       // Legacy bare-array tolerance, same as pr-state-reconciler.ts's
       // makeListTasksByStatus/createTaskStoreClient handling.
-      if (Array.isArray(data)) return data as PendingTaskRecord[];
-      return (data as TaskListResponseJson).tasks;
+      if (Array.isArray(data)) {
+        return { tasks: data as PendingTaskRecord[], nextCursor: null };
+      }
+      const parsed = data as TaskListResponseJson;
+      return { tasks: parsed.tasks, nextCursor: parsed.nextCursor ?? null };
     },
     releaseTask: async (id: string) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}/release`, {

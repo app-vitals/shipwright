@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { sign } from "hono/jwt";
-import { type MetricsDeps, createMetricsApp } from "./api.ts";
+import { createMetricsApp, type MetricsDeps } from "./api.ts";
 import type { AccountsClient, UserRecord } from "./lib/accounts-client.ts";
 import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
@@ -62,7 +62,6 @@ function makeResult(columns: string[], rows: unknown[][]): HogQLResult {
     types: [],
     hasMore: false,
     limit: 100,
-    offset: 0,
   };
 }
 

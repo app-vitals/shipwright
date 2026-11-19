@@ -129,6 +129,8 @@ describe("prompt-fix — SKILL.md", () => {
     expect(text).toContain("status=in_progress&repo=");
     expect(text).toContain("limit=1000");
     expect(text).toContain("Pagination guard");
+    expect(text).toContain("&cursor=<nextCursor>");
+    expect(text.toLowerCase()).not.toContain("offset");
     expect(text).toContain("`prompt-` prefix");
     expect(text).toContain("/tasks/bulk");
     expect(text).toContain("`status: queued`");

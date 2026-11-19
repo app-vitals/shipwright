@@ -227,8 +227,8 @@ Anything the audit couldn't determine without a human call. Common entries:
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={url-encoded-repo}&limit=500" | jq '.tasks'
    ```
-   If the response's `.total` exceeds the number of tasks returned, repeat with
-   `&offset={n*500}` until every task has been scanned.
+   If the response's `.nextCursor` is a string, repeat with
+   `&cursor=<nextCursor>` until it is `null` and every task has been scanned.
 
    From the combined results, filter to task `id` values matching `test-t-<NNN>-{repo-slug}`
    (the ID shape `test-fix` writes — see `skills/test-fix/SKILL.md` Step 5). Extract the

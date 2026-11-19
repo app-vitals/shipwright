@@ -903,7 +903,6 @@ describe("TaskStoreProvider (integration)", () => {
       expect(t.types.length).toBe(t.columns.length);
       expect(t.hasMore).toBe(false);
       expect(t.limit).toBe(100);
-      expect(t.offset).toBe(0);
     }
   });
 

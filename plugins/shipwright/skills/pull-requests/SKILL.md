@@ -162,10 +162,9 @@ curl -sf \
 ```json
 {
   "prs": [ /* array of PR records */ ],
-  "total": 12,
-  "limit": 50,
-  "offset": 0
+  "nextCursor": null
 }
 ```
 
-Use `?limit=N&offset=M` for pagination.
+Use `?limit=N` for the page size and follow `nextCursor` for pagination: pass it back as
+`?cursor=<nextCursor>` until it is `null` (the only completeness signal).

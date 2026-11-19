@@ -10,7 +10,6 @@ export interface HogQLResult {
   types: string[];
   hasMore?: boolean;
   limit?: number;
-  offset?: number;
 }
 
 /** Date range preset or custom range */

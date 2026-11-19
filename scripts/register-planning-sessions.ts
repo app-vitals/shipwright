@@ -82,14 +82,17 @@ export class HttpPlanningStoreClient implements PlanningStoreClient {
 
   async listTasks(filter: { source: string }): Promise<TaskRow[]> {
     const out: TaskRow[] = [];
-    for (let offset = 0; ; offset += TASK_PAGE_SIZE) {
-      const r = await this.call<{ tasks: TaskRow[]; total: number }>(
-        "GET",
-        `/tasks?source=${encodeURIComponent(filter.source)}&limit=${TASK_PAGE_SIZE}&offset=${offset}`,
-      );
+    let cursor: string | null = null;
+    do {
+      const r: { tasks: TaskRow[]; nextCursor?: string | null } =
+        await this.call(
+          "GET",
+          `/tasks?source=${encodeURIComponent(filter.source)}&limit=${TASK_PAGE_SIZE}${cursor !== null ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+        );
       out.push(...r.tasks);
-      if (r.tasks.length === 0 || out.length >= r.total) return out;
-    }
+      cursor = r.nextCursor ?? null;
+    } while (cursor !== null);
+    return out;
   }
 
   async patchTask(

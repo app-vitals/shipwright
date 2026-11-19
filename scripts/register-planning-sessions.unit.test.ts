@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   formatReport,
+  HttpPlanningStoreClient,
   parseArgs,
   repoFromRemote,
 } from "./register-planning-sessions.ts";
@@ -40,5 +41,32 @@ describe("formatReport", () => {
     expect(out).toContain("Dry run: nothing was written.");
     expect(out).toContain("planning/x/A.md — non-standard file");
     expect(out).toContain("x: boom");
+  });
+});
+
+describe("HttpPlanningStoreClient.listTasks", () => {
+  it("follows nextCursor until null and never sends offset", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (url: string | URL | Request) => {
+      urls.push(String(url));
+      const cursor = new URL(String(url)).searchParams.get("cursor");
+      const body =
+        cursor === null
+          ? { tasks: [{ id: "a" }], nextCursor: "c1" }
+          : { tasks: [{ id: "b" }], nextCursor: null };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new HttpPlanningStoreClient({
+      baseUrl: "http://ts.test",
+      token: "t",
+      fetch: fetchFn,
+    });
+
+    const rows = await client.listTasks({ source: "planning/x" });
+
+    expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toContain("cursor=c1");
+    for (const u of urls) expect(u).not.toContain("offset");
   });
 });

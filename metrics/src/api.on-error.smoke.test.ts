@@ -55,7 +55,6 @@ const emptyResult: HogQLResult = {
   types: [],
   hasMore: false,
   limit: 100,
-  offset: 0,
 };
 
 function makeEmptyProvider(): MetricsProvider {

@@ -28,7 +28,6 @@ const emptyResult: HogQLResult = {
   types: [],
   hasMore: false,
   limit: 100,
-  offset: 0,
 };
 
 const MERGED_PRS_COLUMNS = [

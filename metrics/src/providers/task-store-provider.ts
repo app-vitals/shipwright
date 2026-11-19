@@ -153,7 +153,6 @@ function table(columns: string[], results: unknown[][]): MetricTable {
     types: columns.map(() => "String"),
     hasMore: false,
     limit: 100,
-    offset: 0,
   };
 }
 

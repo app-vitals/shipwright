@@ -150,14 +150,12 @@ a T-NNN active for one repo would incorrectly block or interfere with dedup for 
 repo.
 
 **Pagination guard — do not silently proceed with a partial result set.** `limit=1000`
-covers the common case, but a repo can still have more than 1000 active tasks. After each
-call, check the response's `total` field against the number of tasks actually returned
-(`.tasks | length`): if `total <= tasks.length`, the page is complete. If `total >
-tasks.length`, the first `limit=1000` page did not cover every active task — re-run the same
-query with `&offset=1000` (then `&offset=2000`, and so on) and merge the `.tasks` arrays
-until `tasks.length` (summed across pages) `>= total`. Only treat the dedup query as complete
-once every page has been fetched this way; never build the "already active" set (below) from
-a page that fails this check.
+covers the common case, but a repo can still have more than 1000 active tasks. After each call, check the response's `nextCursor`: if it is `null`, the page is complete. If it is a string,
+the first `limit=1000` page did not cover every active task — re-run the same query with
+`&cursor=<nextCursor>` (the opaque string from the previous response; never parse or build one)
+and merge the `.tasks` arrays, repeating until `nextCursor` is `null`. Only treat the dedup
+query as complete once every page has been fetched this way; never build the "already active"
+set (below) from a page that fails this check.
 
 Parse both `.tasks` arrays. From the combined results, collect tasks where:
 - `source == "test-fix"`, AND
