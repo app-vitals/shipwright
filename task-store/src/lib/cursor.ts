@@ -22,8 +22,8 @@ export function encodeCursor(pos: CursorPosition): string {
   ).toString("base64url");
 }
 
-/** Decode a cursor; throws BadRequestError (400) when malformed. */
-export function decodeCursor(raw: string): CursorPosition {
+/** Parse a base64url `[string, string]` cursor; throws BadRequestError (400) when malformed. */
+function parsePair(raw: string): [string, string] {
   const bad = () => new BadRequestError("invalid cursor");
   let parsed: unknown;
   try {
@@ -32,12 +32,18 @@ export function decodeCursor(raw: string): CursorPosition {
     throw bad();
   }
   if (!Array.isArray(parsed) || parsed.length !== 2) throw bad();
-  const [ts, id] = parsed;
-  if (typeof ts !== "string" || typeof id !== "string" || id === "") {
-    throw bad();
-  }
+  const [a, id] = parsed;
+  if (typeof a !== "string" || typeof id !== "string" || id === "") throw bad();
+  return [a, id];
+}
+
+/** Decode a cursor; throws BadRequestError (400) when malformed. */
+export function decodeCursor(raw: string): CursorPosition {
+  const [ts, id] = parsePair(raw);
   const createdAt = new Date(ts);
-  if (Number.isNaN(createdAt.getTime())) throw bad();
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new BadRequestError("invalid cursor");
+  }
   return { createdAt, id };
 }
 
@@ -77,18 +83,7 @@ export function encodeKeyCursor(pos: KeyCursorPosition): string {
 
 /** Decode a string-key cursor; throws BadRequestError (400) when malformed. */
 export function decodeKeyCursor(raw: string): KeyCursorPosition {
-  const bad = () => new BadRequestError("invalid cursor");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-  } catch {
-    throw bad();
-  }
-  if (!Array.isArray(parsed) || parsed.length !== 2) throw bad();
-  const [key, id] = parsed;
-  if (typeof key !== "string" || typeof id !== "string" || id === "") {
-    throw bad();
-  }
+  const [key, id] = parsePair(raw);
   return { key, id };
 }
 
