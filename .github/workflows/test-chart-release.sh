@@ -235,6 +235,34 @@ assert_eq "conflicting tag is not moved" "$SHA2" "$(git -C "$BARE" rev-parse 'ch
 assert_eq "other missing versions are still tagged after a failure" "$SHA3" "$(git -C "$BARE" rev-parse 'chart-1.32.308^{commit}' 2>/dev/null)"
 assert_fails "unreadable gh-pages index fails" tag_missing_chart_versions "$T/nope" 1.32.306 origin
 
+# --- every lib function a chart-release.yml step calls is defined by the libs
+# that step sources (RCN-9.18: publish called latest_chart_version without
+# sourcing chart-drift-check.sh -> exit 127 in CI). Each step is checked in a
+# fresh shell that sources ONLY what the step sources.
+echo ""
+echo "chart-release.yml steps source every lib they call into"
+WF="$SCRIPT_DIR/chart-release.yml"
+LIBDIR="$SCRIPT_DIR/lib"
+ALL_FUNCS=$(grep -hoE '^[a-z_][a-z0-9_]*\(\)' "$LIBDIR"/*.sh | tr -d '()' | sort -u)
+STEPDIR="$T/steps"; mkdir -p "$STEPDIR"
+awk -v d="$STEPDIR" '/^      - name:/ { n++ } n { print > (d "/step" n ".txt") }' "$WF"
+for step in "$STEPDIR"/step*.txt; do
+  libs=$(grep -oE 'source \.github/workflows/lib/[a-z-]+\.sh' "$step" | awk '{print $2}' || true)
+  [ -z "$libs" ] && continue
+  label=$(sed -n '1s/.*name: //p' "$step")
+  missing=""
+  for fn in $ALL_FUNCS; do
+    grep -vE '^\s*#' "$step" | grep -qE "(^|[^a-z_])${fn}([^a-z_]|$)" || continue
+    # shellcheck disable=SC2086
+    # Fresh bash: a subshell would inherit the libs this script already sourced.
+    # shellcheck disable=SC2016
+    if ! bash -c 'fn=$1; shift; for l in "$@"; do source "$l"; done; declare -F "$fn" >/dev/null' _ "$fn" $(for l in $libs; do echo "$SCRIPT_DIR/../../$l"; done) 2>/dev/null; then
+      missing="$missing $fn"
+    fi
+  done
+  assert_eq "step '$label' defines every lib function it calls" "" "${missing# }"
+done
+
 echo ""
 echo "================================"
 echo "Results: ${PASS} passed, ${FAIL} failed"
