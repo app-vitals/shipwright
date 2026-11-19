@@ -27,6 +27,15 @@ Throughout this command, `{SPEC_FILE}` is the spec file chosen in step 2c (`SPEC
 
 Follow all phases in order. Proceed automatically between phases. The only pauses are to receive user answers to questions.
 
+## Chat Message Rules (CSM-2.2)
+
+This session often runs in a chat surface (Slack, a phone). Every message you send that needs a reply follows these rules; the spec file and the docs PR keep full detail, so nothing is lost by being brief in chat:
+
+- **Ask last.** The ask is the final line of the message, never buried mid-message. Where the answer is a choice, number the options: `Look right? 1 yes / 2 adjust`.
+- **Max 3 bullets.** A headline plus at most 3 bullets (at most 5 in a section-review summary) plus links. Point to the spec file or PR for the rest instead of pasting it.
+- **Fits one phone screen** — about 8-10 lines. Cut before you wrap.
+- **One question per message** (see Phase 1) — still true.
+
 ## Phase 0: Project Context Setup
 
 1. **Create the planning folder** if it doesn't exist: `planning/$ARGUMENTS/`
@@ -79,7 +88,7 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
    - Fallback if no remote: `basename $(git rev-parse --show-toplevel)`
    - Last resort if not in a git repo: `basename $(pwd)` and print a warning.
 
-   Print `Detected repo: {repo}` (full `owner/repo` value) in the Phase 0 summary so the user can catch a misdetection before investing time in the session.
+   Include `Detected repo: {repo}` (full `owner/repo` value) in the Phase 0 summary so the user can catch a misdetection before investing time in the session.
 
 2c. **Resolve session documents, spec number, repos and owner (PLU-3.2).** Runs on both paths.
 
@@ -99,7 +108,7 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
 
    **Owner.** Precedence: `--owner` if given; else, when `--initiative {task-id}` was passed and `GET /tasks/{task-id}` returns an `owner`, that owner; else `git config user.email` (if unset, no owner is recorded). The owner is held only for the task-store registration call. **Never write the owner (or any email) into the spec file, its header line, the PR title or the PR body.**
 
-   Print in the Phase 0 summary: `Detected repo: {repo}`, `Spec: {SPEC_PATH}`, `Repos: {repos}`, `Owner: {owner}` so the user can correct any of them before investing time in the session.
+   **Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets, ask last, per the Chat Message Rules: bullet 1 `Detected repo: {repo}` and `Spec: {SPEC_PATH}`, bullet 2 `Repos: {repos}` and `Owner: {owner}`, bullet 3 (optional) one line on what the docs/research already made clear. Then end with the ask, e.g. `Look right? 1 yes / 2 correct something`, so the user can fix any of them before investing time in the session. Do not paste doc excerpts or research output.
 
 3. **Read project documentation** (lightweight scan — highlights only, no deep code dive):
    - `CLAUDE.md` — conventions, architecture decisions, and constraints
@@ -223,15 +232,12 @@ For each feature, extract from the researcher output:
 
 If the researcher identified any complexity risks, present them to the user **in plain language** before drafting the spec. Translate every technical concern into terms a non-technical product owner can act on.
 
-Format each flag as:
+Present one flag per message, as a headline plus at most 3 bullets, ask last (Chat Message Rules):
 ```
-⚠ {Feature name}
-What this means: {Plain-English description of why it's harder than it looks}
-Business impact: {What this costs — e.g., "doubles the scope", "higher risk of bugs elsewhere", "needs foundational work before the feature itself"}
-Options:
-  → Keep as-is (worth the cost)
-  → Simplify: {concrete suggestion for a smaller version}
-  → Flag for engineering review
+⚠ {Feature name} — {one-line plain-English reason it's harder than it looks}
+• Impact: {what this costs, e.g. "doubles the scope"}
+• Simpler version: {concrete suggestion for a smaller version}
+How to handle? 1 keep as-is / 2 simplify / 3 flag for engineering
 ```
 
 Example translations:
@@ -239,7 +245,7 @@ Example translations:
 - "missing abstraction needed first" → "Before we can build this, we'd need to build some underlying plumbing first — that's extra scope you may not have accounted for"
 - "no test coverage in billing" → "The billing area has no safety nets right now — changes here carry more risk until we add them"
 
-For each flag, ask the user: **"How do you want to handle this?"** Wait for their answer before moving on. Record their decision — it will be reflected in the spec as a Resolved Decision, not as a deferred question.
+Each flag message ends with the ask ("How to handle?"). Wait for their answer before moving on. Record their decision — it will be reflected in the spec as a Resolved Decision, not as a deferred question.
 
 If no complexity risks were found, skip Phase 2b entirely and proceed to Phase 3.
 
@@ -270,15 +276,21 @@ At least one criterion per feature must map to automated verification (a test, t
 
 **Resolved Decisions vs. requirements:** If something was uncertain, it must have been driven to a decision in Q8 and recorded in Resolved Decisions. Do not write "TBD" or leave decisions deferred — plan-session cannot generate tasks from unresolved questions. The only acceptable entry in Resolved Decisions that is not yet resolved is a named external blocker with an explicit owner.
 
-Present the complete draft to the user section by section. After presenting each section, ask: "Does this look right, or would you like to adjust anything here?"
+Write the full draft to the spec file in your working copy; it keeps all the detail. In chat, do **not** paste section text. Walk the draft one section at a time, presenting for each section a bullet summary (3-5 bullets, each a short phrase, not the section's prose) with the ask **last**:
+
+```
+Goals: {X}, {Y}, {Z}.
+Look right? 1 yes / 2 adjust
+```
+
+Wait for the answer before the next section. `2 adjust` means ask what to change, apply it to the draft, and re-summarize that section. The complete section text is still written to the spec file.
 
 ## Phase 4: User Review and Finalize
 
-1. Show the complete assembled spec
-2. Ask:
+1. Do not paste the assembled spec into chat. Give a headline plus at most 3 bullets (feature count, the biggest decision, any external blocker) and the spec file path.
+2. Ask last:
    ```
-   Here's the complete Product Specification. Does this capture what you're building?
-   Would you like to adjust anything before I save it?
+   Full spec is at {SPEC_PATH}. Save it as-is? 1 yes / 2 adjust
    ```
 3. Iterate on feedback until the user approves
 4. Write the approved spec to `{SPEC_PATH}` (new files start with the header line from Phase 3; the file never contains the owner).
@@ -490,24 +502,19 @@ both out on the dispatch path:**
    `Resolved Decisions: {N decisions recorded}` on the dispatch path; keep the parenthetical,
    using the live Q8/Phase 2b tally, on the built-in path.
 
+The summary is condensed — a headline, at most 3 bullets, and links (Chat Message Rules). Per-feature requirement and criteria counts, and the full lists, live in the spec file and PR, not in chat. The block is a template: drop any line that does not apply, and fold the remaining counts into the 3 bullets.
+
 Print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PRD COMPLETE
+PRD COMPLETE — {N} features, spec at {SPEC_PATH}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PRD: {SPEC_PATH}
-Spec PR: {url}    ← omit this line if the docs PR was skipped or failed
-Plan viz: {url}   ← omit this line if the render step was skipped
-
-Features: {N}
-{  Feature name} — {N} requirements, {N} acceptance criteria
-  ...
-
-Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}   ← omit this line on the dispatch path
-Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
-External Blockers: {N items require external resolution before plan-session}
+• Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
+• Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}   ← omit this bullet on the dispatch path
+• External Blockers: {N items require external resolution before plan-session}
+Spec PR: {url}    ← omit if the docs PR was skipped or failed
+Plan viz: {url}   ← omit if the render step was skipped
 
 NEXT: /plan-session {repo} $ARGUMENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
