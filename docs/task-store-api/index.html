@@ -122,8 +122,8 @@ repos list — allowing agents to pick up shared work without requiring an expli
 </table>
 <h2 id="endpoints">Endpoints</h2>
 <h3 id="get-tasks">GET /tasks</h3>
-<p>List tasks. Returns <code>{ tasks, total }</code> for ready/blocked queries; <code>{ tasks, total, limit, offset }</code>
-for all other queries.</p>
+<p>List tasks. Returns <code>{ tasks, total }</code> for ready/blocked queries; <code>{ tasks, total, limit, nextCursor }</code>
+for all other queries. Page with <code>cursor</code> and follow <code>nextCursor</code> until it is <code>null</code>.</p>
 <table>
 <thead>
 <tr>
@@ -189,8 +189,8 @@ for all other queries.</p>
 <td>Max results (pagination)</td>
 </tr>
 <tr>
-<td><code>offset</code></td>
-<td>Start offset (pagination)</td>
+<td><code>cursor</code></td>
+<td>Opaque cursor from a previous response’s <code>nextCursor</code> (pagination)</td>
 </tr>
 </tbody>
 </table>

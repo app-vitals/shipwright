@@ -151,7 +151,7 @@
 <p>Set <code>staged</code> via <code>PATCH /prs/:id</code>. Once the review is posted, call <code>POST /prs/:id/complete</code> (which implicitly clears staged) or set <code>staged: false</code> in the same PATCH.</p>
 <h2 id="endpoints">Endpoints</h2>
 <h3 id="get-prs">GET /prs</h3>
-<p>List PR records. Returns <code>{ prs, total, limit, offset }</code>.</p>
+<p>List PR records. Returns <code>{ prs, total, limit, nextCursor }</code>.</p>
 <table>
 <thead>
 <tr>
@@ -192,9 +192,9 @@
 <td>Max results (pagination)</td>
 </tr>
 <tr>
-<td><code>offset</code></td>
-<td>int</td>
-<td>Start offset (pagination)</td>
+<td><code>cursor</code></td>
+<td>string</td>
+<td>Opaque cursor from a previous response’s <code>nextCursor</code> (pagination)</td>
 </tr>
 </tbody>
 </table>
