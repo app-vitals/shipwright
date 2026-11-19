@@ -628,6 +628,73 @@ describe("TaskService.bulk (unit)", () => {
     expect(result.inserted).toBe(MAX_BULK_TASKS);
     expect(optionsSeen).toHaveLength(1);
   });
+
+  // PWE-3.1: POST /sessions/{slug}/plan runs bulk() inside its own
+  // transaction, so bulk() must accept a caller-owned transaction client.
+  it("runs on a caller-supplied transaction client without opening its own transaction", async () => {
+    const { prisma, optionsSeen } = makeBulkTimeoutRecordingDouble();
+    const txCreated: string[] = [];
+    const tx = {
+      task: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          txCreated.push(data.id as string);
+          return { ...data, session: null };
+        },
+      },
+    };
+    const dispatched: unknown[] = [];
+    const service = new TaskService(prisma, undefined, async (_type, data) => {
+      dispatched.push(data);
+    });
+
+    const result = await service.bulk(
+      [
+        { id: "tx-1", title: "t", status: "pending" },
+        { id: "tx-2", title: "t", status: "pending" },
+      ] as never,
+      tx as never,
+    );
+
+    expect(result).toEqual({ inserted: 2, updated: 0, skipped: [] });
+    expect(txCreated).toEqual(["tx-1", "tx-2"]);
+    // No transaction of its own — the caller owns commit/rollback.
+    expect(optionsSeen).toHaveLength(0);
+    // Still exactly one dispatch for the whole batch, inside the caller's tx.
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it("a collision on a caller-supplied transaction client rejects with ConflictError", async () => {
+    const { prisma } = makeBulkTimeoutRecordingDouble();
+    const tx = {
+      task: {
+        create: async () => {
+          throw { code: "P2002" };
+        },
+      },
+    };
+    const service = new TaskService(prisma, undefined, async () => {});
+    await expect(
+      service.bulk(
+        [{ id: "dup", title: "t", status: "pending" }] as never,
+        tx as never,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("enforces MAX_BULK_TASKS on a caller-supplied transaction client too", async () => {
+    const { prisma } = makeBulkTimeoutRecordingDouble();
+    const service = new TaskService(prisma, undefined, async () => {});
+    await expect(
+      service.bulk(
+        Array.from({ length: MAX_BULK_TASKS + 1 }, (_, i) => ({
+          id: `over-tx-${i}`,
+          title: "t",
+          status: "pending",
+        })) as never,
+        { task: { create: async () => ({}) } } as never,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestError);
+  });
 });
 
 // ─── TaskService.list() updatedSince/repo where clause ─────────────────────

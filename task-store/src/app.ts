@@ -54,6 +54,7 @@ import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
 import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
+import type { SessionPlanServiceLike } from "./session-plan-service.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { SystemCronServiceLike } from "./system-cron-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
@@ -189,6 +190,8 @@ export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
   sessionService: SessionServiceLike;
+  /** PWE-3.1: POST /sessions/{slug}/plan. Unwired (throws) when omitted. */
+  sessionPlanService?: SessionPlanServiceLike;
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
   documentService?: DocumentServiceLike;
@@ -316,7 +319,10 @@ export function createTaskStoreApp(
   app.route("/tasks", createTasksRoutes(deps.taskService));
   app.route("/tokens", createTokensRoutes(deps.tokenService));
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
-  app.route("/sessions", createSessionsRoutes(deps.sessionService));
+  app.route(
+    "/sessions",
+    createSessionsRoutes(deps.sessionService, deps.sessionPlanService),
+  );
   app.route(
     "/documents",
     createDocumentsRoutes(deps.documentService ?? unwiredDocumentService),

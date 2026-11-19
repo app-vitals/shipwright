@@ -27,6 +27,7 @@ import type {
   PlanDocument,
   PlanDocumentKind,
   PlanDocumentState,
+  Prisma,
   PrismaClient,
 } from "./index.ts";
 import { isBlankSession } from "./session-service.ts";
@@ -68,12 +69,23 @@ export interface DocumentListFilters {
   planned?: boolean;
 }
 
+/**
+ * The client surface register() writes through. Satisfied by a
+ * `$transaction` callback's `tx`, so a caller can register a document inside
+ * its own transaction (PWE-3.1, POST /sessions/{slug}/plan).
+ */
+export type DocumentTxClient = Pick<
+  Prisma.TransactionClient,
+  "session" | "planDocument"
+>;
+
 /** The subset of DocumentService the routes depend on. */
 export interface DocumentServiceLike {
   register(
     input: RegisterDocumentInput,
     accountId: string,
     scope: DocumentScope,
+    tx?: DocumentTxClient,
   ): Promise<PlanDocument>;
   list(
     filters: DocumentListFilters,
@@ -96,10 +108,16 @@ function definedOnly<T extends Record<string, unknown>>(obj: T): Partial<T> {
 export class DocumentService implements DocumentServiceLike {
   constructor(private prisma: PrismaClient) {}
 
+  /**
+   * Pass `tx` to run inside a caller-owned transaction (PWE-3.1): no
+   * transaction is opened here and a throw rolls back the caller's whole
+   * transaction. Without it, register() runs in its own transaction.
+   */
   async register(
     input: RegisterDocumentInput,
     accountId: string = DEFAULT_ACCOUNT_ID,
     scope: DocumentScope = { repos: null, accountId: null },
+    tx?: DocumentTxClient,
   ): Promise<PlanDocument> {
     if (isBlankSession(input.session)) {
       throw new BadRequestError("session is required");
@@ -138,7 +156,7 @@ export class DocumentService implements DocumentServiceLike {
       originTaskId: input.originTaskId,
     });
 
-    return this.prisma.$transaction(async (tx) => {
+    const write = async (tx: DocumentTxClient): Promise<PlanDocument> => {
       // The upsert below rewrites `repo` on an existing row, so a scoped token
       // must also own the existing document — otherwise it could overwrite and
       // re-home another repo's row. Checked before any write so an
@@ -197,7 +215,8 @@ export class DocumentService implements DocumentServiceLike {
         } as never,
         update: mutable,
       });
-    });
+    };
+    return tx ? write(tx) : this.prisma.$transaction(write);
   }
 
   async list(

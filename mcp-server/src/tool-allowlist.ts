@@ -116,6 +116,9 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   // documents: planning-document write ops (PLU-2.2) — documents_list stays public.
   "documents_create",
   "documents_update",
+  // sessions: the plan write op (PWE-3.1, POST /sessions/{slug}/plan) — a
+  // planning-pipeline write in the same category as documents_create.
+  "sessions_plan",
 ] as const;
 
 /**

@@ -1163,7 +1163,7 @@ export interface paths {
         };
         /**
          * Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, offset }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope.
+         * @description Returns `{ events, total, limit, offset, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -1172,6 +1172,8 @@ export interface paths {
                     limit?: string;
                     /** @description Pagination offset */
                     offset?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path: {
@@ -1435,7 +1437,7 @@ export interface paths {
         };
         /**
          * List pull requests
-         * @description Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
+         * @description Returns `{ prs, total, limit, offset, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
          */
         get: {
             parameters: {
@@ -1464,6 +1466,8 @@ export interface paths {
                     updatedSince?: string;
                     /** @description Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values. */
                     origin?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path?: never;
@@ -2272,7 +2276,7 @@ export interface paths {
         };
         /**
          * Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, offset }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist.
+         * @description Returns `{ events, total, limit, offset, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -2281,6 +2285,8 @@ export interface paths {
                     limit?: string;
                     /** @description Pagination offset */
                     offset?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path: {
@@ -2327,7 +2333,7 @@ export interface paths {
         };
         /**
          * List sessions
-         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.
+         * @description Returns `{ sessions, total, limit, offset, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -2350,6 +2356,8 @@ export interface paths {
                     accountId?: string;
                     limit?: string;
                     offset?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path?: never;
@@ -2700,6 +2708,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{slug}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write a session's plan document, tasks and planned specs atomically
+         * @description One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+                    accountId?: string;
+                };
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SessionPlanBody"];
+                };
+            };
+            responses: {
+                /** @description Plan written: the plan document id and the inserted task count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionPlanResponse"];
+                    };
+                };
+                /** @description Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionLockConflict"];
+                    };
+                };
+                /** @description Webhook delivery failed; nothing was written */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -2900,7 +3001,7 @@ export interface paths {
         };
         /**
          * List verification checks for a task, a PR, or a repo+checkName pair
-         * @description Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.
+         * @description Returns `{ checks, total, limit, offset, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -2916,6 +3017,8 @@ export interface paths {
                     limit?: string;
                     /** @description Pagination offset */
                     offset?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3023,7 +3126,7 @@ export interface paths {
         };
         /**
          * List coverage snapshots, newest first
-         * @description Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.
+         * @description Returns `{ snapshots, total, limit, offset, nextCursor }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -3038,6 +3141,8 @@ export interface paths {
                     offset?: string;
                     /** @description Admin tokens only: narrow to one account. */
                     accountId?: string;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3642,7 +3747,7 @@ export interface paths {
         };
         /**
          * Recent claimed slots of a system cron — admin-only
-         * @description Returns `{ triggers }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded.
+         * @description Returns `{ triggers, nextCursor }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded. `nextCursor` is an opaque cursor — pass it back as `?cursor=` for the next page; `null` on the last page; a malformed cursor is a `400`.
          */
         get: {
             parameters: {
@@ -3651,6 +3756,8 @@ export interface paths {
                     accountId?: string;
                     /** @description Max triggers to return (1-50, default 5). */
                     limit?: number;
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    cursor?: string;
                 };
                 header?: never;
                 path: {
@@ -4086,6 +4193,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         TaskEvent: {
             /** @example clxevent123456 */
@@ -4147,6 +4259,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         PullRequest: {
             /** @example clx0987654321 */
@@ -4550,6 +4667,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         SessionListResponse: {
             sessions: components["schemas"]["Session"][];
@@ -4559,6 +4681,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         Session: {
             /** @example shipwright-may-launch */
@@ -4777,6 +4904,67 @@ export interface components {
             /** @enum {boolean} */
             released: true;
         };
+        SessionPlanResponse: {
+            /** @example clx0plan */
+            planDocumentId: string;
+            /** @example 3 */
+            inserted: number;
+        };
+        SessionPlanBody: {
+            plan: components["schemas"]["SessionPlanDocument"];
+            /** @description Tasks to create, same shape and validation as POST /tasks/bulk (at most 500). Each is stamped with the session, `planDocumentId` and `originRef` (both the plan document id) and `originKind: document`; a task's own `session` must be absent or equal the slug. */
+            tasks: ({
+                /** @example Implement feature X */
+                title?: string;
+                /** @example pending */
+                status?: string;
+                /** @example org/repo */
+                repo?: string | null;
+                /**
+                 * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+                 * @example 42
+                 */
+                pr?: unknown;
+            } & {
+                [key: string]: unknown;
+            })[];
+            /**
+             * @description Spec numbers in this session to mark planned (`plannedAt`). An unregistered number is a 400 and rolls back the whole write; an already-planned spec keeps its `plannedAt`.
+             * @example [
+             *       1,
+             *       2
+             *     ]
+             */
+            specs?: number[];
+            /**
+             * @description Planning-lock identity. Defaults to the calling token's agent id (or 'admin'). A live lock held by anyone else is a 409.
+             * @example agent-1
+             */
+            holder?: string;
+        };
+        SessionPlanDocument: {
+            /**
+             * @description Home repo (org/repo) the plan file lives in.
+             * @example org/home
+             */
+            repo: string;
+            /** @example planning/shipwright-may-launch/PLAN.md */
+            path: string;
+            /** @example null */
+            title?: string | null;
+            /**
+             * @description Sets the session's owner when it has none (first one wins, as POST /documents).
+             * @example dev@example.com
+             */
+            owner?: string | null;
+            /**
+             * @example [
+             *       "org/repo",
+             *       "org/other"
+             *     ]
+             */
+            repos?: string[];
+        };
         RegisterPlanDocumentBody: {
             /** @example shipwright-may-launch */
             session: string;
@@ -4931,6 +5119,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         CoverageSnapshot: {
             /** @example clxcov1234567890 */
@@ -5043,6 +5236,11 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
         CoverageSnapshotLatestResponse: {
             /** @description Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo. */
@@ -5220,6 +5418,11 @@ export interface components {
                 /** @example 2 */
                 taskCount: number;
             }[];
+            /**
+             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
         };
     };
     responses: never;
