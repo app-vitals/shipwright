@@ -208,3 +208,23 @@ function intersects(a: string[], b: string[]): boolean {
   const set = new Set(b);
   return a.some((value) => set.has(value));
 }
+
+// ─── Task visibility ────────────────────────────────────────────────────────
+
+/**
+ * Decide whether a single task is visible under the given scope (MPV-1.2):
+ * always under the "all" scope, otherwise iff the task's assignee is one of
+ * the scope's agent ids OR its repo is one of the scope's repos. An empty
+ * scope sees nothing. Mirrors the task-store's `scopeAgentIds`/`scopeRepos`
+ * list filter, so the detail check agrees with the list.
+ */
+export function isTaskVisible(
+  task: { assignee?: string | null; repo?: string | null },
+  scope: VisibilityScope,
+): boolean {
+  if (scope.agentIds === "all") return true;
+  return (
+    (!!task.assignee && scope.agentIds.includes(task.assignee)) ||
+    (!!task.repo && scope.repos.includes(task.repo))
+  );
+}
