@@ -216,6 +216,19 @@ describe("checkVersionSync", () => {
     expect(error?.message).toContain("9.9.9");
   });
 
+  it("passes when plugin.json and marketplace.json carry no version (committed versionless)", () => {
+    for (const rel of [
+      "plugins/shipwright/.claude-plugin/plugin.json",
+      MARKETPLACE_JSON_PATH,
+    ]) {
+      const abs = resolve(tmpDir, rel);
+      const obj = JSON.parse(readFileSync(abs, "utf8")) as Record<string, unknown>;
+      delete obj.version;
+      writeFileSync(abs, `${JSON.stringify(obj, null, 2)}\n`, "utf8");
+    }
+    expect(() => checkVersionSync(tmpDir)).not.toThrow();
+  });
+
   it("throws when a package.json version mismatches version.txt", () => {
     // Drift one of the package.json files
     const pkgPath = resolve(tmpDir, "metrics/package.json");

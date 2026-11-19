@@ -749,9 +749,9 @@ jobs:
       # extract_run_id_from_link() / failed_required_check_run_ids() /
       # checks_watch_with_retry() — keep both copies in sync.
       #
-      # Retry on stale-base races: this workflow and sync-plugin-version.yml
-      # both trigger off the same tag pushes and race to merge onto main.
-      # When the other workflow's PR lands first, main moves out from under
+      # Retry on stale-base races: this workflow can race other PRs
+      # merging onto main (e.g. a human merge).
+      # When another PR lands first, main moves out from under
       # this PR (no textual conflict — just a stale base ref) and
       # `gh pr merge` fails with a transient GraphQL error: "Base branch was
       # modified. Review and try the merge again." Confirmed via run

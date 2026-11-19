@@ -12,13 +12,11 @@ permissions:
   contents: read
 
 jobs:
-  # Detects whether this run only touches the files auto-bump-chart.yml or
-  # sync-plugin-version.yml commit — chart-version bumps (Chart.yaml,
-  # CHANGELOG.md) and plugin-version syncs (package.json across workspaces,
-  # plugin.json, marketplace.json, version.txt). Both are fully automated,
-  # bot-authored, version-string-only changes that never touch application
-  # logic — so the app/docker/site jobs below are gated on this and skipped
-  # when nothing else changed. helm.yml (separately path-filtered on
+  # Detects whether this run only touches the files auto-bump-chart.yml
+  # commits — chart-version bumps (Chart.yaml, CHANGELOG.md). That is a fully
+  # automated, bot-authored, version-string-only change that never touches
+  # application logic — so the app/docker/site jobs below are gated on this
+  # and skipped when nothing else changed. helm.yml (separately path-filtered on
   # charts/**) still runs and is what actually validates a chart change.
   #
   # Fails open on purpose: any inability to compute the diff (unresolvable
@@ -63,16 +61,16 @@ jobs:
           echo "Changed files (${BASE}...${HEAD_SHA}):"
           echo "$CHANGED"
 
-          # Exact allowlist — the full set of files auto-bump-chart.yml and
-          # sync-plugin-version.yml ever touch. Anything else in the diff
+          # Exact allowlist — the full set of files auto-bump-chart.yml ever
+          # touches. Anything else in the diff
           # means real code changed, so the full suite runs.
-          PATTERN='^(charts/shipwright/Chart\.yaml|charts/shipwright/CHANGELOG\.md|package\.json|plugins/shipwright/package\.json|plugins/shipwright/\.claude-plugin/plugin\.json|metrics/package\.json|agent/package\.json|version\.txt|\.claude-plugin/marketplace\.json)$'
+          PATTERN='^(charts/shipwright/Chart\.yaml|charts/shipwright/CHANGELOG\.md)$'
 
           if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE "$PATTERN"; then
             echo "app=true" >> "$GITHUB_OUTPUT"
           else
             echo "app=false" >> "$GITHUB_OUTPUT"
-            echo "Only automated chart/plugin-version-bump files changed — skipping app-level CI jobs."
+            echo "Only automated chart-bump files changed — skipping app-level CI jobs."
           fi
 
   ci:

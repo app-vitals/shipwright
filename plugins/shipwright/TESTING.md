@@ -1318,18 +1318,17 @@ genuine uncovered error path (e.g. an untested `catch` block) files normally.
 
 ## Versioning Checklist (for every PR to this repo)
 
-**Version is owned by automation — do not manually bump it in a feature PR.**
-`plugins/shipwright/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and
-`version.txt` are synced exclusively by `.github/workflows/sync-plugin-version.yml`,
-triggered off `agent-v*` tags (which `scripts/sync-version.ts` derives from
-semantic-release's conventional-commit analysis). See the `marketplace-dev` skill's
-"Version Ownership" section for the full mechanism.
+**Do not add a `version` to the plugin or marketplace manifests.**
+`plugins/shipwright/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` are
+committed versionless: a git-hosted marketplace plugin with no version uses the commit SHA,
+so every commit is an update for external installs. The agent image gets its version
+stamped at build time (`release.yml` `AGENT_VERSION` → `scripts/sync-version.ts`).
 
 - [ ] Does this PR change any file under `commands/`, `skills/`, `agents/`, or `hooks/`?
-  - **Yes** → write a `fix:`/`feat:`/`feat!:` commit so semantic-release derives the
-    correct bump automatically — do **not** hand-edit `plugin.json`, `README.md`'s
-    version heading, `marketplace.json`, or `version.txt` in this PR
+  - **Yes** → write a `fix:`/`feat:`/`feat!:` commit so the release derives the
+    correct bump automatically — do **not** add a version to `plugin.json` or
+    `marketplace.json`, or hand-edit `version.txt`, in this PR
   - **No** (docs-only, like ADOPTION-ROADMAP.md) → no commit-prefix action needed beyond
     normal Conventional Commits hygiene
 - [ ] After merging: verify `/plugin marketplace update` + `/plugin update shipwright`
-  picks up the new version once the sync-plugin-version PR has landed on `main`
+  picks up the new commit once it has landed on `main`

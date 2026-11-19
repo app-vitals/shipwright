@@ -8,8 +8,7 @@
 #      compute tag (dry run) -> build (local, no push) -> verify -> push -> tag.
 #      The tag is annotated (message = release record trailers) and is pushed with
 #      DISPATCH_TOKEN, not GITHUB_TOKEN, so the tag push still triggers
-#      auto-bump-chart.yml and sync-plugin-version.yml (GITHUB_TOKEN pushes
-#      trigger no workflows).
+#      auto-bump-chart.yml (GITHUB_TOKEN pushes trigger no workflows).
 #
 #   2. Whisper (validate / changes / publish): a CVE-rebuild of a third-party
 #      image. It has no semver tag and no git tag; images are tagged
@@ -177,8 +176,8 @@ jobs:
             # Bare semver off the tag (agent-v0.117.0 -> 0.117.0), stamped into the
             # image so the deployed artifact's plugin.json matches the tag it was
             # built for (agent/Dockerfile "sync plugin version" step). Agent only.
-            # The git-committed version for the public marketplace listing is synced
-            # asynchronously by sync-plugin-version.yml, which this tag also triggers.
+            # The committed manifests carry no version: external installs from the
+            # git marketplace are versioned by commit SHA.
             AGENT_VERSION="${NEW_TAG#agent-v}"
             ARGS+=(--build-arg AGENT_VERSION="$AGENT_VERSION")
           fi
@@ -235,8 +234,8 @@ jobs:
       # 5. Create the git tag last: it exists only for an image that built, passed
       #    verification and was pushed. Annotated, message = release record
       #    trailers (ADR 0002). Pushed with DISPATCH_TOKEN (checkout above did not
-      #    persist credentials) so the tag push triggers auto-bump-chart.yml and
-      #    sync-plugin-version.yml; GITHUB_TOKEN pushes would not.
+      #    persist credentials) so the tag push triggers auto-bump-chart.yml;
+      #    GITHUB_TOKEN pushes would not.
       - name: Tag release
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}

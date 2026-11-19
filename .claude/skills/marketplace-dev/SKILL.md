@@ -39,7 +39,7 @@ and **`scripts/sync-version.ts`** — do NOT manually bump version numbers.
 Versions are determined automatically on every merge to `main`:
 
 1. **semantic-release** analyzes conventional commits since the last tag
-2. `.github/workflows/sync-plugin-version.yml` calls `scripts/sync-version.ts <nextVersion>`
+2. `release.yml` stamps `<nextVersion>` into the agent image at build time via `scripts/sync-version.ts` (the committed plugin/marketplace manifests carry no version)
 3. `sync-version.ts` writes the new version to **five locations**:
 
 | # | File | Updated by |

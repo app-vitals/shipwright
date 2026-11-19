@@ -16,29 +16,12 @@ What actually runs on every merge to `main`:
    `mathieudutour/github-tag-action` to compute the next version from conventional
    commits since the last `agent-v*` tag (`default_bump: patch`), builds and pushes the
    agent Docker image stamped with that version, then pushes a new `agent-v*` git tag.
-2. **`.github/workflows/sync-plugin-version.yml`** triggers on that `agent-v*` tag push.
-   It checks out `main`, runs:
-   ```
-   bun run scripts/sync-version.ts <version>
-   ```
-3. **`scripts/sync-version.ts`** writes the new version into six files:
-
-   | File | What it updates |
-   |------|----------------|
-   | `package.json` | Root `"version"` field |
-   | `plugins/shipwright/package.json` | Plugin workspace `"version"` field |
-   | `plugins/shipwright/.claude-plugin/plugin.json` | Plugin manifest `"version"` field |
-   | `metrics/package.json` | Metrics workspace `"version"` field |
-   | `agent/package.json` | Agent workspace `"version"` field |
-   | `version.txt` | Plain-text version string |
-
-   Plus a seventh, `.claude-plugin/marketplace.json` — this one is already live (not
-   pending any follow-up work); external installs via `claude plugin marketplace add`
-   read this file directly, so it's the reason `sync-plugin-version.yml` exists at all
-   rather than relying solely on the build-time stamp in the Docker image.
-4. The workflow commits the change to a branch (`chore/plugin-version-v<version>`),
-   opens a PR, waits for required checks, and self-merges with `--admin` (squash,
-   `[skip ci]` on the subject so the merge doesn't re-trigger build workflows).
+2. **`scripts/sync-version.ts`** is run at image build time (`agent/Dockerfile`,
+   `ARG AGENT_VERSION`) and stamps the version into the image's copy of the
+   package.json files, `version.txt`, and the plugin/marketplace manifests. Nothing is
+   committed back to git: the committed `plugin.json` and `marketplace.json` carry no
+   `version`, so external `claude plugin marketplace add` installs are versioned by
+   commit SHA and every commit is an update.
 
 ## Commit Types and the Bump They Trigger
 
@@ -56,14 +39,14 @@ an unrelated path never fires a release regardless of commit prefix.
 
 ## Post-Release Verification
 
-After a release merges and `sync-plugin-version.yml` completes:
+After a release merges:
 
 ```bash
 # 1. Check the new git tag
 git fetch --tags
 git tag --sort=-creatordate | head -5
 
-# 2. Verify all files match the new tag
+# 2. Check the committed files agree with version.txt
 bun run scripts/sync-version.ts --check
 ```
 
@@ -84,8 +67,7 @@ If a file shows the wrong version after a release:
 
 ## Reminder: Never Manually Bump Versions
 
-Do not edit `"version"` in any `package.json`, `plugin.json`, or `marketplace.json` by
-hand — the automation owns these and a manual edit just conflicts with (or gets
-overwritten by) the next tag-triggered sync. Write correct conventional commits and let
-`release.yml` / `sync-plugin-version.yml` do the job. Confirmed the hard way in PR
+Do not add a `"version"` to `plugin.json` or `marketplace.json`, and do not hand-edit
+version fields elsewhere. Write correct conventional commits and let `release.yml`
+do the job. Confirmed the hard way in PR
 #1296, where a manual patch bump had to be reverted.
