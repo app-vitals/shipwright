@@ -1,0 +1,303 @@
+name: Bump Agent
+
+# Caller-supplied release run id (optional) is appended to the run name so the
+# release conductor can find its run. Without it the plain workflow name stays.
+run-name: ${{ inputs.run_id && format('Bump Agent ({0})', inputs.run_id) || 'Bump Agent' }}
+
+# Standard bump workflow (ADR 0003, RCN-13.5): the conductor dispatches this
+# with the upstream release's version. It does what platform-release.yml does
+# and reuses its scripts (scripts/platform-release-bump.ts,
+# platform-docs-snapshot.ts, platform-bump-branch-guard.ts,
+# platform-bump-gate.sh) rather than forking the logic: re-pins every
+# @app-vitals/agent-* package and the agent/Dockerfile platform image, refreshes
+# bun.lock, the committed admin spec/types and the docs/platform snapshot, opens
+# or updates the PR on the fixed branch chore/platform-release, waits for the
+# required checks and merges it. When the pin is already at `version` nothing
+# changes, no PR is opened, and the run succeeds. With `dry_run` the bump is
+# generated and reported but nothing is pushed.
+#
+# platform-release.yml keeps its repository_dispatch trigger until RCN-7.2 and
+# RCN-9.12 remove the dispatch and the old name. Both workflows share the
+# `platform-release` concurrency group because they share the bump branch.
+#
+# The version is never interpolated into a script: it reaches every step through
+# env and is validated as strict X.Y.Z by the bump script before anything is
+# written. Content test: bump-agent.content.test.ts (repo root).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream release version to pin (strict X.Y.Z, e.g. 1.73.0)"
+        required: true
+        type: string
+      run_id:
+        description: "Caller-supplied release run id, recorded in the run name so the caller can find this run (optional)"
+        required: false
+        type: string
+      dry_run:
+        description: "Generate the bump and report it, but push nothing, open no PR and merge nothing"
+        required: false
+        default: false
+        type: boolean
+      attempt:
+        description: "Rebuild attempt (1 = first run, 2 = regenerated after a main conflict; capped at 2)"
+        required: false
+        default: "1"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-release
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: bump @app-vitals/agent-* and open PR
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the bump branch
+      pull-requests: write # open / update the PR
+    env:
+      VERSION: ${{ inputs.version }}
+      BRANCH: chore/platform-release
+    steps:
+      # DISPATCH_TOKEN (not GITHUB_TOKEN) for checkout and PR: pushes and PRs
+      # made with GITHUB_TOKEN do not trigger the PR's CI, and an updated
+      # bump PR must re-run it. Same token auto-bump-chart.yml opens PRs with.
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          ref: main
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.4"
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Validates VERSION (strict X.Y.Z) and rewrites the pins; exits non-zero
+      # on an invalid version or when nothing declares a platform package.
+      - name: Pin @app-vitals/agent-* to the released version
+        run: bun scripts/platform-release-bump.ts "$VERSION"
+
+      - name: Checkout platform repo at the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: app-vitals/agent
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          ref: refs/tags/v${{ env.VERSION }}
+          path: .platform-src
+          persist-credentials: false
+
+      - name: Refresh the platform docs snapshot
+        run: bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src
+
+      # npm lists a new version a few minutes after the platform publishes it,
+      # so `bun install` right after the dispatch failed with "No version
+      # matching X found" (0.6.0, 0.6.1, 0.7.0). Poll the registry for every
+      # pinned package first; the list comes from the bump script so it cannot
+      # drift from what was pinned. VERSION arrives via env only.
+      - name: Wait for @app-vitals/agent-* on npm
+        run: |
+          PACKAGES=$(bun scripts/platform-release-bump.ts --list-packages)
+          for pkg in $PACKAGES; do
+            found=false
+            for _ in $(seq 1 40); do
+              if [ "$(npm view "${pkg}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+                # npm can list the version before the tarball is served, so
+                # also require the tarball URL to answer a HEAD.
+                tarball=$(npm view "${pkg}@${VERSION}" dist.tarball 2>/dev/null)
+                if [ -n "$tarball" ] && curl -fsI "$tarball" >/dev/null 2>&1; then
+                  found=true
+                  break
+                fi
+              fi
+              echo "Waiting for ${pkg}@${VERSION} on npm..."
+              sleep 15
+            done
+            if [ "$found" != "true" ]; then
+              echo "ERROR: ${pkg}@${VERSION} not available on npm after ~10 minutes" >&2
+              exit 1
+            fi
+            echo "Found ${pkg}@${VERSION}"
+          done
+
+      # Even after the wait, a registry edge can still 404 a tarball. Retry
+      # only on registry 404 / resolve failures; any other error fails fast.
+      - name: Refresh bun.lock
+        run: |
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            if out=$(bun install 2>&1); then
+              echo "$out"
+              exit 0
+            fi
+            echo "$out" >&2
+            if ! echo "$out" | grep -Eqi '404|failed to resolve'; then
+              echo "ERROR: bun install failed with a non-registry error" >&2
+              exit 1
+            fi
+            last_error=$(echo "$out" | grep -Ei '404|failed to resolve' | tail -n 1)
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Registry 404 on attempt ${attempt}/${max_attempts}; retrying in 20s..."
+              sleep 20
+            fi
+          done
+          echo "ERROR: bun install for ${VERSION} still failing after ${max_attempts} attempts: ${last_error}" >&2
+          exit 1
+
+      # A platform bump that changes the admin surface drifts the committed
+      # admin spec and types mechanically (the byte-identity tests fail for a
+      # reason no human needs to review), so regenerate them inside the bump.
+      # generate:admin-spec writes admin/openapi.json and the standalone
+      # admin/src/coding/openapi.coding.json that feeds the types. Only the
+      # hand-reviewed pins (migrations, composed-surface baseline) can fail a
+      # bump.
+      - name: Regenerate the committed admin spec and types
+        run: |
+          bun run generate:admin-spec
+          bun run generate:admin-types
+
+      - name: Detect changes
+        id: diff
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          rm -rf .platform-src
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Already on @app-vitals/agent-* ${VERSION}; no PR needed."
+          elif [ "$DRY_RUN" = "true" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            git status --short
+            echo "::notice::Dry run: bump to ${VERSION} generated but not pushed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git status --short
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          git checkout -B "$BRANCH"
+          git add -A -- docs/platform
+          git add -u -- bun.lock '*package.json' agent/Dockerfile \
+            admin/openapi.json admin/src/coding/openapi.coding.json \
+            admin/src/coding/admin-types.ts
+          # Anything else changing means the bump did more than re-pin and
+          # re-snapshot: stop.
+          if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
+            echo "ERROR: unexpected changes outside package.json/bun.lock/agent/Dockerfile/docs/platform/admin openapi.json/openapi.coding.json/admin-types.ts:" >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+          git commit -m "chore(deps): bump @app-vitals/agent-* to ${VERSION}"
+          # XPF-1.4: a newer release replaces an unmerged older bump only when
+          # the branch holds bot commits alone. Fix commits from a patch pass
+          # or a human would be discarded by the force-push: fail instead and
+          # leave the branch and PR as they are. PBF-1.1: with no open PR
+          # ($PR_URL empty) the branch is a stale leftover and is replaced.
+          git fetch origin "$BRANCH" 2>/dev/null || true
+          PR_URL=$(gh pr list --head "$BRANCH" --state open --json url -q '.[0].url')
+          bun scripts/platform-bump-branch-guard.ts origin/main "origin/$BRANCH" "$PR_URL"
+          # One bump branch: a newer release replaces an unmerged older bump.
+          git push --force origin "$BRANCH"
+
+      - name: Open or update the bump PR
+        id: pr
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          TITLE="chore(deps): bump @app-vitals/agent-* to ${VERSION}"
+          BODY=$(cat <<EOF
+          ## Platform release ${VERSION}
+
+          Re-pins every registry \`@app-vitals/agent-*\` dependency and the \`agent/Dockerfile\` platform image (\`PLATFORM_VERSION\`) to \`${VERSION}\`, refreshes \`bun.lock\`, regenerates the committed admin spec and types (\`admin/openapi.json\`, \`admin/src/coding/openapi.coding.json\`, \`admin/src/coding/admin-types.ts\`) and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
+
+          Triggered by the \`bump-agent\` dispatch (or a manual run).
+
+          ---
+          _Auto-generated by \`.github/workflows/bump-agent.yml\`._
+          EOF
+          )
+          PR_URL=$(gh pr list --head "$BRANCH" --state open --json url -q '.[0].url')
+          if [ -n "$PR_URL" ]; then
+            gh pr edit "$PR_URL" --title "$TITLE" --body "$BODY"
+            echo "Updated PR: ${PR_URL}"
+            echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          else
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "$TITLE" \
+              --label automated \
+              --body "$BODY")
+            echo "Opened PR: ${PR_URL}"
+            echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Required checks must pass before the bump lands, and the bump PR cannot
+      # be self-approved (it sits BLOCKED), so scripts/platform-bump-gate.sh
+      # waits for the CI workflow run on the PR head commit (the fast title
+      # check cannot stand in for lint / test), then for the required checks
+      # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
+      # A failing or missing check exits 1: the job goes red, the job
+      # goes red, and the PR is left open for a human. The
+      # gate re-reads the full required set after the watch (and awaits every
+# rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
+# merged red when a rerun dropped the CI checks from the rollup). The
+# gate is behavior-tested against recorded check timelines in
+      # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
+      # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
+      # copies in sync.
+      - name: Wait for checks and merge
+        id: merge
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          ATTEMPT: ${{ inputs.attempt || '1' }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          # GitHub computes `mergeable` lazily: UNKNOWN right after the PR is
+          # opened or the branch is pushed. Poll until it settles.
+          MAX_REBUILD_ATTEMPTS=2
+          MERGEABLE=UNKNOWN
+          for _ in $(seq 1 30); do
+            MERGEABLE=$(gh pr view "$PR_URL" --json mergeable -q .mergeable 2>/dev/null || echo UNKNOWN)
+            [ "$MERGEABLE" != "UNKNOWN" ] && break
+            sleep 5
+          done
+
+          # main moved while the bump was generated: required checks never
+          # run on a CONFLICTING PR, so waiting would end in a generic
+          # failure. Regenerate the branch from fresh main once (a new run
+          # re-pins, re-snapshots and force-pushes), then stop this run.
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            echo "::error::${PR_URL} conflicts with main (mergeable=CONFLICTING); required checks cannot run (attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS})."
+            if [ "$ATTEMPT" -lt "$MAX_REBUILD_ATTEMPTS" ]; then
+              NEXT_ATTEMPT=$((ATTEMPT + 1))
+              gh workflow run bump-agent.yml --ref main \
+                -f version="$VERSION" \
+                -f run_id="$RUN_ID" \
+                -f attempt="$NEXT_ATTEMPT"
+              echo "::warning::Re-dispatched bump-agent.yml (attempt ${NEXT_ATTEMPT}/${MAX_REBUILD_ATTEMPTS}) to regenerate the bump branch from fresh main; ${PR_URL} stays open and the new run force-pushes it. This run stops here."
+              exit 0
+            fi
+            echo "::error::${PR_URL} still conflicts with main after the attempt ${ATTEMPT}/${MAX_REBUILD_ATTEMPTS} rebuild; giving up, resolve by hand."
+            exit 1
+          fi
+
+          bash scripts/platform-bump-gate.sh "$PR_URL"
