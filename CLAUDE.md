@@ -35,6 +35,7 @@ task lint         # bunx biome lint .
 task format       # bunx biome format --write .
 task typecheck    # bun run --filter='*' --sequential typecheck
 task check-strings  # scan entire repo for banned/confidential identifiers (client names, internal infra IDs)
+task preview:up / preview:canary / preview:e2e  # bring up the full stack on an existing kube context and run the deployed-target canary and browser specs against it; see docs/preview-environment.md
 ```
 
 The agent platform (runtime, admin, shared lib) lives in `app-vitals/agent` and is consumed as pinned `@app-vitals/agent-*` packages plus the `ghcr.io/app-vitals/agent` base image; to develop both together see `docs/local-platform-development.md`.
