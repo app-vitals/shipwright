@@ -250,6 +250,7 @@ function makeMockDeps(overrides?: Partial<CodingMockDeps>): CodingMockDeps {
         id: "m1",
         agentId,
         email,
+        memberId: null,
         createdAt: new Date(),
       }),
       remove: async () => {},

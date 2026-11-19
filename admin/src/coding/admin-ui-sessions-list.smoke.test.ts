@@ -71,6 +71,7 @@ function makeMemberService(
         id: `member-${i}`,
         agentId: m.agentId,
         email: DEFAULT_EMAIL,
+        memberId: null,
         createdAt: new Date("2024-01-01"),
       })),
   };

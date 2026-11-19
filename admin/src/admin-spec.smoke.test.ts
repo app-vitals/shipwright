@@ -257,6 +257,7 @@ function buildSpecApp() {
         id: "member-1",
         agentId,
         email,
+        memberId: null,
         createdAt: new Date(),
       }),
       listByAgentId: async () => [],

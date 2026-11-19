@@ -683,6 +683,7 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
                   id: "m1",
                   agentId: AGENT_ID,
                   email: MEMBER_EMAIL,
+                  memberId: null,
                   createdAt: new Date(),
                 },
               ]
@@ -692,6 +693,7 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
           id: "m1",
           agentId: AGENT_ID,
           email: MEMBER_EMAIL,
+          memberId: null,
           createdAt: new Date(),
         }),
         remove: async () => {},
@@ -781,6 +783,7 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
           id: "m1",
           agentId: AGENT_ID,
           email: "member@example.com",
+          memberId: null,
           createdAt: new Date(),
         }),
         remove: async () => {},
