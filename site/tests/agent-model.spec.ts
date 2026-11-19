@@ -54,7 +54,7 @@ test("component reference lists all 11 components", async ({ page }) => {
     "dev-task",
     "review",
     "patch",
-    "deploy",
+    "merge",
     "memory",
   ]) {
     expect(text, `expected component "${component}" to be visible`).toContain(
@@ -83,7 +83,7 @@ test("agent-model page links to the new operator docs pages", async ({
   // agent-skills is linked from both the Maintenance Crons chips and the
   // Memory Component Reference row.
   await expect(page.locator('a[href="/docs/agent-skills"]')).toHaveCount(2);
-  // dev-task/review/patch/deploy Component Reference rows -> commands-reference
+  // dev-task/review/patch/merge Component Reference rows -> commands-reference
   await expect(
     page.locator('a[href="/docs/commands-reference"]'),
   ).toHaveCount(4);
