@@ -525,3 +525,16 @@ describe("merge.md — out of scope: no revert PR, no deployed writes", () => {
     expect(content).not.toMatch(/\\?"status\\?"\s*:\s*\\?"deployed\\?"/);
   });
 });
+
+describe("merge.md — Step 5: capped final summary (CSM-2.7)", () => {
+  const section = () => content.match(/## Step 5: Print Handoff[\s\S]*$/)?.[0] ?? "";
+
+  it("caps the final response at 3-5 lines with a link", () => {
+    expect(section()).toContain("3-5 lines");
+    expect(section()).toContain("{pr_url}");
+  });
+
+  it("leaves [silent] behavior unchanged", () => {
+    expect(content).toContain("respond `[silent]` and stop");
+  });
+});

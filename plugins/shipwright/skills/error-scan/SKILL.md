@@ -358,34 +358,18 @@ never read back in as an input to Step 3. Its only purpose is letting a human (o
 
 ## Step 8: Print Summary
 
-Whether or not `--summary` was passed, always print a summary to stdout after the scan:
+Whether or not `--summary` was passed, always print a summary after the scan. Cron runs post
+this to a channel where nobody can reply in the moment, so **cap the final response at
+3-5 lines**: a status line, the counts, and a link. The full detail stays in `error-report.md`
+and the ledger — never repeat it in the response.
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ERROR SCAN COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Projects scanned:        {N}
-  Service tags observed:   {N}
-  Services mapped:         {N}
-  Services unmapped:       {N}
-
-  NEW        {N} issues
-  REGRESSED  {N} issues
-  ─────────────────────
-  Unchanged (not reported): {N}
-
-{If any new/regressed issues exist:}
-  Run /error-fix to classify these issues and queue task-store tasks.
-
-{If zero new/regressed issues:}
-  ✓ No new or regressed issues since last run.
-
+ERROR SCAN COMPLETE — {N} new, {M} regressed ({U} unchanged, not reported)
+Projects: {N} · Services mapped: {N} / {N}
+{If new/regressed: "Next: /error-fix to queue tasks."}  {If zero: "✓ No new or regressed issues."}
 {If --dry-run: "Dry run — no files written."}
-{Else if --summary: "Summary only — error-report.md not written; ledger still updated."}
-{Else: "Report written to: error-report.md"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{Else if --summary: "Summary only — report not written; ledger still updated."}
+{Else: "Report: error-report.md"}
 ```
 
 ---
