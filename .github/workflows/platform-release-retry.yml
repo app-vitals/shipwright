@@ -10,7 +10,8 @@ name: Platform Release Retry
 # marker comment on the PR). No open bump PR, or a green / still-running one,
 # is a no-op. When retries run out this job comments on the PR once
 # (an exhausted marker comment stops repeat reports); no issue is opened. While any
-# platform-release.yml run is queued or in progress, nothing is retried or
+# platform-release.yml or bump-agent.yml run (both share the platform-release
+# group and bump branch) is queued or in progress, nothing is retried or
 # reported: that bump may be about to fix the PR.
 #
 # XPF-1.3: an open bump PR that is green on its head commit (fixed by hand or by
@@ -18,7 +19,7 @@ name: Platform Release Retry
 # scripts/platform-bump-gate.sh on it. It never re-dispatches platform-release
 # for a green PR: that force-pushes the branch and would discard the fix
 # commits. One attempt per head SHA (a "platform-bump-merge:<sha>" marker
-# comment); skipped while a platform-release run is queued or in progress.
+# comment); skipped while a platform-release or bump-agent run is queued or in progress.
 #
 # XPF-1.4: a red or conflicting PR whose branch holds commits the bump bot did
 # not author (a patch pass's or a human's fix) is reported exhausted at once,
@@ -95,14 +96,18 @@ jobs:
           # outputs win over earlier ones in $GITHUB_OUTPUT.
           if [ "$ACTION" = "retry" ] || [ "$ACTION" = "exhausted" ] || [ "$ACTION" = "merge" ]; then
             INFLIGHT=0
-            for STATUS in queued in_progress; do
-              N=$(gh run list --workflow platform-release.yml --status "$STATUS" \
-                --json databaseId -q 'length')
-              INFLIGHT=$((INFLIGHT + N))
+            # bump-agent.yml shares the platform-release group and bump
+            # branch, so its runs count as in-flight bumps too.
+            for WORKFLOW in platform-release.yml bump-agent.yml; do
+              for STATUS in queued in_progress; do
+                N=$(gh run list --workflow "$WORKFLOW" --status "$STATUS" \
+                  --json databaseId -q 'length')
+                INFLIGHT=$((INFLIGHT + N))
+              done
             done
             if [ "$INFLIGHT" -gt 0 ]; then
               echo "action=wait" >> "$GITHUB_OUTPUT"
-              echo "platform-release.yml has ${INFLIGHT} queued/in-progress run(s); skipping"
+              echo "platform-release.yml/bump-agent.yml have ${INFLIGHT} queued/in-progress run(s); skipping"
             fi
           fi
           REPORTED=0

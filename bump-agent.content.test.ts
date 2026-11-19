@@ -148,3 +148,31 @@ describe("bump-agent.yml no-op and dry run", () => {
     for (const s of steps) expect(s.run ?? "").not.toContain("${{");
   });
 });
+
+describe("platform-release-retry.yml sees in-flight bump-agent.yml runs", () => {
+  const retry = readFileSync(
+    join(ROOT, ".github/workflows/platform-release-retry.yml"),
+    "utf8",
+  );
+  const rwf = Bun.YAML.parse(retry) as Workflow;
+  const select = rwf.jobs.retry.steps.find((s) => s.id === "select");
+
+  it("bump-agent.yml shares the platform-release group and bump branch", () => {
+    expect(wf.concurrency?.group).toBe("platform-release");
+    expect(job.env?.BRANCH).toBe(rwf.jobs.retry.env?.BRANCH);
+  });
+
+  it("the in-flight guard counts both workflows before retry, merge or exhausted", () => {
+    const run = select?.run ?? "";
+    expect(run).toContain(
+      "for WORKFLOW in platform-release.yml bump-agent.yml; do",
+    );
+    expect(run).toContain('gh run list --workflow "$WORKFLOW"');
+    expect(run).not.toContain("gh run list --workflow platform-release.yml");
+    const guard = run.slice(run.indexOf("INFLIGHT=0"));
+    expect(run.slice(0, run.indexOf("INFLIGHT=0"))).toContain(
+      '[ "$ACTION" = "merge" ]',
+    );
+    expect(guard).toContain('echo "action=wait"');
+  });
+});
