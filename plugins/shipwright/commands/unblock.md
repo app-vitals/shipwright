@@ -154,27 +154,28 @@ unmatched reason.
 
 ## Step 5: Present Each Blocked Item
 
-For each blocked task or PR-only record (in the order returned), print:
+Present **one item at a time**, concise enough for one phone screen (this often runs in Slack).
+Layout: a headline saying what is blocked, at most 3 bullets of evidence, a link for detail, and
+the ask **last** with numbered options:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BLOCKED: {task-id or org/repo#pr}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Title:         {title}
-Repo:          {repo}
-Origin phase:  {dev-task | patch | merge | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
-Blocked at:    {blockedAt}
-Blocked reason: {blockedReason}
-PR:            {task.pr or "(none)"}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚫 {task-id or org/repo#pr} — {title}: blocked in {origin phase}
+• {blockedReason, trimmed to one line}
+• Blocked {blockedAt}{; PR {task.pr}, if any}
+• {one more evidence bullet only if it changes the decision}
+Details: {PR URL or task link}
+
+1 retry — clear the block, return it to the pipeline
+2 redirect — edit description/acceptance criteria, then retry
+3 abandon — cancel it (blockedReason kept as history)
 ```
 
-Then ask the human to choose one of:
-- **retry** — clear the block and return the item to the pipeline
-- **redirect** — edit the description/acceptance criteria first, then retry
-- **abandon** — cancel the item, leaving `blockedReason` as a historical record
+Origin phase is one of: dev-task | patch | merge | spin-detection — skip-count |
+spin-detection — PR CI-failure streak | unknown origin phase. Never print more than 3 evidence
+bullets; the link carries the rest. PR-only records have no description to edit, so omit option 2
+for them (offer 1 retry / 2 abandon, renumbered).
 
-Wait for the human's answer before acting. Skip an item entirely if the human says so (no
+Accept the number or the word. Wait for the human's answer before acting. Skip an item entirely if the human says so (no
 action taken, move to the next).
 
 ---

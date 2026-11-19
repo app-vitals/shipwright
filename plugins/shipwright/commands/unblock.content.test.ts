@@ -229,3 +229,37 @@ describe("unblock.md — edge cases", () => {
     expect(lower).toContain("abandon");
   });
 });
+
+describe("unblock.md — concise presentation (CSM-2.4)", () => {
+  const step5 = () =>
+    content.slice(
+      content.indexOf("## Step 5: Present Each Blocked Item"),
+      content.indexOf("## Step 6: Act on the Human's Choice"),
+    );
+
+  it("presents one item at a time with a headline and at most 3 evidence bullets", () => {
+    const s = step5();
+    expect(s).toContain("one item at a time");
+    expect(s).toContain("at most 3 bullets");
+    expect(s).toContain("Never print more than 3 evidence");
+  });
+
+  it("links out for detail and fits one phone screen", () => {
+    const s = step5();
+    expect(s).toContain("Details:");
+    expect(s).toContain("one phone screen");
+  });
+
+  it("puts numbered options last: 1 retry / 2 redirect / 3 abandon", () => {
+    const s = step5();
+    expect(s).toMatch(/1 retry[\s\S]*2 redirect[\s\S]*3 abandon/);
+    expect(s).toContain("the ask **last**");
+    expect(s.indexOf("Details:")).toBeLessThan(s.indexOf("1 retry"));
+  });
+
+  it("no longer prints the verbose banner field table", () => {
+    const s = step5();
+    expect(s).not.toContain("Blocked reason:");
+    expect(s).not.toContain("━━━");
+  });
+});
