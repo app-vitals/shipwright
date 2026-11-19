@@ -1368,7 +1368,7 @@
           "tasks"
         ],
         "summary": "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
-        "description": "Returns `{ events, total, limit, offset }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope.",
+        "description": "Returns `{ events, total, limit, offset, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
         "parameters": [
           {
             "schema": {
@@ -1399,6 +1399,16 @@
             "required": false,
             "description": "Pagination offset",
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -1667,7 +1677,7 @@
           "PRs"
         ],
         "summary": "List pull requests",
-        "description": "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
+        "description": "Returns `{ prs, total, limit, offset, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
         "parameters": [
           {
             "schema": {
@@ -1853,6 +1863,16 @@
             "required": false,
             "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
             "name": "origin",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -2564,7 +2584,7 @@
           "PRs"
         ],
         "summary": "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
-        "description": "Returns `{ events, total, limit, offset }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist.",
+        "description": "Returns `{ events, total, limit, offset, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
         "parameters": [
           {
             "schema": {
@@ -2595,6 +2615,16 @@
             "required": false,
             "description": "Pagination offset",
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -2628,7 +2658,7 @@
           "sessions"
         ],
         "summary": "List sessions",
-        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+        "description": "Returns `{ sessions, total, limit, offset, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
         "parameters": [
           {
             "schema": {
@@ -2766,6 +2796,16 @@
             },
             "required": false,
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -3460,7 +3500,7 @@
           "Verification Checks"
         ],
         "summary": "List verification checks for a task, a PR, or a repo+checkName pair",
-        "description": "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "description": "Returns `{ checks, total, limit, offset, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
         "parameters": [
           {
             "schema": {
@@ -3524,6 +3564,16 @@
             "required": false,
             "description": "Pagination offset",
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -3626,7 +3676,7 @@
           "Coverage Snapshots"
         ],
         "summary": "List coverage snapshots, newest first",
-        "description": "Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+        "description": "Returns `{ snapshots, total, limit, offset, nextCursor }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
         "parameters": [
           {
             "schema": {
@@ -3681,6 +3731,16 @@
             "required": false,
             "description": "Admin tokens only: narrow to one account.",
             "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -4254,7 +4314,7 @@
           "System Crons"
         ],
         "summary": "Recent claimed slots of a system cron — admin-only",
-        "description": "Returns `{ triggers }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded.",
+        "description": "Returns `{ triggers, nextCursor }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded. `nextCursor` is an opaque cursor — pass it back as `?cursor=` for the next page; `null` on the last page; a malformed cursor is a `400`.",
         "parameters": [
           {
             "schema": {
@@ -4288,6 +4348,16 @@
             "required": false,
             "description": "Max triggers to return (1-50, default 5).",
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. Mutually exclusive with `offset` (400); a malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. Mutually exclusive with `offset` (400); a malformed cursor is a 400.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -5248,13 +5318,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "events",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "TaskEvent": {
@@ -5412,13 +5491,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "prs",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "PullRequest": {
@@ -6246,13 +6334,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "events",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "SessionListResponse": {
@@ -6275,13 +6372,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "sessions",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "Session": {
@@ -7102,13 +7208,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "checks",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "CoverageSnapshot": {
@@ -7327,13 +7442,22 @@
           "offset": {
             "type": "integer",
             "example": 0
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
           "snapshots",
           "total",
           "limit",
-          "offset"
+          "offset",
+          "nextCursor"
         ]
       },
       "CoverageSnapshotLatestResponse": {
@@ -7668,10 +7792,19 @@
               ]
             },
             "description": "Claimed slots, newest first by scheduledFor (createdAt desc tie-break)."
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
           }
         },
         "required": [
-          "triggers"
+          "triggers",
+          "nextCursor"
         ]
       }
     }

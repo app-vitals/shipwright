@@ -223,15 +223,16 @@ function makePrismaDouble(opts: DoubleOpts = {}): PrismaClient {
         skip,
       }: {
         where: Record<string, unknown>;
-        orderBy?: { at?: "asc" | "desc" };
+        orderBy?: Array<{ at?: "asc" | "desc" }> | { at?: "asc" | "desc" };
         take?: number;
         skip?: number;
       }) {
         let matched = rows.filter((r) =>
           Object.entries(where).every(([k, v]) => r[k] === v),
         );
-        if (orderBy?.at) {
-          const dir = orderBy.at === "desc" ? -1 : 1;
+        const atOrder = (Array.isArray(orderBy) ? orderBy[0] : orderBy)?.at;
+        if (atOrder) {
+          const dir = atOrder === "desc" ? -1 : 1;
           matched = [...matched].sort(
             (a, b) => dir * String(a.at).localeCompare(String(b.at)),
           );

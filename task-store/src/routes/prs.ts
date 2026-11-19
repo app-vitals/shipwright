@@ -31,7 +31,7 @@
  *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
  *                              — source:"patch" may only submit disposition:"rejected" (400
  *                              otherwise); source:"review" may submit any disposition
- *   GET    /prs/:id/events    fetch a PR's PullRequestEvent audit trail (?limit, ?offset),
+ *   GET    /prs/:id/events    fetch a PR's PullRequestEvent audit trail (?limit, ?offset, ?cursor; returns nextCursor),
  *                              ordered by `at` ascending (oldest first)
  */
 
@@ -149,7 +149,7 @@ const listRoute = createRoute({
   tags: ["PRs"],
   summary: "List pull requests",
   description:
-    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
+    "Returns `{ prs, total, limit, offset, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
   request: {
     query: PrListQuerySchema,
   },
@@ -493,7 +493,7 @@ const eventsRoute = createRoute({
   summary:
     "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
   description:
-    "Returns `{ events, total, limit, offset }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist.",
+    "Returns `{ events, total, limit, offset, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
   request: {
     params: PrIdParamSchema,
     query: PrEventsQuerySchema,
@@ -600,6 +600,10 @@ export function createPrsRoutes(
   app.openapi(listRoute, async (c): Promise<any> => {
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
     const prNumberRaw = c.req.query("prNumber");
 
     const stagedRaw = c.req.query("staged");
@@ -632,6 +636,7 @@ export function createPrsRoutes(
       blocked,
       sort,
       origin,
+      cursor,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
@@ -642,7 +647,7 @@ export function createPrsRoutes(
           : undefined,
       updatedSince: c.req.query("updatedSince"),
     });
-    return c.json(result, 200);
+    return c.json({ ...result, nextCursor: result.nextCursor ?? null }, 200);
   });
 
   // ─── Claim (atomic) — must be before /:id to avoid param capture ───────────
@@ -1061,6 +1066,10 @@ export function createPrsRoutes(
     await loadScopedPr(c);
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
     const limit =
       limitRaw !== undefined
         ? Number.parseInt(limitRaw, 10) || undefined
@@ -1073,6 +1082,7 @@ export function createPrsRoutes(
     const result = await prService.getEvents(c.req.param("id"), {
       limit,
       offset,
+      cursor,
     });
 
     return c.json(
@@ -1081,6 +1091,7 @@ export function createPrsRoutes(
         total: result.total,
         limit: limit ?? 50,
         offset: offset ?? 0,
+        nextCursor: result.nextCursor ?? null,
       },
       200,
     );

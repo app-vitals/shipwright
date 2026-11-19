@@ -105,8 +105,11 @@ function fakeService(
       if (id !== DEF.id) throw new NotFoundError("system cron not found");
       return { scheduledFor: "2026-11-14T09:00:00.000Z" };
     },
-    async recentTriggers(id, limit, accountId) {
-      calls.push({ method: "recentTriggers", args: [id, limit, accountId] });
+    async recentTriggers(id, limit, accountId, cursor) {
+      calls.push({
+        method: "recentTriggers",
+        args: [id, limit, accountId, cursor],
+      });
       if (id !== DEF.id) throw new NotFoundError("system cron not found");
       return {
         triggers: [
@@ -357,9 +360,10 @@ describe("GET /system-crons/:id/triggers", () => {
           taskCount: 2,
         },
       ],
+      nextCursor: null,
     });
     expect(service.calls).toEqual([
-      { method: "recentTriggers", args: ["dep-audit", 5, null] },
+      { method: "recentTriggers", args: ["dep-audit", 5, null, undefined] },
     ]);
   });
 
@@ -370,7 +374,10 @@ describe("GET /system-crons/:id/triggers", () => {
     );
     expect(res.status).toBe(200);
     expect(service.calls).toEqual([
-      { method: "recentTriggers", args: ["dep-audit", 50, "acct-1"] },
+      {
+        method: "recentTriggers",
+        args: ["dep-audit", 50, "acct-1", undefined],
+      },
     ]);
   });
 

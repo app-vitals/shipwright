@@ -21,7 +21,7 @@
  *   POST  /system-crons/:id/enable   set enabled=true
  *   POST  /system-crons/:id/disable  set enabled=false
  *   GET   /system-crons/:id/last-trigger → { scheduledFor: ISO | null }
- *   GET   /system-crons/:id/triggers?limit=N (default 5, max 50) →
+ *   GET   /system-crons/:id/triggers?limit=N (default 5, max 50) &cursor= →
  *                                    { triggers: [{ scheduledFor, claimedAt, taskCount }] }
  *                                    newest first
  *   POST  /system-crons/:id/fire     {scheduledFor, repos} → 201 claimed:true
@@ -243,7 +243,7 @@ const triggersRoute = createRoute({
   tags: TAGS,
   summary: "Recent claimed slots of a system cron — admin-only",
   description:
-    "Returns `{ triggers }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded.",
+    "Returns `{ triggers, nextCursor }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded. `nextCursor` is an opaque cursor — pass it back as `?cursor=` for the next page; `null` on the last page; a malformed cursor is a `400`.",
   request: {
     params: SystemCronIdParamSchema,
     query: SystemCronTriggersQuerySchema,
@@ -401,13 +401,14 @@ export function createSystemCronsRoutes(
 
   // biome-ignore lint/suspicious/noExplicitAny: see above
   app.openapi(triggersRoute, async (c): Promise<any> => {
-    const { limit } = c.req.valid("query");
+    const { limit, cursor } = c.req.valid("query");
     const result = await service.recentTriggers(
       c.req.param("id"),
       limit,
       resolveAccountScope(c),
+      cursor,
     );
-    return c.json(result, 200);
+    return c.json({ ...result, nextCursor: result.nextCursor ?? null }, 200);
   });
 
   return app;
