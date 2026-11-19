@@ -45,20 +45,37 @@ import {
   SCOPE_DEGRADED,
 } from "./pr-state-reconciler.ts";
 
+/**
+ * Fake keyset paging over an in-memory list. The cursor is opaque to the code
+ * under test; the fake encodes the start index as a string.
+ */
+function fakeCursorPage<T>(
+  all: T[],
+  limit: number,
+  cursor: string | null,
+): { items: T[]; nextCursor: string | null } {
+  const start = cursor === null ? 0 : Number(cursor);
+  const end = start + limit;
+  return {
+    items: all.slice(start, end),
+    nextCursor: end < all.length ? String(end) : null,
+  };
+}
+
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
 interface ListPrsCall {
   repo: string;
   state: string;
   limit: number;
-  offset: number;
+  cursor: string | null;
   /** Optional as of RPS-1.1 — reconcilePrState's scan no longer passes a cutoff. */
   updatedSince?: string;
 }
 
 interface ListTasksCall {
   limit: number;
-  offset: number;
+  cursor: string | null;
 }
 
 interface PatchCall {
@@ -163,12 +180,12 @@ function makeDeps({
     listOpenPrRecords: async (
       repo: string,
       limit: number,
-      offset: number,
+      cursor: string | null,
       updatedSince?: string,
     ) => {
-      listCalls.push({ repo, state: "open", limit, offset, updatedSince });
+      listCalls.push({ repo, state: "open", limit, cursor, updatedSince });
       const all = openRecords[repo] ?? [];
-      return all.slice(offset, offset + limit);
+      return fakeCursorPage(all, limit, cursor);
     },
     patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
       patchCalls.push({ id, fields });
@@ -180,9 +197,9 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async (limit: number, offset: number) => {
-      listPrOpenTasksCalls.push({ limit, offset });
-      return prOpenTasks.slice(offset, offset + limit);
+    listPrOpenTasks: async (limit: number, cursor: string | null) => {
+      listPrOpenTasksCalls.push({ limit, cursor });
+      return fakeCursorPage(prOpenTasks, limit, cursor);
     },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       taskPatchCalls.push({ id, fields });
@@ -317,7 +334,7 @@ describe("reconcilePrState", () => {
       repo: "acme/example-repo",
       state: "open",
       limit: 50,
-      offset: 0,
+      cursor: null,
       updatedSince: undefined,
     });
   });
@@ -359,24 +376,24 @@ describe("reconcilePrState", () => {
         listOpenPrRecords: async (
           _repo: string,
           _limit: number,
-          offset: number,
+          cursor: string | null,
           updatedSince?: string,
         ) => {
           listCalls.push({ updatedSince });
-          if (offset > 0) return [];
+          if (cursor !== null) return { items: [], nextCursor: null };
           if (
             updatedSince !== undefined &&
             STALE_RECORD_UPDATED_AT < updatedSince
           ) {
-            return []; // would have been excluded by the old recency filter
+            return { items: [], nextCursor: null }; // would have been excluded by the old recency filter
           }
-          return [record];
+          return { items: [record], nextCursor: null };
         },
         patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
           patchCalls.push({ id, fields });
         },
         ghViewPr: async () => ghResult,
-        listPrOpenTasks: async () => [],
+        listPrOpenTasks: async () => ({ items: [], nextCursor: null }),
         updateTaskStatus: async () => {},
         ghListMergedPrsForBranch: async () => [],
         now: () => FAKE_NOW,
@@ -669,17 +686,18 @@ describe("reconcilePrState", () => {
 
     await reconcilePrState(deps);
 
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
+    // Two pages fetched: first page (full, 2 items, nextCursor "2") then the
+    // cursor-"2" page (1 item, nextCursor null)
     expect(listCalls).toHaveLength(2);
     expect(listCalls[0]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 0,
+      cursor: null,
     });
     expect(listCalls[1]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 2,
+      cursor: "2",
     });
   });
 
@@ -958,7 +976,7 @@ describe("reconcilePrState", () => {
 interface ListReviewCall {
   repo: string;
   limit: number;
-  offset: number;
+  cursor: string | null;
   updatedSince?: string;
 }
 
@@ -1014,21 +1032,21 @@ function makeReviewStateDeps({
     listPendingReviewRecords: async (
       repo: string,
       limit: number,
-      offset: number,
+      cursor: string | null,
       updatedSince: string,
     ) => {
-      listCalls.push({ repo, limit, offset, updatedSince });
+      listCalls.push({ repo, limit, cursor, updatedSince });
       const all = pendingRecords[repo] ?? [];
-      return all.slice(offset, offset + limit);
+      return fakeCursorPage(all, limit, cursor);
     },
     listPostedReviewRecords: async (
       repo: string,
       limit: number,
-      offset: number,
+      cursor: string | null,
     ) => {
-      listPostedCalls.push({ repo, limit, offset });
+      listPostedCalls.push({ repo, limit, cursor });
       const all = postedRecords[repo] ?? [];
-      return all.slice(offset, offset + limit);
+      return fakeCursorPage(all, limit, cursor);
     },
     patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
       patchCalls.push({ id, fields });
@@ -1115,7 +1133,7 @@ describe("reconcileReviewState", () => {
     expect(listCalls[0]).toEqual({
       repo: "acme/example-repo",
       limit: 50,
-      offset: 0,
+      cursor: null,
       updatedSince: "2026-07-19T17:15:00.000Z",
     });
 
@@ -1123,7 +1141,7 @@ describe("reconcileReviewState", () => {
     expect(listPostedCalls[0]).toEqual({
       repo: "acme/example-repo",
       limit: 50,
-      offset: 0,
+      cursor: null,
     });
   });
 
@@ -1512,12 +1530,12 @@ describe("reconcileReviewState", () => {
     expect(listCalls[0]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 0,
+      cursor: null,
     });
     expect(listCalls[1]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 2,
+      cursor: "2",
     });
   });
 
@@ -1813,12 +1831,12 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
     expect(listPostedCalls[0]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 0,
+      cursor: null,
     });
     expect(listPostedCalls[1]).toMatchObject({
       repo: "acme/example-repo",
       limit: 2,
-      offset: 2,
+      cursor: "2",
     });
   });
 
@@ -1856,14 +1874,16 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
       pageLimit: 50,
       clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
       listPendingReviewRecords: async (repo: string) => {
-        if (repo === "acme/repo-a") return [pendingRecord];
-        return [];
+        if (repo === "acme/repo-a") {
+          return { items: [pendingRecord], nextCursor: null };
+        }
+        return { items: [], nextCursor: null };
       },
       listPostedReviewRecords: async (repo: string) => {
         if (repo === "acme/repo-a") {
           throw new Error("task-store GET /prs → 503");
         }
-        return [postedRecordB];
+        return { items: [postedRecordB], nextCursor: null };
       },
       patchPrRecord: async () => {},
       fetchPrReviews: async (org: string, repo: string, prNumber: number) => {
@@ -2004,26 +2024,27 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
     calls: Array<{
       status: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
       hasUpdatedSince: boolean;
     }>;
   } {
     const calls: Array<{
       status: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
       hasUpdatedSince: boolean;
     }> = [];
     const fetchFn = async (url: RequestInfo | URL) => {
       const parsed = new URL(String(url));
       const status = parsed.searchParams.get("status") ?? "";
       const limit = Number(parsed.searchParams.get("limit"));
-      const offset = Number(parsed.searchParams.get("offset"));
+      const cursor = parsed.searchParams.get("cursor");
+      expect(parsed.searchParams.has("offset")).toBe(false);
       const hasUpdatedSince = parsed.searchParams.has("updatedSince");
-      calls.push({ status, limit, offset, hasUpdatedSince });
+      calls.push({ status, limit, cursor, hasUpdatedSince });
       const all = opts.tasksByStatus[status] ?? [];
-      const page = all.slice(offset, offset + limit);
-      return new Response(JSON.stringify({ tasks: page }), {
+      const { items: page, nextCursor } = fakeCursorPage(all, limit, cursor);
+      return new Response(JSON.stringify({ tasks: page, nextCursor }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2069,14 +2090,14 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
-    const result = await deps.listPrOpenTasks(50, 0);
+    const result = await deps.listPrOpenTasks(50, null);
 
-    expect(result).toEqual(tasks);
+    expect(result).toEqual({ items: tasks, nextCursor: null });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({
       status: "pr_open",
       limit: 50,
-      offset: 0,
+      cursor: null,
       hasUpdatedSince: false,
     });
   });
@@ -2095,25 +2116,26 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       repo: string;
       branch: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
     }>;
   } {
     const calls: Array<{
       repo: string;
       branch: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
     }> = [];
     const fetchFn = async (url: RequestInfo | URL) => {
       const parsed = new URL(String(url));
       const repo = parsed.searchParams.get("repo") ?? "";
       const branch = parsed.searchParams.get("branch") ?? "";
       const limit = Number(parsed.searchParams.get("limit"));
-      const offset = Number(parsed.searchParams.get("offset"));
-      calls.push({ repo, branch, limit, offset });
+      const cursor = parsed.searchParams.get("cursor");
+      expect(parsed.searchParams.has("offset")).toBe(false);
+      calls.push({ repo, branch, limit, cursor });
       const all = opts.tasksByRepoBranch[`${repo}#${branch}`] ?? [];
-      const page = all.slice(offset, offset + limit);
-      return new Response(JSON.stringify({ tasks: page }), {
+      const { items: page, nextCursor } = fakeCursorPage(all, limit, cursor);
+      return new Response(JSON.stringify({ tasks: page, nextCursor }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2147,7 +2169,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       repo: "acme/example-repo",
       branch: "feat/bundle",
       limit: 50,
-      offset: 0,
+      cursor: null,
     });
   });
 
@@ -2178,13 +2200,13 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
         repo: "acme/example-repo",
         branch: "feat/big-bundle",
         limit: 50,
-        offset: 0,
+        cursor: null,
       },
       {
         repo: "acme/example-repo",
         branch: "feat/big-bundle",
         limit: 50,
-        offset: 50,
+        cursor: "50",
       },
     ]);
   });
@@ -2212,14 +2234,14 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       repo: string;
       branch: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
     }>;
   } {
     const calls: Array<{
       repo: string;
       branch: string;
       limit: number;
-      offset: number;
+      cursor: string | null;
     }> = [];
     let callCount = 0;
     const fetchFn = async (url: RequestInfo | URL) => {
@@ -2227,8 +2249,9 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       const repo = parsed.searchParams.get("repo") ?? "";
       const branch = parsed.searchParams.get("branch") ?? "";
       const limit = Number(parsed.searchParams.get("limit"));
-      const offset = Number(parsed.searchParams.get("offset"));
-      calls.push({ repo, branch, limit, offset });
+      const cursor = parsed.searchParams.get("cursor");
+      expect(parsed.searchParams.has("offset")).toBe(false);
+      calls.push({ repo, branch, limit, cursor });
       callCount += 1;
       if (callCount <= opts.degradedForCalls) {
         return new Response(
@@ -2237,10 +2260,11 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
         );
       }
       const all = opts.tasksByRepoBranch[`${repo}#${branch}`] ?? [];
-      const page = all.slice(offset, offset + limit);
+      const { items: page, nextCursor } = fakeCursorPage(all, limit, cursor);
       return new Response(
         JSON.stringify({
           tasks: page,
+          nextCursor,
           total: all.length,
           scopeDegraded: false,
         }),
@@ -2351,7 +2375,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     __resetPrOpenTasksCursorForTests();
   });
 
-  test("listPrOpenTasks is called with a plain limit/offset — no updatedSince anywhere in the call (RCB-1.1)", async () => {
+  test("listPrOpenTasks is called with a plain limit/cursor — no updatedSince anywhere in the call (RCB-1.1)", async () => {
     const { deps, listPrOpenTasksCalls } = makeDeps({
       prOpenTasks: [],
       now: () => "2026-07-19T23:15:00.000Z",
@@ -2362,7 +2386,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(listPrOpenTasksCalls).toHaveLength(1);
     expect(listPrOpenTasksCalls[0]).toEqual({
       limit: 50,
-      offset: 0,
+      cursor: null,
     });
   });
 
@@ -2922,11 +2946,11 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
     await reconcilePrState(deps);
 
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1),
-    // both starting from cursor 0 — no updatedSince anywhere (RCB-1.1).
+    // Two pages fetched: the first (nextCursor "2"), then the cursor-"2" page
+    // (nextCursor null) — no updatedSince anywhere (RCB-1.1).
     expect(listPrOpenTasksCalls).toHaveLength(2);
-    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
-    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, cursor: null });
+    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, cursor: "2" });
   });
 
   // ─── batch + rotating cursor (RCB-1.1) ─────────────────────────────────────
@@ -2952,20 +2976,20 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     await reconcilePrOpenTasks(deps);
 
     // One page (well under both DEFAULT_PAGE_LIMIT=50 and BATCH_SIZE=200) —
-    // page shorter than the page limit ends pagination, and since the total
-    // fetched (3) is also under BATCH_SIZE, the cursor wraps back to 0.
-    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 0 }]);
+    // a null nextCursor ends pagination, and the stored cursor resets to the
+    // start of the list.
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, cursor: null }]);
 
-    // A second call starts again at offset 0 — confirms the cursor wrapped
-    // rather than continuing to advance past the end of the list.
+    // A second call starts again from the beginning — confirms the stored
+    // cursor reset to null rather than continuing past the end of the list.
     await reconcilePrOpenTasks(deps);
     expect(listPrOpenTasksCalls).toEqual([
-      { limit: 50, offset: 0 },
-      { limit: 50, offset: 0 },
+      { limit: 50, cursor: null },
+      { limit: 50, cursor: null },
     ]);
   });
 
-  test("a pr_open list larger than BATCH_SIZE is split across two reconcilePrOpenTasks() calls — cursor advances by the batch size", async () => {
+  test("a pr_open list larger than BATCH_SIZE is split across two reconcilePrOpenTasks() calls — the stored cursor resumes where the batch stopped", async () => {
     const totalTasks = 225; // > RECONCILER_PR_OPEN_TASK_BATCH_SIZE default of 200
     const tasks = Array.from({ length: totalTasks }, (_, i) => ({
       id: `task-big-${i}`,
@@ -2987,25 +3011,24 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     await reconcilePrOpenTasks(deps);
 
     // First call fetches exactly BATCH_SIZE=200 tasks, paginated in
-    // DEFAULT_PAGE_LIMIT=50 chunks starting at cursor 0: offsets 0/50/100/150.
+    // DEFAULT_PAGE_LIMIT=50 chunks following nextCursor from the start.
     expect(listPrOpenTasksCalls).toEqual([
-      { limit: 50, offset: 0 },
-      { limit: 50, offset: 50 },
-      { limit: 50, offset: 100 },
-      { limit: 50, offset: 150 },
+      { limit: 50, cursor: null },
+      { limit: 50, cursor: "50" },
+      { limit: 50, cursor: "100" },
+      { limit: 50, cursor: "150" },
     ]);
 
     listPrOpenTasksCalls.length = 0;
 
     await reconcilePrOpenTasks(deps);
 
-    // Second call picks up where the first left off (cursor now 200), fetching
-    // the remaining 25 tasks in a single (partial, < limit) page — batch ends
-    // there since the page returned fewer than the page limit.
-    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 200 }]);
+    // Second call picks up where the first left off (stored cursor "200"),
+    // fetching the remaining 25 tasks in a single page whose nextCursor is null.
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, cursor: "200" }]);
   });
 
-  test("cursor wraps to 0 once it passes the end of the list, so the next call restarts from the beginning", async () => {
+  test("cursor resets to the start once nextCursor is null, so the next call restarts from the beginning", async () => {
     const totalTasks = 220; // > BATCH_SIZE (200), so the whole list needs 2 calls
     const tasks = Array.from({ length: totalTasks }, (_, i) => ({
       id: `task-wrap-${i}`,
@@ -3024,21 +3047,64 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
       ghResults,
     });
 
-    // 1st call: cursor 0 -> fetches 200 (BATCH_SIZE), cursor advances to 200.
+    // 1st call: from the start -> fetches 200 (BATCH_SIZE), stores cursor "200".
     await reconcilePrOpenTasks(deps);
     listPrOpenTasksCalls.length = 0;
 
-    // 2nd call: cursor 200 -> only 20 tasks remain, a page shorter than the
-    // page limit signals end-of-list reached before the batch filled, so the
-    // cursor wraps back to 0 for the call after this one.
+    // 2nd call: cursor "200" -> only 20 tasks remain and nextCursor is null
+    // (end of list reached before the batch filled), so the stored cursor
+    // resets for the call after this one.
     await reconcilePrOpenTasks(deps);
-    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 200 }]);
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, cursor: "200" }]);
     listPrOpenTasksCalls.length = 0;
 
-    // 3rd call: cursor should have wrapped to 0 — starts over from the
-    // beginning of the list instead of requesting an out-of-range offset.
+    // 3rd call: stored cursor was reset — starts over from the beginning.
     await reconcilePrOpenTasks(deps);
-    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 50, offset: 0 });
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 50, cursor: null });
+  });
+
+  test("rotation stores the last opaque nextCursor string and resumes from it; a failed fetch leaves it unchanged", async () => {
+    const received: Array<string | null> = [];
+    // Opaque, non-numeric cursors: the code must never parse or do arithmetic on them.
+    const script: Record<string, { n: number; next: string | null }> = {
+      start: { n: 50, next: "tok-a" },
+      "tok-a": { n: 50, next: "tok-b" },
+      "tok-b": { n: 50, next: "tok-c" },
+      "tok-c": { n: 50, next: "tok-d" },
+      "tok-d": { n: 10, next: null },
+    };
+    let failNext = false;
+    const { deps } = makeDeps({ prOpenTasks: [] });
+    deps.listPrOpenTasks = async (_limit, cursor) => {
+      received.push(cursor);
+      if (failNext) throw new Error("boom");
+      const step = script[cursor ?? "start"];
+      return {
+        items: Array.from({ length: step.n }, (_, i) => ({
+          id: `t-${cursor}-${i}`,
+          repo: "acme/example-repo",
+          pr: undefined,
+        })) as unknown as PrOpenTaskRecord[],
+        nextCursor: step.next,
+      };
+    };
+
+    await reconcilePrOpenTasks(deps); // 4 pages = BATCH_SIZE, stops with "tok-d" stored
+    expect(received).toEqual([null, "tok-a", "tok-b", "tok-c"]);
+
+    received.length = 0;
+    failNext = true;
+    await reconcilePrOpenTasks(deps).catch(() => {});
+    expect(received).toEqual(["tok-d"]); // resumed from the stored cursor
+    failNext = false;
+
+    received.length = 0;
+    await reconcilePrOpenTasks(deps); // failure did not advance: still "tok-d"; ends at null
+    expect(received).toEqual(["tok-d"]);
+
+    received.length = 0;
+    await reconcilePrOpenTasks(deps); // wrapped: starts over
+    expect(received[0]).toBeNull();
   });
 
   // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
@@ -3160,7 +3226,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
       const parsed = new URL(String(url));
       calls.push(Object.fromEntries(parsed.searchParams.entries()));
       return new Response(
-        JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }),
+        JSON.stringify({ prs: [], total: 0, limit: 50, cursor: null }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     };
@@ -3219,7 +3285,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
-    await deps.listOpenPrRecords("acme/example-repo", 50, 0);
+    await deps.listOpenPrRecords("acme/example-repo", 50, null);
 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBeUndefined();
@@ -3238,7 +3304,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
     await deps.listOpenPrRecords(
       "acme/example-repo",
       50,
-      0,
+      null,
       "2026-07-19T17:00:00.000Z",
     );
 
@@ -3255,7 +3321,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
-    await deps.listPrOpenTasks(50, 0);
+    await deps.listPrOpenTasks(50, null);
 
     expect(calls.length).toBeGreaterThanOrEqual(1); // pr_open
     for (const call of calls) {
@@ -3292,7 +3358,7 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
       const parsed = new URL(String(url));
       calls.push(Object.fromEntries(parsed.searchParams.entries()));
       return new Response(
-        JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }),
+        JSON.stringify({ prs: [], total: 0, limit: 50, cursor: null }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     };
@@ -3342,7 +3408,7 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
     await deps.listPendingReviewRecords(
       "acme/example-repo",
       50,
-      0,
+      null,
       updatedSince,
     );
 
@@ -3362,7 +3428,7 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
-    await deps.listPostedReviewRecords("acme/example-repo", 50, 0);
+    await deps.listPostedReviewRecords("acme/example-repo", 50, null);
 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBeUndefined();
@@ -3900,7 +3966,7 @@ describe("buildProductionDeps / buildReviewStateProductionDeps — getRepos() se
     const listed: string[] = [];
     deps.listOpenPrRecords = async (repo: string) => {
       listed.push(repo);
-      return [];
+      return { items: [], nextCursor: null };
     };
     await reconcilePrState(deps);
     expect(listed).toContain("acme/late-clone");
@@ -3920,9 +3986,12 @@ describe("buildProductionDeps / buildReviewStateProductionDeps — getRepos() se
     const listed: string[] = [];
     deps.listPendingReviewRecords = async (repo: string) => {
       listed.push(repo);
-      return [];
+      return { items: [], nextCursor: null };
     };
-    deps.listPostedReviewRecords = async () => [];
+    deps.listPostedReviewRecords = async () => ({
+      items: [],
+      nextCursor: null,
+    });
     await reconcileReviewState(deps);
     expect(listed).toContain("acme/late-clone");
   });

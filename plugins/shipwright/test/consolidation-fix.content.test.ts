@@ -120,16 +120,19 @@ describe("consolidation-fix — dedup query is pagination-safe", () => {
     expect(readSkill()).toContain("limit=1000");
   });
 
-  it("documents checking the response's total field against what was fetched", () => {
+  it("documents checking the response's nextCursor field", () => {
     const lower = readSkill().toLowerCase();
-    expect(lower).toContain("total");
-    expect(lower).toMatch(/check(ing)?.{0,40}total|total.{0,40}check/s);
+    expect(lower).toContain("nextcursor");
+    expect(lower).toMatch(
+      /check(ing)?.{0,40}nextcursor|nextcursor.{0,40}check/s,
+    );
   });
 
-  it("documents paging via offset when total exceeds the fetched page", () => {
+  it("documents paging via cursor until nextCursor is null, with no offset paging", () => {
     const lower = readSkill().toLowerCase();
-    expect(lower).toContain("offset");
+    expect(lower).toContain("&cursor=");
     expect(lower).toContain("page");
+    expect(lower).not.toContain("offset");
   });
 
   it("does not silently proceed with a partial result set", () => {

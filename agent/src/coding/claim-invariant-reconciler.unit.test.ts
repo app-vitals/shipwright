@@ -14,6 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  buildProductionDeps,
   type ClaimInvariantReconcilerDeps,
   type PendingTaskRecord,
   reconcileClaimInvariant,
@@ -49,11 +50,21 @@ function makeDeps(opts: MakeDepsOptions = {}): {
   const deps: ClaimInvariantReconcilerDeps = {
     getScopedRepos: () => scopedRepos,
     ...(pageLimit !== undefined ? { pageLimit } : {}),
-    listPendingTasks: async (repo: string, limit: number, offset: number) => {
+    listPendingTasks: async (
+      repo: string,
+      limit: number,
+      cursor: string | null,
+    ) => {
       const err = listErrors[repo];
       if (err) throw err;
       const all = tasksByRepo[repo] ?? [];
-      return all.slice(offset, offset + limit);
+      // The cursor is opaque to the code under test; the fake encodes a start index.
+      const start = cursor === null ? 0 : Number(cursor);
+      const end = start + limit;
+      return {
+        tasks: all.slice(start, end),
+        nextCursor: end < all.length ? String(end) : null,
+      };
     },
     releaseTask: async (id: string) => {
       releaseCalls.push(id);
@@ -122,6 +133,72 @@ describe("reconcileClaimInvariant", () => {
 
     // Indices 0, 2, 4 have non-null claimedBy.
     expect(releaseCalls).toEqual(["task-0", "task-2", "task-4"]);
+  });
+
+  test("pagination: follows nextCursor until null (a full final page still stops on null)", async () => {
+    const cursors: Array<string | null> = [];
+    const deps: ClaimInvariantReconcilerDeps = {
+      getScopedRepos: () => ["example-repo"],
+      pageLimit: 2,
+      listPendingTasks: async (_repo, _limit, cursor) => {
+        cursors.push(cursor);
+        if (cursor === null) {
+          return {
+            tasks: [
+              { id: "a", claimedBy: null },
+              { id: "b", claimedBy: null },
+            ],
+            nextCursor: "opaque-1",
+          };
+        }
+        return {
+          tasks: [
+            { id: "c", claimedBy: "x" },
+            { id: "d", claimedBy: null },
+          ],
+          nextCursor: null,
+        };
+      },
+      releaseTask: async () => {},
+    };
+
+    await reconcileClaimInvariant(deps);
+
+    expect(cursors).toEqual([null, "opaque-1"]);
+  });
+
+  test("production deps: sends cursor (never offset) and returns nextCursor", async () => {
+    const urls: string[] = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      urls.push(String(url));
+      const cursor = new URL(String(url)).searchParams.get("cursor");
+      return new Response(
+        JSON.stringify({
+          tasks: [{ id: "t", claimedBy: null }],
+          nextCursor: cursor === null ? "abc" : null,
+        }),
+        { status: 200 },
+      );
+    };
+    const prev = process.env.SHIPWRIGHT_TASK_STORE_URL;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "http://ts.test";
+    try {
+      const deps = buildProductionDeps({
+        getScopedRepos: () => ["example-repo"],
+        fetchFn,
+      });
+      const first = await deps.listPendingTasks("example-repo", 50, null);
+      expect(first.nextCursor).toBe("abc");
+      const second = await deps.listPendingTasks("example-repo", 50, "abc");
+      expect(second.nextCursor).toBeNull();
+    } finally {
+      if (prev === undefined) delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+      else process.env.SHIPWRIGHT_TASK_STORE_URL = prev;
+    }
+    expect(urls[0]).not.toContain("offset");
+    expect(urls[0]).not.toContain("cursor");
+    expect(urls[1]).toContain("cursor=abc");
+    expect(urls[1]).not.toContain("offset");
   });
 
   test("a releaseTask failure is caught and logged; remaining tasks in the batch still processed", async () => {

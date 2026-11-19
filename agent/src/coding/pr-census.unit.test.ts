@@ -20,6 +20,7 @@ import { FixedClock } from "@app-vitals/agent-runtime/clock";
 import {
   __resetPrCensusThrottleForTests,
   buildCensusEntry,
+  buildProductionDeps,
   type CensusEntry,
   type CensusTaskRecord,
   classifyCommits,
@@ -946,5 +947,36 @@ describe("runPrCensus", () => {
     await runPrCensus(deps);
 
     expect(ghCalls).toHaveLength(2);
+  });
+});
+
+describe("buildProductionDeps listTasksWithPr (keyset paging)", () => {
+  test("follows nextCursor until null, never sends offset, and keeps only tasks with a PR", async () => {
+    const urls: string[] = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      urls.push(String(url));
+      const cursor = new URL(String(url)).searchParams.get("cursor");
+      const body =
+        cursor === null
+          ? { tasks: [{ pr: 1 }], nextCursor: "c1" }
+          : cursor === "c1"
+            ? { tasks: [{ pr: null }], nextCursor: "c2" }
+            : { tasks: [{ pr: 3 }], nextCursor: null };
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    const deps = buildProductionDeps({
+      getScopedRepos: () => ["org/repo"],
+      ghJson: async () => [] as never,
+      fetchFn,
+    });
+
+    const tasks = await deps.listTasksWithPr("org/repo");
+
+    expect(tasks.map((t) => t.pr)).toEqual([1, 3]);
+    expect(urls).toHaveLength(3);
+    expect(urls[0]).not.toContain("cursor=");
+    expect(urls[1]).toContain("cursor=c1");
+    expect(urls[2]).toContain("cursor=c2");
+    for (const u of urls) expect(u).not.toContain("offset");
   });
 });

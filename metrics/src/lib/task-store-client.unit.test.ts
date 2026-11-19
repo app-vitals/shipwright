@@ -19,8 +19,9 @@ const SERVER_MAX_PAGE = 50;
 
 /** Build a fetch double that pages a fixed dataset under `key`. Like the live
  * store, it caps the effective page at `SERVER_MAX_PAGE` even when the client
- * asks for more — so the client must loop on `offset` to read everything.
- * Reports a `total` and records each requested URL for assertions. */
+ * asks for more — so the client must follow `nextCursor` to read everything.
+ * Cursors are opaque to the client; the double encodes a start index. Records
+ * each requested URL for assertions. */
 function pagingFetch<T>(
   key: "tasks" | "prs" | "snapshots",
   rows: T[],
@@ -31,13 +32,18 @@ function pagingFetch<T>(
     const url = new URL(input);
     const requested = Number(url.searchParams.get("limit") ?? "50");
     const limit = Math.min(requested, SERVER_MAX_PAGE);
-    const offset = Number(url.searchParams.get("offset") ?? "0");
-    const page = rows.slice(offset, offset + limit);
+    const cursor = url.searchParams.get("cursor");
+    const start = cursor === null ? 0 : Number(cursor);
+    const end = start + limit;
+    const page = rows.slice(start, end);
     return {
       ok: true,
       status: 200,
       text: async () => "",
-      json: async () => ({ [key]: page, total: rows.length, limit, offset }),
+      json: async () => ({
+        [key]: page,
+        nextCursor: end < rows.length ? String(end) : null,
+      }),
     };
   };
   return { fetch, calls };
@@ -58,6 +64,9 @@ describe("HttpTaskStoreClient pagination", () => {
     expect(got.length).toBe(130);
     // More than one request was made (paginated, not truncated at 50).
     expect(calls.length).toBeGreaterThan(1);
+    // Keyset paging only: no offset param, and later pages carry the cursor.
+    for (const c of calls) expect(c).not.toContain("offset");
+    expect(calls[1]).toContain("cursor=");
   });
 
   test("listTasks fetches every page past the server default limit", async () => {

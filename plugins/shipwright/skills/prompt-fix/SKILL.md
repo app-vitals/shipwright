@@ -166,10 +166,10 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&repo={url-encoded-repo}&limit=1000" | jq .
 ```
 
-**Pagination guard — never proceed with a partial result set.** After each call compare
-`total` to `.tasks | length`. If `total > tasks.length`, repeat the query with
-`&offset=1000`, `&offset=2000`, ... and merge until the summed length is `>= total`. Only
-then build the "already active" set.
+**Pagination guard — never proceed with a partial result set.** After each call check
+the response's `nextCursor`. If it is a string, repeat the query with
+`&cursor=<nextCursor>` (opaque; never parse or build one) and merge the `.tasks` arrays until
+`nextCursor` is `null`. Only then build the "already active" set.
 
 From the merged tasks keep those whose `id` starts with the `prompt-` prefix. A finding
 is a duplicate when an active task's id contains its `{class}-{fp8}` segment (any week).

@@ -202,8 +202,8 @@ Both the task store and the PRs surface are plain HTTP APIs behind a Bearer toke
 
 **Tasks** — `GET /tasks` supports `ready=true` (dependency-satisfied, non-HITL pending work),
 `state=` (`ready`/`blocked`/`open`/`closed`/`in_progress`), `status=` (exact status),
-`session=`, `assignee=`, `repo=`, `branch=`, `pr=`, `claimedBy=`, plus `limit=`/`offset=` for
-pagination.
+`session=`, `assignee=`, `repo=`, `branch=`, `pr=`, `claimedBy=`, plus `limit=`/`cursor=` for
+pagination (follow `nextCursor` until `null`).
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -213,7 +213,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 **PRs** — `GET /prs` supports `repo=`, `prNumber=` (pair with `repo` for one record),
 `state=` (`open`/`merged`/`closed`), `reviewState=`
 (`pending`/`in_progress`/`posted`/`approved`), `staged=` (true → only staged/unposted
-reviews), plus `limit=`/`offset=`.
+reviews), plus `limit=`/`cursor=`.
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -221,7 +221,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 Both APIs paginate — a naive unpaginated fetch can silently miss records once a repo has more
-than a page's worth; loop on `offset` until you've covered `.total`.
+than a page's worth; follow `nextCursor` (pass it back as `?cursor=`) until it is `null`.
 
 Full reference (schemas, status lifecycle, all endpoints):
 [`task-store-api.mdx`](../../../site/src/content/docs/task-store-api.mdx) and

@@ -156,26 +156,31 @@ const deps: BackfillDeps = {
   listTasksWithPr: async (repo: string) => {
     const limit = DEFAULT_TASK_PAGE_LIMIT;
     const tasks: CensusTaskRecord[] = [];
-    let offset = 0;
+    let cursor: string | null = null;
 
-    for (;;) {
+    do {
       const params = new URLSearchParams({
         repo,
         limit: String(limit),
-        offset: String(offset),
+        ...(cursor !== null ? { cursor } : {}),
       });
       const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok) {
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
       }
       const data = (await res.json()) as unknown;
-      const page = Array.isArray(data)
-        ? (data as CensusTaskRecord[])
-        : (data as { tasks: CensusTaskRecord[] }).tasks;
-      tasks.push(...page);
-      if (page.length < limit) break;
-      offset += limit;
-    }
+      if (Array.isArray(data)) {
+        tasks.push(...(data as CensusTaskRecord[]));
+        cursor = null;
+      } else {
+        const parsed = data as {
+          tasks: CensusTaskRecord[];
+          nextCursor?: string | null;
+        };
+        tasks.push(...parsed.tasks);
+        cursor = parsed.nextCursor ?? null;
+      }
+    } while (cursor !== null);
 
     return tasks.filter((task) => task.pr !== null && task.pr !== undefined);
   },

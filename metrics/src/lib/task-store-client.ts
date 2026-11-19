@@ -269,17 +269,13 @@ const PAGE_SIZE = 200;
 
 /**
  * Envelope shape returned by the paginated `/tasks` and `/prs` list routes,
- * derived from the generated TaskListResponse/PrListResponse schemas. Both
- * report `total`; only PrListResponse reports `limit`/`offset` (asymmetric
- * with TaskListResponse), so those are read defensively at the call site
- * regardless — hence `Partial` here rather than requiring them. The data
- * array itself lives under a route-specific key (`tasks` or `prs`), typed
+ * which follow the keyset contract: `nextCursor` is an opaque string passed
+ * back as `?cursor=`, and null on the last page. The data array itself lives under a route-specific key (`tasks` or `prs`), typed
  * generically over `T` since fetchAllPages is shared by both routes.
  */
-type PageEnvelope<T> = Partial<
-  Pick<components["schemas"]["TaskListResponse"], "total"> &
-    Pick<components["schemas"]["PrListResponse"], "limit" | "offset">
-> & {
+type PageEnvelope<T> = {
+  /** Opaque keyset cursor for the next page; null on the last page. */
+  nextCursor?: string | null;
   tasks?: T[];
   prs?: T[];
   snapshots?: T[];
@@ -342,11 +338,9 @@ export class HttpTaskStoreClient implements TaskStoreClient {
    * Walk the paginated list route at `path` until every record is fetched.
    *
    * The live store defaults to a server `limit` (50) and truncates silently, so
-   * a single request drops every record beyond that page. This loops on
-   * `offset`, requesting `PAGE_SIZE` rows at a time, until the accumulated count
-   * reaches the reported `total` (or a short page signals the end). `total`,
-   * `limit`, and `offset` are read defensively so a server that omits them still
-   * terminates rather than looping forever.
+   * a single request drops every record beyond that page. This requests
+   * `PAGE_SIZE` rows at a time and follows the opaque `nextCursor` until it is
+   * null (the only completeness signal).
    */
   private async fetchAllPages<T>(
     path: string,
@@ -354,31 +348,21 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     baseParams: Record<string, string | undefined>,
   ): Promise<T[]> {
     const all: T[] = [];
-    let offset = 0;
+    let cursor: string | null = null;
     // Hard cap on iterations as a belt-and-suspenders guard against a server
     // that never advances past the same page.
     for (let guard = 0; guard < 10_000; guard++) {
-      const params = {
+      const params: Record<string, string | undefined> = {
         ...baseParams,
         limit: String(PAGE_SIZE),
-        offset: String(offset),
+        cursor: cursor ?? undefined,
       };
       const res = await this.fetch<PageEnvelope<T>>(
         `${path}${HttpTaskStoreClient.query(params)}`,
       );
-      const page = (res[dataKey] as T[] | undefined) ?? [];
-      all.push(...page);
-
-      const total = typeof res.total === "number" ? res.total : undefined;
-      const pageLimit =
-        typeof res.limit === "number" && res.limit > 0 ? res.limit : PAGE_SIZE;
-
-      // Stop when we've collected the reported total, or the page came back
-      // shorter than the limit (last page), or the page was empty.
-      if (page.length === 0) break;
-      if (total !== undefined && all.length >= total) break;
-      if (page.length < pageLimit) break;
-      offset += page.length;
+      all.push(...((res[dataKey] as T[] | undefined) ?? []));
+      cursor = res.nextCursor ?? null;
+      if (cursor === null) break;
     }
     return all;
   }

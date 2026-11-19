@@ -106,6 +106,14 @@ describe("SKILL.md — cursor paging contract (TPG-1.2)", () => {
     );
   });
 
+  it("no longer describes offset paging (only the cursor+offset 400 is mentioned)", () => {
+    const stripped = skillContent.replace(
+      "`?cursor` together with `?offset` is a `400`",
+      "",
+    );
+    expect(stripped).not.toContain("offset");
+  });
+
   it("names every cursor-paginated list route", () => {
     for (const route of [
       "/tasks",

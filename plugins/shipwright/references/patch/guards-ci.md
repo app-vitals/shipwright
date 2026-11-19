@@ -42,7 +42,7 @@ the command directly bypasses it, and a bundle-mate can start or block between s
 Re-query right before the CI-fix dispatch (mirrors merge.md's live-state re-check):
 
 ```bash
-BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
+BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}" 2>/dev/null || echo '{"tasks":[],"nextCursor":null}')
 INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
 INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
 ```

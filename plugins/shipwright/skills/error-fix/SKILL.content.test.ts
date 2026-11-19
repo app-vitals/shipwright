@@ -5,17 +5,16 @@
  * Step 5's dedup check queries `GET /tasks?status=pending` and
  * `status=in_progress` unbounded (repo-unscoped — error-fix dedups
  * globally, not per-repo). task-store's plain GET /tasks path defaults to
- * `limit=50` and signals truncation via a `total` field (task-service.ts
- * `list()`), but a consumer that doesn't raise the limit and check `total`
- * against what it actually received silently undercounts once the active
+ * `limit=50` and signals truncation via `nextCursor` (task-service.ts
+ * `list()`), but a consumer that doesn't raise the limit and follow `nextCursor`
+ * to completion silently undercounts once the active
  * task count exceeds 50 — exactly the failure mode that let three
  * already-queued tasks slip past dedup on 2026-07-23 (test-fix's own
  * dedup query, same shape).
  *
  * These tests assert Step 5 documents: an explicit high `limit=1000` on
- * both dedup queries, and a guard that checks the response's `total` field
- * against what was fetched and pages via `offset` if `total` is still not
- * fully covered.
+ * both dedup queries, and a guard that checks the response's `nextCursor`
+ * and pages via `cursor` until `nextCursor` is null.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -59,16 +58,19 @@ describe("error-fix — Step 5 dedup query is pagination-safe", () => {
     expect(readSkill()).toContain("limit=1000");
   });
 
-  it("documents checking the response's total field against what was fetched", () => {
+  it("documents checking the response's nextCursor field", () => {
     const lower = readSkill().toLowerCase();
-    expect(lower).toContain("total");
-    expect(lower).toMatch(/check(ing)?.{0,40}total|total.{0,40}check/s);
+    expect(lower).toContain("nextcursor");
+    expect(lower).toMatch(
+      /check(ing)?.{0,40}nextcursor|nextcursor.{0,40}check/s,
+    );
   });
 
-  it("documents paging via offset when total exceeds the fetched page", () => {
+  it("documents paging via cursor until nextCursor is null, with no offset paging", () => {
     const lower = readSkill().toLowerCase();
-    expect(lower).toContain("offset");
+    expect(lower).toContain("&cursor=");
     expect(lower).toContain("page");
+    expect(lower).not.toContain("offset");
   });
 
   it("does not silently proceed with a partial result set", () => {

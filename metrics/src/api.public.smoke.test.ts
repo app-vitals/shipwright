@@ -23,7 +23,6 @@ const emptyResult: HogQLResult = {
   types: [],
   hasMore: false,
   limit: 100,
-  offset: 0,
 };
 
 /** Provider that returns an empty table for every kind — enough to render 200s. */
