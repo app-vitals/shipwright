@@ -33,6 +33,22 @@ function withAccountId(
   return next;
 }
 
+/**
+ * Multi-agent scope for `GET /tasks` (admin token only): tasks assigned to any
+ * of `agentIds` OR in any of `repos`. Sets both params even when empty, so an
+ * empty scope reaches the task-store as an empty scope (empty list) rather than
+ * silently becoming unscoped. Returns a copy; never mutates `params`.
+ */
+export function withTaskScope(
+  params: URLSearchParams,
+  scope: { agentIds: string[]; repos: string[] },
+): URLSearchParams {
+  const next = new URLSearchParams(params);
+  next.set("scopeAgentIds", scope.agentIds.join(","));
+  next.set("scopeRepos", scope.repos.join(","));
+  return next;
+}
+
 function query(params: URLSearchParams): string {
   return params.size > 0 ? `?${params}` : "";
 }

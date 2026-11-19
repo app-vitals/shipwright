@@ -8,7 +8,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
+import {
+  createTaskStoreFetchers,
+  withTaskScope,
+} from "./task-store-fetchers.ts";
 
 interface Recorded {
   url: URL;
@@ -218,5 +221,26 @@ describe("createTaskStoreFetchers — adherence lookups (DTA-6.1)", () => {
     await expect(fetchers.getTask("T-1")).rejects.toThrow("500");
     await expect(fetchers.getPrByNumber("org/r", 1)).rejects.toThrow("500");
     await expect(fetchers.getVerificationChecks("T-1")).rejects.toThrow("500");
+  });
+});
+
+describe("withTaskScope (MPV-1.1)", () => {
+  it("sets comma-joined scope params without mutating the input", () => {
+    const base = new URLSearchParams({ limit: "5" });
+    const next = withTaskScope(base, { agentIds: ["a", "b"], repos: ["o/r"] });
+    expect(next.get("scopeAgentIds")).toBe("a,b");
+    expect(next.get("scopeRepos")).toBe("o/r");
+    expect(next.get("limit")).toBe("5");
+    expect(base.has("scopeAgentIds")).toBe(false);
+  });
+
+  it("keeps an empty scope explicit so it never degrades to unscoped", () => {
+    const next = withTaskScope(new URLSearchParams(), {
+      agentIds: [],
+      repos: [],
+    });
+    expect(next.has("scopeAgentIds")).toBe(true);
+    expect(next.has("scopeRepos")).toBe(true);
+    expect(next.toString()).toBe("scopeAgentIds=&scopeRepos=");
   });
 });

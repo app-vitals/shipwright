@@ -984,6 +984,16 @@ export const TaskListQuerySchema = z.object({
     description:
       "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally.",
   }),
+  scopeAgentIds: z.string().optional().openapi({
+    example: "agent-a,agent-b",
+    description:
+      "Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility.",
+  }),
+  scopeRepos: z.string().optional().openapi({
+    example: "org/a,org/b",
+    description:
+      "Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`.",
+  }),
   sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
   updatedSince: z.string().optional().openapi({
     example: "2026-01-01T00:00:00.000Z",

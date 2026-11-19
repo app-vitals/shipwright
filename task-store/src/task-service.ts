@@ -546,6 +546,13 @@ export interface TaskListFilters {
    */
   agentScope?: { agentId: string; repos: string[] };
   /**
+   * Admin multi-agent visibility scope. A task matches iff its `assignee` is in
+   * `agentIds` OR its `repo` is in `repos` (assignee only — not claimedBy,
+   * mirroring agentScope). An empty scope matches nothing. ANDed with every
+   * other filter; combines with agentScope/repo-org ORs under `where.AND`.
+   */
+  scope?: { agentIds: string[]; repos: string[] };
+  /**
    * Account (tenant) scope (SSP-6.5). A string restricts the result to rows
    * with that accountId; null/undefined is unrestricted (admin token without
    * `?accountId=`). Applied as an AND condition on top of every other
@@ -729,6 +736,22 @@ export class TaskService implements TaskServiceLike {
     }
     if (filters.assignee) where.assignee = filters.assignee;
     if (isAccountScoped(filters.accountId)) where.accountId = filters.accountId;
+    if (filters.scope) {
+      const branches: Prisma.TaskWhereInput[] = [];
+      if (filters.scope.agentIds.length > 0) {
+        branches.push({ assignee: { in: filters.scope.agentIds } });
+      }
+      if (filters.scope.repos.length > 0) {
+        branches.push({ repo: { in: filters.scope.repos } });
+      }
+      // `OR: []` matches nothing in Prisma, so an empty scope is empty, never everything.
+      const existingAnd = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      where.AND = [...existingAnd, { OR: branches }];
+    }
     if (filters.column) {
       // ANDed in (never spread onto where.OR/where.AND wholesale) so it can't
       // clobber agentScope's OR or the repo/org fragment. `total` and the
