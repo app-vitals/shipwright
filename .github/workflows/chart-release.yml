@@ -3,33 +3,58 @@ name: Chart Release
 # Publishes the Helm chart at charts/shipwright to a GitHub Pages Helm repository
 # (the `gh-pages` branch) so it is consumable via `helm repo add`.
 #
-# This workflow only concerns the Helm chart artifact. Two concerns:
+# The chart version is DERIVED AT PUBLISH TIME (ADR 0001,
+# docs/adr/0001-derive-chart-version-at-publish-time.md): there is no bump
+# commit, no bump PR and no admin merge. Chart.yaml's `version` is only a
+# MAJOR.MINOR floor, edited by hand for a deliberate minor/major.
 #
-#   publish (push to main) — packages charts/shipwright into a `.tgz`, merges it
-#     into the existing gh-pages `index.yaml` (with the public Pages `--url`), and
-#     commits BOTH the `.tgz` and the regenerated `index.yaml` directly to the
-#     `gh-pages` branch root. It creates NO GitHub Releases. The publish is keyed
-#     off `Chart.yaml`'s `version`: a re-run with an unchanged version repackages
-#     an identical `.tgz` (same digest) and produces no committable diff, so the
-#     effective trigger is "a chart version bump landed on main". Consumption is
-#     PULL-based: a downstream consumer's own node-cron poller watches this
-#     gh-pages index for new chart versions and triggers a workflow_dispatch-only
-#     bump workflow on its side — this workflow sends no push notification and has
-#     no knowledge of downstream consumers.
+#   publish — derives MAJOR.MINOR.(P+1) (P = highest published patch of the
+#     floor's line, from gh-pages/index.yaml and the chart-* tags), stamps the
+#     latest release tag of every service into a scratch copy of values.yaml,
+#     packages that copy with `helm package --version`, merges the package into
+#     the existing gh-pages index.yaml (format unchanged: same --merge, same
+#     --url, same .tgz naming) and pushes to gh-pages. A run whose stamped chart
+#     equals the latest published one publishes nothing (no empty versions).
+#     LAST, after the gh-pages push, it creates the annotated tag
+#     chart-<version> on the source commit (message = the release record). A
+#     re-run is idempotent: the same SHA exits 0, a different SHA fails; a tag is
+#     never moved. Consumption is PULL-based: downstream consumers poll the
+#     gh-pages index; nothing is pushed to them.
 #
-#   dry-run (pull_request) — validates that the chart packages and the index
-#     merges, WITHOUT publishing anything. This is the PR-time test for the
-#     publish path (see also .github/workflows/helm.yml for lint/install gates).
+#   dry-run (pull_request) — exercises derive + stamp + package + index merge
+#     without publishing, and checks the index diff is additive only.
+#
+# Triggers: a release tag (admin-v*, metrics-v*, agent-v*, task-store-v*, after
+# a 90s debounce that collapses bursts into one publish), an agent/Dockerfile
+# edit on main (PLATFORM_VERSION: the chat image pin), a chart change on main,
+# or a manual run. Tag pushes made by release.yml use DISPATCH_TOKEN; the
+# chart-<version> tag is pushed with GITHUB_TOKEN so it triggers nothing.
+#
+# Logic lives in lib/chart-release.sh; tests: test-chart-release.sh and
+# chart-release.content.test.ts (repo root).
 on:
   push:
+    tags:
+      - "admin-v*"
+      - "metrics-v*"
+      - "agent-v*"
+      - "task-store-v*"
+    # paths only filters branch pushes, never the tag pushes above.
     branches: [main]
     paths:
       - "charts/shipwright/**"
+      - "agent/Dockerfile"
       - ".github/workflows/chart-release.yml"
+      - ".github/workflows/lib/chart-release.sh"
+      - ".github/workflows/lib/chart-tag-utils.sh"
   pull_request:
     paths:
       - "charts/shipwright/**"
+      - "agent/Dockerfile"
       - ".github/workflows/chart-release.yml"
+      - ".github/workflows/lib/chart-release.sh"
+      - ".github/workflows/lib/chart-tag-utils.sh"
+  workflow_dispatch: {}
 
 # Least privilege at the workflow level; the publish job widens to contents:write.
 permissions:
@@ -39,30 +64,66 @@ env:
   # Public GitHub Pages URL the gh-pages branch is served from. Every newly
   # packaged chart's index entry resolves to <PAGES_URL>/<name>-<version>.tgz.
   PAGES_URL: https://app-vitals.github.io/shipwright
+  # Last chart version published before chart-<version> tags began (RCN-9.10).
+  # Must match check-chart-drift.yml's CHART_TAG_FLOOR.
+  CHART_TAG_FLOOR: 1.32.313
 
 jobs:
-  # Publish job — runs ONLY on push to main, never on pull_request.
+  # Absorbs a burst of near-simultaneous release tags into one publish. Does no
+  # repo work: a newer tag cancels the older debounce, whose publish is then
+  # skipped; the surviving publish stamps the latest tag of every service.
+  debounce:
+    name: debounce burst of release tags
+    if: startsWith(github.ref, 'refs/tags/')
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    permissions: {}
+    concurrency:
+      group: chart-release-debounce
+      cancel-in-progress: true
+    steps:
+      - name: Wait for quiet period
+        env:
+          DEBOUNCE_SECONDS: 90
+        run: |
+          echo "Tag ${GITHUB_REF_NAME} landed; waiting ${DEBOUNCE_SECONDS}s for other releases before publishing the chart."
+          sleep "${DEBOUNCE_SECONDS}"
+
+  # Publish job: never runs on pull_request, and only from main or a release
+  # tag: a workflow_dispatch picked on any other branch must not publish that
+  # branch's chart to the public index or tag a non-main commit.
   #
   # Serialized by a concurrency group: two chart releases can never run at once,
-  # which closes the index-corruption race (concurrent `--merge` + push to the
-  # same gh-pages index.yaml). cancel-in-progress is FALSE so an in-flight
-  # release that has already packaged a `.tgz` is allowed to finish and push
-  # rather than being aborted mid-publish.
+  # so two runs cannot derive the same version or corrupt the gh-pages index.
+  # cancel-in-progress is FALSE so an in-flight release that has already
+  # packaged is allowed to finish and push. The gh-pages push is also rejected
+  # if another publish landed first; the run then fails and a re-run re-derives.
   publish:
-    name: package + publish (gh-pages)
-    if: github.event_name == 'push'
+    name: derive + package + publish (gh-pages)
+    needs: debounce
+    if: >-
+      ${{ !cancelled() && github.event_name != 'pull_request'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+      && (needs.debounce.result == 'success' || needs.debounce.result == 'skipped') }}
     timeout-minutes: 15
     runs-on: ubuntu-latest
     concurrency:
       group: chart-release
       cancel-in-progress: false
     permissions:
-      contents: write # push the .tgz + index.yaml to gh-pages
+      contents: write # push the .tgz + index.yaml to gh-pages and the chart-<version> tag
     steps:
+      # Tag pushes build from main (not the tag's commit) so the chart is the
+      # latest on main; every other event builds the triggering commit.
+      # persist-credentials left at its default (true) intentionally: the
+      # "Create chart tag" step pushes the tag from this checkout. Full history
+      # and tags are needed for latest_tag_for_service and the chart-* tags.
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          ref: ${{ startsWith(github.ref, 'refs/tags/') && 'main' || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
 
       # persist-credentials left at its default (true) intentionally: the
       # "Commit and push to gh-pages" step below pushes from this checkout's
@@ -73,6 +134,7 @@ jobs:
         with:
           ref: gh-pages
           path: gh-pages
+          fetch-depth: 0
 
       - name: Configure Git identity
         run: |
@@ -96,47 +158,105 @@ jobs:
       - name: Build chart dependencies
         run: helm dependency build charts/shipwright
 
-      - name: Package chart into gh-pages
-        run: helm package charts/shipwright -d gh-pages/
+      # MAJOR.MINOR from the Chart.yaml floor, patch = highest published patch
+      # + 1 (index.yaml and chart-* tags). An unreadable index fails the job.
+      - name: Derive chart version
+        id: derive
+        run: |
+          set -euo pipefail
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-release.sh
+          VERSION=$(derive_chart_version charts/shipwright/Chart.yaml gh-pages/index.yaml)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Chart version to publish: ${VERSION}"
+
+      # Stamps the latest release tag of every service into a scratch copy
+      # (never committed), so default installs keep deploying the exact
+      # per-service tags of this chart version.
+      - name: Stamp image pins into a scratch copy
+        id: stamp
+        env:
+          VERSION: ${{ steps.derive.outputs.version }}
+        run: |
+          set -euo pipefail
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-release.sh
+          SCRATCH="${RUNNER_TEMP}/chart-scratch"
+          rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
+          cp -r charts/shipwright "$SCRATCH/shipwright"
+          PINS=$(stamp_pins "$SCRATCH/shipwright/values.yaml" | paste -sd, -)
+          stamp_chart_yaml "$SCRATCH/shipwright/Chart.yaml" "$VERSION" "$PINS"
+          echo "scratch=${SCRATCH}" >> "$GITHUB_OUTPUT"
+          echo "pins=${PINS}" >> "$GITHUB_OUTPUT"
+          echo "Stamped pins: ${PINS}"
+
+      - name: Package stamped chart
+        id: package
+        env:
+          VERSION: ${{ steps.derive.outputs.version }}
+          SCRATCH: ${{ steps.stamp.outputs.scratch }}
+        run: |
+          set -euo pipefail
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-release.sh
+          helm package "$SCRATCH/shipwright" --version "$VERSION" -d "$SCRATCH/out"
+          LATEST=$(latest_chart_version gh-pages/index.yaml)
+          if [ -n "$LATEST" ] && [ -f "gh-pages/shipwright-${LATEST}.tgz" ] \
+            && chart_packages_equivalent "gh-pages/shipwright-${LATEST}.tgz" "$SCRATCH/out/shipwright-${VERSION}.tgz"; then
+            echo "Stamped chart equals published ${LATEST}; publishing nothing."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp "$SCRATCH/out/shipwright-${VERSION}.tgz" gh-pages/
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Merge repo index
+        if: steps.package.outputs.publish == 'true'
         # --merge preserves every existing entry (including legacy entries whose
         # urls still point at old GitHub Release assets); only newly packaged
         # versions gain a <PAGES_URL>/<name>-<version>.tgz url.
-        # Guard: --merge fails if index.yaml doesn't exist yet (first-time publish
-        # on a gh-pages branch initialized with an empty orphan commit). The flag
-        # is only passed when the file is already present.
-        run: |
-          MERGE_FLAG=""
-          [ -f gh-pages/index.yaml ] && MERGE_FLAG="--merge gh-pages/index.yaml"
-          helm repo index gh-pages/ $MERGE_FLAG --url "$PAGES_URL"
+        run: helm repo index gh-pages/ --merge gh-pages/index.yaml --url "$PAGES_URL"
 
-      - name: Parse chart version
-        id: chart-version
-        run: |
-          CHART_VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
-          [ -z "$CHART_VERSION" ] && echo "Error: could not parse chart version from Chart.yaml" && exit 1
-          echo "version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Chart version: ${CHART_VERSION}"
-
+      # The commit body is the release record; "Create chart tag" reuses it as
+      # the tag message, so a re-run can create a tag a failed run never reached.
       - name: Commit and push to gh-pages
-        working-directory: gh-pages
+        if: steps.package.outputs.publish == 'true'
         env:
-          CHART_VERSION: ${{ steps.chart-version.outputs.version }}
+          VERSION: ${{ steps.derive.outputs.version }}
+          PINS: ${{ steps.stamp.outputs.pins }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          set -euo pipefail
+          source .github/workflows/lib/library-pin.sh
+          source .github/workflows/lib/chart-release.sh
+          SOURCE_SHA=$(git rev-parse HEAD)
+          RECORD=$(release_record "$VERSION" "$SOURCE_SHA" "$PINS" \
+            "$(library_pin_from_chart charts/shipwright/Chart.yaml)" "$RUN_URL")
+          cd gh-pages
           git add -- '*.tgz' index.yaml
-          if git diff --cached --quiet; then
-            echo "No chart changes to publish (version ${CHART_VERSION} already on gh-pages)."
-            exit 0
-          fi
-          git commit -m "chart: publish shipwright ${CHART_VERSION}"
+          git commit -m "chart: publish shipwright ${VERSION}" -m "$RECORD"
           git push origin gh-pages
 
-  # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
-  # the index merges with the production --url; publishes nothing (no gh-pages
-  # push, no GitHub Release). No concurrency guard: dry runs touch no shared state.
+      # LAST, after the gh-pages push: a tag implies a published version. Also
+      # runs when nothing was published. Tags EVERY published version above
+      # CHART_TAG_FLOOR still missing its chart-<version> tag (not just this
+      # run's), so a version whose run failed before tagging is recovered even
+      # after a later run published a newer one. Idempotent: same SHA exits 0,
+      # different SHA fails; never moves a tag. Versions published before
+      # records existed have no record and are skipped.
+      - name: Create chart tag
+        run: |
+          set -euo pipefail
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-drift-check.sh
+          source .github/workflows/lib/chart-release.sh
+          tag_missing_chart_versions gh-pages "$CHART_TAG_FLOOR" origin
+
+  # Dry-run validation: only on pull_request. Exercises derive + stamp + package
+  # + the index merge with the production --url and checks the index diff is
+  # additive only; publishes nothing (no gh-pages push, no tag, no Release).
   dry-run:
-    name: package + index (dry run)
+    name: derive + package + index (dry run)
     if: github.event_name == 'pull_request'
     timeout-minutes: 15
     runs-on: ubuntu-latest
@@ -144,6 +264,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: gh-pages
           persist-credentials: false
 
       - name: Install Helm
@@ -163,13 +292,35 @@ jobs:
       - name: Build chart dependencies
         run: helm dependency build charts/shipwright
 
-      - name: Package chart (no publish)
-        run: helm package charts/shipwright -d .cr-release-packages
+      - name: Derive version, stamp pins and package (no publish)
+        run: |
+          set -euo pipefail
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-release.sh
+          VERSION=$(derive_chart_version charts/shipwright/Chart.yaml gh-pages/index.yaml)
+          echo "Would publish chart version ${VERSION}"
+          SCRATCH=.cr-release-packages
+          rm -rf "$SCRATCH" && mkdir -p "$SCRATCH/src"
+          cp -r charts/shipwright "$SCRATCH/src/shipwright"
+          PINS=$(stamp_pins "$SCRATCH/src/shipwright/values.yaml" | paste -sd, -)
+          stamp_chart_yaml "$SCRATCH/src/shipwright/Chart.yaml" "$VERSION" "$PINS"
+          echo "Stamped pins: ${PINS}"
+          helm package "$SCRATCH/src/shipwright" --version "$VERSION" -d "$SCRATCH"
 
       - name: Generate repo index (no publish)
-        # Mirrors the publish job's --url so the dry run exercises the exact index
-        # entries production will write.
-        run: helm repo index .cr-release-packages --url "$PAGES_URL"
+        # Mirrors the publish job's --merge and --url so the dry run exercises the
+        # exact index entries production will write.
+        run: helm repo index .cr-release-packages --merge gh-pages/index.yaml --url "$PAGES_URL"
+
+      - name: Check the index diff is additive only
+        run: |
+          # No line of the published index may be removed or changed, except
+          # the `generated:` timestamp (set-based: robust to diff alignment).
+          if grep -vxFf .cr-release-packages/index.yaml gh-pages/index.yaml | grep -v '^generated:'; then
+            echo "::error::the merged index.yaml removes or changes published entries" >&2
+            exit 1
+          fi
+          echo "Index diff is additive only."
 
       - name: Show packaged artifacts
         run: ls -la .cr-release-packages

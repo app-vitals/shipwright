@@ -18,7 +18,7 @@
   },
   "packageRules": [
     {
-      "description": "Shipwright's own GHCR service images are bumped by auto-bump-chart.yml, not Renovate",
+      "description": "Shipwright's own GHCR service images are stamped into the chart at publish time by chart-release.yml, not Renovate",
       "matchDatasources": ["docker"],
       "matchPackageNames": [
         "ghcr.io/app-vitals/shipwright-admin",

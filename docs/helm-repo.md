@@ -4,11 +4,12 @@ The `shipwright` chart (`charts/shipwright`) vendors four optional subcharts
 (PostgreSQL, ingress-nginx, Traefik, cert-manager — see the chart
 [README](../charts/shipwright/README.md#dependencies) for versions and
 conditions) and is published to a
-[GitHub Pages](https://pages.github.com/) Helm repository on every chart
-**version bump** that lands on `main`. The
-[`chart-release.yml`](../.github/workflows/chart-release.yml) workflow packages
-the chart and commits the artifact **directly to the `gh-pages` branch** — it
-creates **no GitHub Releases**.
+[GitHub Pages](https://pages.github.com/) Helm repository on every service
+release. The [`chart-release.yml`](../.github/workflows/chart-release.yml)
+workflow derives the chart version, packages the chart and commits the artifact
+**directly to the `gh-pages` branch**; it creates **no GitHub Releases** and
+opens **no bump PR** (ADR
+[0001](adr/0001-derive-chart-version-at-publish-time.md)).
 
 > **Note:** The marketing site (`site/`) also deploys to the same `gh-pages`
 > branch via the [`deploy-site.yml`](../.github/workflows/deploy-site.yml)
@@ -16,94 +17,86 @@ creates **no GitHub Releases**.
 > site deploy uses `clean-exclude` to preserve Helm artifacts (`index.yaml` and
 > `*.tgz` files) when clearing stale content.
 
-On a push to `main` the publish job:
+## When the chart is published
 
-1. Checks out `main` and the `gh-pages` branch (side by side).
-2. Builds chart dependencies and runs `helm package charts/shipwright` into the
-   `gh-pages` working tree.
-3. Regenerates the repo index with
+The publish job runs on:
+
+- a release tag `admin-v*`, `metrics-v*`, `agent-v*` or `task-store-v*` (created
+  by the service build workflows on successful image push), after a 90-second
+  debounce that collapses a burst of tags into one publish (a newer tag cancels
+  the older debounce);
+- a change to `PLATFORM_VERSION` in `agent/Dockerfile` on `main` (the
+  `platform-release` dispatch from app-vitals/agent, which publishes the
+  `ghcr.io/app-vitals/agent-chat` image; the pin is credited as
+  `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`);
+- a push to `main` touching `charts/shipwright/**`;
+- a manual `workflow_dispatch` on `main` (a dispatch from any other branch
+  skips the publish job, so an unmerged branch can never publish or be tagged).
+
+A run whose stamped chart equals the latest published chart publishes nothing,
+so there are no empty versions.
+
+## What a publish does
+
+1. Checks out `main` (for tag triggers) and the `gh-pages` branch side by side,
+   with full history and tags.
+2. Builds chart dependencies.
+3. **Derives the version**: `MAJOR.MINOR` from the `Chart.yaml` floor, patch =
+   highest published patch of that line in `gh-pages/index.yaml` and the
+   `chart-*` tags, plus one (`MAJOR.MINOR.0` when the line is unpublished). An
+   unreadable index fails the run; it never falls back to the floor.
+4. **Stamps the image pins** into a scratch copy of the chart (never committed):
+   the latest release tag of each service (`admin`, `metrics`, `agent`,
+   `task-store`, `chat`) goes into its `values.yaml` image path(s), and the
+   `artifacthub.io/changes` annotation lists them. A service without a release
+   tag keeps its default pin and a warning is logged.
+5. Runs `helm package <scratch> --version <derived>`.
+6. Regenerates the repo index with
    `helm repo index gh-pages/ --merge gh-pages/index.yaml --url https://app-vitals.github.io/shipwright`.
-   `--merge` preserves every existing `index.yaml` entry; only the newly packaged
-   version gains a `https://app-vitals.github.io/shipwright/<name>-<version>.tgz`
-   URL, served straight from the `gh-pages` root.
-4. Commits the `.tgz` and the regenerated `index.yaml` to `gh-pages` (only when
-   `git diff --cached` shows a change).
-
-> Publishing is keyed off `Chart.yaml`'s `version` (the
-> [versioning discipline](../charts/shipwright/CHANGELOG.md)). Repackaging an
-> unchanged version produces an identical `.tgz` and no committable diff, so a
-> chart is published exactly when its version is bumped, never on a plain PR.
+   `--merge` preserves every existing `index.yaml` entry; only the new version
+   gains a `https://app-vitals.github.io/shipwright/<name>-<version>.tgz` URL.
+   The index format is unchanged.
+7. Commits the `.tgz` and `index.yaml` to `gh-pages`; the commit body is the
+   release record (version, source SHA, stamped pins, library pin, run URL).
+8. **Last**, creates and pushes the annotated tag `chart-<version>` on the
+   source commit with that release record as its message. A tag implies a
+   published version. A re-run is idempotent: an existing tag at the same SHA
+   exits 0, at a different SHA the run fails, and a tag is never moved. Every
+   run tags **every** published version above the tag floor that is still
+   missing its `chart-<version>` tag and has a release record, not only its own
+   version. So if the push to `gh-pages` succeeded but tagging failed, the next
+   run (a re-run, or a later run that publishes a newer version) creates the
+   missing tag from the record in the gh-pages commit.
 
 The publish job declares a `concurrency: { group: chart-release }` guard with
-`cancel-in-progress: false`. Two chart releases can therefore never run at once
-— this serializes the `--merge` + push against the shared `index.yaml` and
-closes the index-corruption race — while an in-flight release that has already
-packaged a `.tgz` is allowed to finish rather than being cancelled mid-publish.
+`cancel-in-progress: false`. Two chart releases can therefore never run at once,
+which serializes the `--merge` + push against the shared `index.yaml`, while an
+in-flight release is allowed to finish. If the `gh-pages` push is still
+rejected (another writer landed first) the run fails and a re-run re-derives.
 
-## How chart versions are bumped
+On pull requests, a dry-run job exercises derive + stamp + package + the index
+merge and checks the merged index differs from the published one only by added
+lines.
 
-Chart version bumps are **automated** by the
-[`auto-bump-chart.yml`](../.github/workflows/auto-bump-chart.yml) workflow.
-Whenever a release tag is pushed matching `agent-v*`, `admin-v*`, `metrics-v*`,
-or `task-store-v*` (created by the service build workflows on successful image
-push), or `PLATFORM_VERSION` in `agent/Dockerfile` changes on `main` (the
-`platform-release` dispatch from app-vitals/agent, which also publishes the
-`ghcr.io/app-vitals/agent-chat` image the `chat` block defaults to; the pin is
-credited as `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`),
-the automation detects the tag, increments the chart
-patch version in `Chart.yaml`, pins each released tag into the matching
-`values.yaml` image defaults, opens a PR (targeting `main`), and merges it
-once checks pass. Once the PR merges, `chart-release.yml` fires and publishes
-the new chart version. No manual version bump is required.
+## How chart versions are derived
 
-The `values.yaml` pinning ensures the chart's GHCR image defaults (in the
-`admin`, `metrics`, `agent`, `taskStore`, `chat`, and `mcpServer` blocks) track the same
-releases the chart version is crediting — preventing a scenario where the
-bumped chart would be deployed with stale image tags. Each batched release
-tag is pinned into its corresponding `values.yaml` path(s); for example,
-`admin-v0.156.2` pins into `admin.image.tag`, and `agent-v1.5.0` pins into
-both `agent.image.tag` and `agent.provisioning.image.tag`.
+There is no bump commit and no bump PR. `Chart.yaml` `version` is a **floor**
+(`MAJOR.MINOR.0`), edited by hand only for a deliberate minor or major bump.
+The `values.yaml` and `Chart.yaml` in git therefore do not show what was
+published; the source of truth for "what shipped" is the `chart-<version>` tag
+message and the published package. For example `admin-v0.156.2` is stamped into
+`admin.image.tag`, and `agent-v1.5.0` into both `agent.image.tag` and
+`agent.provisioning.image.tag`.
 
-The `mcpServer` block follows the same `values.yaml` pinning shape as the
-other components, but `auto-bump-chart.yml`'s tag-push trigger and
-`service_for_tag`/`values_paths_for_service` cases do not yet include an
-`mcp-server-v*` entry — until that fast-follow lands, `mcp-server-v*` release
-tags will not auto-pin `mcpServer.image.tag` the way the other five
-components do. This is not a live-cluster risk today, since `mcpServer` is
-disabled by default (`mcpServer.enabled=false`).
+The `mcpServer` block has the same shape, but `service_for_tag` and
+`values_paths_for_service` (`lib/chart-tag-utils.sh`) have no `mcp-server-v*`
+entry, so its tag is not stamped. This is not a live-cluster risk, since
+`mcpServer` is disabled by default (`mcpServer.enabled=false`).
 
-Services release independently, so it's common for two or three tags to land
-within seconds or minutes of each other. Rather than bumping the chart once
-per tag (a PR/merge/publish cycle per tag for what's really one release
-event), the workflow **debounces**: a 90-second quiet period absorbs bursts,
-and only the last tag in a burst triggers the actual bump. The resulting PR
-credits every release tag that is currently drifted from what's pinned in
-`values.yaml` (i.e., the highest-semver tag for each service differs from its
-current `values.yaml` pin), so the batch stays fully traceable even though it's
-collapsed into a single version bump. If nothing has actually drifted (e.g., a
-concurrent run already pinned everything), the workflow skips opening a PR
-entirely. The PR body lists exactly which `values.yaml` path(s) were pinned
-and to which tag(s).
-
-### Handling concurrent bumps (collision retry)
-
-Debounce collapses tags within a single burst, but two *separate* bursts
-(triggered by tags landing close together but outside the debounce window)
-can still compute the *same* next chart version from the same starting
-`Chart.yaml` — both runs read `main` before either has pushed its bump
-commit. When this happens, the workflow detects a branch-name collision
-(`chore/chart-v{version}` already exists on the remote) and, instead of
-silently skipping and dropping the losing run's entire tag batch, it fetches
-a fresh copy of `main`, re-derives the batch and version from that newer
-state by checking which tags currently drift from the new `values.yaml`
-(tags the winning run already pinned are no longer drifted and are naturally
-excluded), and retries — up to 5 times with a 15-second backoff between
-attempts.
-
-If every retry attempt still collides, the workflow fails loudly, naming the
-release tag(s) that could not be pinned, rather than silently exiting
-success and dropping those tags. This ensures no release tags ever disappear
-from the chart version bump without surfacing the failure.
+[`check-chart-drift.yml`](../.github/workflows/check-chart-drift.yml) runs daily
+and fails when the newest **published** chart's pins trail the latest release
+tags, when the library pin trails the library index, or when a published
+version (newer than the last pre-tag version, 1.32.313) has no `chart-*` tag.
 
 ## Automating library chart releases
 
@@ -125,18 +118,16 @@ On receipt, `library-chart-release.yml`:
 
 1. Validates the version is strict `X.Y.Z` format.
 2. Waits for the version to appear in the agent-platform's published Helm index.
-3. Runs `lib/library-pin.sh` to re-pin the dependency in `charts/shipwright/Chart.yaml` and `Chart.lock`.
-4. Bumps the Shipwright chart patch version in `Chart.yaml`.
-5. Updates `CHANGELOG.md` with an `artifacthub.io/changes` annotation.
-6. Swaps the vendored agent-platform chart tarballs in `charts/shipwright/charts/`.
-7. Opens (or updates) a PR on the fixed branch `chore/library-chart-release`.
+3. Runs `lib/library-pin.sh` to re-pin the dependency in `charts/shipwright/Chart.yaml` and `Chart.lock` (no chart version bump: that is derived at publish time).
+4. Swaps the vendored agent-platform chart tarballs in `charts/shipwright/charts/`.
+5. Opens (or updates) a PR on the fixed branch `chore/library-chart-release`.
 
 The PR runs the full CI suite, but skips the `helm.yml` render-parity check
 (refactor-only gate — library-chart-release PRs have `chore(deps):` titles and
 do not run this check). Intentional library chart changes affect the renders and
 are expected. Once checks pass, the workflow auto-merges the PR using the
 platform release merge gate (`scripts/platform-bump-gate.sh`). When the PR
-merges, `chart-release.yml` publishes the bumped chart version to the
+merges, `chart-release.yml` publishes a new chart version to the
 `gh-pages` branch as usual.
 
 **Drift detection:** [`check-chart-drift.yml`](../.github/workflows/check-chart-drift.yml)
@@ -176,16 +167,16 @@ the vendored `.tgz` committed) and stays the one **deployable** chart.
   different name is pruned. Treat a change to any of these as a breaking
   change.
 
-### How a library release reaches a chart bump
+### How a library release reaches a chart publish
 
 1. `app-vitals/agent` publishes a new `agent-platform` version to its Pages
    Helm repo and dispatches `chart-release` to this repo (see
    [Automating library chart releases](#automating-library-chart-releases)).
-2. `library-chart-release.yml` re-pins `Chart.yaml` / `Chart.lock`, bumps the
-   `shipwright` chart patch version and opens the `chore/library-chart-release`
-   PR, which auto-merges once checks pass.
-3. The merge changes the chart version, so `chart-release.yml` publishes the
-   new `shipwright` chart to `gh-pages` as described above.
+2. `library-chart-release.yml` re-pins `Chart.yaml` / `Chart.lock` and opens
+   the `chore/library-chart-release` PR, which auto-merges once checks pass.
+3. The merge touches `charts/shipwright/**`, so `chart-release.yml` derives the
+   next version and publishes the new `shipwright` chart to `gh-pages` as
+   described above.
 4. `check-chart-drift.yml` runs daily and fails if the pin is behind the
    published index, catching a missed dispatch.
 

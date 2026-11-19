@@ -19,9 +19,9 @@
 # CHECK_REG_ATTEMPTS=30, CHECK_REG_INTERVAL=2, WATCH_INTERVAL=15,
 # CHECKS_MAX_ATTEMPTS=3, MERGE_MAX_ATTEMPTS=3, STALE_BASE_DELAY=5.
 #
-# The check-rerun helpers mirror .github/workflows/test-auto-bump-chart.sh and
-# the "Wait for checks and merge" step in auto-bump-chart.yml — keep the
-# copies in sync.
+# The check-rerun helpers are shared with the "Wait for checks and merge" logic
+# of the other bot-PR workflows (library-chart-release.yml,
+# platform-release.yml) — keep the copies in sync.
 #
 set -euo pipefail
 

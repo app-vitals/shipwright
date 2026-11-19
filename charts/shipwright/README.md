@@ -50,7 +50,7 @@ there — the chart does not provision a deployment-wide credential.
 
 ## Helm Repository
 
-The chart is published to a [GitHub Pages](https://pages.github.com/) Helm repository on every merge to `main` that bumps the `Chart.yaml` version. The [`chart-release.yml`](../../.github/workflows/chart-release.yml) workflow packages the chart and commits the `.tgz` plus a merged `index.yaml` directly to the `gh-pages` branch root — no GitHub Releases are created. See [docs/helm-repo.md](../../docs/helm-repo.md) for the full mechanism.
+The chart is published to a [GitHub Pages](https://pages.github.com/) Helm repository on every release (see Versioning). The [`chart-release.yml`](../../.github/workflows/chart-release.yml) workflow packages the chart and commits the `.tgz` plus a merged `index.yaml` directly to the `gh-pages` branch root — no GitHub Releases are created. See [docs/helm-repo.md](../../docs/helm-repo.md) for the full mechanism.
 
 **Add the repo:**
 
@@ -60,7 +60,7 @@ helm repo update
 helm install my-release shipwright/shipwright
 ```
 
-**GitHub Pages publish path:** On each push to `main` with a chart version bump, `chart-release.yml` packages the chart, merges it into the `gh-pages` `index.yaml` (with `--url https://app-vitals.github.io/shipwright`), and commits the `.tgz` + `index.yaml` to the `gh-pages` root. The `gh-pages` branch must exist and GitHub Pages must be serving from it (**Settings → Pages → gh-pages branch → / (root)**) — see [docs/helm-repo.md](../../docs/helm-repo.md) for the one-time setup.
+**GitHub Pages publish path:** On each service release tag, `agent/Dockerfile` platform pin change or chart change on `main`, `chart-release.yml` derives the version, stamps the image pins into a scratch copy, packages it, merges it into the `gh-pages` `index.yaml` (with `--url https://app-vitals.github.io/shipwright`), and commits the `.tgz` + `index.yaml` to the `gh-pages` root. The `gh-pages` branch must exist and GitHub Pages must be serving from it (**Settings → Pages → gh-pages branch → / (root)**) — see [docs/helm-repo.md](../../docs/helm-repo.md) for the one-time setup.
 
 **Fallback — direct .tgz download:** If the Helm repo is not yet available (before the first release lands), you can install directly from the published `.tgz` on GitHub Pages:
 
@@ -70,28 +70,28 @@ helm install my-release https://app-vitals.github.io/shipwright/shipwright-1.0.0
 
 ## Versioning
 
-This chart follows [Semantic Versioning](https://semver.org). The chart
-`version` in `Chart.yaml` is bumped on **every** chart change, independent of
-`appVersion`. `appVersion` is not used by the default install — each
-service's `image.tag` (`admin`, `metrics`, `agent`, `taskStore`, `chat`) ships
-pre-pinned to its own released tag by the
-[`auto-bump-chart.yml`](../../.github/workflows/auto-bump-chart.yml) workflow,
-so a default install always runs the exact per-service tags pinned at that
-chart version with no overrides required. Templates still fall back to
-`appVersion` if an `image.tag` override is cleared — `appVersion` is a static
-placeholder (`"0.1.0"`), so don't rely on that fallback for a real deploy.
+This chart follows [Semantic Versioning](https://semver.org). The published
+version is **derived at publish time** by
+[`chart-release.yml`](../../.github/workflows/chart-release.yml) (ADR
+[0001](../../docs/adr/0001-derive-chart-version-at-publish-time.md)), with no
+bump commit or PR: `MAJOR.MINOR` comes from the `version` in `Chart.yaml`,
+which is only a **floor** (`MAJOR.MINOR.0`, edited by hand for a deliberate
+minor or major), and the patch is one more than the highest patch already
+published for that line. `appVersion` is not used by the default install: each
+service's `image.tag` (`admin`, `metrics`, `agent`, `taskStore`, `chat`) is
+**stamped at package time** with that service's latest released tag, so a
+default install of a published chart version always runs the exact per-service
+tags pinned at that version with no overrides required. The `image.tag`
+defaults and `version` committed in git therefore do not reflect what was
+published. Templates still fall back to `appVersion` if an `image.tag`
+override is cleared; `appVersion` is a static placeholder (`"0.1.0"`), so
+don't rely on that fallback for a real deploy.
 
-**On any change under `charts/shipwright/**`:**
-
-1. Bump `version` in `Chart.yaml` (patch / minor / major per the nature of the
-   change).
-2. Add a matching entry to [`CHANGELOG.md`](./CHANGELOG.md) (keep-a-changelog
-   style).
-3. Mirror that entry in the `artifacthub.io/changes` annotation in `Chart.yaml`.
-
-CI enforces step 1: the Helm workflow runs
-`ct lint --check-version-increment`, which fails any PR that modifies the chart
-without bumping `version`. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+Every publish also creates an annotated git tag `chart-<version>` on the source
+commit; its message records the version, source SHA, stamped pins and library
+pin. **Changing the chart needs no version bump, CHANGELOG entry or
+`artifacthub.io/changes` edit.** `CHANGELOG.md` is historical (last entry
+1.32.313).
 
 ## Quick start (Minikube)
 
@@ -376,7 +376,7 @@ keys and no resource of its own.
   `shipwright.platformExtensions` in `templates/_helpers.tpl`. Task-store,
   metrics and mcp-server templates remain here.
 - **Release flow.** A new library version dispatches to this repo, which
-  re-pins the dependency, bumps the chart patch version and publishes — see
+  re-pins the dependency and the next publish picks it up — see
   [docs/helm-repo.md](../../docs/helm-repo.md#how-a-library-release-reaches-a-chart-bump).
 - **Compatibility contract.** The chart name `shipwright`, the release name and
   the `values.yaml` keys are relied on by downstream wrappers and do not change;

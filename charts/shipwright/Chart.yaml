@@ -6,10 +6,11 @@ description: >-
   plus runtime agent provisioning and an optional bundled PostgreSQL, for
   Kubernetes (Minikube-friendly defaults).
 type: application
-# Chart version (SemVer). Bump on every chart change, independent of appVersion.
-# See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
-# via `ct lint --check-version-increment`.
-version: 1.32.313
+# Chart version FLOOR (MAJOR.MINOR.0). The published version is derived at
+# publish time by chart-release.yml: MAJOR.MINOR from here, patch = highest
+# published patch + 1 (ADR 0001). Edit by hand only for a deliberate
+# minor/major bump.
+version: 1.32.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -26,11 +27,11 @@ maintainers:
 # License: MIT (chart + application).
 annotations:
   licenses: MIT
-  # Artifact Hub change log for this release. Must mirror the matching version
-  # entry in CHANGELOG.md (keep the two in sync on every bump).
+  # Artifact Hub change log. Replaced at publish time with the stamped pins
+  # (chart-release.yml); the value committed here is a placeholder.
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.32.313 triggered by release tag admin-v1.370.0"
+      description: "see the chart-<version> git tag for this release's record"
 dependencies:
   # Shared platform helpers (CHM-3.1): the agent-platform library chart owns the
   # name/label/image helpers this chart's `shipwright.*` helpers delegate to.

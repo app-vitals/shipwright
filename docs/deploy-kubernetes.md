@@ -16,7 +16,7 @@
 > ingress/cert-manager) — see [`deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md).
 
 The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
-published to a Helm repo on every chart version bump (see
+published to a Helm repo on every service release and chart change (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
 (port **3460**), agent (port **3000**), task-store (port **3000**), optional chat
 (port **3000**), and optional MCP server (port **3010**) services plus optional bundled

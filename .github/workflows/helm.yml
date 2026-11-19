@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # ct --check-version-increment diffs against target-branch
+          fetch-depth: 0 # ct diffs changed charts against target-branch
           persist-credentials: false
 
       - name: Install Helm
@@ -75,13 +75,12 @@ jobs:
       - name: helm lint
         run: helm lint charts/shipwright
 
-      - name: ct lint (enforces chart version-increment)
-        # Fails any PR that modifies charts/shipwright/** without bumping
-        # Chart.yaml `version`. NOTE: the version-increment check only fires in
-        # ct's *changed-chart detection* mode — passing `--charts` would bypass
-        # detection and silently skip the bump check. So we rely on `chart-dirs`
-        # + `target-branch` from ct.yaml to let ct diff against main itself.
-        run: ct lint --config ct.yaml --check-version-increment --target-branch main
+      - name: ct lint
+        # No --check-version-increment: the chart version is derived at publish
+        # time by chart-release.yml (ADR 0001), so source edits no longer bump
+        # Chart.yaml. ct still diffs against main via chart-dirs + target-branch
+        # from ct.yaml.
+        run: ct lint --config ct.yaml --target-branch main
 
       - name: helm unittest
         run: helm unittest charts/shipwright

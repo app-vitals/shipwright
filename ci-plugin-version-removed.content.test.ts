@@ -1,7 +1,8 @@
 /**
  * RCN-9.16: the committed plugin version and the version-sync bot PR are gone.
  * Guards that sync-plugin-version.yml stays deleted, the manifests stay
- * versionless, and ci.yml's bot-only skip allowlist covers chart bumps only.
+ * versionless, and ci.yml's bot-only skip allowlist covers neither plugin-version
+ * files nor (since RCN-9.10 retired the chart bump PR) chart-bump files.
  *
  * Lives at the repo root because `bun test` never walks dot-directories.
  */
@@ -27,13 +28,13 @@ describe("plugin version sync removal", () => {
     }
   });
 
-  it("ci.yml bot-only allowlist matches only chart-bump files", () => {
+  it("ci.yml bot-only allowlist matches no plugin-version or chart-bump files", () => {
     const m = read(".github/workflows/ci.yml").match(/PATTERN='([^']+)'/);
     expect(m).not.toBeNull();
     const re = new RegExp(m![1]);
-    expect(re.test("charts/shipwright/Chart.yaml")).toBe(true);
-    expect(re.test("charts/shipwright/CHANGELOG.md")).toBe(true);
     for (const f of [
+      "charts/shipwright/Chart.yaml",
+      "charts/shipwright/CHANGELOG.md",
       "package.json",
       "version.txt",
       ".claude-plugin/marketplace.json",
@@ -47,7 +48,6 @@ describe("plugin version sync removal", () => {
     for (const rel of [
       ".github/workflows/ci.yml",
       ".github/workflows/release.yml",
-      ".github/workflows/auto-bump-chart.yml",
       ".github/zizmor.yml",
     ]) {
       expect(read(rel)).not.toContain("sync-plugin-version");

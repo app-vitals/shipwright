@@ -19,11 +19,10 @@ chart-repos: []
 # Single maintainer/org chart — don't enforce the maintainers list.
 validate-maintainers: false
 
-# Gate on a chart-version bump for every chart change. `ct lint
-# --check-version-increment` diffs charts/shipwright/** against target-branch and
-# fails any PR that modifies the chart without bumping Chart.yaml `version`. See
-# charts/shipwright/CHANGELOG.md and the README "Versioning" section.
-check-version-increment: true
+# No chart-version-bump gate: the chart version is derived at publish time by
+# chart-release.yml (ADR 0001), so source edits do not bump Chart.yaml `version`
+# (a MAJOR.MINOR floor). See the chart README "Versioning" section.
+check-version-increment: false
 
 # Extra args passed to every `helm install`/`helm upgrade` ct runs. The
 # bundled optional subcharts (CNH-6.1) — especially cert-manager with

@@ -1,42 +1,28 @@
 name: Chart Drift Check
 
-# Periodic drift-check: catches a future recurrence of chart-pin drift (from a
-# race condition in auto-bump-chart.yml's debounce/burst handling, or any
-# other cause) between the highest-semver release tag for each Shipwright
-# service and what's actually pinned in charts/shipwright/values.yaml, without
-# requiring manual git archaeology to discover it.
+# Periodic drift-check. Image pins are no longer committed: chart-release.yml
+# stamps the latest release tag of every service into the chart at publish time
+# (ADR 0001). This workflow therefore checks the PUBLISHED chart, not git:
 #
-# For each service (admin, metrics, agent, task-store, chat) this workflow:
-#   1. Finds the highest-semver `{service}-v*` git tag (chat: the platform
-#      version pinned in agent/Dockerfile, since its ghcr.io/app-vitals/agent-chat
-#      image is released by app-vitals/agent and delivered by the
-#      platform-release dispatch rather than a tag in this repo).
-#   2. Reads the tag currently pinned at that service's values.yaml path(s).
-#   3. Compares them. Any mismatch fails the job — the job failure IS the
-#      alert (visible in the Actions tab / a red X on the default branch).
-#      No new notification infra, no new secrets: only the default
-#      GITHUB_TOKEN read scope (contents: read) already used elsewhere in
-#      this repo's workflows.
+#   1. For each service (admin, metrics, agent, task-store, chat) it finds the
+#      highest-semver `{service}-v*` git tag (chat: the platform version pinned
+#      in agent/Dockerfile) and compares it with the pin inside the newest
+#      package on the Pages index. A mismatch means a release did not reach a
+#      publish (a skipped or failed chart-release run).
+#   2. Every published version newer than 1.32.313 (the last version published
+#      before tagging began) must have an annotated `chart-<version>` tag. A
+#      missing tag means a publish pushed gh-pages but failed to tag; re-run
+#      chart-release.yml (it creates the missing tag without republishing).
+#   3. The agent-platform library chart pin (CHM-3.5) in Chart.yaml and
+#      Chart.lock must not trail the latest version in the library's Helm repo
+#      index (https://app-vitals.github.io/agent).
 #
-# It also checks the agent-platform library chart pin (CHM-3.5): the version
-# in Chart.yaml and Chart.lock must not trail the latest version published in
-# the library's Helm repo index (https://app-vitals.github.io/agent). An
-# unreadable index fails the job too, so a broken check never reads as green.
-# A failed run just goes red; no issue is opened.
+# An unreadable index fails the job too, so a broken check never reads as
+# green. The job failure IS the alert; no issue is opened and no secrets are
+# used (contents: read only).
 #
-# Reuses the SAME service_for_tag / values_paths_for_service /
-# highest_semver_tag logic that auto-bump-chart.yml uses to pin tags in the
-# first place — extracted to .github/workflows/lib/chart-tag-utils.sh so both
-# workflows share one implementation instead of drifting apart themselves.
-#
-# Deliberately does NOT source .github/workflows/test-auto-bump-chart.sh
-# directly: that file has no `if [[ "${BASH_SOURCE[0]}" == "$0" ]]`
-# main-guard, so sourcing it would run its entire existing assertion suite as
-# a side effect and its trailing `exit 1` (on failure) would kill this step's
-# shell outright even on unrelated failures. lib/chart-tag-utils.sh instead
-# holds ONLY the function definitions, extracted verbatim, safe to source.
-#
-# Logic tests live in .github/workflows/test-check-chart-drift.sh.
+# Logic lives in .github/workflows/lib/ (chart-tag-utils.sh, chart-drift-check.sh,
+# library-pin.sh). Logic tests: .github/workflows/test-check-chart-drift.sh.
 # Run locally: bash .github/workflows/test-check-chart-drift.sh
 
 on:
@@ -48,9 +34,14 @@ on:
 permissions:
   contents: read
 
+env:
+  PAGES_URL: https://app-vitals.github.io/shipwright
+  # Last chart version published before chart-<version> tags began (RCN-9.10).
+  CHART_TAG_FLOOR: 1.32.313
+
 jobs:
   check-drift:
-    name: check chart pins against latest release tags
+    name: check published chart against latest release tags
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
@@ -63,20 +54,32 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - name: Compare pinned tags against latest release tags
+      - name: Compare the published chart's pins against latest release tags
         run: |
           set -uo pipefail
 
           source .github/workflows/lib/chart-tag-utils.sh
           source .github/workflows/lib/chart-drift-check.sh
 
-          VALUES_YAML="charts/shipwright/values.yaml"
-          SERVICES=(admin metrics agent task-store chat)
+          WORK=$(mktemp -d)
+          if ! curl -fsS --retry 3 --retry-delay 5 -o "$WORK/index.yaml" "${PAGES_URL}/index.yaml"; then
+            echo "::error::could not fetch ${PAGES_URL}/index.yaml; the published chart pins were NOT checked."
+            exit 1
+          fi
+          LATEST_CHART=$(latest_chart_version "$WORK/index.yaml")
+          if [ -z "$LATEST_CHART" ]; then
+            echo "::error::no shipwright chart versions in ${PAGES_URL}/index.yaml."
+            exit 1
+          fi
+          if ! curl -fsS --retry 3 --retry-delay 5 -o "$WORK/chart.tgz" "${PAGES_URL}/shipwright-${LATEST_CHART}.tgz" \
+            || ! tar -xzf "$WORK/chart.tgz" -C "$WORK" shipwright/values.yaml; then
+            echo "::error::could not fetch or unpack ${PAGES_URL}/shipwright-${LATEST_CHART}.tgz."
+            exit 1
+          fi
+          VALUES_YAML="$WORK/shipwright/values.yaml"
+          echo "Checking the pins stamped into published chart ${LATEST_CHART}."
 
-          # Resolve the highest-semver `{service}-v*` git tag for each
-          # service into "service=tag" lines, mirroring how
-          # auto-bump-chart.yml's select_pinned_tags() groups tags by
-          # service before picking the winner with highest_semver_tag().
+          SERVICES=(admin metrics agent task-store chat)
           LATEST_BY_SERVICE=""
           MISSING_SERVICES=()
           for service in "${SERVICES[@]}"; do
@@ -90,7 +93,7 @@ jobs:
           done
 
           if [ ${#MISSING_SERVICES[@]} -gt 0 ]; then
-            echo "No git tags found for: ${MISSING_SERVICES[*]} — skipping drift check for these services (nothing to compare against)."
+            echo "No git tags found for: ${MISSING_SERVICES[*]}; skipping drift check for these services (nothing to compare against)."
           fi
 
           echo "Latest release tag per service:"
@@ -100,15 +103,37 @@ jobs:
 
           if [ -n "$MISMATCHES" ]; then
             echo ""
-            echo "Chart drift detected — values.yaml is not pinned to the latest release tag(s):"
+            echo "Chart drift detected: published chart ${LATEST_CHART} is not pinned to the latest release tag(s):"
             echo "$MISMATCHES"
             echo ""
-            echo "Fix: update the listed path(s) in ${VALUES_YAML} to the expected tag(s) above (or investigate why auto-bump-chart.yml did not pin them)."
+            echo "::error title=Published chart is stale::a release did not reach a chart publish. Re-run 'Chart Release' (workflow_dispatch) to publish a chart stamped with the latest tags."
             exit 1
           fi
 
           echo ""
-          echo "No chart drift detected — all pinned tags match their latest release tags."
+          echo "No chart drift detected: all published pins match their latest release tags."
+
+      # chart-release.yml tags every publish chart-<version> after the gh-pages
+      # push. A published version without a tag means tagging failed.
+      - name: Check every published chart version has a chart tag
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          source .github/workflows/lib/chart-drift-check.sh
+
+          INDEX=$(mktemp)
+          if ! curl -fsS --retry 3 --retry-delay 5 -o "$INDEX" "${PAGES_URL}/index.yaml"; then
+            echo "::error::could not fetch ${PAGES_URL}/index.yaml; chart tags were NOT checked."
+            exit 1
+          fi
+          MISSING=$(versions_missing_chart_tag "$INDEX" "$CHART_TAG_FLOOR") || exit 1
+          if [ -n "$MISSING" ]; then
+            echo "Published chart versions with no chart-<version> tag:"
+            echo "$MISSING"
+            echo "::error title=Chart tag missing::a publish pushed gh-pages but did not create its chart-<version> tag. Re-run 'Chart Release' (workflow_dispatch); it creates the missing tag without republishing."
+            exit 1
+          fi
+          echo "Every published chart version since ${CHART_TAG_FLOOR} has a chart-<version> tag."
 
       # The library pin (agent-platform) is bumped by library-chart-release.yml
       # on the library's chart-release dispatch. A pin behind the published

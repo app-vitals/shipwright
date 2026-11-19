@@ -8,7 +8,7 @@
 #      compute tag (dry run) -> build (local, no push) -> verify -> push -> tag.
 #      The tag is annotated (message = release record trailers) and is pushed with
 #      DISPATCH_TOKEN, not GITHUB_TOKEN, so the tag push still triggers
-#      auto-bump-chart.yml (GITHUB_TOKEN pushes trigger no workflows).
+#      chart-release.yml (GITHUB_TOKEN pushes trigger no workflows).
 #
 #   2. Whisper (validate / changes / publish): a CVE-rebuild of a third-party
 #      image. It has no semver tag and no git tag; images are tagged
@@ -234,7 +234,7 @@ jobs:
       # 5. Create the git tag last: it exists only for an image that built, passed
       #    verification and was pushed. Annotated, message = release record
       #    trailers (ADR 0002). Pushed with DISPATCH_TOKEN (checkout above did not
-      #    persist credentials) so the tag push triggers auto-bump-chart.yml;
+      #    persist credentials) so the tag push triggers chart-release.yml;
       #    GITHUB_TOKEN pushes would not.
       - name: Tag release
         env:

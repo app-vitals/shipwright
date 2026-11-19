@@ -100,7 +100,7 @@ jobs:
     steps:
       # DISPATCH_TOKEN (not GITHUB_TOKEN) for checkout and PR: pushes and PRs
       # made with GITHUB_TOKEN do not trigger the PR's CI, and an updated
-      # bump PR must re-run it. Same token auto-bump-chart.yml opens PRs with.
+      # bump PR must re-run it. Same token library-chart-release.yml opens PRs with.
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -287,8 +287,7 @@ jobs:
 # merged red when a rerun dropped the CI checks from the rollup). The
 # gate is behavior-tested against recorded check timelines in
       # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
-      # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
-      # copies in sync.
+      # are covered by that test; keep the copies in sync.
       - name: Wait for checks and merge
         id: merge
         if: steps.diff.outputs.changed == 'true'

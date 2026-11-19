@@ -3,23 +3,21 @@
 # .github/workflows/lib/chart-drift-check.sh
 #
 # Drift-comparison logic for check-chart-drift.yml: computing mismatches
-# between the highest-semver git release tag per service and what's actually
-# pinned in values.yaml.
+# between the highest-semver git release tag per service and what is pinned in
+# the PUBLISHED chart's values.yaml (pins are stamped at publish time, not
+# committed; ADR 0001), plus the published-version-has-a-chart-tag check.
 #
 # Depends on chart-tag-utils.sh being sourced first — both for
 # values_paths_for_service() (used directly below) and for read_pinned_tag()
 # (used by compute_drift() below; it moved to chart-tag-utils.sh because it's
 # a generic values.yaml dot-path reader with no drift-specific meaning of its
-# own — auto-bump-chart.yml's compute_batch_from_drift() also needs it).
+# own — it is a generic reader).
 # Source both together:
 #   source .github/workflows/lib/chart-tag-utils.sh
 #   source .github/workflows/lib/chart-drift-check.sh
 #
-# Read-only — unlike auto-bump-chart.yml's update_values_tag (which WRITES a
-# new tag into values.yaml and needs python3 for safe indentation-scoped
-# editing), read_pinned_tag() only ever reads, so a simple awk state-machine
-# scoped by indentation is sufficient and keeps this dependency-free (no
-# python3, no yq).
+# Read-only: read_pinned_tag() only ever reads, so a simple awk state-machine
+# scoped by indentation is sufficient and keeps this dependency-free.
 #
 # This file is sourced only — running it directly does nothing useful.
 #
@@ -49,4 +47,41 @@ compute_drift() {
       fi
     done < <(values_paths_for_service "$service")
   done <<< "$latest_by_service"
+}
+
+# Prints every version under entries.shipwright in a Helm repo index.yaml, one
+# per line. Prints nothing when the file is missing.
+chart_versions_from_index() {
+  [ -f "$1" ] || return 0
+  awk '
+    /^  [^ -]/ { in_chart = ($0 == "  shipwright:"); next }
+    in_chart && /^    version:/ {
+      v = $0; sub(/^    version:[ ]*/, "", v); gsub(/"/, "", v); print v
+    }
+  ' "$1"
+}
+
+# Prints the highest published chart version (nothing for a missing index).
+latest_chart_version() {
+  chart_versions_from_index "$1" | sort -V | tail -n1
+}
+
+# versions_missing_chart_tag <index.yaml> <floor>
+# Prints every published version strictly above <floor> that has no
+# chart-<version> git tag (run in a checkout with tags fetched). <floor> is
+# the last version published before tagging began: earlier versions predate
+# the scheme. Returns 1 when the index is unreadable.
+versions_missing_chart_tag() {
+  local index="$1" floor="$2" v
+  if [ ! -f "$index" ] || [ -z "$(chart_versions_from_index "$index")" ]; then
+    echo "::error::no chart versions found in ${index}; cannot check chart tags." >&2
+    return 1
+  fi
+  while IFS= read -r v; do
+    [ -z "$v" ] && continue
+    [ "$v" = "$floor" ] && continue
+    [ "$(printf '%s\n%s\n' "$v" "$floor" | sort -V | tail -n1)" = "$floor" ] && continue
+    [ -n "$(git tag -l "chart-${v}")" ] || echo "$v"
+  done < <(chart_versions_from_index "$index" | sort -V)
+  return 0
 }
