@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import {
   deriveSessionVisibilityFromTasks,
   isSessionVisible,
+  isTaskVisible,
   type MembershipForScope,
   type SessionForVisibility,
   type VisibilityScope,
@@ -294,5 +295,35 @@ describe("account-scoped visibility (SSP-6.8)", () => {
         { assignee: "a2", accountId: "acct-b" },
       ]).accountId,
     ).toBeUndefined();
+  });
+});
+
+describe("isTaskVisible", () => {
+  const scope: VisibilityScope = { agentIds: ["a1"], repos: ["org/r1"] };
+
+  it("is always true under the all scope", () => {
+    expect(isTaskVisible({}, { agentIds: "all", repos: [] })).toBe(true);
+  });
+
+  it("matches on assignee", () => {
+    expect(isTaskVisible({ assignee: "a1", repo: "org/x" }, scope)).toBe(true);
+  });
+
+  it("matches on repo", () => {
+    expect(isTaskVisible({ assignee: "a2", repo: "org/r1" }, scope)).toBe(true);
+  });
+
+  it("is false when neither assignee nor repo match", () => {
+    expect(isTaskVisible({ assignee: "a2", repo: "org/x" }, scope)).toBe(false);
+    expect(isTaskVisible({ assignee: null, repo: null }, scope)).toBe(false);
+  });
+
+  it("an empty scope sees nothing", () => {
+    expect(
+      isTaskVisible(
+        { assignee: "a1", repo: "org/r1" },
+        { agentIds: [], repos: [] },
+      ),
+    ).toBe(false);
   });
 });
