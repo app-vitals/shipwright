@@ -371,6 +371,7 @@ describeOrSkip("SystemCronService definitions (integration)", () => {
     // No triggers yet.
     expect(await service.recentTriggers(CRON_ID, 5, null)).toEqual({
       triggers: [],
+      nextCursor: null,
     });
 
     // Fewer than limit; fired out of order, ordered by scheduledFor desc.

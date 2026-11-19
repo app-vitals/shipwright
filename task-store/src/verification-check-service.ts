@@ -34,6 +34,11 @@
 
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "./errors.ts";
+import {
+  decodeKeyCursor,
+  encodeKeyCursor,
+  keyCursorWhere,
+} from "./lib/cursor.ts";
 import type {
   PrismaClient,
   VerificationCheck,
@@ -108,6 +113,8 @@ interface RecordVerificationCheckInput {
 interface ListVerificationChecksResult {
   checks: VerificationCheck[];
   total: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 /** The subset of VerificationCheckService the routes depend on. */
@@ -118,12 +125,12 @@ export interface VerificationCheckServiceLike {
   ): Promise<VerificationCheck>;
   listForTask(
     taskId: string,
-    opts?: { limit?: number; offset?: number },
+    opts?: { limit?: number; offset?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   listForPr(
     prId: string,
-    opts?: { limit?: number; offset?: number },
+    opts?: { limit?: number; offset?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   /**
@@ -137,7 +144,7 @@ export interface VerificationCheckServiceLike {
   listByRepoAndCheck(
     repo: string,
     checkName: string,
-    opts?: { limit?: number; offset?: number },
+    opts?: { limit?: number; offset?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
 }
@@ -283,7 +290,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
 
   async listForTask(
     taskId: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     await this.findScopedTask(taskId, scope);
@@ -292,7 +299,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
 
   async listForPr(
     prId: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     await this.findScopedPr(prId, scope);
@@ -302,7 +309,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
   async listByRepoAndCheck(
     repo: string,
     checkName: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     if (!repo) {
@@ -334,22 +341,40 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
       | { taskId: string }
       | { prRecordId: string }
       | { repo: string; checkName: string; accountId?: string },
-    opts: { limit?: number; offset?: number },
+    opts: { limit?: number; offset?: number; cursor?: string },
     order: "asc" | "desc",
   ): Promise<ListVerificationChecksResult> {
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
+    if (opts.cursor !== undefined && opts.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+    const pageWhere =
+      opts.cursor !== undefined
+        ? {
+            AND: [
+              where,
+              keyCursorWhere(decodeKeyCursor(opts.cursor), order, "at"),
+            ],
+          }
+        : where;
 
-    const [checks, total] = await this.prisma.$transaction([
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.verificationCheck.findMany({
-        where,
-        orderBy: { at: order },
-        take: limit,
+        where: pageWhere,
+        orderBy: [{ at: order }, { id: order }],
+        take: limit + 1,
         skip: offset,
       }),
       this.prisma.verificationCheck.count({ where }),
     ]);
+    const hasMore = fetched.length > limit;
+    const checks = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = checks[checks.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeKeyCursor({ key: last.at, id: last.id }) : null;
 
-    return { checks, total };
+    return { checks, total, nextCursor };
   }
 }

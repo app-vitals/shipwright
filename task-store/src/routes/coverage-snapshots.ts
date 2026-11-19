@@ -10,7 +10,7 @@
  *                                    (accountId, repo, commitSha); the server
  *                                    computes every pct from the counts.
  *                                    201 created / 200 updated
- *   GET  /coverage-snapshots         ?repo=&since=&limit=&offset=, newest first
+ *   GET  /coverage-snapshots         ?repo=&since=&limit=&offset=&cursor=, newest first
  *   GET  /coverage-snapshots/latest  newest snapshot per repo
  *
  * A snapshot has no parent task/PR, so its account comes from the caller:
@@ -83,7 +83,7 @@ const listRoute = createRoute({
   tags: ["Coverage Snapshots"],
   summary: "List coverage snapshots, newest first",
   description:
-    "Returns `{ snapshots, total, limit, offset }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.",
+    "Returns `{ snapshots, total, limit, offset, nextCursor }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
   request: { query: CoverageSnapshotListQuerySchema },
   responses: {
     200: {
@@ -181,6 +181,10 @@ export function createCoverageSnapshotsRoutes(
     }
     const limit = parseIntParam(c.req.query("limit"));
     const offset = parseIntParam(c.req.query("offset"));
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && c.req.query("offset") !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
 
     const result = await service.list(
       {
@@ -188,6 +192,7 @@ export function createCoverageSnapshotsRoutes(
         since: since || undefined,
         limit,
         offset,
+        cursor,
       },
       callerScope(c),
     );
@@ -198,6 +203,7 @@ export function createCoverageSnapshotsRoutes(
         total: result.total,
         limit: limit ?? 50,
         offset: offset ?? 0,
+        nextCursor: result.nextCursor ?? null,
       },
       200,
     );

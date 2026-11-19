@@ -24,7 +24,7 @@
  *   GET  /verification-checks  list outcomes for a task, a PR, or a
  *                              repo+checkName pair (LVB-4.4)
  *                              (?taskId= XOR ?prId= XOR (?repo=+?checkName=),
- *                               ?limit, ?offset)
+ *                               ?limit, ?offset, ?cursor; returns nextCursor)
  *
  * The third mode — ?repo=+?checkName= — answers "the last few outcomes for
  * check X on repo Y, across ALL tasks/PRs" rather than scoping to one parent.
@@ -105,7 +105,7 @@ const listRoute = createRoute({
   summary:
     "List verification checks for a task, a PR, or a repo+checkName pair",
   description:
-    "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.",
+    "Returns `{ checks, total, limit, offset, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
   request: {
     query: VerificationCheckListQuerySchema,
   },
@@ -206,6 +206,10 @@ export function createVerificationChecksRoutes(
 
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
     const limit =
       limitRaw !== undefined
         ? Number.parseInt(limitRaw, 10) || undefined
@@ -217,13 +221,21 @@ export function createVerificationChecksRoutes(
 
     const scope = callerScope(c);
     const result = hasTask
-      ? await service.listForTask(taskId as string, { limit, offset }, scope)
+      ? await service.listForTask(
+          taskId as string,
+          { limit, offset, cursor },
+          scope,
+        )
       : hasPr
-        ? await service.listForPr(prId as string, { limit, offset }, scope)
+        ? await service.listForPr(
+            prId as string,
+            { limit, offset, cursor },
+            scope,
+          )
         : await service.listByRepoAndCheck(
             repo as string,
             checkName as string,
-            { limit, offset },
+            { limit, offset, cursor },
             scope,
           );
 
@@ -233,6 +245,7 @@ export function createVerificationChecksRoutes(
         total: result.total,
         limit: limit ?? 50,
         offset: offset ?? 0,
+        nextCursor: result.nextCursor ?? null,
       },
       200,
     );

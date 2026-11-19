@@ -40,6 +40,16 @@ import {
   type PullRequest,
   type PullRequestEvent,
 } from "./index.ts";
+import {
+  cursorWhere,
+  decodeCursor,
+  decodeKeyCursor,
+  decodeOffsetCursor,
+  encodeCursor,
+  encodeKeyCursor,
+  encodeOffsetCursor,
+  keyCursorWhere,
+} from "./lib/cursor.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { deriveOrigin } from "./pr-origin-derivation.ts";
 import { computePrTransitionDiff } from "./pr-transition-diff.ts";
@@ -217,6 +227,12 @@ export interface PullRequestListFilters {
   limit?: number;
   offset?: number;
   /**
+   * Opaque keyset cursor (see lib/cursor.ts): return PRs strictly after the
+   * encoded (createdAt, id) position. Mutually exclusive with `offset`.
+   * With `blocked` (in-memory filtering) the cursor wraps an internal offset.
+   */
+  cursor?: string;
+  /**
    * When true, only return unclaimed PRs (claimedBy IS NULL) — mirrors
    * /tasks?ready=true's semantics for tasks. Deliberately kept to the literal
    * "unclaimed" interpretation from the acceptance criteria rather than also
@@ -280,12 +296,16 @@ export interface PullRequestListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 /** Result from PullRequestService.getEvents. */
 export interface GetEventsResult {
   events: PullRequestEvent[];
   total: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 // ─── Origin metrics (POM-1.1) ──────────────────────────────────────────────────
@@ -420,7 +440,7 @@ export interface PullRequestServiceLike {
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
   getEvents(
     prId: string,
-    opts?: { limit?: number; offset?: number },
+    opts?: { limit?: number; offset?: number; cursor?: string },
   ): Promise<GetEventsResult>;
   lookupBlockedPrNumbers(pairs: BlockedPrLookupKey[]): Promise<Set<number>>;
   /**
@@ -513,7 +533,11 @@ export class PullRequestService implements PullRequestServiceLike {
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
-    const orderBy = { createdAt: filters.sort ?? ("asc" as const) };
+    const sortDir = filters.sort ?? ("asc" as const);
+    const orderBy = [{ createdAt: sortDir }, { id: sortDir }];
+    if (filters.cursor !== undefined && filters.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
 
     if (filters.blocked) {
       // The blocked predicate depends on linked Task rows, which are joined
@@ -563,26 +587,50 @@ export class PullRequestService implements PullRequestServiceLike {
         ),
       );
 
+      // The blocked set is derived in memory, so the cursor wraps an offset.
+      const start =
+        filters.cursor !== undefined
+          ? decodeOffsetCursor(filters.cursor)
+          : offset;
+      const end = start + limit;
       return {
-        prs: blockedPrs.slice(offset, offset + limit),
+        prs: blockedPrs.slice(start, end),
         total: blockedPrs.length,
         limit,
-        offset,
+        offset: start,
+        nextCursor: end < blockedPrs.length ? encodeOffsetCursor(end) : null,
       };
     }
 
-    const [prs, total] = await this.prisma.$transaction([
+    // The cursor is only a position (never a row lookup). ANDed in so it
+    // can't clobber the caller's own OR/AND. `total` counts the un-cursored set.
+    const pageWhere: Prisma.PullRequestWhereInput =
+      filters.cursor !== undefined
+        ? {
+            AND: [where, cursorWhere(decodeCursor(filters.cursor), sortDir)],
+          }
+        : where;
+
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.pullRequest.findMany({
-        where,
+        where: pageWhere,
         orderBy,
-        take: limit,
+        take: limit + 1,
         skip: offset,
         include: { findings: true, events: true },
       }),
       this.prisma.pullRequest.count({ where }),
     ]);
+    const hasMore = fetched.length > limit;
+    const prs = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = prs[prs.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+        : null;
 
-    return { prs, total, limit, offset };
+    return { prs, total, limit, offset, nextCursor };
   }
 
   async get(id: string): Promise<PullRequest | null> {
@@ -1475,7 +1523,7 @@ export class PullRequestService implements PullRequestServiceLike {
    */
   async getEvents(
     prId: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; cursor?: string } = {},
   ): Promise<GetEventsResult> {
     const existing = await this.prisma.pullRequest.findUnique({
       where: { id: prId },
@@ -1488,17 +1536,36 @@ export class PullRequestService implements PullRequestServiceLike {
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
 
-    const [events, total] = await this.prisma.$transaction([
+    if (opts.cursor !== undefined && opts.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+    const pageWhere: Prisma.PullRequestEventWhereInput =
+      opts.cursor !== undefined
+        ? {
+            AND: [
+              { prRecordId: prId },
+              keyCursorWhere(decodeKeyCursor(opts.cursor), "asc", "at"),
+            ],
+          }
+        : { prRecordId: prId };
+
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.pullRequestEvent.findMany({
-        where: { prRecordId: prId },
-        orderBy: { at: "asc" },
-        take: limit,
+        where: pageWhere,
+        orderBy: [{ at: "asc" }, { id: "asc" }],
+        take: limit + 1,
         skip: offset,
       }),
       this.prisma.pullRequestEvent.count({ where: { prRecordId: prId } }),
     ]);
+    const hasMore = fetched.length > limit;
+    const events = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = events[events.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeKeyCursor({ key: last.at, id: last.id }) : null;
 
-    return { events, total };
+    return { events, total, nextCursor };
   }
 
   /**

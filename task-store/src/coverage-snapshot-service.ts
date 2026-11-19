@@ -17,6 +17,7 @@
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ForbiddenError } from "./errors.ts";
 import type { CoverageSnapshot, PrismaClient } from "./index.ts";
+import { cursorWhere, decodeCursor, encodeCursor } from "./lib/cursor.ts";
 import { isOrgRepo } from "./validate.ts";
 
 /** Caller scope: `accountId: null` = unrestricted (admin). */
@@ -56,11 +57,15 @@ export interface ListCoverageSnapshotsOptions {
   since?: string;
   limit?: number;
   offset?: number;
+  /** Opaque keyset cursor on (measuredAt, id), newest first. Mutually exclusive with `offset`. */
+  cursor?: string;
 }
 
 export interface ListCoverageSnapshotsResult {
   snapshots: CoverageSnapshot[];
   total: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 export interface RecordCoverageSnapshotResult {
@@ -230,16 +235,36 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
       ...(opts.repo ? { repo: opts.repo } : {}),
       ...(opts.since ? { measuredAt: { gte: new Date(opts.since) } } : {}),
     };
-    const [snapshots, total] = await this.prisma.$transaction([
+    if (opts.cursor !== undefined && opts.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+    const pageWhere =
+      opts.cursor !== undefined
+        ? {
+            AND: [
+              where,
+              cursorWhere(decodeCursor(opts.cursor), "desc", "measuredAt"),
+            ],
+          }
+        : where;
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.coverageSnapshot.findMany({
-        where,
-        orderBy: { measuredAt: "desc" },
-        take: limit,
+        where: pageWhere,
+        orderBy: [{ measuredAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
         skip: offset,
       }),
       this.prisma.coverageSnapshot.count({ where }),
     ]);
-    return { snapshots, total };
+    const hasMore = fetched.length > limit;
+    const snapshots = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = snapshots[snapshots.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ createdAt: last.measuredAt, id: last.id })
+        : null;
+    return { snapshots, total, nextCursor };
   }
 
   async latest(

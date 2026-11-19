@@ -22,8 +22,8 @@ export function encodeCursor(pos: CursorPosition): string {
   ).toString("base64url");
 }
 
-/** Decode a cursor; throws BadRequestError (400) when malformed. */
-export function decodeCursor(raw: string): CursorPosition {
+/** Parse a base64url `[string, string]` cursor; throws BadRequestError (400) when malformed. */
+function parsePair(raw: string): [string, string] {
   const bad = () => new BadRequestError("invalid cursor");
   let parsed: unknown;
   try {
@@ -32,12 +32,18 @@ export function decodeCursor(raw: string): CursorPosition {
     throw bad();
   }
   if (!Array.isArray(parsed) || parsed.length !== 2) throw bad();
-  const [ts, id] = parsed;
-  if (typeof ts !== "string" || typeof id !== "string" || id === "") {
-    throw bad();
-  }
+  const [a, id] = parsed;
+  if (typeof a !== "string" || typeof id !== "string" || id === "") throw bad();
+  return [a, id];
+}
+
+/** Decode a cursor; throws BadRequestError (400) when malformed. */
+export function decodeCursor(raw: string): CursorPosition {
+  const [ts, id] = parsePair(raw);
   const createdAt = new Date(ts);
-  if (Number.isNaN(createdAt.getTime())) throw bad();
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new BadRequestError("invalid cursor");
+  }
   return { createdAt, id };
 }
 
@@ -48,14 +54,73 @@ export function decodeCursor(raw: string): CursorPosition {
 export function cursorWhere(
   pos: CursorPosition,
   sort: "asc" | "desc",
+  field = "createdAt",
 ): {
   OR: Array<Record<string, unknown>>;
 } {
   const op = sort === "desc" ? "lt" : "gt";
   return {
     OR: [
-      { createdAt: { [op]: pos.createdAt } },
-      { createdAt: pos.createdAt, id: { [op]: pos.id } },
+      { [field]: { [op]: pos.createdAt } },
+      { [field]: pos.createdAt, id: { [op]: pos.id } },
     ],
   };
+}
+
+export interface KeyCursorPosition {
+  key: string;
+  id: string;
+}
+
+/**
+ * Cursor over a string sort column (e.g. TaskEvent.at / VerificationCheck.at,
+ * which are caller-controlled strings and must round-trip verbatim — never
+ * re-serialised through Date). Same wire shape as encodeCursor: [key, id].
+ */
+export function encodeKeyCursor(pos: KeyCursorPosition): string {
+  return Buffer.from(JSON.stringify([pos.key, pos.id])).toString("base64url");
+}
+
+/** Decode a string-key cursor; throws BadRequestError (400) when malformed. */
+export function decodeKeyCursor(raw: string): KeyCursorPosition {
+  const [key, id] = parsePair(raw);
+  return { key, id };
+}
+
+/** Like cursorWhere, for a string sort column named `field`. */
+export function keyCursorWhere(
+  pos: KeyCursorPosition,
+  sort: "asc" | "desc",
+  field: string,
+): { OR: Array<Record<string, unknown>> } {
+  const op = sort === "desc" ? "lt" : "gt";
+  return {
+    OR: [
+      { [field]: { [op]: pos.key } },
+      { [field]: pos.key, id: { [op]: pos.id } },
+    ],
+  };
+}
+
+/**
+ * Offset-backed cursor for lists whose order is derived in memory (session
+ * rollups, blocked-PR filtering) and so has no keyset position. The offset is
+ * wrapped in an opaque token so clients still just follow nextCursor.
+ */
+export function encodeOffsetCursor(offset: number): string {
+  return Buffer.from(JSON.stringify({ o: offset })).toString("base64url");
+}
+
+/** Decode an offset cursor; throws BadRequestError (400) when malformed. */
+export function decodeOffsetCursor(raw: string): number {
+  const bad = () => new BadRequestError("invalid cursor");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+  } catch {
+    throw bad();
+  }
+  const o = (parsed as { o?: unknown } | null)?.o;
+  if (typeof o !== "number" || !Number.isInteger(o) || o < 0) throw bad();
+  return o;
 }
