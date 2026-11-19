@@ -29,6 +29,7 @@ import {
 } from "@app-vitals/agent-admin/agents-api";
 import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
 import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
+import { createPrincipalsApp } from "@app-vitals/agent-admin/principals-api";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { adminExtensions } from "./main.ts";
 import {
@@ -384,6 +385,17 @@ function buildSpecApp() {
     createAgentTemplatesApp({
       templateService: {} as never,
       callerScopeResolver: async () => ({ kind: "all" }),
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+    }),
+  );
+  // The /principals lookup routes (ACM-1.1) are likewise their own app
+  // mounted at the root in admin-boot.ts.
+  root.route(
+    "/",
+    createPrincipalsApp({
+      lookup: {} as never,
       sessionSecret: SESSION_SECRET,
       adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
       agentTokenService: { validate: async () => null },
