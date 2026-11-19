@@ -73,3 +73,21 @@ describe("SKILL.md — worktree path convention", () => {
     expect(content).not.toContain("~/worktrees/{repo}-{branch-slug}");
   });
 });
+
+describe("SKILL.md — concise presentation (CSM-2.6)", () => {
+  it("presents headline + max 3 bullets with the ask last", () => {
+    expect(content).toContain("at most 3 bullets");
+    expect(content).toContain("one phone\nscreen");
+    const block = content.slice(content.indexOf("### 3c."), content.indexOf("## 4."));
+    expect(block.indexOf("What do you want to do?")).toBeGreaterThan(block.indexOf("*PR #{pr}"));
+  });
+
+  it("offers numbered options 1 post / 2 skip / 3 draft / 4 discuss", () => {
+    expect(content).toContain("1 post · 2 skip · 3 draft · 4 discuss");
+  });
+
+  it("no longer prints the verbose Why/Changes grid", () => {
+    expect(content).not.toContain("*Why:*");
+    expect(content).not.toContain("*Concerns (");
+  });
+});

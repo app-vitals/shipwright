@@ -54,6 +54,14 @@ Risk: Low|Medium|High - {reason}
 Use `RISK_RATING.level` capitalized and a short reason from `RISK_RATING.reason`. Never add it to a `Verdict: COMMENT`
 body, and omit it when `RISK_RATING` is empty. Step 10.5's validation still passes because the body leads with the label.
 
+## Concise posted review (CSM-2.6)
+
+The posted `body` is verdict-first: the literal `Verdict: ...` label, then the 1-3 findings that matter most in one line
+each, then (if any more are worth keeping) short bullets with `file:line` pointers. No restated PR description, no
+per-section walkthrough, no strengths list — that narrative stays in `PR_REVIEW_{pr}.md`. Each inline comment in
+`comments[]` covers **one issue** and leads with the fix suggestion, then one short sentence of why; never batch several
+issues into one inline comment.
+
 ## Diff-line mapping
 
 For each finding with a `file:line` reference, check whether the line is in the diff

@@ -1,6 +1,6 @@
 ---
 name: review-staged
-description: Walk through staged PR reviews from the task store conversationally — APPROVEs first, then COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept owner direction (post, skip, draft, discuss). Use when asked to "drain the staged reviews", "walk through staged reviews", or "what's staged".
+description: Walk through staged PR reviews from the task store conversationally — APPROVEs first, then COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept owner direction (1 post, 2 skip, 3 draft, 4 discuss). Use when asked to "drain the staged reviews", "walk through staged reviews", or "what's staged".
 ---
 
 # Review Staged
@@ -114,35 +114,20 @@ gh api "repos/{org}/{repo}/actions/runs?branch={branch}&per_page=5" \
   -q '.workflow_runs[] | "\(.name): \(.status) \(.conclusion)"'
 ```
 
-Print this block (and only this block — no extra commentary):
+Print this block (and only this block — no extra commentary). It must fit one phone
+screen: a headline, at most 3 bullets, and the ask last.
 
 ```
-*PR #{pr}: {title}* — {url}
-@{author} · {branch} → {base} · +{additions}/-{deletions} ({diffSize})
+*PR #{pr}: {title}* — {url} — *{APPROVE | COMMENT}*
+- {the 1-3 things that matter most: top Critical/Important finding with file:line, a breaking/API/DB change, or failing CI — one line each, max 3 bullets total}
+- ({N} more suggestions/nits — show on request)   ← only if any
 
-*Why:* {motivation}
-
-*Changes*
-- Web view:   {value or "none"}
-- API:        {value or "none"}
-- Database:   {value or "none"}
-- Breaking:   {value or "none"}
-- Arch:       {value or "none"}
-
-*CI:* {one-line summary — e.g. "all green" / "lint failing" / "1 failure: build"}
-
-*Concerns ({count})*
-- {Critical/Important findings, each on one line with file:line}
-- ({N} suggestions/nits — show on request)
-
-*Verdict:* {APPROVE | COMMENT} — {one-line reasoning from review file}
+What do you want to do?
+1 post · 2 skip · 3 draft · 4 discuss
 ```
 
-Then prompt:
-
-```
-What do you want to do? (post it / skip / next / draft it / discuss)
-```
+Fold the one-line verdict reasoning into the headline or first bullet. Omit "none" fields,
+the Why/Changes grid, and author/branch/diff-size lines — the owner can ask via `discuss`.
 
 Stop and wait for the owner's response.
 
@@ -150,9 +135,10 @@ Stop and wait for the owner's response.
 
 ## 4. Handle the action
 
-Match the owner's response:
+Match the owner's response — a number or its verb (`1`/`post it`, `2`/`skip`,
+`3`/`draft it`, `4`/anything else):
 
-### `post it`
+### `post it` (1)
 
 1. Submit the review:
    ```bash
@@ -182,7 +168,7 @@ Print the posted review URL.
 
 Move to the next PR.
 
-### `skip`
+### `skip` (2)
 
 Leave the task store record as `staged: true`. Do nothing. Move to the next PR.
 
@@ -190,17 +176,17 @@ Leave the task store record as `staged: true`. Do nothing. Move to the next PR.
 
 Same as `skip` — move on without action.
 
-### `draft it`
+### `draft it` (3)
 
 Print the full review body and inline comments from `state/reviews/pr_review_{pr}.json`
 (the JSON destined for the GitHub API). Format the inline comments as a list:
-`{path}:{line} — {body}`. **Do not post.** Re-prompt for an action verb.
+`{path}:{line} — {body}`. **Do not post.** Re-prompt with the numbered options.
 
-### Anything else (discussion)
+### `discuss` / anything else (4)
 
 Treat the response as a question or pushback. Engage conversationally — explain a
 finding, look up code, run `git show` or `gh pr diff` as needed. **Do not post.**
-After the discussion settles, re-prompt with the action verbs.
+After the discussion settles, re-prompt with the numbered options.
 
 ---
 

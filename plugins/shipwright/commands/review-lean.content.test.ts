@@ -766,3 +766,13 @@ describe("review-lean — not wired to any cron or default dispatch", () => {
     expect(reviewMd).not.toContain("review-lean");
   });
 });
+
+describe("review-lean — concise posted review (CSM-2.6)", () => {
+  it("specifies a verdict-first body and one-issue inline comments, fix first", () => {
+    const c = norm(corpus);
+    expect(c).toContain("Concise posted review (CSM-2.6)");
+    expect(c).toContain("1-3 findings that matter most");
+    expect(c).toContain("covers **one issue** and leads with the fix suggestion");
+    expect(norm(spine)).toContain("one issue per inline comment, fix suggestion first");
+  });
+});
