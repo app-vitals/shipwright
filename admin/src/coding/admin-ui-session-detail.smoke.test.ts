@@ -492,6 +492,7 @@ describe("admin UI — session detail page", () => {
                     id: "m1",
                     agentId: AGENT_ID,
                     email: memberEmail,
+                    memberId: null,
                     createdAt: new Date("2024-01-01"),
                   },
                 ]
@@ -501,6 +502,7 @@ describe("admin UI — session detail page", () => {
             id: "m1",
             agentId: AGENT_ID,
             email: memberEmail,
+            memberId: null,
             createdAt: new Date(),
           }),
           remove: async () => {},
@@ -564,6 +566,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -573,6 +576,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
@@ -621,6 +625,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -630,6 +635,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
@@ -770,6 +776,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -779,6 +786,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
