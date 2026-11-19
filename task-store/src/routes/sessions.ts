@@ -28,10 +28,13 @@
  *   POST   /sessions/:slug/lock    acquire the planning lock (PLU-2.4; 409 when held)
  *   DELETE /sessions/:slug/lock    release it (403 for a non-holder)
  *   GET    /sessions/preflight/scope  which repos the token may write to (PLU-2.4)
- *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
- *                          agent tokens regardless of ownership; unlike the
- *                          GET routes above, there is no agent-scoped
- *                          visibility carve-out for this write.
+ *   PATCH /sessions/:slug  rename/archive/owner/homeRepo/repos (SESH-3.1,
+ *                          PWE-1.1) — follows task-store scope: admin tokens
+ *                          are unrestricted; an agent token may write when
+ *                          every repo in the session (task repos + document
+ *                          repos) is in its scope. 404 when the session is
+ *                          not visible to the agent, 403 when visible but
+ *                          not wholly in scope or when it has no repos.
  */
 
 import { readJson } from "@app-vitals/agent-lib/http";
@@ -47,12 +50,12 @@ import {
   ScopePreflightQuerySchema,
   ScopePreflightResponseSchema,
   SessionAccountQuerySchema,
+  SessionListQuerySchema,
+  SessionListResponseSchema,
   SessionLockBodySchema,
   SessionLockConflictSchema,
   SessionLockReleaseSchema,
   SessionLockSchema,
-  SessionListQuerySchema,
-  SessionListResponseSchema,
   SessionPatchBodySchema,
   SessionSchema,
   SessionSlugParamSchema,
@@ -118,9 +121,9 @@ const patchRoute = createRoute({
   method: "patch",
   path: "/:slug",
   tags: ["sessions"],
-  summary: "Rename/archive a session — admin-only",
+  summary: "Update a session (title, archive, owner, homeRepo, repos)",
   description:
-    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+    "Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -138,7 +141,8 @@ const patchRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     403: {
-      description: "Forbidden — admin tokens only",
+      description:
+        "Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only)",
       content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
@@ -293,6 +297,54 @@ async function assertSessionVisible(
   if (!visible) throw new NotFoundError("session not found");
 }
 
+/**
+ * PWE-1.1: gate a session write on the caller's scope. Admin tokens pass.
+ * For an agent token: not visible (GET rule, own account only) => 404 so
+ * existence never leaks; visible => every repo in the session (task repos,
+ * declared repos, document home + target repos) must be in the token's scope,
+ * and a session with no repos is admin-only => 403. Returns the agent's repo
+ * scope (null for admin) so the caller can vet a `repos` patch against it.
+ */
+async function assertSessionWritable(
+  sessionService: SessionServiceLike,
+  c: Context<TaskStoreAuthEnv>,
+): Promise<string[] | null> {
+  const agentId = c.get("agentId");
+  if (agentId === null) return null;
+  const slug = c.req.param("slug") as string;
+  const accountId = slugAccountId(c);
+  const scope = c.get("repos") ?? [];
+
+  const visible = await sessionService.get(
+    slug,
+    { agentId, repos: scope },
+    accountId,
+  );
+  if (!visible) throw new NotFoundError("session not found");
+
+  // Unscoped read: the visible view above filters documents to the agent's
+  // scope, which would hide exactly the out-of-scope repos we must check.
+  const full = await sessionService.get(slug, undefined, accountId);
+  if (!full) throw new NotFoundError("session not found");
+  const repos = new Set(full.repos);
+  for (const d of full.documents) {
+    repos.add(d.repo);
+    for (const r of d.repos) repos.add(r);
+  }
+  if (repos.size === 0) {
+    throw new ForbiddenError(
+      "session has no repos; only admin tokens may update it",
+    );
+  }
+  const outside = [...repos].filter((r) => !scope.includes(r));
+  if (outside.length > 0) {
+    throw new ForbiddenError(
+      `session spans repos outside this token's scope: ${outside.join(", ")}`,
+    );
+  }
+  return scope;
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createSessionsRoutes(
@@ -366,15 +418,12 @@ export function createSessionsRoutes(
     return c.json(session, 200);
   });
 
-  // ─── Patch (rename/archive, SESH-3.1) ──────────────────────────────────────
+  // ─── Patch (rename/archive, SESH-3.1; scoped writes, PWE-1.1) ──────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
-    const agentId = c.get("agentId");
-    // Admin-only, no exceptions — unlike the GET routes, agent-scoped tokens
-    // never get read-through visibility into a write here.
-    if (agentId !== null) {
-      throw new ForbiddenError("session updates are admin-only");
-    }
+    // Scope is checked before the body so an out-of-scope caller learns
+    // nothing from validation errors.
+    const writeScope = await assertSessionWritable(sessionService, c);
 
     const body = await readJson(c);
     const patch: SessionUpdatePatch = {};
@@ -408,12 +457,19 @@ export function createSessionsRoutes(
         );
       }
       patch.repos = body.repos as string[];
+      // An agent may not declare repos it has no scope over.
+      if (
+        writeScope !== null &&
+        patch.repos.some((r) => !writeScope.includes(r))
+      ) {
+        throw new ForbiddenError("repos must be within this token's scope");
+      }
     }
 
     const updated = await sessionService.update(
       c.req.param("slug"),
       patch,
-      "admin",
+      c.get("agentId") ?? "admin",
       slugAccountId(c),
     );
     return c.json(updated, 200);

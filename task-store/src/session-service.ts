@@ -730,9 +730,9 @@ export class SessionService implements SessionServiceLike {
       throw this.translateNotFound(err, "session not found");
     }
 
-    // The row we just wrote unconditionally exists and update() is
-    // admin-only (no agentScope), so get() cannot legitimately return null
-    // here — the fallback exists only to satisfy the type checker.
+    // The row we just wrote unconditionally exists and this read is unscoped
+    // (the route already enforced the caller's scope), so get() cannot
+    // legitimately return null here — the fallback exists only to satisfy the type checker.
     const updated = await this.get(slug, undefined, accountId);
     if (!updated) throw new NotFoundError("session not found");
 
