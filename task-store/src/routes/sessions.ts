@@ -28,10 +28,18 @@
  *   POST   /sessions/:slug/lock    acquire the planning lock (PLU-2.4; 409 when held)
  *   DELETE /sessions/:slug/lock    release it (403 for a non-holder)
  *   GET    /sessions/preflight/scope  which repos the token may write to (PLU-2.4)
- *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
- *                          agent tokens regardless of ownership; unlike the
- *                          GET routes above, there is no agent-scoped
- *                          visibility carve-out for this write.
+ *   POST   /sessions/:slug/plan    write the plan document, its tasks and the
+ *                          planned specs in ONE transaction (PWE-3.1); every
+ *                          repo involved must be in an agent token's scope
+ *                          (403), a lock held by someone else is 409, a task
+ *                          id collision is 409 and rolls everything back.
+ *   PATCH /sessions/:slug  rename/archive/owner/homeRepo/repos (SESH-3.1,
+ *                          PWE-1.1) — follows task-store scope: admin tokens
+ *                          are unrestricted; an agent token may write when
+ *                          every repo in the session (task repos + document
+ *                          repos) is in its scope. 404 when the session is
+ *                          not visible to the agent, 403 when visible but
+ *                          not wholly in scope or when it has no repos.
  */
 
 import { readJson } from "@app-vitals/agent-lib/http";
@@ -40,28 +48,41 @@ import type { Context } from "hono";
 import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../errors.ts";
+import type { Prisma } from "../index.ts";
 import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   ErrorSchema,
   ScopePreflightQuerySchema,
   ScopePreflightResponseSchema,
   SessionAccountQuerySchema,
+  SessionListQuerySchema,
+  SessionListResponseSchema,
   SessionLockBodySchema,
   SessionLockConflictSchema,
   SessionLockReleaseSchema,
   SessionLockSchema,
-  SessionListQuerySchema,
-  SessionListResponseSchema,
   SessionPatchBodySchema,
+  SessionPlanBodySchema,
+  SessionPlanResponseSchema,
   SessionSchema,
   SessionSlugParamSchema,
 } from "../openapi-schemas.ts";
+import type {
+  SessionPlanDocumentInput,
+  SessionPlanServiceLike,
+} from "../session-plan-service.ts";
 import type {
   SessionListFilters,
   SessionServiceLike,
   SessionUpdatePatch,
 } from "../session-service.ts";
+import { accountIdForCreate, validateBulkTasks } from "./tasks.ts";
 
 // ─── Route definitions ────────────────────────────────────────────────────────
 
@@ -118,9 +139,9 @@ const patchRoute = createRoute({
   method: "patch",
   path: "/:slug",
   tags: ["sessions"],
-  summary: "Rename/archive a session — admin-only",
+  summary: "Update a session (title, archive, owner, homeRepo, repos)",
   description:
-    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+    "Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
     query: SessionAccountQuerySchema,
@@ -138,7 +159,8 @@ const patchRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     403: {
-      description: "Forbidden — admin tokens only",
+      description:
+        "Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only)",
       content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
@@ -242,6 +264,54 @@ const scopePreflightRoute = createRoute({
   },
 });
 
+const planRoute = createRoute({
+  method: "post",
+  path: "/:slug/plan",
+  tags: ["sessions"],
+  summary:
+    "Write a session's plan document, tasks and planned specs atomically",
+  description:
+    "One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.",
+  request: {
+    params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
+    body: {
+      content: { "application/json": { schema: SessionPlanBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Plan written: the plan document id and the inserted task count",
+      content: { "application/json": { schema: SessionPlanResponseSchema } },
+    },
+    400: {
+      description:
+        "Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description:
+        "Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written",
+      content: { "application/json": { schema: SessionLockConflictSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; nothing was written",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -293,10 +363,66 @@ async function assertSessionVisible(
   if (!visible) throw new NotFoundError("session not found");
 }
 
+/**
+ * PWE-1.1: gate a session write on the caller's scope. Admin tokens pass.
+ * For an agent token: not visible (GET rule, own account only) => 404 so
+ * existence never leaks; visible => every repo in the session (task repos,
+ * declared repos, document home + target repos) must be in the token's scope,
+ * and a session with no repos is admin-only => 403. Returns the agent's repo
+ * scope (null for admin) so the caller can vet a `repos` patch against it.
+ */
+async function assertSessionWritable(
+  sessionService: SessionServiceLike,
+  c: Context<TaskStoreAuthEnv>,
+): Promise<string[] | null> {
+  const agentId = c.get("agentId");
+  if (agentId === null) return null;
+  const slug = c.req.param("slug") as string;
+  const accountId = slugAccountId(c);
+  const scope = c.get("repos") ?? [];
+
+  const visible = await sessionService.get(
+    slug,
+    { agentId, repos: scope },
+    accountId,
+  );
+  if (!visible) throw new NotFoundError("session not found");
+
+  // Unscoped read: the visible view above filters documents to the agent's
+  // scope, which would hide exactly the out-of-scope repos we must check.
+  const full = await sessionService.get(slug, undefined, accountId);
+  if (!full) throw new NotFoundError("session not found");
+  const repos = new Set(full.repos);
+  for (const d of full.documents) {
+    repos.add(d.repo);
+    for (const r of d.repos) repos.add(r);
+  }
+  if (repos.size === 0) {
+    throw new ForbiddenError(
+      "session has no repos; only admin tokens may update it",
+    );
+  }
+  const outside = [...repos].filter((r) => !scope.includes(r));
+  if (outside.length > 0) {
+    throw new ForbiddenError(
+      `session spans repos outside this token's scope: ${outside.join(", ")}`,
+    );
+  }
+  return scope;
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
+
+/** Disabled plan writer used when the feature is not wired up in a test context. */
+const unwiredPlanService: SessionPlanServiceLike = {
+  async plan() {
+    throw new Error("session plan writes are not configured");
+  },
+};
 
 export function createSessionsRoutes(
   sessionService: SessionServiceLike,
+  planService: SessionPlanServiceLike = unwiredPlanService,
 ): OpenAPIHono<TaskStoreAuthEnv> {
   const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
@@ -366,15 +492,12 @@ export function createSessionsRoutes(
     return c.json(session, 200);
   });
 
-  // ─── Patch (rename/archive, SESH-3.1) ──────────────────────────────────────
+  // ─── Patch (SESH-3.1; scoped writes, PWE-1.1) ───────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
-    const agentId = c.get("agentId");
-    // Admin-only, no exceptions — unlike the GET routes, agent-scoped tokens
-    // never get read-through visibility into a write here.
-    if (agentId !== null) {
-      throw new ForbiddenError("session updates are admin-only");
-    }
+    // Scope is checked before the body so an out-of-scope caller learns
+    // nothing from validation errors.
+    const writeScope = await assertSessionWritable(sessionService, c);
 
     const body = await readJson(c);
     const patch: SessionUpdatePatch = {};
@@ -408,12 +531,19 @@ export function createSessionsRoutes(
         );
       }
       patch.repos = body.repos as string[];
+      // An agent may not declare repos it has no scope over.
+      if (
+        writeScope !== null &&
+        patch.repos.some((r) => !writeScope.includes(r))
+      ) {
+        throw new ForbiddenError("repos must be within this token's scope");
+      }
     }
 
     const updated = await sessionService.update(
       c.req.param("slug"),
       patch,
-      "admin",
+      c.get("agentId") ?? "admin",
       slugAccountId(c),
     );
     return c.json(updated, 200);
@@ -472,6 +602,61 @@ export function createSessionsRoutes(
       slugAccountId(c),
     );
     return c.json({ released: true }, 200);
+  });
+
+  // ─── Plan write (PWE-3.1) ──────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: matches sibling handlers
+  app.openapi(planRoute, async (c): Promise<any> => {
+    const slug = c.req.param("slug") as string;
+    const agentId = c.get("agentId");
+    const body = await readJson(c);
+    const plan = body.plan as SessionPlanDocumentInput;
+    const tasks = body.tasks as Record<string, unknown>[];
+    const specs = (body.specs ?? []) as number[];
+    for (const task of tasks) {
+      if (
+        task.session !== undefined &&
+        task.session !== null &&
+        task.session !== slug
+      ) {
+        throw new BadRequestError(
+          `task '${String(task.id)}' has session '${String(task.session)}', not '${slug}'`,
+        );
+      }
+    }
+    // Format and field checks exactly as POST /tasks/bulk. Scope is passed as
+    // unrestricted here because the service enforces it as a 403 across
+    // every repo in the request (bulk answers an out-of-scope task repo 400).
+    const accountId = accountIdForCreate(c);
+    validateBulkTasks(tasks, null, accountId);
+    const holder =
+      typeof body.holder === "string" ? body.holder : (agentId ?? "admin");
+
+    try {
+      const result = await planService.plan(
+        {
+          session: slug,
+          accountId,
+          holder,
+          plan,
+          tasks: tasks as Prisma.TaskCreateInput[],
+          specs,
+        },
+        { repos: agentId === null ? null : (c.get("repos") ?? []) },
+      );
+      return c.json(result, 200);
+    } catch (err) {
+      // Same no-leak rule as POST /tasks/bulk for a task id collision (task
+      // ids are global). The lock 409 carries its details and passes through.
+      if (
+        err instanceof ConflictError &&
+        err.details === undefined &&
+        c.get("accountId") !== null
+      ) {
+        throw new ConflictError("task id unavailable");
+      }
+      throw err;
+    }
   });
 
   return app;

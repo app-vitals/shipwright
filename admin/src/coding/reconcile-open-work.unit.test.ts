@@ -141,27 +141,26 @@ describe("createTaskStoreOpenWorkPort", () => {
     );
   });
 
-  it("pages until a short page is returned", async () => {
-    const full = Array.from({ length: 100 }, (_, i) => ({
-      id: `x${i}`,
-      repo: "o/removed",
-      title: "t",
-    }));
-    let taskCalls = 0;
+  it("follows nextCursor until it is null, never sending offset", async () => {
+    const page = (n: number) =>
+      Array.from({ length: 2 }, (_, i) => ({
+        id: `x${n}-${i}`,
+        repo: "o/removed",
+        title: "t",
+      }));
     const { port, calls } = make((c) => {
-      if (c.url.pathname === "/prs") return json({ prs: [] });
-      taskCalls++;
-      return json({
-        tasks:
-          c.url.searchParams.get("offset") === "0" && taskCalls === 1
-            ? full
-            : [],
-      });
+      if (c.url.pathname === "/prs") return json({ prs: [], nextCursor: null });
+      const cursor = c.url.searchParams.get("cursor");
+      if (!cursor) return json({ tasks: page(1), nextCursor: "c2" });
+      if (cursor === "c2") return json({ tasks: page(2), nextCursor: "c3" });
+      return json({ tasks: page(3), nextCursor: null });
     });
     const items = await port.listOpenWork("a1", ["o/removed"]);
-    expect(items).toHaveLength(100);
+    // 3 pages of 2 rows (deduped by id across the repeated status/who scans).
+    expect(items).toHaveLength(6);
     expect(
-      calls.filter((c) => c.url.searchParams.get("offset") === "100").length,
+      calls.filter((c) => c.url.searchParams.get("cursor") === "c3").length,
     ).toBeGreaterThan(0);
+    expect(calls.every((c) => !c.url.searchParams.has("offset"))).toBe(true);
   });
 });

@@ -1480,7 +1480,7 @@ describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
 
 function extractCarryThroughSection(md: string): string {
   const match = md.match(
-    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list and dependency map as a first pass)/,
+    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list as a first pass)/,
   );
   expect(match).not.toBeNull();
   return match?.[0] ?? "";
@@ -1581,8 +1581,8 @@ describe("plan-session.md — --initiative close-out (ICO-1.1)", () => {
     expect(s).toMatch(/never fail/i);
   });
 
-  it("only runs when the bulk write succeeded", () => {
-    expect(extractCloseout()).toMatch(/bulk (write|POST) (fails|failed)|failed or partial/);
+  it("only runs when the plan write succeeded", () => {
+    expect(extractCloseout()).toMatch(/(plan|bulk) (write|POST) (fails|failed)|write fails|failed or partial/);
   });
 
   it("states that both the built-in and Configured Methodology Dispatch paths converge on it", () => {
@@ -1683,26 +1683,54 @@ describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
     expect(step0).toMatch(/decision log/);
   });
 
-  it("Step 6b tasks carry planDocumentId, specDocumentId, owner, originKind document and originRef = plan document id (AC4)", () => {
+  it("Step 6b tasks carry specDocumentId and owner; the store stamps planDocumentId, originKind and originRef (PWE-3.2)", () => {
     const section = extractStep6bSection(content);
     const block = section.match(/```json[\s\S]*?```/)?.[0] ?? "";
     expect(block).toContain('"source": "planning/{session}/PLAN.md"');
-    expect(block).toContain('"planDocumentId": "{PLAN_DOC_ID}"');
     expect(block).toContain('"specDocumentId": "{SPEC_DOC_ID}"');
     expect(block).toContain('"owner": "{owner}"');
-    expect(block).toContain('"originKind": "document"');
-    expect(block).toContain('"originRef": "{PLAN_DOC_ID}"');
+    expect(block).not.toContain("planDocumentId");
+    expect(block).not.toContain("originKind");
+    expect(block).not.toContain("originRef");
     const lower = prose(section);
+    expect(lower).toMatch(/store stamps/);
     expect(lower).toMatch(/spec's owner|owner of the spec/);
     expect(lower).toMatch(/omit `?owner`? when (empty|none|unset)/);
   });
 
-  it("marks planned specs with plannedAt and widens the session's declared repos after the bulk POST", () => {
+  it("writes plan, tasks and planned specs with one POST /sessions/{session}/plan and keeps the plan response id (PWE-3.2)", () => {
     const section = extractStep6bSection(content);
-    expect(section).toContain("plannedAt");
-    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}");
-    expect(section).toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}");
-    expect(prose(section)).toMatch(/widen/);
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/sessions/{session}/plan"');
+    expect(section).toContain("planDocumentId");
+    expect(section).toMatch(/PLAN_DOC_ID/);
+    expect(prose(section)).toMatch(/all-or-nothing/);
+    expect(prose(section)).toMatch(/release the planning lock/);
+  });
+
+  it("Step 6 no longer registers the plan document, PATCHes plannedAt, or PATCHes session repos (PWE-3.2)", () => {
+    const step6 = content.slice(content.indexOf("## Step 6: Write to Queue"), content.indexOf("**Step 6c — Autonomous mode"));
+    expect(step6).not.toContain("POST $SHIPWRIGHT_TASK_STORE_URL/documents");
+    expect(step6).not.toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/");
+    expect(step6).not.toContain("PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/");
+    expect(step6).not.toContain("Register the plan document");
+    expect(prose(step6)).toMatch(/no separate .*sessions\/\{session\}`? to widen|no separate `patch/);
+  });
+
+  it("keeps POST /tasks/bulk only on the DOCS_API=off path (PWE-3.2)", () => {
+    const section = extractStep6bSection(content);
+    const offIdx = section.indexOf("`DOCS_API=off` path");
+    expect(offIdx).toBeGreaterThan(-1);
+    const bulkIdx = section.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk"');
+    expect(bulkIdx).toBeGreaterThan(offIdx);
+    expect(section.indexOf("/sessions/{session}/plan")).toBeLessThan(offIdx);
+  });
+
+  it("Step 6b.2 says specs are marked planned and the session repos derived inside the Step 6b write (PWE-3.2)", () => {
+    const idx = content.indexOf("**Step 6b.2");
+    expect(idx).toBeGreaterThan(-1);
+    const sec = prose(content.slice(idx, content.indexOf("**Step 6c — Autonomous mode")));
+    expect(sec).toContain("plannedat");
+    expect(sec).toMatch(/inside the step 6b transaction/);
   });
 
   it("no longer ties the input to a single PRODUCT-SPEC.md: Step 1 reads specs[] with the legacy file as spec 1", () => {
@@ -1775,5 +1803,70 @@ describe("plan-session.md — planning lock, append-only passes and docs PR (PLU
     const sec = content.slice(start, content.indexOf("**Step 6d", start));
     expect(sec).toContain("planDocumentId");
     expect(sec).toMatch(/already closed[\s\S]*still link the plan/);
+  });
+});
+
+describe("plan-session.md — staged, concise interactive chat (CSM-2.3)", () => {
+  const slice = (from: string, to: string) => {
+    const start = content.indexOf(from);
+    const end = content.indexOf(to, start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  };
+
+  it("defines chat message rules: ask last, one decision per message, one phone screen", () => {
+    const section = slice("## Chat Message Rules (CSM-2.3)", "## Step 0: Resolve Session");
+    expect(section).toContain("**Ask last.**");
+    expect(section).toContain("**One decision per message.**");
+    expect(section).toContain("one phone screen");
+    expect(section).toContain("`--autonomous` runs have no human and are unchanged");
+  });
+
+  it("orientation is a headline plus 2-3 lines, not a banner", () => {
+    const section = slice("Present a condensed orientation", "If no spec exists");
+    expect(section).toContain("a headline plus 2-3 lines");
+    expect(section).not.toContain("━");
+  });
+
+  it("Step 4 opens with a 3-line approach summary then one decision per message, ask last", () => {
+    const section = slice("**Interactive staging (CSM-2.3).**", "### `--autonomous` Mode");
+    expect(section).toContain("3-line approach summary");
+    expect(section).toContain("Raise each design decision or risk as its own message");
+    expect(section).toContain("the ask **last**");
+    expect(section).toContain("Design approved? 1 yes / 2 adjust");
+  });
+
+  it("Step 5 shows a short numbered task list and keeps the graph and table out of chat", () => {
+    const section = slice("**Interactive presentation (CSM-2.3).**", "### `--autonomous` Mode");
+    expect(section).toContain("short numbered list");
+    expect(section).toContain("`{n}. {id} — {title} (deps: {ids or none})`");
+    expect(section).toContain("Do **not** post the ASCII dependency graph or the summary table in chat");
+    expect(section).toContain("`PLAN.md`");
+    expect(section).toContain("drill in");
+  });
+
+  it("dispatch-path interactive approval also stages the breakdown", () => {
+    const section = slice("#### Interactive Approval", "Once the breakdown has validated");
+    expect(section).toContain("numbered task list");
+    expect(section).toContain("ask last");
+  });
+
+  it("QUEUED block is condensed to 3-4 lines plus links", () => {
+    const section = content.slice(content.indexOf("Confirm with a condensed block"));
+    expect(section).toContain("3-4 lines plus links");
+    expect(section).toContain("QUEUED — {session}: {count} tasks");
+    expect(section).toContain("Plan PR: {url}");
+    expect(section).not.toContain("READY TO START (no dependencies):");
+    expect(section).not.toContain("BLOCKED (waiting on deps):");
+  });
+
+  // Retired (CSM-2.3): the chat-posted ASCII graph and summary table, the
+  // orientation banner and the long QUEUED block must not return.
+  it("does not contain the retired verbose chat output", () => {
+    expect(content).not.toContain("Present the task list and dependency map as a first pass");
+    expect(content).not.toContain("Present the map in two forms:");
+    expect(content).not.toContain("Present a brief orientation:");
+    expect(content).not.toContain("Tasks queued: {count}");
   });
 });

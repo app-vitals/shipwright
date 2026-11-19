@@ -22,6 +22,12 @@ import {
 } from "./admin-ui-verification-cards.ts";
 import { DEFAULT_CLAIM_TTL_MS } from "./claim-ttl.ts";
 import {
+  applyCursorState,
+  type CursorPagination,
+  type CursorState,
+  renderCursorPager,
+} from "./cursor-paging.ts";
+import {
   type OwnerView,
   ownerViewParam,
   renderDocumentsBlock,
@@ -223,7 +229,7 @@ export function renderRepoOrgFilterFields(
  * set of matching agent ids first, and membership in that set has to be
  * checked client-side against a widened, unpaginated fetch — otherwise a
  * fuzzy/partial name match that hits N agents can't be expressed as a single
- * upstream query, and normal limit/offset pagination would undercount pages
+ * upstream query, and normal cursor pagination would undercount pages
  * once the client-side filter narrows the result set.
  *
  * Originally lived inline in the Tasks page route (admin-ui.ts); extracted
@@ -235,32 +241,48 @@ export function renderRepoOrgFilterFields(
  * than hardcoded here.
  *
  * When `agentName` is absent/empty, this is a passthrough: `fetchPage` runs
- * once with the caller's own requested limit/offset and no filtering happens
+ * once with the caller's own requested limit/cursor and no filtering happens
  * (`filterActive: false`). When `agentName` is present, `searchByName` runs
  * once to resolve it to zero or more agent ids (a name with zero matches
  * still produces a valid, empty result rather than an error), `fetchPage`
- * runs once at limit 500 / offset 0 to gather a page large enough to filter
+ * runs once at limit 500 (first page) to gather a page large enough to filter
  * against client-side, and the result is filtered, its total recomputed from
  * the filtered set, and re-sliced to the caller's originally-requested
- * limit/offset (`filterActive: true`).
+ * limit/cursor (`filterActive: true`).
  */
 export async function resolveAgentNameFilterAndPaginate<T>(options: {
   agentName: string | undefined;
   searchByName: (name: string) => Promise<Array<{ id: string }>>;
   limit: number;
-  offset: number;
+  /**
+   * Page cursor. Passthrough mode forwards it to `fetchPage` (the task-store's
+   * opaque keyset cursor). Filtered mode never sends it upstream: the widened
+   * fetch is re-sliced locally, so there the cursor is a plain start index
+   * into the filtered set, minted by this function's own `nextCursor`.
+   */
+  cursor?: string;
   matches: (item: T, matchedAgentIds: Set<string>) => boolean;
   fetchPage: (
     limit: number,
-    offset: number,
-  ) => Promise<{ items: T[]; total: number }>;
-}): Promise<{ items: T[]; total: number; filterActive: boolean }> {
-  const { agentName, searchByName, limit, offset, matches, fetchPage } =
+    cursor?: string,
+  ) => Promise<{ items: T[]; total: number; nextCursor?: string | null }>;
+}): Promise<{
+  items: T[];
+  total: number;
+  nextCursor: string | null;
+  filterActive: boolean;
+}> {
+  const { agentName, searchByName, limit, cursor, matches, fetchPage } =
     options;
 
   if (!agentName) {
-    const { items, total } = await fetchPage(limit, offset);
-    return { items, total, filterActive: false };
+    const { items, total, nextCursor } = await fetchPage(limit, cursor);
+    return {
+      items,
+      total,
+      nextCursor: nextCursor ?? null,
+      filterActive: false,
+    };
   }
 
   const matchedAgents = await searchByName(agentName);
@@ -269,12 +291,16 @@ export async function resolveAgentNameFilterAndPaginate<T>(options: {
   // Widen to a single large page (matching every other client-side filter
   // in this codebase) rather than paginating the upstream fetch, since the
   // filtered total isn't known until every candidate row has been fetched.
-  const { items: fetched } = await fetchPage(500, 0);
+  const { items: fetched } = await fetchPage(500);
   const filtered = fetched.filter((item) => matches(item, matchedAgentIds));
+  const start =
+    cursor && /^\d+$/.test(cursor) ? Number.parseInt(cursor, 10) : 0;
+  const end = start + limit;
 
   return {
-    items: filtered.slice(offset, offset + limit),
+    items: filtered.slice(start, end),
     total: filtered.length,
+    nextCursor: end < filtered.length ? String(end) : null,
     filterActive: true,
   };
 }
@@ -329,10 +355,11 @@ export function renderTasksPage(
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
-  pagination: { total: number; limit: number; page: number } = {
+  pagination: CursorPagination = {
+    count: 0,
     total: 0,
     limit: 50,
-    page: 1,
+    state: { prev: [] },
   },
   opts?: {
     error?: string;
@@ -433,19 +460,13 @@ export function renderTasksPage(
       agentFilterHtml,
       renderBlockerBadges,
       renderKindBadge,
-      page: pagination.page,
       now,
     });
   }
 
   // Pagination (hoisted above the row loop so row links can carry the current
   // list view as a `from` back-link param — see makePageUrl usage below).
-  const totalPages = Math.max(
-    1,
-    Math.ceil(pagination.total / pagination.limit),
-  );
-  const page = pagination.page;
-  const makePageUrl = (p: number) => {
+  const makePageUrl = (state: CursorState | null) => {
     const params = new URLSearchParams();
     if (filters.status) params.set("status", filters.status);
     else if (filters.state) params.set("state", filters.state);
@@ -459,7 +480,7 @@ export function renderTasksPage(
     if (filters.ideas) params.set("ideas", "1");
     if (filters.ownerView)
       params.set("owner", ownerViewParam(filters.ownerView));
-    if (p > 1) params.set("page", String(p));
+    applyCursorState(params, state);
     // Keep self-referential links inside this view — bare /admin/tasks now
     // defaults to the board (AXR-1.3), so every link generated in this
     // table-view branch must carry ?view=table forward or it silently
@@ -471,7 +492,7 @@ export function renderTasksPage(
 
   // Mine / All switch target: same filters, table view, page reset.
   const makeOwnerUrl = (owner: string) => {
-    const u = new URL(makePageUrl(1), "http://x");
+    const u = new URL(makePageUrl(null), "http://x");
     u.searchParams.set("owner", owner);
     return `${u.pathname}${u.search}`;
   };
@@ -482,7 +503,7 @@ export function renderTasksPage(
   // row links into the Task Detail and Session Detail pages always carry it
   // as `?from=` so their "← Tasks" back link returns to this table view
   // (with its filters) instead of falling through to the board.
-  const currentListUrl = makePageUrl(page);
+  const currentListUrl = makePageUrl(pagination.state);
   const detailHrefSuffix = `?from=${encodeURIComponent(currentListUrl)}`;
 
   const rows =
@@ -629,21 +650,12 @@ export function renderTasksPage(
     )
     .join("");
 
-  const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
-  const to = Math.min(page * pagination.limit, pagination.total);
   // Suppress pagination in read-only mode: makePageUrl always returns /admin/tasks,
   // which is auth-walled, so unauthenticated visitors following Next/Prev links
   // would hit a login redirect.
-  const paginationHtml =
-    pagination.total === 0 || readOnly
-      ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
-      <span>${from}–${to} of ${pagination.total}</span>
-      <div style="display:flex;gap:4px">
-        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
-        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
-      </div>
-    </div>`;
+  const paginationHtml = readOnly
+    ? ""
+    : renderCursorPager(pagination, makePageUrl);
 
   return renderAdminPage({
     title: "Tasks — Shipwright",
@@ -797,7 +809,6 @@ function renderTasksBoard(args: {
     blockedBy: BlockedByEntry[] | null | undefined,
   ) => string;
   renderKindBadge: (kind: string | null | undefined) => string;
-  page: number;
   // Reference "current" time for card age badges (TBC-1.1) — threaded down
   // from renderTasksPage so renderCard (defined below) never calls
   // `new Date()` itself (t2_clock_injection).
@@ -816,7 +827,6 @@ function renderTasksBoard(args: {
     agentFilterHtml,
     renderBlockerBadges,
     renderKindBadge,
-    page,
     now,
   } = args;
 
@@ -861,12 +871,12 @@ function renderTasksBoard(args: {
 
   // Query string for the current filter selection, mirroring the table
   // view's makePageUrl param order/semantics (status/state, session, repo,
-  // org, source, agent, hitl, page) so a URL built here round-trips
+  // org, source, agent, hitl) so a URL built here round-trips
   // identically whether the request landed on the board or the table. The
   // board doesn't render its own state-tab or pagination controls (its 5
   // columns replace the Ready/In Progress/Blocked/Closed tabs, and it
   // shows every fetched task rather than paging through them), but a
-  // bookmarked/back-linked URL carrying `state` or `page` still needs to
+  // bookmarked/back-linked URL carrying `state` still needs to
   // reproduce faithfully in the task/session detail "from" back-link.
   const currentBoardUrl = (() => {
     const params = new URLSearchParams();
@@ -882,7 +892,6 @@ function renderTasksBoard(args: {
     if (filters.ideas) params.set("ideas", "1");
     if (filters.ownerView)
       params.set("owner", ownerViewParam(filters.ownerView));
-    if (page > 1) params.set("page", String(page));
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
   })();
@@ -1083,7 +1092,8 @@ function renderTasksBoard(args: {
         : renderTasksOwnerSwitch(filters, userName, (owner) => {
             const u = new URL(currentBoardUrl, "http://x");
             u.searchParams.set("owner", owner);
-            u.searchParams.delete("page");
+            u.searchParams.delete("cursor");
+            u.searchParams.delete("prev");
             return `${u.pathname}${u.search}`;
           })
     }
@@ -2417,10 +2427,11 @@ export function renderPrsPage(
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string> = {},
-  pagination: { total: number; limit: number; page: number } = {
+  pagination: CursorPagination = {
+    count: 0,
     total: 0,
     limit: 50,
-    page: 1,
+    state: { prev: [] },
   },
   timezone = "America/Los_Angeles",
   suggestions?: { repos?: string[]; orgs?: string[] },
@@ -2556,12 +2567,7 @@ export function renderPrsPage(
     </div>`;
 
   // Pagination
-  const totalPages = Math.max(
-    1,
-    Math.ceil(pagination.total / pagination.limit),
-  );
-  const page = pagination.page;
-  const makePageUrl = (p: number) => {
+  const makePageUrl = (state: CursorState | null) => {
     const params = new URLSearchParams();
     if (filters.state) params.set("state", filters.state);
     if (filters.reviewState) params.set("reviewState", filters.reviewState);
@@ -2569,23 +2575,12 @@ export function renderPrsPage(
     for (const o of toFilterArray(filters.org)) params.append("org", o);
     if (filters.taskId) params.set("taskId", filters.taskId);
     if (filters.blocked) params.set("blocked", filters.blocked);
-    if (p > 1) params.set("page", String(p));
+    applyCursorState(params, state);
     const qs = params.toString();
     return `/admin/prs${qs ? `?${qs}` : ""}`;
   };
 
-  const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
-  const to = Math.min(page * pagination.limit, pagination.total);
-  const paginationHtml =
-    pagination.total === 0
-      ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
-      <span>${from}–${to} of ${pagination.total}</span>
-      <div style="display:flex;gap:4px">
-        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
-        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
-      </div>
-    </div>`;
+  const paginationHtml = renderCursorPager(pagination, makePageUrl);
 
   // "More filters" disclosure state. `state` already has a visible cue via the
   // Open/Merged/Blocked tab highlighting above, but `reviewState` and `taskId`

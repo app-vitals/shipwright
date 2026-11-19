@@ -47,12 +47,12 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * per-agent scoping. This is a considered inclusion, not an omission.
  *
  * `sessions_update` (PATCH /sessions/{slug}, added to task-store/openapi.json
- * for SESH-3.1) surfaced when this file was next regenerated: it's excluded
- * here, not added to the public surface. Unlike `sessions_list`/`sessions_get`
- * above, the route itself is admin-only (`session updates are admin-only` —
- * task-store/src/routes/sessions.ts throws `ForbiddenError` for any non-admin
- * token), so it's in the same "write op outside the agreed edit surface"
- * category as `prs_findings`, not the "agent-token-scoped read" category.
+ * for SESH-3.1) is excluded here, not added to the public surface. Since
+ * PWE-1.1 the route follows task-store scope (agent tokens may write when
+ * every repo in the session is in their scope; otherwise 404/403) rather than
+ * being admin-only, but it stays a write op outside the agreed edit surface —
+ * the same "write op" category as `prs_findings`, not the "agent-token-scoped
+ * read" category — so exposing it is a separate decision.
  *
  * POM-1.1 (PR origin metrics) added two routes: `POST /prs/census` (batch
  * upsert of authorLogin/headRef/title/state/mergedAt/prCreatedAt/origin,
@@ -108,7 +108,7 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "tasks_events",
   "prs_events",
   "prs_findings",
-  // sessions: admin-only write op
+  // sessions: write op outside the agreed edit surface
   "sessions_update",
   // prs: census batch-upsert write op (POM-1.1) — prs_cursor (the read-only
   // cursor GET) stays public, see the doc comment above.
@@ -116,6 +116,9 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   // documents: planning-document write ops (PLU-2.2) — documents_list stays public.
   "documents_create",
   "documents_update",
+  // sessions: the plan write op (PWE-3.1, POST /sessions/{slug}/plan) — a
+  // planning-pipeline write in the same category as documents_create.
+  "sessions_plan",
 ] as const;
 
 /**

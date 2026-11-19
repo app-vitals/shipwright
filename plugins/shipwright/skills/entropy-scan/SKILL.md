@@ -236,40 +236,18 @@ Rules:
 
 ## Step 5: Print Summary
 
-Whether or not `--summary` was passed, always print a summary to stdout after the scan (or instead of writing the report, if `--summary` was passed):
+Whether or not `--summary` was passed, always print a summary after the scan (or instead of
+writing the report, if `--summary` was passed). Cron runs post this to a channel where nobody
+can reply in the moment, so **cap the final response at 3-5 lines**: a status line, the
+counts, and a link. The full detail (findings, top issues, expired suppressions) stays in
+`entropy-report.md` — never repeat it in the response.
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ENTROPY SCAN COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  HIGH     {N} findings
-  MEDIUM   {N} findings
-  LOW      {N} findings
-  ─────────────────────
-  TOTAL    {N} findings across {N} rules
-  Suppressed: {N}   (.shipwright/suppressions.yml)
-
-{If any expired entries:}
-  Expired suppressions (no longer suppressing — their findings are reported again):
-    - {file} {symbol} — expired {expires}
-
-TOP ISSUES
-──────────
-{List up to 3 highest-severity findings, one line each:}
-  {severity} · {rule_id} · {file_path} — {description}
-
-{If any high-severity findings exist:}
-  ⚠️  Run /entropy-fix to queue task-store tasks for PR-worthy violations.
-
-{If zero findings:}
-  ✓ No violations found. Codebase is clean against active rules.
-
-{If --summary flag: no report written.}
-{Otherwise:}
-  Report written to: entropy-report.md
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENTROPY SCAN COMPLETE — {N} findings across {N} rules (suppressed: {N})
+HIGH {N} · MEDIUM {N} · LOW {N}
+{If high-severity findings: "Next: /entropy-fix to queue tasks."}  {If zero: "✓ No violations."}
+{If expired suppressions: "Expired suppressions: {N} — see report."}
+{If --summary: "Summary only — no report written."}  {Otherwise: "Report: entropy-report.md"}
 ```
 
 ---

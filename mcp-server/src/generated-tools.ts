@@ -1289,7 +1289,7 @@ export const generatedTools: GeneratedTool[] = [
   },
   {
     name: "sessions_update",
-    description: "Rename/archive a session — admin-only",
+    description: "Update a session (title, archive, owner, homeRepo, repos)",
     inputSchema: {
       type: "object",
       properties: {

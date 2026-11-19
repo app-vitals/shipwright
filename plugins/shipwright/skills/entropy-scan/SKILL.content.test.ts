@@ -97,9 +97,9 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
     expect(content).toContain('suppressions.ts" --filter');
   });
 
-  it("prints the suppressed count and lists expired entries", () => {
-    expect(content).toContain("Suppressed:");
-    expect(content).toContain("no longer suppressing");
+  it("prints the suppressed count and an expired-suppressions count in the capped summary", () => {
+    expect(content).toContain("(suppressed: {N})");
+    expect(content).toContain("Expired suppressions: {N}");
   });
 
   it("limits expired entries to the entropy rule", () => {
@@ -138,5 +138,15 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
       .filter((id): id is string => !!id && /^[a-z_]+$/.test(id));
     expect(scannable.length).toBeGreaterThanOrEqual(12);
     for (const id of scannable) expect(ref).toContain(`\`${id}\``);
+  });
+});
+
+describe("SKILL.md — capped final summary (CSM-2.7)", () => {
+  it("caps the final summary at 3-5 lines and keeps detail in the report file", () => {
+    const section = content.match(/## Step \d+: Print Summary[\s\S]*?\n---/)?.[0] ?? "";
+    expect(section).toContain("3-5 lines");
+    expect(section).toContain("ENTROPY SCAN COMPLETE");
+    expect(section).toContain("entropy-report.md");
+    expect(section).not.toContain("━");
   });
 });

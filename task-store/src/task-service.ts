@@ -43,7 +43,10 @@ import {
 } from "./pull-request-service.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES, type TaskColumn } from "./statuses.ts";
+
+export type { TaskColumn };
+
 import { writeTaskEvents } from "./task-transition-diff.ts";
 import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
@@ -55,6 +58,13 @@ import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
  * it. Mirrors PrismaTxClient in pull-request-service.ts.
  */
 type PrismaTxClient = Pick<Prisma.TransactionClient, "task" | "taskEvent">;
+
+/**
+ * The client surface bulk() writes through: tasks plus their Session rows.
+ * Satisfied by a `$transaction` callback's `tx`, so a caller can run bulk()
+ * inside its own transaction (PWE-3.1).
+ */
+export type BulkTxClient = Pick<Prisma.TransactionClient, "task" | "session">;
 
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
@@ -501,6 +511,11 @@ export interface TaskListFilters {
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1) — `?kind=dev` / `?kind=prd`. */
   kind?: TaskKind;
+  /**
+   * TPG-1.3: board-column membership, computed server-side so it matches the
+   * admin board's bucketTaskColumn exactly (see applyColumnFilter).
+   */
+  column?: TaskColumn;
   limit?: number;
   offset?: number;
   /**
@@ -589,6 +604,7 @@ export interface TaskServiceLike {
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
+    tx?: BulkTxClient,
   ): Promise<{ inserted: number; updated: number; skipped: string[] }>;
   markMergedByPr(params: {
     repo: string;
@@ -736,6 +752,21 @@ export class TaskService implements TaskServiceLike {
         : [];
       where.AND = [...existingAnd, { OR: branches }];
     }
+    if (filters.column) {
+      // ANDed in (never spread onto where.OR/where.AND wholesale) so it can't
+      // clobber agentScope's OR or the repo/org fragment. `total` and the
+      // page query both see it, so per-column totals are exact.
+      const columnWhere = await this.columnWhere(
+        filters.column,
+        filters.accountId,
+      );
+      const existing = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      where.AND = [...existing, columnWhere];
+    }
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -804,6 +835,110 @@ export class TaskService implements TaskServiceLike {
     }));
 
     return { tasks, total, limit, offset, nextCursor };
+  }
+
+  /**
+   * Prisma where-fragment selecting exactly the tasks the admin board's
+   * bucketTaskColumn (admin/src/coding/admin-ui-work-item-pages.ts) places in
+   * `column`. Precedence mirrors it: closed → kind initiative/idea → blocked
+   * (status blocked | hitl | unmet dependency | joined PR blocked) →
+   * in-flight → unclaimed pending.
+   *
+   * Two of the blocked signals are not columns on Task, so they are resolved
+   * up front and fed in as id / (repo, pr) lists: unmet dependencies (via
+   * computeBlockedBy, within each task's own account) and PullRequest.blocked
+   * (joined on repo + prNumber, as the board does).
+   */
+  private async columnWhere(
+    column: TaskColumn,
+    accountId?: string | null,
+  ): Promise<Prisma.TaskWhereInput> {
+    const open: Prisma.TaskWhereInput = {
+      status: { notIn: [...CLOSED_STATUSES] },
+    };
+    if (column === "planning") return { AND: [open, { kind: "initiative" }] };
+    if (column === "ideas") return { AND: [open, { kind: "idea" }] };
+
+    const accountWhere: Prisma.TaskWhereInput = isAccountScoped(accountId)
+      ? { accountId }
+      : {};
+    const withDeps = await this.prisma.task.findMany({
+      where: {
+        ...accountWhere,
+        ...open,
+        dependencies: { isEmpty: false },
+      },
+    });
+    const depIds = [...new Set(withDeps.flatMap((t: Task) => t.dependencies))];
+    const depRows = depIds.length
+      ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
+      : [];
+    const depBlockedIds = withDeps
+      .filter((t: Task) =>
+        computeBlockedBy(t, sameAccount(depRows, t.accountId)).some(
+          (b) => b.type === "dependency",
+        ),
+      )
+      .map((t: Task) => t.id);
+
+    const blockedPrs = await this.prisma.pullRequest.findMany({
+      where: {
+        blocked: true,
+        ...(isAccountScoped(accountId) ? { accountId } : {}),
+      },
+      select: { repo: true, prNumber: true, accountId: true },
+    });
+
+    const isBlocked: Prisma.TaskWhereInput = {
+      OR: [
+        { status: "blocked" },
+        { hitl: true },
+        ...(depBlockedIds.length ? [{ id: { in: depBlockedIds } }] : []),
+        ...blockedPrs.map((p) => ({
+          accountId: p.accountId,
+          repo: p.repo,
+          pr: p.prNumber,
+        })),
+      ],
+    };
+    // The exact complement of isBlocked. Not `NOT: isBlocked`: hitl, pr and
+    // repo are nullable and SQL's NOT(NULL = x) is NULL, which would silently
+    // drop every task with a null hitl/pr from the non-blocked columns.
+    const notBlocked: Prisma.TaskWhereInput = {
+      AND: [
+        { status: { not: "blocked" } },
+        { OR: [{ hitl: null }, { hitl: false }] },
+        ...(depBlockedIds.length ? [{ id: { notIn: depBlockedIds } }] : []),
+        ...blockedPrs.map((p) => ({
+          OR: [
+            { pr: null },
+            { pr: { not: p.prNumber } },
+            { repo: null },
+            { repo: { not: p.repo } },
+            { accountId: { not: p.accountId } },
+          ],
+        })),
+      ],
+    };
+    // kind is non-nullable (default dev), so notIn needs no null branch.
+    const board: Prisma.TaskWhereInput = {
+      AND: [open, { kind: { notIn: ["initiative", "idea"] } }],
+    };
+    if (column === "blocked") return { AND: [board, isBlocked] };
+    if (column === "in_progress") {
+      return {
+        AND: [
+          board,
+          notBlocked,
+          { status: { in: ["in_progress", "pr_open", "approved"] } },
+        ],
+      };
+    }
+    // queued: pending and unclaimed. ("claimed" pending tasks have their own
+    // bucket; no other open status can fall through to "queued".)
+    return {
+      AND: [board, notBlocked, { status: "pending", claimedBy: null }],
+    };
   }
 
   /**
@@ -1104,9 +1239,17 @@ export class TaskService implements TaskServiceLike {
    * fixed `WEBHOOK_TX_OPTIONS`: the amount of work inside the transaction
    * now scales with `tasks.length`, so the budget scales with it too (see
    * `bulkTxTimeoutMs`), bounded by the `MAX_BULK_TASKS` cap enforced below.
+   *
+   * PWE-3.1: pass `tx` to run inside a caller-owned transaction (POST
+   * /sessions/{slug}/plan). bulk() then opens no transaction of its own: the
+   * caller owns commit, rollback and the transaction budget, and a thrown
+   * ConflictError/WebhookDeliveryError rolls back the caller's whole
+   * transaction. The post-commit PR-collision warning is skipped in that
+   * mode, because the rows are not committed when bulk() returns.
    */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
+    tx?: BulkTxClient,
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
     // Rejected before the transaction opens: an over-cap batch is a caller
     // error, and answering 400 up front is strictly better than opening a
@@ -1117,36 +1260,12 @@ export class TaskService implements TaskServiceLike {
         `bulk insert accepts at most ${MAX_BULK_TASKS} tasks per call (received ${tasks.length}) — split the batch`,
       );
     }
+    if (tx) {
+      const rows = await this.bulkInsert(tx, tasks);
+      return { inserted: rows.length, updated: 0, skipped: [] };
+    }
     const createdRows = await this.prisma.$transaction(
-      async (tx) => {
-        const rows: Task[] = [];
-        for (const task of tasks) {
-          let created: Task;
-          try {
-            created = await tx.task.create({ data: task });
-          } catch (err: unknown) {
-            // P2002 = unique constraint violation (id already exists) —
-            // translate to ConflictError so it propagates uncaught and rolls
-            // back the whole transaction, rather than being swallowed/skipped.
-            if (isUniqueViolation(err)) {
-              throw new ConflictError(
-                `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
-              );
-            }
-            throw err;
-          }
-          await this.sessionService.upsert(
-            tx,
-            created.session,
-            created.accountId,
-          );
-          rows.push(created);
-        }
-        // Fires once for the whole batch, after every row has landed, still
-        // inside this transaction — see JSDoc above.
-        await this.webhookDispatcher("task.write", rows);
-        return rows;
-      },
+      (ownTx) => this.bulkInsert(ownTx, tasks),
       { timeout: bulkTxTimeoutMs(tasks.length) },
     );
     for (const row of createdRows) await this.warnOnPrCollision(row);
@@ -1154,6 +1273,36 @@ export class TaskService implements TaskServiceLike {
     // backward compatibility (AC4); collisions hard-fail the whole batch via
     // ConflictError above instead of populating it.
     return { inserted: createdRows.length, updated: 0, skipped: [] };
+  }
+
+  /** bulk()'s transaction body: create each task + its session row in order, then dispatch once. */
+  private async bulkInsert(
+    tx: BulkTxClient,
+    tasks: Prisma.TaskCreateInput[],
+  ): Promise<Task[]> {
+    const rows: Task[] = [];
+    for (const task of tasks) {
+      let created: Task;
+      try {
+        created = await tx.task.create({ data: task });
+      } catch (err: unknown) {
+        // P2002 = unique constraint violation (id already exists) —
+        // translate to ConflictError so it propagates uncaught and rolls
+        // back the whole transaction, rather than being swallowed/skipped.
+        if (isUniqueViolation(err)) {
+          throw new ConflictError(
+            `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
+          );
+        }
+        throw err;
+      }
+      await this.sessionService.upsert(tx, created.session, created.accountId);
+      rows.push(created);
+    }
+    // Fires once for the whole batch, after every row has landed, still
+    // inside the transaction — see bulk()'s JSDoc.
+    await this.webhookDispatcher("task.write", rows);
+    return rows;
   }
 
   /**

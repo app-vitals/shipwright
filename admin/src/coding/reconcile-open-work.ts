@@ -59,18 +59,21 @@ export function createTaskStoreOpenWorkPort(
     key: "tasks" | "prs",
   ): Promise<T[]> {
     const rows: T[] = [];
-    for (let offset = 0; ; offset += PAGE_SIZE) {
+    let cursor: string | undefined;
+    // Follow nextCursor until the server reports the last page (null).
+    for (;;) {
       const page = new URLSearchParams(params);
       page.set("limit", String(PAGE_SIZE));
-      page.set("offset", String(offset));
+      if (cursor) page.set("cursor", cursor);
       const res = await doFetch(`${config.url}${path}?${page}`, {
         headers: auth,
       });
       if (!res.ok) throw new Error(`task-store GET ${path} → ${res.status}`);
-      const body = (await res.json()) as Record<string, T[] | undefined>;
-      const batch = body[key] ?? [];
-      rows.push(...batch);
-      if (batch.length < PAGE_SIZE) return rows;
+      const body = (await res.json()) as Record<string, unknown>;
+      rows.push(...((body[key] as T[] | undefined) ?? []));
+      const next = body.nextCursor;
+      if (typeof next !== "string" || next === "") return rows;
+      cursor = next;
     }
   }
 

@@ -50,7 +50,6 @@ describe("admin UI — public task board", () => {
             tasks: MOCK_PUBLIC_TASKS,
             total: MOCK_PUBLIC_TASKS.length,
             limit: 50,
-            offset: 0,
           };
         },
       }),
@@ -67,7 +66,7 @@ describe("admin UI — public task board", () => {
         publicRepo: PUBLIC_REPO,
         fetchTaskStoreTasks: async (params) => {
           capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -83,7 +82,7 @@ describe("admin UI — public task board", () => {
         publicRepo: PUBLIC_REPO,
         fetchTaskStoreTasks: async (params) => {
           capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -99,7 +98,7 @@ describe("admin UI — public task board", () => {
         publicRepo: PUBLIC_REPO,
         fetchTaskStoreTasks: async (params) => {
           capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -138,7 +137,7 @@ describe("admin UI — public task board", () => {
           ];
           const source = params.get("source");
           const tasks = source ? all.filter((t) => t.source === source) : all;
-          return { tasks, total: tasks.length, limit: 50, offset: 0 };
+          return { tasks, total: tasks.length, limit: 50 };
         },
       }),
     );
@@ -156,7 +155,7 @@ describe("admin UI — public task board", () => {
         publicRepo: PUBLIC_REPO,
         fetchTaskStoreTasks: async (params) => {
           capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -173,7 +172,6 @@ describe("admin UI — public task board", () => {
           tasks: MOCK_PUBLIC_TASKS,
           total: MOCK_PUBLIC_TASKS.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -210,7 +208,6 @@ describe("admin UI — public task board", () => {
           ],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -243,7 +240,6 @@ describe("admin UI — public task board", () => {
           ],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStorePrs: async () => {
           fetchTaskStorePrsCalled = true;
@@ -267,7 +263,6 @@ describe("admin UI — public task board", () => {
             ],
             total: 1,
             limit: 50,
-            offset: 0,
           };
         },
       }),
@@ -344,7 +339,6 @@ describe("admin UI — public task board", () => {
           tasks: manyTasks,
           total: 500, // >50 — would trigger pagination in admin mode
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -377,7 +371,6 @@ describe("admin UI — public task board", () => {
           tasks: [dirtyTask],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );

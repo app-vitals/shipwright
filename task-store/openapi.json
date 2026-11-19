@@ -201,6 +201,24 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "planning",
+                "ideas",
+                "queued",
+                "in_progress",
+                "blocked"
+              ],
+              "example": "blocked",
+              "description": "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400."
+            },
+            "required": false,
+            "description": "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
+            "name": "column",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only."
             },
             "required": false,
@@ -2921,8 +2939,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Rename/archive a session — admin-only",
-        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
+        "summary": "Update a session (title, archive, owner, homeRepo, repos)",
+        "description": "Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
         "parameters": [
           {
             "schema": {
@@ -2976,7 +2994,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — admin tokens only",
+            "description": "Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3215,6 +3233,109 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{slug}/plan": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Write a session's plan document, tasks and planned specs atomically",
+        "description": "One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPlanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan written: the plan document id and the inserted task count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLockConflict"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Webhook delivery failed; nothing was written",
             "content": {
               "application/json": {
                 "schema": {
@@ -6870,6 +6991,131 @@
         },
         "required": [
           "released"
+        ]
+      },
+      "SessionPlanResponse": {
+        "type": "object",
+        "properties": {
+          "planDocumentId": {
+            "type": "string",
+            "example": "clx0plan"
+          },
+          "inserted": {
+            "type": "integer",
+            "example": 3
+          }
+        },
+        "required": [
+          "planDocumentId",
+          "inserted"
+        ]
+      },
+      "SessionPlanBody": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/SessionPlanDocument"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "Implement feature X"
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "pending"
+                },
+                "repo": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "example": "org/repo"
+                },
+                "pr": {
+                  "example": 42,
+                  "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
+                }
+              },
+              "additionalProperties": {}
+            },
+            "maxItems": 500,
+            "description": "Tasks to create, same shape and validation as POST /tasks/bulk (at most 500). Each is stamped with the session, `planDocumentId` and `originRef` (both the plan document id) and `originKind: document`; a task's own `session` must be absent or equal the slug."
+          },
+          "specs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "example": [
+              1,
+              2
+            ],
+            "description": "Spec numbers in this session to mark planned (`plannedAt`). An unregistered number is a 400 and rolls back the whole write; an already-planned spec keeps its `plannedAt`."
+          },
+          "holder": {
+            "type": "string",
+            "minLength": 1,
+            "example": "agent-1",
+            "description": "Planning-lock identity. Defaults to the calling token's agent id (or 'admin'). A live lock held by anyone else is a 409."
+          }
+        },
+        "required": [
+          "plan",
+          "tasks"
+        ]
+      },
+      "SessionPlanDocument": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1,
+            "example": "org/home",
+            "description": "Home repo (org/repo) the plan file lives in."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "example": "planning/shipwright-may-launch/PLAN.md"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev@example.com",
+            "description": "Sets the session's owner when it has none (first one wins, as POST /documents)."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "example": [
+              "org/repo",
+              "org/other"
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "path"
         ]
       },
       "RegisterPlanDocumentBody": {

@@ -38,7 +38,13 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "./errors.ts";
-import type { PlanDocument, Prisma, PrismaClient, Task } from "./index.ts";
+import type {
+  PlanDocument,
+  Prisma,
+  PrismaClient,
+  Session,
+  Task,
+} from "./index.ts";
 import { decodeOffsetCursor, encodeOffsetCursor } from "./lib/cursor.ts";
 import {
   computeSessionRollup,
@@ -192,6 +198,46 @@ export type PlanningLockHeldDetails = {
   acquiredAt: string;
   expiresAt: string;
 };
+
+/**
+ * The 409 for a planning lock held (unexpired) by someone else, naming the
+ * holder and when it was taken. Shared by acquirePlanningLock() and POST
+ * /sessions/{slug}/plan (PWE-3.1) so both answer with the same body.
+ */
+export function planningLockHeldError(
+  row: Pick<Session, "planningLockHolder" | "planningLockExpiresAt">,
+): ConflictError {
+  const heldExpiry = row.planningLockExpiresAt as Date;
+  const acquiredAt = new Date(heldExpiry.getTime() - PLANNING_LOCK_TTL_MS);
+  const details: PlanningLockHeldDetails = {
+    holder: row.planningLockHolder as string,
+    acquiredAt: acquiredAt.toISOString(),
+    expiresAt: heldExpiry.toISOString(),
+  };
+  return new ConflictError(
+    `planning lock held by ${details.holder} since ${details.acquiredAt}`,
+    details,
+  );
+}
+
+/**
+ * The where-clause for "the planning lock is free to `holder` at `now`": no
+ * holder, expired, or already held by `holder`. Shared by
+ * acquirePlanningLock() and the plan endpoint's lock check.
+ */
+export function planningLockFreeTo(
+  holder: string,
+  now: Date,
+): Prisma.SessionWhereInput {
+  return {
+    OR: [
+      { planningLockHolder: null },
+      { planningLockExpiresAt: null },
+      { planningLockExpiresAt: { lte: now } },
+      { planningLockHolder: holder },
+    ],
+  };
+}
 
 /** The subset of SessionService the routes depend on. */
 export interface SessionServiceLike {
@@ -679,11 +725,9 @@ export class SessionService implements SessionServiceLike {
 
   /**
    * Rename and/or archive/un-archive the [accountId, slug] session — another
-   * account's same-slug session is never touched. Admin-only at the route
-   * layer (routes/sessions.ts, which passes ?accountId or the default
-   * account) — `actor` is whatever identity the caller attributes the change
-   * to (the route passes a fixed "admin" since only admin tokens ever reach
-   * this method).
+   * account's same-slug session is never touched. Scope-gated at the route
+   * layer (routes/sessions.ts, PWE-1.1, which passes ?accountId or the default
+   * account) — `actor` is the caller's identity (the agent id, or "admin").
    *
    * `archived: true` stamps `archivedAt: this.clock.now()` and
    * `archivedBy: actor`; `archived: false` clears both; omitted leaves the
@@ -730,9 +774,9 @@ export class SessionService implements SessionServiceLike {
       throw this.translateNotFound(err, "session not found");
     }
 
-    // The row we just wrote unconditionally exists and update() is
-    // admin-only (no agentScope), so get() cannot legitimately return null
-    // here — the fallback exists only to satisfy the type checker.
+    // The row we just wrote unconditionally exists and this read is unscoped
+    // (the route already enforced the caller's scope), so get() cannot
+    // legitimately return null here — the fallback exists only to satisfy the type checker.
     const updated = await this.get(slug, undefined, accountId);
     if (!updated) throw new NotFoundError("session not found");
 
@@ -761,16 +805,7 @@ export class SessionService implements SessionServiceLike {
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + PLANNING_LOCK_TTL_MS);
     const { count } = await this.prisma.session.updateMany({
-      where: {
-        accountId,
-        slug,
-        OR: [
-          { planningLockHolder: null },
-          { planningLockExpiresAt: null },
-          { planningLockExpiresAt: { lte: now } },
-          { planningLockHolder: holder },
-        ],
-      },
+      where: { accountId, slug, ...planningLockFreeTo(holder, now) },
       data: { planningLockHolder: holder, planningLockExpiresAt: expiresAt },
     });
     if (count > 0) return { holder, acquiredAt: now, expiresAt };
@@ -779,17 +814,7 @@ export class SessionService implements SessionServiceLike {
       where: { accountId_slug: { accountId, slug } },
     });
     if (!row) throw new NotFoundError("session not found");
-    const heldExpiry = row.planningLockExpiresAt as Date;
-    const acquiredAt = new Date(heldExpiry.getTime() - PLANNING_LOCK_TTL_MS);
-    const details: PlanningLockHeldDetails = {
-      holder: row.planningLockHolder as string,
-      acquiredAt: acquiredAt.toISOString(),
-      expiresAt: heldExpiry.toISOString(),
-    };
-    throw new ConflictError(
-      `planning lock held by ${details.holder} since ${details.acquiredAt}`,
-      details,
-    );
+    throw planningLockHeldError(row);
   }
 
   /**

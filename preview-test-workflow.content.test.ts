@@ -17,6 +17,7 @@ type Step = {
   uses?: string;
   run?: string;
   if?: string;
+  "working-directory"?: string;
   with?: Record<string, unknown>;
 };
 type Job = {
@@ -121,6 +122,24 @@ describe("preview-test.yml", () => {
     );
     expect(helm).toBeGreaterThanOrEqual(0);
     expect(canary).toBeGreaterThan(helm);
+  });
+
+  it("runs the browser e2e specs after the canary from the trusted checkout", () => {
+    const steps = wf.jobs["preview-test"].steps;
+    const canary = steps.findIndex((s) =>
+      (s.run ?? "").includes("task preview:canary ENV_FILE="),
+    );
+    const install = steps.findIndex((s) =>
+      (s.run ?? "").includes("playwright install --with-deps chromium"),
+    );
+    const e2e = steps.findIndex((s) =>
+      (s.run ?? "").includes("task preview:e2e ENV_FILE="),
+    );
+    expect(canary).toBeGreaterThanOrEqual(0);
+    expect(install).toBeGreaterThan(canary);
+    expect(e2e).toBeGreaterThan(install);
+    expect(steps[install]["working-directory"]).toBe("trusted");
+    expect(steps[e2e]["working-directory"]).toBe("trusted");
   });
 
   it("uploads diagnostics on failure without reading Secrets", () => {

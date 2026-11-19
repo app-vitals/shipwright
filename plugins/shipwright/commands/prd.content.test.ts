@@ -456,3 +456,67 @@ describe("prd.md — numbered specs, repos, owner (PLU-3.2)", () => {
     );
   });
 });
+
+describe("prd.md — concise one-section-at-a-time chat interaction (CSM-2.2)", () => {
+  it("defines chat message rules: ask last, max 3 bullets, ~10-line cap", () => {
+    const idx = content.indexOf("## Chat Message Rules (CSM-2.2)");
+    const phase0Idx = content.indexOf("## Phase 0: Project Context Setup");
+    expect(idx).toBeGreaterThan(-1);
+    expect(phase0Idx).toBeGreaterThan(idx);
+    const section = content.slice(idx, phase0Idx);
+    expect(section).toContain("**Ask last.**");
+    expect(section).toContain("**Max 3 bullets.**");
+    expect(section).toContain("8-10 lines");
+    expect(section).toContain("Look right? 1 yes / 2 adjust");
+  });
+
+  it("keeps one question at a time", () => {
+    expect(content).toContain("**One question at a time**");
+  });
+
+  it("Phase 3 presents a bullet summary per section with the ask last, and still writes full text to the spec file", () => {
+    const start = content.indexOf("## Phase 3: Draft the spec");
+    const end = content.indexOf("## Phase 4: User Review and Finalize");
+    const section = content.slice(start, end);
+    expect(section).toContain("bullet summary (3-5 bullets");
+    expect(section).toContain("with the ask **last**");
+    expect(section).toContain("Look right? 1 yes / 2 adjust");
+    expect(section).toContain("complete section text is still written to the spec file");
+  });
+
+  it("Phase 4 no longer pastes the full spec into chat", () => {
+    const start = content.indexOf("## Phase 4: User Review and Finalize");
+    const end = content.indexOf("4a. **Register the document**");
+    const section = content.slice(start, end);
+    expect(section).toContain("Do not paste the assembled spec into chat");
+    expect(section).toContain("1 yes / 2 adjust");
+  });
+
+  it("Phase 0 summary and complexity flags are condensed to headline + bullets with the ask last", () => {
+    expect(content).toContain("**Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets plus the spec path as the link, ask last");
+    const start = content.indexOf("## Phase 2b: Complexity Review");
+    const end = content.indexOf("## Phase 3: Draft the spec");
+    const section = content.slice(start, end);
+    expect(section).toContain("one flag per message");
+    expect(section).toContain("How to handle? 1 keep as-is / 2 simplify / 3 flag for engineering");
+  });
+
+  it("Phase 5 summary is condensed to headline + bullets + links", () => {
+    const start = content.indexOf("## Phase 5: Summary and Next Steps");
+    const section = content.slice(start);
+    expect(section).toContain("The summary is condensed — a headline, at most 3 bullets, and links");
+    expect(section).toContain("PRD COMPLETE — {N} features, spec at {SPEC_PATH}");
+  });
+
+  // Retired: the previous Phase 3/4/2b/5 wording was pinned only implicitly; the
+  // removed verbose text ("Does this look right, or would you like to adjust anything here?",
+  // "Here's the complete Product Specification", the "What this means / Business impact"
+  // flag block and the per-feature "{N} requirements, {N} acceptance criteria" lines)
+  // must not return.
+  it("does not contain the retired verbose summary text", () => {
+    expect(content).not.toContain("Does this look right, or would you like to adjust anything here?");
+    expect(content).not.toContain("Here's the complete Product Specification");
+    expect(content).not.toContain("Business impact:");
+    expect(content).not.toContain("{N} requirements, {N} acceptance criteria");
+  });
+});

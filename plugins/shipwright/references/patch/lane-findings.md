@@ -160,14 +160,14 @@ INSTRUCTIONS — follow in order:
     cause repeated approval prompts):
     ```bash
     # Write the rebuttal body to /tmp/shipwright-patch-rebuttal-{pr}.txt:
-    #   Reviewed the finding(s) above and did not implement changes — premise did not hold:
+    #   No code change — {n} finding(s) rejected:
     #
     #   - {finding summary}: {reason rejected}
     #   - {finding summary}: {reason rejected}
     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-rebuttal-{pr}.txt
     rm /tmp/shipwright-patch-rebuttal-{pr}.txt
     ```
-    The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+    Resolution first, then one bullet per finding; no narrative of process. The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
     across all worktrees. List only the REJECTed findings, one bullet per finding, drawn
     from the CONCERNS you compiled in [A.5] — do not include ACCEPTED/MODIFIED findings
     here even if this run also produced a commit above. This comment is what allows a

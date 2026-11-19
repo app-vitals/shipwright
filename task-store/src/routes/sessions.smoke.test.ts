@@ -681,24 +681,28 @@ describe("PATCH /sessions/:slug (smoke)", () => {
     expect(body.title).toBeNull();
   });
 
-  it("agent-scoped token receives 403 regardless of body, even for a session it owns a task in", async () => {
+  // The full agent write-scope matrix (real DB) lives in
+  // sessions.write-scope.integration.test.ts; these cover the route wiring.
+  it("agent-scoped token with the session's repo in scope can patch and is recorded as the actor", async () => {
     const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
     const res = await parent.request("/active-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ archived: true }),
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.archivedBy).toBe("agent-1");
   });
 
-  it("agent-scoped token receives 403 for a nonexistent slug too (auth checked before lookup)", async () => {
+  it("agent-scoped token receives 404 for a nonexistent slug", async () => {
     const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
     const res = await parent.request("/does-not-exist", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ archived: true }),
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("admin token, nonexistent slug returns 404", async () => {
@@ -924,14 +928,14 @@ describe("session owner / homeRepo / repos (smoke, PLU-2.3)", () => {
     }
   });
 
-  it("agent tokens still get 403 on PATCH with the new fields", async () => {
-    const parent = makeAgentParent(makeApp(records()), "agent-1", ["org/a"]);
+  it("agent tokens get 404 on PATCH of a session outside their scope", async () => {
+    const parent = makeAgentParent(makeApp(records()), "agent-9", ["org/zzz"]);
     const res = await parent.request("/mine", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ owner: "a@example.com" }),
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 });
 

@@ -76,35 +76,11 @@ reports back, whatever the outcome — a single bonus attempt, not a new fix loo
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PATCH COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-REVIEW FINDINGS ({A} PR(s)):
-{for each PR in List A:
-  "#{pr} — {title} ({org}/{repo})
-   {if DONE or DONE_WITH_CONCERNS with push: "✓ Fixed and pushed"}
-   {if BLOCKED: "✗ Blocked: {blocker summary}"}
-   {if DONE_WITH_CONCERNS: "⚠ Concerns: {concern summary}"}
-   Findings addressed:
-   {bullet list from subagent FINDINGS_ADDRESSED}"}
-
-MERGE CONFLICTS ({C} PR(s)):
-{for each PR in List C:
-  "#{pr} — {title} ({org}/{repo})
-   {if DONE or DONE_WITH_CONCERNS with push: "✓ Conflicts resolved and pushed"}
-   {if BLOCKED: "✗ Blocked: {blocker summary}"}
-   {if DONE_WITH_CONCERNS: "⚠ Concerns: {concern summary}"}
-   Conflicts resolved:
-   {bullet list from subagent CONFLICTS_RESOLVED}"}
-
-FAILING CI ({D} PR(s)):
-{for each PR in List D:
-  "#{pr} — {title} ({org}/{repo})
-   {if DONE or DONE_WITH_CONCERNS with push: "✓ Fixed and pushed"}
-   {if BLOCKED: "✗ Blocked: {blocker summary}"}
-   {if DONE_WITH_CONCERNS: "⚠ Concerns: {concern summary}"}
-   Failures fixed:
-   {bullet list from subagent FAILURES_FIXED}"}
+{for each PR in Lists A, C, D:
+  "#{pr} — {title} ({org}/{repo}): {✓ Fixed and pushed | ✗ Blocked: {blocker} | ⚠ Concerns: {concern}} — {lane: review findings | merge conflicts | failing CI}
+   - {max 3 bullets: what was fixed/resolved, from FINDINGS_ADDRESSED / CONFLICTS_RESOLVED / FAILURES_FIXED; risk and blockers first}
+   {PR link}"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Also state any settle-with-rejected refs (5c.5) and out-of-scope `ci:` refs (6b.9) under the
-corresponding list.
+No process narrative. Fold settle-with-rejected refs (5c.5) and out-of-scope `ci:` refs (6b.9) into the PR's bullets; they are never dropped to fit the 3-bullet cap (merge them or lead with them).

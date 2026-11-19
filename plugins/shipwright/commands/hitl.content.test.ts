@@ -276,3 +276,32 @@ describe("hitl.md — guard against silent PR in HITL session (HSR-2.1 AC2)", ()
     expect(hasNormalFlow).toBe(true);
   });
 });
+
+describe("hitl.md — concise task context, ask last (CSM-2.4)", () => {
+  const step4 = () =>
+    content.slice(
+      content.indexOf("## Step 4: Display Task Header"),
+      content.indexOf("## Step 5: Assist with Execution"),
+    );
+
+  it("prints a condensed headline instead of the full task dump", () => {
+    const s = step4();
+    expect(s).toContain("condensed header");
+    expect(s).toContain("never the full task dump");
+    expect(s).not.toContain("## Acceptance Criteria");
+    expect(s).not.toContain("{TASK_DESC or");
+  });
+
+  it("condenses Human steps into a short numbered list", () => {
+    const s = step4();
+    expect(s).toContain("Essential Steps");
+    expect(s).toContain("at most ~5 essential steps");
+  });
+
+  it("links for detail and ends with the ask/next action last", () => {
+    const s = step4();
+    expect(s).toContain("Details: {link}");
+    expect(s).toContain("as the **last line**");
+    expect(s.indexOf("Details: {link}")).toBeLessThan(s.indexOf("Ready for step 1?"));
+  });
+});

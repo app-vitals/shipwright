@@ -254,6 +254,20 @@ When `?ready=true` returns `{ tasks: [], total: 0 }`:
 
 Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 
+### Write a whole plan (planning sessions)
+
+`/shipwright:plan-session` writes a session's plan document, its tasks and the planned-spec
+marks with one call, `POST /sessions/{slug}/plan`, instead of separate document, bulk-task
+and `plannedAt` calls. Body: `{plan: {repo, path, owner?, title?, repos?}, tasks: [...], specs?: [numbers], holder?}`;
+response: `{planDocumentId, inserted}`. Each task is stamped with the session,
+`planDocumentId`, `originKind: "document"` and `originRef` (the plan document id) server-side,
+and the session's repos follow from its tasks and documents (no `PATCH /sessions` needed).
+It is atomic: a `409` (planning lock held by someone else, or a task id already taken),
+`400` (invalid task or unregistered spec number), `403` (repo out of scope) or `502`
+writes nothing. Use it only for planning passes; every other skill that queues tasks
+(`error-fix`, `security-fix`, `entropy-fix`, `test-fix`, …) keeps using `POST /tasks/bulk`
+(all-or-nothing, `409` on any existing id, at most `MAX_BULK_TASKS` per call).
+
 ---
 
 ## Full API reference
@@ -262,6 +276,8 @@ Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 |---|---|---|
 | `GET` | `/tasks` | List tasks (`?status`, `?session`, `?assignee`, `?ready=true`) |
 | `POST` | `/tasks` | Create a task (409 if `id` exists) |
+| `POST` | `/tasks/bulk` | Create many tasks atomically (409 if any `id` exists); used by the fix skills |
+| `POST` | `/sessions/:slug/plan` | Write a plan document, its tasks and planned specs in one transaction (planning sessions) |
 | `GET` | `/tasks/:id` | Fetch one task (404 if missing) |
 | `PATCH` | `/tasks/:id` | Update fields (partial update, returns updated task) |
 | `DELETE` | `/tasks/:id` | Delete a task |

@@ -138,3 +138,22 @@ describe("SKILL.md — cursor paging contract (TPG-1.2)", () => {
     expect(prsRow).toContain("nextCursor");
   });
 });
+
+describe("SKILL.md — plan write endpoint (PWE-3.2)", () => {
+  it("documents POST /sessions/{slug}/plan and its body and response", () => {
+    expect(skillContent).toContain("POST /sessions/{slug}/plan");
+    expect(skillContent).toContain("planDocumentId");
+    expect(skillContent).toContain("inserted");
+    expect(skillContent).toContain("/shipwright:plan-session");
+  });
+
+  it("lists the plan endpoint in the API reference table", () => {
+    expect(skillContent).toMatch(/\|\s*`POST`\s*\|\s*`\/sessions\/:slug\/plan`/);
+  });
+
+  it("keeps POST /tasks/bulk documented for the other fix skills", () => {
+    expect(skillContent).toMatch(/\|\s*`POST`\s*\|\s*`\/tasks\/bulk`/);
+    expect(skillContent).toContain("fix skills");
+    expect(skillContent).toContain("error-fix");
+  });
+});

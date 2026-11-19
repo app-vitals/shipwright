@@ -10,6 +10,7 @@ import { z } from "@hono/zod-openapi";
 
 import { ORIGIN_KINDS } from "./origin-kinds.ts";
 import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
+import { TASK_COLUMNS } from "./statuses.ts";
 import {
   BY_PR_TARGET_STATUSES,
   MAX_BULK_TASKS,
@@ -962,6 +963,11 @@ export const TaskListQuerySchema = z.object({
   pr: z.string().optional().openapi({ example: "42" }),
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
+  column: z.enum(TASK_COLUMNS).optional().openapi({
+    example: "blocked",
+    description:
+      "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
+  }),
   cursor: z.string().optional().openapi({
     description:
       "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only.",
@@ -1135,6 +1141,64 @@ export const BulkInsertResponseSchema = z
     }),
   })
   .openapi("BulkInsertResponse");
+
+// ─── Session plan write (PWE-3.1) ──────────────────────────────────────────────
+
+/** The plan document part of POST /sessions/:slug/plan. */
+const SessionPlanDocumentSchema = z
+  .object({
+    repo: z.string().min(1).openapi({
+      example: "org/home",
+      description: "Home repo (org/repo) the plan file lives in.",
+    }),
+    path: z
+      .string()
+      .min(1)
+      .openapi({ example: "planning/shipwright-may-launch/PLAN.md" }),
+    title: z.string().nullable().optional().openapi({ example: null }),
+    owner: z.string().nullable().optional().openapi({
+      example: "dev@example.com",
+      description:
+        "Sets the session's owner when it has none (first one wins, as POST /documents).",
+    }),
+    repos: z
+      .array(z.string().min(1))
+      .optional()
+      .openapi({ example: ["org/repo", "org/other"] }),
+  })
+  .openapi("SessionPlanDocument");
+
+/** Request body for POST /sessions/:slug/plan. */
+export const SessionPlanBodySchema = z
+  .object({
+    plan: SessionPlanDocumentSchema,
+    tasks: z.array(BulkInsertItemSchema).openapi({
+      maxItems: MAX_BULK_TASKS,
+      description: `Tasks to create, same shape and validation as POST /tasks/bulk (at most ${MAX_BULK_TASKS}). Each is stamped with the session, \`planDocumentId\` and \`originRef\` (both the plan document id) and \`originKind: document\`; a task's own \`session\` must be absent or equal the slug.`,
+    }),
+    specs: z
+      .array(z.number().int().positive())
+      .optional()
+      .openapi({
+        example: [1, 2],
+        description:
+          "Spec numbers in this session to mark planned (`plannedAt`). An unregistered number is a 400 and rolls back the whole write; an already-planned spec keeps its `plannedAt`.",
+      }),
+    holder: z.string().min(1).optional().openapi({
+      example: "agent-1",
+      description:
+        "Planning-lock identity. Defaults to the calling token's agent id (or 'admin'). A live lock held by anyone else is a 409.",
+    }),
+  })
+  .openapi("SessionPlanBody");
+
+/** Response for POST /sessions/:slug/plan. */
+export const SessionPlanResponseSchema = z
+  .object({
+    planDocumentId: z.string().openapi({ example: "clx0plan" }),
+    inserted: z.number().int().openapi({ example: 3 }),
+  })
+  .openapi("SessionPlanResponse");
 
 /**
  * Request body for PATCH /tasks/by-pr (MPD-1.2). Shape violations (empty or

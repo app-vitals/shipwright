@@ -546,15 +546,25 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
   });
 
   it("prints the suppressed count in the summary", () => {
-    expect(content).toContain("Suppressed:");
+    expect(content).toContain("(suppressed: {N})");
   });
 
-  it("lists expired entries as no longer suppressing", () => {
-    expect(content).toContain("no longer suppressing");
+  it("reports expired entries as a count in the capped summary", () => {
+    expect(content).toContain("Expired suppressions: {N}");
   });
 
   it("keeps the existing zizmor/.gitleaksignore handling", () => {
     expect(content).toContain("3.5a");
     expect(content).toContain(".gitleaksignore");
+  });
+});
+
+describe("SKILL.md — capped final summary (CSM-2.7)", () => {
+  it("caps the final summary at 3-5 lines and keeps detail in the report file", () => {
+    const section = content.match(/## Step \d+: Print Summary[\s\S]*?\n---/)?.[0] ?? "";
+    expect(section).toContain("3-5 lines");
+    expect(section).toContain("SECURITY SCAN COMPLETE");
+    expect(section).toContain("security-report.md");
+    expect(section).not.toContain("━");
   });
 });
