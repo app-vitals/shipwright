@@ -168,7 +168,7 @@ describe("release.yml step order (a tag means proven)", () => {
       "Release $NEW_TAG",
       "Release-Version: $NEW_TAG",
       "Source-Sha: $SOURCE_SHA",
-      "Upstream-Versions:",
+      "Upstream-Versions: $UPSTREAM_VERSIONS",
       "Release-Run:",
       "Workflow-Run: $WORKFLOW_RUN",
     ]) {
@@ -182,7 +182,7 @@ describe("release.yml step order (a tag means proven)", () => {
       "org.opencontainers.image.source=https://github.com/app-vitals/shipwright",
       "com.app-vitals.release.version=",
       "com.app-vitals.release.source-sha=",
-      "com.app-vitals.release.upstream-versions=",
+      'com.app-vitals.release.upstream-versions="$UPSTREAM_VERSIONS"',
       "com.app-vitals.release.run-id=",
       "com.app-vitals.release.workflow-run=",
     ]) {
@@ -196,6 +196,59 @@ describe("release.yml step order (a tag means proven)", () => {
     expect(build).toContain('AGENT_VERSION="${NEW_TAG#agent-v}"');
     expect(build.match(/AGENT_VERSION/g)?.length).toBe(3);
     expect(text.match(/--build-arg/g)?.length).toBe(1);
+  });
+});
+
+describe("release.yml upstream record", () => {
+  const run = () => runOf(steps, /Read upstream record/) as string;
+
+  it("reads the Dockerfile pin at SOURCE_SHA before the build", () => {
+    expect(stepIndex(steps, /Read upstream record/)).toBeGreaterThan(
+      stepIndex(steps, /Compute next tag/),
+    );
+    expect(stepIndex(steps, /Read upstream record/)).toBeLessThan(
+      stepIndex(steps, /Build Docker image/),
+    );
+    expect(run()).toContain('git show "$SOURCE_SHA:agent/Dockerfile"');
+    expect(run()).toContain("ARG PLATFORM_VERSION=");
+  });
+
+  it("writes agent=<pin> for the agent service only", () => {
+    expect(run()).toContain('if [ "$SERVICE" = agent ]');
+    expect(run()).toContain('UPSTREAM="agent=$PIN"');
+    expect(run()).toContain('UPSTREAM=""');
+    expect(run()).toContain('echo "versions=$UPSTREAM" >> "$GITHUB_OUTPUT"');
+  });
+
+  it("fails closed before anything is built, pushed or tagged", () => {
+    expect(run()).toContain("-ne 1");
+    expect(run()).toContain("::error::");
+    expect(run()).toContain("exit 1");
+  });
+
+  it("feeds the same value to the image label and the tag trailer", () => {
+    for (const re of [/Build Docker image/, /Tag release/]) {
+      const step = steps[stepIndex(steps, re)];
+      expect(step.env.UPSTREAM_VERSIONS).toBe(
+        "${{ steps.upstream.outputs.versions }}",
+      );
+    }
+  });
+
+  it("extracts the real pin from the Dockerfile with the workflow's sed", () => {
+    const sed = run().match(/sed -n '([^']+)'/)?.[1] as string;
+    expect(sed).toBeTruthy();
+    const proc = Bun.spawnSync(["sed", "-n", sed], {
+      stdin: Buffer.from(read("agent/Dockerfile")),
+    });
+    const pin = read("agent/Dockerfile").match(
+      /^ARG PLATFORM_VERSION=(\S+)$/m,
+    )?.[1];
+    expect(proc.stdout.toString().trim()).toBe(pin as string);
+    const bad = Bun.spawnSync(["sed", "-n", sed], {
+      stdin: Buffer.from("ARG PLATFORM_VERSION=latest\n"),
+    });
+    expect(bad.stdout.toString().trim()).toBe("");
   });
 });
 
