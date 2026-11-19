@@ -119,7 +119,7 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
 # -> {"event":"APPROVE"|"COMMENT","verdictLabel":"APPROVE"|"COMMENT"}
 ```
 Use `event` and `verdictLabel` verbatim in `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json` (`commit_id`, `body`, `event`, `comments[]`). The `body` MUST lead with the literal `Verdict: APPROVE` or `Verdict: COMMENT` matching `verdictLabel` — also when `event` is forced to `COMMENT` by
-self-review. Append the dependency-risk clause and (only when `verdictLabel` is APPROVE and `RISK_RATING` is set) the Risk line after that lead-in; inline comments only on diff-hunk lines: [verdict-folding.md](../references/review-lean/verdict-folding.md).
+self-review. Append the dependency-risk clause and (only when `verdictLabel` is APPROVE and `RISK_RATING` is set) the Risk line after that lead-in; inline comments only on diff-hunk lines. The posted body is verdict-first (verdict, then the 1-3 findings that matter, then bullets with `file:line`); each inline comment is one issue, fix suggestion first: [verdict-folding.md](../references/review-lean/verdict-folding.md).
 ### Step 10.5: Hard-Gate Validation (Before Posting)
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
@@ -142,4 +142,4 @@ Only after a posted review, after every ledger POST. With `[ -n "$PR_RECORD_ID" 
 **Proof:** `POST /prs/{id}/complete` and the PATCH with `agentId`/`reviewedCommitSha`.
 ## Review Quality Rules
 - **Verify before flagging** against the actual code, not just the diff; **check scope** with `git show origin/{base}:{file}` — present on base → out of scope.
-- **Don't echo CI** unless your finding is the cause; **don't contradict CLAUDE.md**. **No filler language** ("FYI", "Note:"). **Organize by file and line**, in diff order. **Breaking API changes**: assume rolling deployments; flag removed endpoints, changed shapes and renamed fields as critical.
+- **Don't echo CI** unless your finding is the cause; **don't contradict CLAUDE.md**. **No filler language** ("FYI", "Note:"). **Verdict first**: 1-3 findings that matter, one issue per inline comment, fix suggestion first. **Organize by file and line**, in diff order. **Breaking API changes**: assume rolling deployments; flag removed endpoints, changed shapes and renamed fields as critical.

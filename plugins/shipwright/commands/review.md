@@ -1387,6 +1387,14 @@ Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 For a COMMENT verdict, the `body` follows the same convention, e.g.
 `"body": "Verdict: COMMENT — {one-line summary of the most important finding}"`.
 
+**Concise posted review (CSM-2.6).** The posted `body` is verdict-first: the literal
+`Verdict: ...` label, then the 1-3 findings that matter most in one line each, then (if
+any more are worth keeping) short bullets with `file:line` pointers. No restated PR
+description, no per-section walkthrough, no strengths list — that narrative stays in
+`PR_REVIEW_{pr}.md`. Each inline comment in `comments[]` covers **one issue** and leads
+with the fix suggestion, followed by one short sentence of why. Never batch several
+issues into one inline comment.
+
 **Folding in the dependency risk analysis (DBR-3.2).** When Step 5.8 triggered and
 `DEPENDENCY_RISK_ANALYSIS` is set, append a short, clearly-labeled dependency-risk clause to
 the `body` after the `Verdict: ...` lead-in, e.g. `"Verdict: COMMENT — {code-review summary};
@@ -1966,7 +1974,9 @@ These rules are non-negotiable regardless of policy settings:
   the cause.
 - **Don't contradict CLAUDE.md**: don't suggest patterns the project explicitly avoids.
 - **No filler language**: no "FYI", "Note:", "Just a heads up". Be direct.
-- **Keep it tight**: 2-5 actionable items. Drop low-confidence suggestions and nitpicks.
+- **Keep it tight**: 2-5 actionable items in the review file (the posted body surfaces only the top 1-3). Drop low-confidence suggestions and nitpicks.
+- **Verdict first**: the posted body leads with the verdict and the 1-3 findings that
+  matter; inline comments are one issue each, fix suggestion first.
 - **Organize by file and line**: list issues in diff order.
 - **Never REQUEST_CHANGES**: only APPROVE or COMMENT.
 - **APPROVE means clean**: any finding at important or critical severity means COMMENT —

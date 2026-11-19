@@ -2975,3 +2975,12 @@ describe("review.md — Step 9.5 semantic no-finding classification (DTA-11.1)",
     expect(s).toMatch(/never\s+overrides a structural exclusion/);
   });
 });
+
+describe("review.md — concise posted review (CSM-2.6)", () => {
+  it("specifies a verdict-first body and one-issue inline comments, fix first", () => {
+    const s = readFileSync(REVIEW_MD_PATH, "utf-8").replace(/\s+/g, " ");
+    expect(s).toContain("Concise posted review (CSM-2.6)");
+    expect(s).toContain("1-3 findings that matter most");
+    expect(s).toContain("covers **one issue** and leads with the fix suggestion");
+  });
+});
