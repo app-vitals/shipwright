@@ -782,3 +782,24 @@ describe("commands carry no onboarding preflight section", () => {
     });
   }
 });
+
+describe("dev-task — concise PR body and final summary (CSM-2.5)", () => {
+  it("PR body is bottom-line-first with bullets and no process narrative", () => {
+    expect(content).toContain("bottom-line-first");
+    expect(content).toContain("no narrative of your process");
+    expect(content).toContain("a bottom line first (1-2 lines: what changed and why)");
+    for (const b of ["What changed", "Risk", "What to check", "Tests"]) {
+      expect(content).toContain(`**${b}**`);
+    }
+    expect(content).not.toContain("Acceptance Criteria table");
+  });
+
+  it("final summary is headline + max 3 bullets + PR link, keeping the DONE proof", () => {
+    expect(content).toContain("`DONE: {id}`");
+    expect(content).toContain("at most 3 bullets");
+    expect(content).toContain("PR link");
+    expect(content).toContain("never trimmed");
+    expect(content).toContain("logged and PATCHed, not listed unless notable");
+    expect(content).not.toContain("Coverage before → after");
+  });
+});

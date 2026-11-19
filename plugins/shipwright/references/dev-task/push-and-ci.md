@@ -5,9 +5,13 @@ Mechanics for `commands/dev-task.md`.
 ## Push and PR
 Pre-push: `GET /verification-checks?taskId={id}&limit=1`; empty → record outcomes now (never blocks).
 Existing open PR for the branch (bundled task) → push adds commits; set `pr`/`prCreatedAt` on the task; skip creation.
-Otherwise write the body (Summary, Acceptance Criteria table, Test Plan) to `/tmp/shipwright-pr-body-{task-id}.txt` (task id
+Otherwise write the body to `/tmp/shipwright-pr-body-{task-id}.txt` (task id
 in the path; `/tmp` is shared across worktrees), `gh pr create --title ... --body-file ...`, then remove it. No heredocs in
 the command string (they defeat permission glob matching).
+
+Body layout (skimmable, no narrative of the agent's process): a bottom line first (1-2 lines: what changed and why), then
+bullets — **What changed**, **Risk** (incl. breaking changes and follow-ups), **What to check**, **Tests**. List acceptance
+criteria only as a compact met/unmet line.
 
 ## PR failure cleanup
 PR creation fails after 2 retries → close orphaned PRs on the branch, delete the remote branch, remove the local branch,

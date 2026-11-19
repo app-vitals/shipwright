@@ -145,5 +145,6 @@ Still red after the window → exactly one bonus CI-fix subagent (6c prompt, fre
 
 ## Step 7: Report
 
-Print the `PATCH COMPLETE` summary (List A/C/D outcomes, settled refs, blockers) from verify-ci.md's template.
+Print the `PATCH COMPLETE` summary from verify-ci.md's template: per PR a headline plus at most 3 bullets and the PR
+link(s); blockers and concerns are never trimmed. Comment replies posted to PRs lead with the resolution.
 **Proof:** the `PATCH COMPLETE` block.

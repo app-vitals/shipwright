@@ -583,3 +583,26 @@ describe("patch references — semantic no-finding classification (DTA-11.1)", (
     expect(spine).toContain("--candidates");
   });
 });
+
+describe("patch — concise report and resolution-first replies (CSM-2.5)", () => {
+  it("Step 7 report is headline + max 3 bullets + PR link, keeping PATCH COMPLETE", () => {
+    expect(spine).toContain("`PATCH COMPLETE`");
+    expect(spine).toContain("at most 3 bullets");
+    expect(spine).toContain("never trimmed");
+    const tpl = refs["verify-ci.md"];
+    expect(tpl).toContain("PATCH COMPLETE");
+    expect(tpl).toContain("max 3 bullets");
+    expect(tpl).toContain("{PR link}");
+    expect(tpl).toContain("No process narrative");
+    expect(tpl).not.toContain("Findings addressed:");
+    expect(tpl).not.toContain("Failures fixed:");
+  });
+
+  it("comment replies lead with the resolution", () => {
+    expect(spine).toContain("lead with the resolution");
+    const lane = refs["lane-findings.md"];
+    expect(lane).toContain("No code change — {n} finding(s) rejected:");
+    expect(lane).toContain("Resolution first, then one bullet per finding");
+    expect(lane).not.toContain("premise did not hold");
+  });
+});
