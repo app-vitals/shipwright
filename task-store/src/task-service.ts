@@ -27,6 +27,7 @@ import type {
   TaskEvent,
   TaskKind,
 } from "./index.ts";
+import { cursorWhere, decodeCursor, encodeCursor } from "./lib/cursor.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import type { OriginKind } from "./origin-kinds.ts";
 import {
@@ -495,6 +496,12 @@ export interface TaskListFilters {
   kind?: TaskKind;
   limit?: number;
   offset?: number;
+  /**
+   * Opaque keyset cursor (see lib/cursor.ts): return rows strictly after the
+   * encoded (createdAt, id) position in the current sort order. Mutually
+   * exclusive with `offset` (BadRequestError). Malformed → BadRequestError.
+   */
+  cursor?: string;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
   sort?: "asc" | "desc";
   /**
@@ -531,6 +538,8 @@ export interface TaskListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Cursor for the next page; null on the last page. TaskService always sets it; test doubles may omit (route coerces to null). */
+  nextCursor?: string | null;
 }
 
 /** Result from TaskService.getEvents. */
@@ -698,6 +707,27 @@ export class TaskService implements TaskServiceLike {
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
+    const sort = filters.sort ?? "asc";
+
+    // The cursor is only a position — never a row lookup — so a deleted or
+    // filtered-out cursor row is irrelevant. It is ANDed in (not spread onto
+    // where.OR) so it can't clobber agentScope's OR. `total` keeps counting
+    // the whole filtered set, so it uses `where` without the cursor clause.
+    let pageWhere: Prisma.TaskWhereInput = where;
+    if (filters.cursor !== undefined) {
+      if (filters.offset) {
+        throw new BadRequestError("cursor and offset are mutually exclusive");
+      }
+      const existing = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      pageWhere = {
+        ...where,
+        AND: [...existing, cursorWhere(decodeCursor(filters.cursor), sort)],
+      };
+    }
 
     // pageTasks + total are the only two queries that share the `where`
     // filter, so batching them in a transaction is what actually mattered
@@ -708,15 +738,23 @@ export class TaskService implements TaskServiceLike {
     // the real pageTasks result first, then scope the dependency lookup by
     // id — mirroring get()'s `where: { id: { in: task.dependencies } }`
     // pattern — instead of always pulling every row in the table.
-    const [pageTasks, total] = await this.prisma.$transaction([
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.task.findMany({
-        where,
-        orderBy: { createdAt: filters.sort ?? "asc" },
-        take: limit,
+        where: pageWhere,
+        orderBy: [{ createdAt: sort }, { id: sort }],
+        take: limit + 1,
         skip: offset,
       }),
       this.prisma.task.count({ where }),
     ]);
+    const hasMore = fetched.length > limit;
+    const pageTasks = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = pageTasks[pageTasks.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+        : null;
 
     const depIds = [
       ...new Set(pageTasks.flatMap((t: Task) => t.dependencies ?? [])),
@@ -733,7 +771,7 @@ export class TaskService implements TaskServiceLike {
       blockedBy: computeBlockedBy(t, sameAccount(allTasks, t.accountId)),
     }));
 
-    return { tasks, total, limit, offset };
+    return { tasks, total, limit, offset, nextCursor };
   }
 
   /**

@@ -176,6 +176,10 @@ Response: `{ "updated": ["<id>"], "unchanged": ["<id>"], "skipped": [{ "id": "<i
 
 The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to find the task ids, then `PATCH /tasks/:id` with `{ "status": "deployed", "deployedAt": "<ISO>" }` (or `released` / `releasedAt`) per task; `PATCH /tasks/by-pr` replaces that with one atomic request.
 
+### Keyset paging on `GET /tasks`
+
+`GET /tasks` returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. Results are ordered by `(createdAt, id)` (both reversed for `sort=desc`), so rows sharing a `createdAt` page deterministically. `nextCursor` is an opaque string encoding the last returned row's `(createdAt, id)`; pass it back as `?cursor=` to get the next page (`WHERE createdAt > c OR (createdAt = c AND id > i)`, comparisons flipped for `sort=desc`), or `null` on the last page. The cursor is only a position, not a row lookup, so it keeps working if that row is deleted or no longer matches the filters. `total` still counts the whole filtered set. `?offset` keeps working, but `?cursor` together with `?offset` is a `400`, as is a malformed cursor. `?ready=true` / `?state=ready` and `?state=blocked` are unpaginated and always return `nextCursor: null`. The codec lives in `task-store/src/lib/cursor.ts`.
+
 ### Agent repo scoping on `GET /tasks`
 
 An agent token never sees the whole account's task list. When the token carries an agent id and a repo scope, `TaskService.list` replaces the plain `assignee` filter with an OR clause (`agentScope` in `task-store/src/task-service.ts`, applied at the `if (filters.agentScope)` branch of `list`): tasks assigned to that agent, **or** any task whose `repo` is in the agent's repos. `?repo=` and the other filters still AND-narrow on top, and the account scope applies to every result. An agent token with no repo scope falls back to its own tasks only (`effectiveFilters` drops a caller-supplied `assignee`).
