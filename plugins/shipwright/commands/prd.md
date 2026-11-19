@@ -32,7 +32,7 @@ Follow all phases in order. Proceed automatically between phases. The only pause
 This session often runs in a chat surface (Slack, a phone). Every message you send that needs a reply follows these rules; the spec file and the docs PR keep full detail, so nothing is lost by being brief in chat:
 
 - **Ask last.** The ask is the final line of the message, never buried mid-message. Where the answer is a choice, number the options: `Look right? 1 yes / 2 adjust`.
-- **Max 3 bullets.** A headline plus at most 3 bullets (at most 5 in a section-review summary) plus links. Point to the spec file or PR for the rest instead of pasting it.
+- **Max 3 bullets.** A headline plus at most 3 bullets plus links; the one exception is a Phase 3 section-review summary, which may use 3-5. Point to the spec file or PR for the rest instead of pasting it.
 - **Fits one phone screen** — about 8-10 lines. Cut before you wrap.
 - **One question per message** (see Phase 1) — still true.
 
@@ -108,7 +108,7 @@ rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straig
 
    **Owner.** Precedence: `--owner` if given; else, when `--initiative {task-id}` was passed and `GET /tasks/{task-id}` returns an `owner`, that owner; else `git config user.email` (if unset, no owner is recorded). The owner is held only for the task-store registration call. **Never write the owner (or any email) into the spec file, its header line, the PR title or the PR body.**
 
-   **Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets, ask last, per the Chat Message Rules: bullet 1 `Detected repo: {repo}` and `Spec: {SPEC_PATH}`, bullet 2 `Repos: {repos}` and `Owner: {owner}`, bullet 3 (optional) one line on what the docs/research already made clear. Then end with the ask, e.g. `Look right? 1 yes / 2 correct something`, so the user can fix any of them before investing time in the session. Do not paste doc excerpts or research output.
+   **Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets plus the spec path as the link, ask last, per the Chat Message Rules: bullet 1 `Detected repo: {repo}` and `Spec: {SPEC_PATH}`, bullet 2 `Repos: {repos}` and `Owner: {owner}`, bullet 3 (optional) one line on what the docs/research already made clear. Then end with the ask, e.g. `Look right? 1 yes / 2 correct something`, so the user can fix any of them before investing time in the session. Do not paste doc excerpts or research output.
 
 3. **Read project documentation** (lightweight scan — highlights only, no deep code dive):
    - `CLAUDE.md` — conventions, architecture decisions, and constraints
