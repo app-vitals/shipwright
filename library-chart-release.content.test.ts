@@ -2,7 +2,7 @@
  * Content guard for .github/workflows/library-chart-release.yml (CHM-3.5), the
  * receiver of app-vitals/agent's `chart-release` dispatch (CHM-2.7), and the
  * library-pin step of check-chart-drift.yml. The pin/bump/drift logic itself is
- * tested in .github/workflows/test-auto-bump-chart.sh and
+ * tested in .github/workflows/test-library-pin.sh and
  * test-check-chart-drift.sh.
  *
  * Lives at the repo root (not under .github/) because `bun test` never walks
@@ -79,6 +79,12 @@ describe("library-chart-release.yml", () => {
     expect(runs).toContain("helm dependency update");
     expect(runs).toContain("agent-platform-${VERSION}.tgz");
     expect(runs).toContain('git push --force origin "$BRANCH"');
+  });
+
+  it("re-pins the dependency only: no chart version bump, changelog or annotation rewrite", () => {
+    expect(runs).not.toContain("CHANGELOG");
+    expect(runs).not.toMatch(/date -u/);
+    expect(text).not.toContain("auto-bump-chart");
   });
 
   it("uses a pr-title-lint-clean title and the shared merge gate", () => {

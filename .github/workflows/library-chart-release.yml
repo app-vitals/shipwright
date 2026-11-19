@@ -8,16 +8,16 @@ name: Library Chart Release Bump
 #     -f event_type=chart-release -f client_payload[version]=$VERSION
 #
 # This workflow re-pins the agent-platform dependency to that exact version in
-# charts/shipwright/Chart.yaml and Chart.lock (lib/library-pin.sh), bumps the
-# chart version with the matching artifacthub.io/changes annotation and
-# CHANGELOG.md entry, swaps the vendored charts/shipwright/charts/
+# charts/shipwright/Chart.yaml and Chart.lock (lib/library-pin.sh), swaps the
+# vendored charts/shipwright/charts/
 # agent-platform-*.tgz (same layout CHM-3.1 committed), and opens the bump PR,
 # or updates the open one, on the fixed branch chore/library-chart-release. The
 # PR's helm.yml checks include the render-parity check. It then reuses the
 # platform release merge gate (scripts/platform-bump-gate.sh: waits for CI,
 # reruns failed checks, admin-merges the bot PR). The merge touches
-# charts/shipwright/**, so chart-release.yml publishes the new chart version
-# as usual. Renovate's helmv3 manager is the fallback if a dispatch is missed;
+# charts/shipwright/**, so chart-release.yml derives and publishes the next
+# chart version (the chart version is not bumped here: ADR 0001). Renovate's
+# helmv3 manager is the fallback if a dispatch is missed;
 # check-chart-drift.yml fails when the pin trails the published index.
 #
 # Failures are loud: the job fails (leaving the PR open) and goes red.
@@ -29,7 +29,7 @@ name: Library Chart Release Bump
 # Manual / rehearsal run: Actions -> Library Chart Release Bump -> Run workflow,
 # with the library version to pin.
 #
-# Logic tests: .github/workflows/test-auto-bump-chart.sh (bump) and
+# Logic tests: .github/workflows/test-library-pin.sh (bump) and
 # test-check-chart-drift.sh (drift). Content test:
 # library-chart-release.content.test.ts (repo root).
 
@@ -100,12 +100,12 @@ jobs:
             exit 1
           fi
 
-      # Validates VERSION (strict X.Y.Z), then rewrites Chart.yaml, Chart.lock,
-      # CHANGELOG.md. A no-op when already pinned (or newer).
-      - name: Re-pin agent-platform and bump the chart version
+      # Validates VERSION (strict X.Y.Z), then rewrites the dependency pin in
+      # Chart.yaml and Chart.lock. A no-op when already pinned (or newer).
+      - name: Re-pin agent-platform
         run: |
           source .github/workflows/lib/library-pin.sh
-          bump_library_pin charts/shipwright "$VERSION" "$(date -u +%Y-%m-%d)"
+          bump_library_pin charts/shipwright "$VERSION"
 
       - name: Add Helm chart repos
         uses: ./.github/actions/helm-repos
@@ -148,10 +148,10 @@ jobs:
         run: |
           git checkout -B "$BRANCH"
           git add -A -- charts/shipwright/Chart.yaml charts/shipwright/Chart.lock \
-            charts/shipwright/CHANGELOG.md charts/shipwright/charts
+            charts/shipwright/charts
           # Anything else changing means the bump did more than re-pin: stop.
           if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
-            echo "ERROR: unexpected changes outside Chart.yaml/Chart.lock/CHANGELOG.md/charts/:" >&2
+            echo "ERROR: unexpected changes outside Chart.yaml/Chart.lock/charts/:" >&2
             git status --porcelain >&2
             exit 1
           fi
@@ -169,7 +169,7 @@ jobs:
           BODY=$(cat <<EOF
           ## agent-platform library chart ${VERSION}
 
-          Re-pins the \`agent-platform\` dependency in \`charts/shipwright/Chart.yaml\` and \`Chart.lock\` to \`${VERSION}\`, replaces the vendored \`charts/agent-platform-*.tgz\` and bumps the chart version (annotation + CHANGELOG in sync).
+          Re-pins the \`agent-platform\` dependency in \`charts/shipwright/Chart.yaml\` and \`Chart.lock\` to \`${VERSION}\`, replaces the vendored \`charts/agent-platform-*.tgz\` (the chart version is derived at publish time).
 
           Triggered by the \`chart-release\` dispatch from app-vitals/agent (or a manual run).
 

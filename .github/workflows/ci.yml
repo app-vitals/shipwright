@@ -12,11 +12,10 @@ permissions:
   contents: read
 
 jobs:
-  # Detects whether this run only touches the files auto-bump-chart.yml or
-  # sync-plugin-version.yml commit — chart-version bumps (Chart.yaml,
-  # CHANGELOG.md) and plugin-version syncs (package.json across workspaces,
-  # plugin.json, marketplace.json, version.txt). Both are fully automated,
-  # bot-authored, version-string-only changes that never touch application
+  # Detects whether this run only touches the files sync-plugin-version.yml
+  # commits — plugin-version syncs (package.json across workspaces,
+  # plugin.json, marketplace.json, version.txt). It is a fully automated,
+  # bot-authored, version-string-only change that never touch application
   # logic — so the app/docker/site jobs below are gated on this and skipped
   # when nothing else changed. helm.yml (separately path-filtered on
   # charts/**) still runs and is what actually validates a chart change.
@@ -63,16 +62,16 @@ jobs:
           echo "Changed files (${BASE}...${HEAD_SHA}):"
           echo "$CHANGED"
 
-          # Exact allowlist — the full set of files auto-bump-chart.yml and
-          # sync-plugin-version.yml ever touch. Anything else in the diff
+          # Exact allowlist — the full set of files sync-plugin-version.yml
+          # ever touches. Anything else in the diff
           # means real code changed, so the full suite runs.
-          PATTERN='^(charts/shipwright/Chart\.yaml|charts/shipwright/CHANGELOG\.md|package\.json|plugins/shipwright/package\.json|plugins/shipwright/\.claude-plugin/plugin\.json|metrics/package\.json|agent/package\.json|version\.txt|\.claude-plugin/marketplace\.json)$'
+          PATTERN='^(package\.json|plugins/shipwright/package\.json|plugins/shipwright/\.claude-plugin/plugin\.json|metrics/package\.json|agent/package\.json|version\.txt|\.claude-plugin/marketplace\.json)$'
 
           if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE "$PATTERN"; then
             echo "app=true" >> "$GITHUB_OUTPUT"
           else
             echo "app=false" >> "$GITHUB_OUTPUT"
-            echo "Only automated chart/plugin-version-bump files changed — skipping app-level CI jobs."
+            echo "Only automated plugin-version-sync files changed — skipping app-level CI jobs."
           fi
 
   ci:
@@ -158,15 +157,16 @@ jobs:
       - name: Check banned strings
         run: task check-strings
 
-      # The chart-bump shell suites hand-mirror the inline bash in
-      # auto-bump-chart.yml / check-chart-drift.yml, so without running them a
-      # workflow edit is unverified. They run in this required job (no new check
+      # The chart shell suites test the logic that chart-release.yml,
+      # library-chart-release.yml and check-chart-drift.yml source from
+      # .github/workflows/lib/. They run in this required job (no new check
       # name). The `changes` allowlist above only skips this job for pure
-      # version-bump diffs, so a PR touching only those workflows, the test
-      # scripts or lib/chart-tag-utils.sh still runs them.
-      - name: Chart-bump shell tests
+      # plugin-version-sync diffs, so a PR touching only those workflows, the
+      # test scripts or lib/ still runs them.
+      - name: Chart shell tests
         run: |
-          bash .github/workflows/test-auto-bump-chart.sh
+          bash .github/workflows/test-chart-release.sh
+          bash .github/workflows/test-library-pin.sh
           bash .github/workflows/test-check-chart-drift.sh
 
       - name: Typecheck

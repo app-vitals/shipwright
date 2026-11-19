@@ -38,11 +38,7 @@ assert_eq() {
 
 # ---------------------------------------------------------------------------
 # Source the shared libs under test. Sourcing must be side-effect free (no
-# assertions run, no top-level `exit`) — that's the whole point of extracting
-# these into lib/ instead of sourcing test-auto-bump-chart.sh directly (see
-# check-chart-drift.yml's header comment for why sourcing that test file
-# would be unsafe: no main-guard, runs its whole suite, and calls `exit`
-# unconditionally at the bottom which would kill this script too).
+# assertions run, no top-level `exit`).
 # ---------------------------------------------------------------------------
 
 # shellcheck source=lib/chart-tag-utils.sh
@@ -59,8 +55,7 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Fixture mirroring the shape of charts/shipwright/values.yaml's five
 # image-tag-bearing service blocks (admin, metrics, agent + nested
-# provisioning.image, taskStore, chat). Same shape as test-auto-bump-chart.sh's
-# make_values_yaml fixture, with tags overridable per-block so drift/no-drift
+# provisioning.image, taskStore, chat). With tags overridable per-block so drift/no-drift
 # scenarios are easy to construct.
 make_values_yaml() {
   local admin_tag="${1:-admin-v1.50.0}"
@@ -429,6 +424,44 @@ if compute_library_drift "$LIB_DIR/Chart.yaml" "$LIB_DIR/Chart.lock" "$LIB_DIR/d
   fail "missing index file fails" "non-zero exit" "exit 0"
 else
   pass "missing index file fails"
+fi
+
+# ---------------------------------------------------------------------------
+# Tests: published-chart drift (ADR 0001): pins come from the newest package
+# on Pages, not from committed values.yaml; every published version since the
+# tag scheme began must have a chart-<version> tag.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== published chart index tests ==="
+
+CIDX="$SCRIPT_DIR/fixtures/chart-index.yaml"
+assert_eq "latest_chart_version picks the highest semver (1.32.304 > 1.32.9)" "1.32.304" "$(latest_chart_version "$CIDX")"
+assert_eq "latest_chart_version on a missing index prints nothing" "" "$(latest_chart_version "$TMPDIR_TEST/none.yaml")"
+
+# A published package's values.yaml is what the drift check compares.
+PUB=$(make_values_yaml "admin-v1.49.0")
+assert_eq "published pins behind the latest tags are drift" \
+  "MISMATCH: service=admin path=admin.image.tag expected=admin-v1.50.0 actual=admin-v1.49.0" \
+  "$(compute_drift "$PUB" "admin=admin-v1.50.0")"
+
+echo ""
+echo "=== versions_missing_chart_tag tests ==="
+
+TAGREPO="$TMPDIR_TEST/tagrepo"
+git init -q "$TAGREPO"
+(cd "$TAGREPO" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i)
+assert_eq "untagged version above the floor is reported" "1.32.304" \
+  "$(cd "$TAGREPO" && versions_missing_chart_tag "$CIDX" 1.32.9)"
+(cd "$TAGREPO" && git tag chart-1.32.304)
+assert_eq "tagged versions are not reported" "" \
+  "$(cd "$TAGREPO" && versions_missing_chart_tag "$CIDX" 1.32.9)"
+assert_eq "versions at or below the floor predate the tag scheme" "" \
+  "$(cd "$TAGREPO" && git tag -d chart-1.32.304 >/dev/null && versions_missing_chart_tag "$CIDX" 1.32.304)"
+if (cd "$TAGREPO" && versions_missing_chart_tag "$TMPDIR_TEST/none.yaml" 1.32.9) >/dev/null 2>&1; then
+  fail "unreadable index fails" "non-zero exit" "exit 0"
+else
+  pass "unreadable index fails"
 fi
 
 # ---------------------------------------------------------------------------

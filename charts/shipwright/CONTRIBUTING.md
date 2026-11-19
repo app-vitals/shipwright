@@ -4,35 +4,29 @@ This note covers the rules specific to the chart under `charts/shipwright/`. For
 repo-wide conventions (Conventional Commits, tests-with-code, license), see the
 [root `CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
-## Versioning discipline (enforced by CI)
+## Versioning
 
-Every change under `charts/shipwright/**` **must bump the chart `version`** in
-`Chart.yaml`. This is a hard CI gate, not a convention:
+The published chart version is **derived at publish time** by
+`.github/workflows/chart-release.yml` (ADR
+[0001](../../docs/adr/0001-derive-chart-version-at-publish-time.md)). You do
+not bump it, add a `CHANGELOG.md` entry or edit `artifacthub.io/changes` when
+you change the chart.
 
-- The Helm workflow (`.github/workflows/helm.yml`) runs
-  `ct lint --check-version-increment`, which diffs the chart against `main` and
-  **fails the PR** if the chart changed but `version` did not increase.
-- `ct.yaml` sets `check-version-increment: true`.
-
-When you change the chart:
-
-1. **Bump `version`** in `Chart.yaml` (SemVer — patch/minor/major as
-   appropriate). `appVersion` only changes when the deployed Shipwright app
-   release changes.
-2. **Add a `CHANGELOG.md` entry** for the new version (keep-a-changelog style:
-   `Added` / `Changed` / `Fixed` / `Removed`).
-3. **Mirror it in `artifacthub.io/changes`** in `Chart.yaml` (Artifact Hub
-   list-of-changes format: `- kind: added|changed|fixed|removed` +
-   `description:`). Keep the annotation and the CHANGELOG in sync.
+- `Chart.yaml` `version` is a **floor** (`MAJOR.MINOR.0`). Edit it by hand only
+  for a deliberate minor or major bump; the publish takes the next patch of that
+  line.
+- The per-service image pins in `values.yaml` are stamped at package time from
+  the latest release tags; do not hand-edit them for a release.
+- `ct.yaml` sets `check-version-increment: false`.
+- What shipped in a version is recorded in the annotated git tag
+  `chart-<version>` (message = release record).
 
 ## Validate locally before pushing
 
 ```bash
 helm lint charts/shipwright
 task helm:unittest                                # helm-unittest specs
-# Detection mode — no --charts, so ct diffs against main and runs the
-# version-bump check (passing --charts bypasses detection and the bump check):
-ct lint --config ct.yaml --check-version-increment --target-branch main
+ct lint --config ct.yaml --target-branch main
 ```
 
 `ct lint` also runs `yamllint` and `yamale` schema validation; install them with

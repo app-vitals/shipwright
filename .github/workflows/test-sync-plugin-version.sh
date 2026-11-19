@@ -72,7 +72,7 @@ assert_eq "branch for 1.0.0"   "chore/plugin-version-v1.0.0"   "$(branch_name '1
 # Stale-base merge-retry logic (mirrors the "Wait for checks and merge" step)
 #
 # gh pr merge --admin can fail with a transient GraphQL error when a
-# concurrent workflow (e.g. auto-bump-chart.yml) merges its own PR first and
+# concurrent workflow (e.g. library-chart-release.yml) merges its own PR first and
 # moves main out from under this one — "Base branch was modified. Review and
 # try the merge again." This is NOT a real conflict; it resolves itself on
 # retry once the base ref settles. is_stale_base_error() matches on "Base

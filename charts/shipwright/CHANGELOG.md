@@ -5,10 +5,11 @@ All notable changes to the **shipwright** Helm chart are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The chart `version` (in `Chart.yaml`) is bumped on **every** chart change,
-independent of `appVersion`. CI enforces this with
-`ct lint --check-version-increment`. Each release here must mirror the
-`artifacthub.io/changes` annotation in `Chart.yaml`.
+**Historical.** Up to 1.32.304 each chart version was bumped by a committed PR
+and logged here. Since ADR 0001 the chart version is derived at publish time
+and no longer committed: see the README "Versioning" section, and the annotated
+`chart-<version>` git tags (message = release record) for what each version
+shipped.
 
 ## [1.32.304] - 2026-11-19
 

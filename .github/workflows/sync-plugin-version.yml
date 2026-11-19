@@ -74,8 +74,7 @@ on:
     tags:
       - "agent-v*"
 
-# Queue concurrent bumps rather than cancelling them, same reasoning as
-# auto-bump-chart.yml: if multiple agent-v* tags land close together, each
+# Queue concurrent bumps rather than cancelling them: if multiple agent-v* tags land close together, each
 # should still produce its own sync. The "Wait for PR to merge" step holds
 # the slot until the merge actually lands, so the next queued run always
 # reads the post-merge version.
@@ -94,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Check out main (not the tag's commit) so we always sync from the
-      # latest state on main, same reasoning as auto-bump-chart.yml.
+      # latest state on main.
       #
       # persist-credentials left at its default (true) intentionally: the
       # "Commit and push sync branch" step below pushes from this checkout's
@@ -243,8 +242,8 @@ jobs:
       # PR #1084, where `gh pr merge --squash` (no `--admin`) failed with
       # "the base branch policy prohibits the merge" even after checks passed.
       #
-      # Retry on stale-base races: this workflow and auto-bump-chart.yml both
-      # trigger off the same tag pushes and race to merge onto main. When the
+      # Retry on stale-base races: this workflow and other bot PRs
+      # (e.g. library-chart-release.yml) race to merge onto main. When the
       # other workflow's PR lands first, main moves out from under this PR
       # (no textual conflict — just a stale base ref) and `gh pr merge` fails
       # with a transient GraphQL error: "Base branch was modified. Review and
