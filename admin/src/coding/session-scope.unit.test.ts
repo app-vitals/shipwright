@@ -8,6 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   deriveSessionVisibilityFromTasks,
+  isPrVisible,
   isSessionVisible,
   isTaskVisible,
   type MembershipForScope,
@@ -325,5 +326,30 @@ describe("isTaskVisible", () => {
         { agentIds: [], repos: [] },
       ),
     ).toBe(false);
+  });
+});
+
+describe("isPrVisible", () => {
+  const scope: VisibilityScope = { agentIds: ["a1"], repos: ["org/r1"] };
+
+  it("is always true under the all scope", () => {
+    expect(isPrVisible({ repo: "org/x" }, { agentIds: "all", repos: [] })).toBe(
+      true,
+    );
+  });
+
+  it("matches on repo", () => {
+    expect(isPrVisible({ repo: "org/r1" }, scope)).toBe(true);
+  });
+
+  it("is false for a repo outside the scope or a missing repo", () => {
+    expect(isPrVisible({ repo: "org/x" }, scope)).toBe(false);
+    expect(isPrVisible({ repo: null }, scope)).toBe(false);
+  });
+
+  it("an empty scope sees nothing", () => {
+    expect(isPrVisible({ repo: "org/r1" }, { agentIds: [], repos: [] })).toBe(
+      false,
+    );
   });
 });

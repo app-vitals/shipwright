@@ -96,6 +96,7 @@ import {
 } from "./session-follow-service.ts";
 import {
   deriveSessionVisibilityFromTasks,
+  isPrVisible,
   isSessionVisible,
   isTaskVisible,
   type SessionForVisibility,
@@ -106,7 +107,7 @@ import { fetchRecentVerificationChecks } from "./verification-checks.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** TaskStoreViewScope plus the MPV-1.2 `member` kind (Tasks read routes only). */
+/** TaskStoreViewScope plus the MPV-1.2 `member` kind (Tasks and PRs read routes only). */
 type TaskReadViewScope =
   | TaskStoreViewScope
   | { kind: "member"; agentIds: string[]; repos: string[] };
@@ -1420,11 +1421,20 @@ export function createCodingAdminUIApp(
   // ─── PRs ─────────────────────────────────────────────────────────────────
 
   app.get("/admin/prs", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    const view = await resolveTaskReadView(c.var.isAdmin, c.var.userEmail);
     if (view.kind === "none") return new Response("Forbidden", { status: 403 });
     const ts = scopedTaskStore(
       view.kind === "account" ? view.accountId : undefined,
     );
+    // MPV-1.3: a member's PR list is limited to their agents' repos — the
+    // user's own repo filter is intersected with that scope (never widened).
+    const requestedRepos = c.req.queries("repo");
+    const memberRepos =
+      view.kind === "member"
+        ? requestedRepos && requestedRepos.length > 0
+          ? requestedRepos.filter((r) => view.repos.includes(r))
+          : view.repos
+        : undefined;
 
     const stateParam = c.req.query("state") ?? undefined;
     const reviewState = c.req.query("reviewState") ?? undefined;
@@ -1432,7 +1442,7 @@ export function createCodingAdminUIApp(
     // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
     // both a bookmarked single-value URL and a multiselect submission with
     // several selections round-trip correctly.
-    const repo = c.req.queries("repo");
+    const repo = requestedRepos;
     const org = c.req.queries("org");
     const taskId = c.req.query("taskId") ?? undefined;
     const blockedParam = c.req.query("blocked") ?? undefined;
@@ -1466,7 +1476,11 @@ export function createCodingAdminUIApp(
         } else {
           try {
             const task = await fetchTask(taskId);
-            if (task?.repo && task.pr) {
+            if (
+              task?.repo &&
+              task.pr &&
+              (view.kind !== "member" || view.repos.includes(task.repo))
+            ) {
               taskFilterRepo = task.repo;
               taskFilterPr = task.pr;
             } else {
@@ -1492,6 +1506,10 @@ export function createCodingAdminUIApp(
         taskFilterUnresolved = true;
       }
 
+      // A member whose filter leaves no in-scope repo gets an empty list; an
+      // empty repo set must never reach the task-store (it means unscoped).
+      if (memberRepos && memberRepos.length === 0) taskFilterUnresolved = true;
+
       if (taskFilterUnresolved) {
         // Task not found / no linked pr / lookup failed / conflicts with the
         // user's own repo filter — render empty list.
@@ -1501,7 +1519,7 @@ export function createCodingAdminUIApp(
         const params = new URLSearchParams();
         if (stateParam) params.set("state", stateParam);
         if (reviewState) params.set("reviewState", reviewState);
-        for (const r of repo ?? []) params.append("repo", r);
+        for (const r of memberRepos ?? repo ?? []) params.append("repo", r);
         for (const o of org ?? []) params.append("org", o);
         if (taskFilterRepo && taskFilterPr) {
           params.set("repo", taskFilterRepo);
@@ -1570,12 +1588,15 @@ export function createCodingAdminUIApp(
       }
     }
 
-    const suggestions = ts.fetchDistinct
-      ? await ts
-          .fetchDistinct()
-          .then((v) => ({ repos: v.repos, orgs: v.orgs }))
-          .catch(() => ({}))
-      : {};
+    const suggestions =
+      view.kind === "member"
+        ? { repos: view.repos, orgs: [] }
+        : ts.fetchDistinct
+          ? await ts
+              .fetchDistinct()
+              .then((v) => ({ repos: v.repos, orgs: v.orgs }))
+              .catch(() => ({}))
+          : {};
 
     return html(
       renderPrsPage(
@@ -1606,7 +1627,7 @@ export function createCodingAdminUIApp(
   });
 
   app.get("/admin/prs/:id", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    const view = await resolveTaskReadView(c.var.isAdmin, c.var.userEmail);
     if (view.kind === "none") return new Response("Forbidden", { status: 403 });
     const ts = scopedTaskStore(
       view.kind === "account" ? view.accountId : undefined,
@@ -1621,6 +1642,13 @@ export function createCodingAdminUIApp(
     }
     // SSP-6.8: another account's PR id is indistinguishable from a missing one.
     if (!pr && view.kind === "account") return NOT_FOUND();
+    // MPV-1.3: a member gets the same 404 for a missing PR and one outside
+    // their agents' repos, so existence isn't leaked.
+    if (
+      view.kind === "member" &&
+      (!pr || !isPrVisible(pr, { agentIds: view.agentIds, repos: view.repos }))
+    )
+      return NOT_FOUND();
     if (!pr) return c.redirect("/admin/prs", 302);
 
     const agentIds = [pr.agentId, pr.claimedBy].filter(

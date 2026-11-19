@@ -10,8 +10,8 @@
  *   - account user (flag on): only their account's rows; another account's
  *     task/PR/session id → 404; may rename/archive their own sessions
  *   - platform admin: every row, plus an Account column on the sessions list
- *   - caller with no account (flag off): PRs stay admin-only (403); an agent
- *     member sees Tasks scoped to their agents (MPV-1.2) but cannot mutate
+ *   - caller with no account (flag off): an agent member sees Tasks and PRs
+ *     scoped to their agents (MPV-1.2/1.3) but cannot mutate
  */
 
 import { describe, expect, it } from "bun:test";
@@ -658,10 +658,12 @@ describe("SSP-6.8 — /admin/prs scoped by account", () => {
     expect((await get(app, "/admin/prs/pr-b", A_USER)).status).toBe(404);
   });
 
-  it("a caller with no account still gets 403", async () => {
+  it("a caller with no account is a member: PRs outside their agents' repos are empty/404 (MPV-1.3)", async () => {
     const { app } = makeApp();
-    expect((await get(app, "/admin/prs", NO_ACCOUNT)).status).toBe(403);
-    expect((await get(app, "/admin/prs/pr-a", NO_ACCOUNT)).status).toBe(403);
+    const list = await get(app, "/admin/prs", NO_ACCOUNT);
+    expect(list.status).toBe(200);
+    expect(await list.text()).not.toContain("/admin/prs/pr-a");
+    expect((await get(app, "/admin/prs/pr-a", NO_ACCOUNT)).status).toBe(404);
   });
 });
 

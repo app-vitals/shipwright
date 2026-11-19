@@ -228,3 +228,18 @@ export function isTaskVisible(
     (!!task.repo && scope.repos.includes(task.repo))
   );
 }
+
+// ─── PR visibility ──────────────────────────────────────────────────────────
+
+/**
+ * Decide whether a single PR is visible under the given scope (MPV-1.3):
+ * always under the "all" scope, otherwise iff the PR's repo is one of the
+ * scope's repos (the task-store PR scope rule). An empty scope sees nothing.
+ */
+export function isPrVisible(
+  pr: { repo?: string | null },
+  scope: VisibilityScope,
+): boolean {
+  if (scope.agentIds === "all") return true;
+  return !!pr.repo && scope.repos.includes(pr.repo);
+}
