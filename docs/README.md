@@ -24,6 +24,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 - **[Release gate runbook](./release-gate.md)** — the cross-repo release chain a RELEASE GATE task waits on, `scripts/check-platform-pin.sh` behavior and stages, watch list and failure playbook.
 - **[Review risk rating](./review-risk-rating.md)** — how `/shipwright:review` scores a PR Low/Medium/High: factor categories, the points-to-level threshold table, the raise-only subagent merge rule, APPROVE-only posting, and the exclusion of author-based signals.
 - **[Finding suppressions](./suppressions.md)** — `.shipwright/suppressions.yml`: match keys, `false_positive` vs `accepted_risk` expiry, which scan/fix skills honor it, and the hitl proposal flow.
+- **[Preview environment](./preview-environment.md)** — the automatic stack test and the label-triggered, password-gated public preview: one-time GitHub setup, requesting and ending a preview, how the password is protected, limits and troubleshooting.
 - **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 
 ## Command reference
