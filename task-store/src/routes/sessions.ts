@@ -28,6 +28,11 @@
  *   POST   /sessions/:slug/lock    acquire the planning lock (PLU-2.4; 409 when held)
  *   DELETE /sessions/:slug/lock    release it (403 for a non-holder)
  *   GET    /sessions/preflight/scope  which repos the token may write to (PLU-2.4)
+ *   POST   /sessions/:slug/plan    write the plan document, its tasks and the
+ *                          planned specs in ONE transaction (PWE-3.1); every
+ *                          repo involved must be in an agent token's scope
+ *                          (403), a lock held by someone else is 409, a task
+ *                          id collision is 409 and rolls everything back.
  *   PATCH /sessions/:slug  rename/archive/owner/homeRepo/repos (SESH-3.1,
  *                          PWE-1.1) — follows task-store scope: admin tokens
  *                          are unrestricted; an agent token may write when
@@ -43,7 +48,13 @@ import type { Context } from "hono";
 import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { DEFAULT_ACCOUNT_ID } from "../default-account.ts";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../errors.ts";
+import type { Prisma } from "../index.ts";
 import { rejectUnknownQuery } from "../lib/reject-unknown-query.ts";
 import {
   ErrorSchema,
@@ -57,14 +68,21 @@ import {
   SessionLockReleaseSchema,
   SessionLockSchema,
   SessionPatchBodySchema,
+  SessionPlanBodySchema,
+  SessionPlanResponseSchema,
   SessionSchema,
   SessionSlugParamSchema,
 } from "../openapi-schemas.ts";
+import type {
+  SessionPlanDocumentInput,
+  SessionPlanServiceLike,
+} from "../session-plan-service.ts";
 import type {
   SessionListFilters,
   SessionServiceLike,
   SessionUpdatePatch,
 } from "../session-service.ts";
+import { accountIdForCreate, validateBulkTasks } from "./tasks.ts";
 
 // ─── Route definitions ────────────────────────────────────────────────────────
 
@@ -246,6 +264,54 @@ const scopePreflightRoute = createRoute({
   },
 });
 
+const planRoute = createRoute({
+  method: "post",
+  path: "/:slug/plan",
+  tags: ["sessions"],
+  summary:
+    "Write a session's plan document, tasks and planned specs atomically",
+  description:
+    "One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.",
+  request: {
+    params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
+    body: {
+      content: { "application/json": { schema: SessionPlanBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Plan written: the plan document id and the inserted task count",
+      content: { "application/json": { schema: SessionPlanResponseSchema } },
+    },
+    400: {
+      description:
+        "Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description:
+        "Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written",
+      content: { "application/json": { schema: SessionLockConflictSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; nothing was written",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -347,8 +413,16 @@ async function assertSessionWritable(
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+/** Disabled plan writer used when the feature is not wired up in a test context. */
+const unwiredPlanService: SessionPlanServiceLike = {
+  async plan() {
+    throw new Error("session plan writes are not configured");
+  },
+};
+
 export function createSessionsRoutes(
   sessionService: SessionServiceLike,
+  planService: SessionPlanServiceLike = unwiredPlanService,
 ): OpenAPIHono<TaskStoreAuthEnv> {
   const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
@@ -528,6 +602,61 @@ export function createSessionsRoutes(
       slugAccountId(c),
     );
     return c.json({ released: true }, 200);
+  });
+
+  // ─── Plan write (PWE-3.1) ──────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: matches sibling handlers
+  app.openapi(planRoute, async (c): Promise<any> => {
+    const slug = c.req.param("slug") as string;
+    const agentId = c.get("agentId");
+    const body = await readJson(c);
+    const plan = body.plan as SessionPlanDocumentInput;
+    const tasks = body.tasks as Record<string, unknown>[];
+    const specs = (body.specs ?? []) as number[];
+    for (const task of tasks) {
+      if (
+        task.session !== undefined &&
+        task.session !== null &&
+        task.session !== slug
+      ) {
+        throw new BadRequestError(
+          `task '${String(task.id)}' has session '${String(task.session)}', not '${slug}'`,
+        );
+      }
+    }
+    // Format and field checks exactly as POST /tasks/bulk. Scope is passed as
+    // unrestricted here because the service enforces it as a 403 across
+    // every repo in the request (bulk answers an out-of-scope task repo 400).
+    const accountId = accountIdForCreate(c);
+    validateBulkTasks(tasks, null, accountId);
+    const holder =
+      typeof body.holder === "string" ? body.holder : (agentId ?? "admin");
+
+    try {
+      const result = await planService.plan(
+        {
+          session: slug,
+          accountId,
+          holder,
+          plan,
+          tasks: tasks as Prisma.TaskCreateInput[],
+          specs,
+        },
+        { repos: agentId === null ? null : (c.get("repos") ?? []) },
+      );
+      return c.json(result, 200);
+    } catch (err) {
+      // Same no-leak rule as POST /tasks/bulk for a task id collision (task
+      // ids are global). The lock 409 carries its details and passes through.
+      if (
+        err instanceof ConflictError &&
+        err.details === undefined &&
+        c.get("accountId") !== null
+      ) {
+        throw new ConflictError("task id unavailable");
+      }
+      throw err;
+    }
   });
 
   return app;

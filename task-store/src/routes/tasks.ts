@@ -361,12 +361,43 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
 }
 
 /**
+ * Per-item validation shared by POST /tasks/bulk and POST
+ * /sessions/{slug}/plan (PWE-3.1): status/repo presence and format, field
+ * types, pr normalization, and the accountId stamp. Mutates each task in
+ * place. `repos` is the agent's scope (null = admin, unrestricted).
+ */
+export function validateBulkTasks(
+  tasks: Record<string, unknown>[],
+  repos: string[] | null,
+  accountId: string,
+): void {
+  for (const task of tasks) {
+    stripRemovedFields(task);
+    if (typeof task.status !== "string" || !task.status) {
+      throw new BadRequestError("status is required");
+    }
+    if (!VALID_STATUSES.has(task.status)) {
+      throw new BadRequestError(`invalid status: ${task.status}`);
+    }
+    if (!("repo" in task)) {
+      throw new BadRequestError(
+        "repo key is required (null is valid for unscoped tasks)",
+      );
+    }
+    validateRepo(task.repo, repos);
+    normalizePrField(task);
+    assertTaskFieldTypes(task);
+    task.accountId = accountId;
+  }
+}
+
+/**
  * The accountId a create should stamp (SSP-6.5). Agent tokens always get
  * their resolved account; an agent whose scope resolution failed
  * (NO_ACCESS_ACCOUNT_ID) can't create at all. Admin tokens use `?accountId=`
  * or fall back to DEFAULT_ACCOUNT_ID — never a body-supplied value.
  */
-function accountIdForCreate(c: Context<TaskStoreAuthEnv>): string {
+export function accountIdForCreate(c: Context<TaskStoreAuthEnv>): string {
   const callerAccountId = c.get("accountId");
   if (callerAccountId === NO_ACCESS_ACCOUNT_ID) {
     throw new ForbiddenError("account scope unavailable — cannot create tasks");
@@ -1211,26 +1242,11 @@ export function createTasksRoutes(
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
     }
-    // Validate status/repo presence and format on each task, and stamp accountId.
-    const accountId = accountIdForCreate(c);
-    for (const task of body as Record<string, unknown>[]) {
-      stripRemovedFields(task);
-      if (typeof task.status !== "string" || !task.status) {
-        throw new BadRequestError("status is required");
-      }
-      if (!VALID_STATUSES.has(task.status)) {
-        throw new BadRequestError(`invalid status: ${task.status}`);
-      }
-      if (!("repo" in task)) {
-        throw new BadRequestError(
-          "repo key is required (null is valid for unscoped tasks)",
-        );
-      }
-      validateRepo(task.repo, agentId !== null ? repos : null);
-      normalizePrField(task);
-      assertTaskFieldTypes(task);
-      task.accountId = accountId;
-    }
+    validateBulkTasks(
+      body as Record<string, unknown>[],
+      agentId !== null ? repos : null,
+      accountIdForCreate(c),
+    );
     const result = await withGenericIdConflict(c, () =>
       taskService.bulk(body as Prisma.TaskCreateInput[]),
     );
