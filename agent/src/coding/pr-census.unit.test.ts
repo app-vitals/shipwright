@@ -955,7 +955,10 @@ describe("buildProductionDeps listTasksWithPr (keyset paging)", () => {
     const urls: string[] = [];
     const fetchFn = async (url: RequestInfo | URL) => {
       urls.push(String(url));
-      const cursor = new URL(String(url), "http://task-store.test").searchParams.get("cursor");
+      const cursor = new URL(
+        String(url),
+        "http://task-store.test",
+      ).searchParams.get("cursor");
       const body =
         cursor === null
           ? { tasks: [{ pr: 1 }], nextCursor: "c1" }
