@@ -1118,7 +1118,32 @@ export function createTasksRoutes(
       throw new BadRequestError("cursor and offset are mutually exclusive");
     }
 
+    // Multi-agent scope is admin-token only; an agent token must never widen
+    // its own visibility with it.
+    const scopeAgentIdsRaw = c.req.query("scopeAgentIds");
+    const scopeReposRaw = c.req.query("scopeRepos");
+    const scopeRequested =
+      scopeAgentIdsRaw !== undefined || scopeReposRaw !== undefined;
+    if (scopeRequested && agentId !== null) {
+      throw new BadRequestError(
+        "scopeAgentIds/scopeRepos are admin-token only",
+      );
+    }
+    const splitCsv = (v: string | undefined): string[] =>
+      (v ?? "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+
     const result = await taskService.list({
+      ...(scopeRequested
+        ? {
+            scope: {
+              agentIds: splitCsv(scopeAgentIdsRaw),
+              repos: splitCsv(scopeReposRaw),
+            },
+          }
+        : {}),
       status: statusRaw,
       cursor,
       state,

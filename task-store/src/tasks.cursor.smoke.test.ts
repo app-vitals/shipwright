@@ -322,3 +322,55 @@ describe("GET /tasks keyset cursor (smoke)", () => {
     expect(((await res.json()) as TaskListResult).nextCursor).toBe("c");
   });
 });
+
+describe("GET /tasks multi-agent scope (smoke, MPV-1.1)", () => {
+  it("admin token: scopeAgentIds/scopeRepos are parsed into list({ scope }) and combine with cursor", async () => {
+    const captured: TaskListFilters[] = [];
+    const app = makeApp(
+      fakeTaskService({
+        listResult: [makeTask({ id: "t1" })],
+        listNextCursor: "next-1",
+        capturedListFilters: captured,
+      }),
+    );
+    const res = await app.request(
+      "/tasks?scopeAgentIds=a,b&scopeRepos=org/r1&limit=1&cursor=abc&repo=org/r1",
+      { headers: auth() },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as TaskListResult).nextCursor).toBe("next-1");
+    expect(captured[0]?.scope).toEqual({
+      agentIds: ["a", "b"],
+      repos: ["org/r1"],
+    });
+    expect(captured[0]?.cursor).toBe("abc");
+    expect(captured[0]?.repo).toEqual(["org/r1"]);
+  });
+
+  it("admin token: an empty scope is still passed as a (empty) scope, never dropped", async () => {
+    const captured: TaskListFilters[] = [];
+    const app = makeApp(fakeTaskService({ capturedListFilters: captured }));
+    const res = await app.request("/tasks?scopeAgentIds=&scopeRepos=", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    expect(captured[0]?.scope).toEqual({ agentIds: [], repos: [] });
+  });
+
+  it("admin token without the params: no scope is set", async () => {
+    const captured: TaskListFilters[] = [];
+    const app = makeApp(fakeTaskService({ capturedListFilters: captured }));
+    await app.request("/tasks", { headers: auth() });
+    expect(captured[0]?.scope).toBeUndefined();
+  });
+
+  it("agent token: using the scope params is a 400 and list() is never called", async () => {
+    const captured: TaskListFilters[] = [];
+    const app = makeApp(fakeTaskService({ capturedListFilters: captured }));
+    const res = await app.request("/tasks?scopeAgentIds=other-agent", {
+      headers: agentAuth(),
+    });
+    expect(res.status).toBe(400);
+    expect(captured).toHaveLength(0);
+  });
+});
