@@ -230,7 +230,7 @@ regression, no status churn.
 | Smoke | 59 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None |
 | E2E | 27 `site/tests/*.spec.ts` + 7 `{admin,metrics}/e2e/*.e2e.ts` (unchanged) | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None |
 | Content | 75 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references,test}/*` plus root-level content tests | None |
-| Shell (unofficial 6th layer) | 3 `test-*.sh` bash assertion suites (unchanged: `test-auto-bump-chart.sh`, `test-check-chart-drift.sh`, `test-sync-plugin-version.sh`) | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh` | None — only a documentation-completeness question open (see Open risks) |
+| Shell (unofficial 6th layer) | 3 `test-*.sh` bash assertion suites (`test-auto-bump-chart.sh`, `test-check-chart-drift.sh`, `test-helm-repos.sh`) | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh` | None — only a documentation-completeness question open (see Open risks) |
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step; only a taxonomy question open (see Open risks) |
 
 **Total (2026-11-17 recount via `git ls-files`, excluding `site/`): 406 `bun test`-scanned files** (206 unit + 66 integration + 59 smoke + 75 content; 362 on 2026-11-13; plus 5 opt-in `preview/canary/*.canary.test.ts` suites outside the default scan; CI reports 407 files including `app.unit.test.js`). Prior recount, preserved: **Total (2026-11-13 recount via `git ls-files`, excluding `site/`): 362 `bun test`-scanned files** (176 unit + 59 integration + 55 smoke + 72 content; 349 on 2026-11-10 and 350 on 2026-11-12, +12 this cycle from the system-crons, task-kinds, claim-heartbeat, risk-signals and local-store work; 351 on 2026-11-08, -1 unit, +1 integration, -2 content from the deploy-phase removal; the drop from 538 on 2026-10-26 is the extracted platform code and its tests, not lost coverage) **+ 27 site E2E + 7 admin/metrics E2E = 383 test files** (E2E counts unchanged). See `test-migration.md`'s 2026-11-10 top-up for the delta reconciliation.
@@ -464,8 +464,7 @@ for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all
   `.github/workflows/lib/chart-tag-utils.sh` / `chart-drift-check.sh` and their `test-*.sh`
   siblings are genuinely tested code units that fall entirely outside the `bun test` runner
   and the five-suffix convention declared in root `CLAUDE.md`. Carried forward unchanged
-  across several cycles (first flagged 2026-07-31; the `test-sync-plugin-version.sh`
-  documentation-precision note from the 2026-09-23 cycle remains open too). Not urgent; not
+  across several cycles (first flagged 2026-07-31). Not urgent; not
   blocking anything above.
 - **Recorded-fixture coverage breadth** (remaining `Http*Client` modules that could extend
   the `Recorded*Client` pattern) remains a Phase 2 design-level backlog item, not a

@@ -530,7 +530,7 @@ resolve_batch_with_retry() {
 # Stale-base merge-retry logic (mirrors the "Wait for checks and merge" step)
 #
 # gh pr merge --admin can fail with a transient GraphQL error when a
-# concurrent workflow (e.g. sync-plugin-version.yml) merges its own PR first
+# concurrent PR merges first
 # and moves main out from under this one — "Base branch was modified. Review
 # and try the merge again." This is NOT a real conflict; it resolves itself on
 # retry once the base ref settles. is_stale_base_error() matches on "Base
