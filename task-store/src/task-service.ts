@@ -56,6 +56,13 @@ import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
  */
 type PrismaTxClient = Pick<Prisma.TransactionClient, "task" | "taskEvent">;
 
+/**
+ * The client surface bulk() writes through: tasks plus their Session rows.
+ * Satisfied by a `$transaction` callback's `tx`, so a caller can run bulk()
+ * inside its own transaction (PWE-3.1).
+ */
+export type BulkTxClient = Pick<Prisma.TransactionClient, "task" | "session">;
+
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
 export { CLOSED_STATUSES, OPEN_STATUSES };
@@ -582,6 +589,7 @@ export interface TaskServiceLike {
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
+    tx?: BulkTxClient,
   ): Promise<{ inserted: number; updated: number; skipped: string[] }>;
   markMergedByPr(params: {
     repo: string;
@@ -1081,9 +1089,17 @@ export class TaskService implements TaskServiceLike {
    * fixed `WEBHOOK_TX_OPTIONS`: the amount of work inside the transaction
    * now scales with `tasks.length`, so the budget scales with it too (see
    * `bulkTxTimeoutMs`), bounded by the `MAX_BULK_TASKS` cap enforced below.
+   *
+   * PWE-3.1: pass `tx` to run inside a caller-owned transaction (POST
+   * /sessions/{slug}/plan). bulk() then opens no transaction of its own: the
+   * caller owns commit, rollback and the transaction budget, and a thrown
+   * ConflictError/WebhookDeliveryError rolls back the caller's whole
+   * transaction. The post-commit PR-collision warning is skipped in that
+   * mode, because the rows are not committed when bulk() returns.
    */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
+    tx?: BulkTxClient,
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
     // Rejected before the transaction opens: an over-cap batch is a caller
     // error, and answering 400 up front is strictly better than opening a
@@ -1094,36 +1110,12 @@ export class TaskService implements TaskServiceLike {
         `bulk insert accepts at most ${MAX_BULK_TASKS} tasks per call (received ${tasks.length}) — split the batch`,
       );
     }
+    if (tx) {
+      const rows = await this.bulkInsert(tx, tasks);
+      return { inserted: rows.length, updated: 0, skipped: [] };
+    }
     const createdRows = await this.prisma.$transaction(
-      async (tx) => {
-        const rows: Task[] = [];
-        for (const task of tasks) {
-          let created: Task;
-          try {
-            created = await tx.task.create({ data: task });
-          } catch (err: unknown) {
-            // P2002 = unique constraint violation (id already exists) —
-            // translate to ConflictError so it propagates uncaught and rolls
-            // back the whole transaction, rather than being swallowed/skipped.
-            if (isUniqueViolation(err)) {
-              throw new ConflictError(
-                `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
-              );
-            }
-            throw err;
-          }
-          await this.sessionService.upsert(
-            tx,
-            created.session,
-            created.accountId,
-          );
-          rows.push(created);
-        }
-        // Fires once for the whole batch, after every row has landed, still
-        // inside this transaction — see JSDoc above.
-        await this.webhookDispatcher("task.write", rows);
-        return rows;
-      },
+      (ownTx) => this.bulkInsert(ownTx, tasks),
       { timeout: bulkTxTimeoutMs(tasks.length) },
     );
     for (const row of createdRows) await this.warnOnPrCollision(row);
@@ -1131,6 +1123,36 @@ export class TaskService implements TaskServiceLike {
     // backward compatibility (AC4); collisions hard-fail the whole batch via
     // ConflictError above instead of populating it.
     return { inserted: createdRows.length, updated: 0, skipped: [] };
+  }
+
+  /** bulk()'s transaction body: create each task + its session row in order, then dispatch once. */
+  private async bulkInsert(
+    tx: BulkTxClient,
+    tasks: Prisma.TaskCreateInput[],
+  ): Promise<Task[]> {
+    const rows: Task[] = [];
+    for (const task of tasks) {
+      let created: Task;
+      try {
+        created = await tx.task.create({ data: task });
+      } catch (err: unknown) {
+        // P2002 = unique constraint violation (id already exists) —
+        // translate to ConflictError so it propagates uncaught and rolls
+        // back the whole transaction, rather than being swallowed/skipped.
+        if (isUniqueViolation(err)) {
+          throw new ConflictError(
+            `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
+          );
+        }
+        throw err;
+      }
+      await this.sessionService.upsert(tx, created.session, created.accountId);
+      rows.push(created);
+    }
+    // Fires once for the whole batch, after every row has landed, still
+    // inside the transaction — see bulk()'s JSDoc.
+    await this.webhookDispatcher("task.write", rows);
+    return rows;
   }
 
   /**
