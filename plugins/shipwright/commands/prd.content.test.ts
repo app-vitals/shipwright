@@ -493,7 +493,7 @@ describe("prd.md — concise one-section-at-a-time chat interaction (CSM-2.2)", 
   });
 
   it("Phase 0 summary and complexity flags are condensed to headline + bullets with the ask last", () => {
-    expect(content).toContain("**Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets, ask last");
+    expect(content).toContain("**Phase 0 summary (chat).** Condense to a headline plus at most 3 bullets plus the spec path as the link, ask last");
     const start = content.indexOf("## Phase 2b: Complexity Review");
     const end = content.indexOf("## Phase 3: Draft the spec");
     const section = content.slice(start, end);
