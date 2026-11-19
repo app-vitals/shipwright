@@ -2445,8 +2445,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename/archive a session — admin-only
-         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
+         * Update a session (title, archive, owner, homeRepo, repos)
+         * @description Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos, declared repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). An agent's `repos` patch must itself be within its scope (`403` otherwise). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null, repos?: string[] }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear; `repos` replaces the declared repos (stored as `declaredRepos`). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
          */
         patch: {
             parameters: {
@@ -2484,7 +2484,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Forbidden — admin tokens only */
+                /** @description Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only) */
                 403: {
                     headers: {
                         [name: string]: unknown;
