@@ -29,6 +29,22 @@ const PR_ORIGIN_VALUES = [
 
 /** PLU-2.5: the registered origin kinds, shared with the write validator. */
 const OriginKindSchema = z.enum(ORIGIN_KINDS);
+
+/** `?cursor=` query param shared by every cursor-paginated list route (TPG-1.2). */
+const cursorQueryParam = (what: string) =>
+  z
+    .string()
+    .optional()
+    .openapi({
+      description: `Opaque cursor from a previous response's \`nextCursor\`. Returns the next page of ${what}. Mutually exclusive with \`offset\` (400); a malformed cursor is a 400.`,
+    });
+
+/** `nextCursor` response field shared by every cursor-paginated list route (TPG-1.2). */
+const nextCursorField = z.string().nullable().openapi({
+  example: null,
+  description:
+    "Opaque cursor for the next page (pass as `?cursor=`); null on the last page.",
+});
 const ORIGIN_KIND_DESCRIPTION = `Typed origin of the task: one of ${ORIGIN_KINDS.join(", ")}. Writes and the \`?originKind=\` filter share this one list; any other value is 400.`;
 
 // ─── Common ───────────────────────────────────────────────────────────────────
@@ -760,6 +776,7 @@ export const SessionListQuerySchema = z
     }),
     limit: z.string().optional().openapi({ example: "50" }),
     offset: z.string().optional().openapi({ example: "0" }),
+    cursor: cursorQueryParam("sessions"),
   })
   .openapi("SessionListQuery");
 
@@ -770,6 +787,7 @@ export const SessionListResponseSchema = z
     total: z.number().int().openapi({ example: 10 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("SessionListResponse");
 
@@ -1271,6 +1289,7 @@ export const PrListQuerySchema = z
       description:
         "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
     }),
+    cursor: cursorQueryParam("pull requests"),
   })
   .openapi("PrListQuery");
 
@@ -1282,6 +1301,7 @@ export const PrListResponseSchema = z
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("PrListResponse");
 
@@ -1409,6 +1429,7 @@ export const PrEventsQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "0", description: "Pagination offset" }),
+    cursor: cursorQueryParam("events"),
   })
   .openapi("PrEventsQuery");
 
@@ -1422,6 +1443,7 @@ export const PrEventsResponseSchema = z
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("PrEventsResponse");
 
@@ -1436,6 +1458,7 @@ export const TaskEventsQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "0", description: "Pagination offset" }),
+    cursor: cursorQueryParam("events"),
   })
   .openapi("TaskEventsQuery");
 
@@ -1449,6 +1472,7 @@ export const TaskEventsResponseSchema = z
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("TaskEventsResponse");
 
@@ -1716,6 +1740,7 @@ export const VerificationCheckListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "0", description: "Pagination offset" }),
+    cursor: cursorQueryParam("verification checks"),
   })
   .openapi("VerificationCheckListQuery");
 
@@ -1729,6 +1754,7 @@ export const VerificationCheckListResponseSchema = z
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("VerificationCheckListResponse");
 
@@ -1849,6 +1875,7 @@ export const CoverageSnapshotListQuerySchema = z
       example: "default",
       description: "Admin tokens only: narrow to one account.",
     }),
+    cursor: cursorQueryParam("snapshots"),
   })
   .openapi("CoverageSnapshotListQuery");
 
@@ -1872,6 +1899,7 @@ export const CoverageSnapshotListResponseSchema = z
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
+    nextCursor: nextCursorField,
   })
   .openapi("CoverageSnapshotListResponse");
 
@@ -2100,6 +2128,7 @@ export const SystemCronTriggersQuerySchema = z
       example: 5,
       description: "Max triggers to return (1-50, default 5).",
     }),
+    cursor: cursorQueryParam("triggers"),
   })
   .openapi("SystemCronTriggersQuery");
 
@@ -2123,6 +2152,7 @@ export const SystemCronTriggersResponseSchema = z
         description:
           "Claimed slots, newest first by scheduledFor (createdAt desc tie-break).",
       }),
+    nextCursor: nextCursorField,
   })
   .openapi("SystemCronTriggersResponse");
 

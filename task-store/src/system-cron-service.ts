@@ -42,6 +42,7 @@ import type {
   SystemCronDefinition,
   Task,
 } from "./index.ts";
+import { cursorWhere, decodeCursor, encodeCursor } from "./lib/cursor.ts";
 import type { OriginKind } from "./origin-kinds.ts";
 import {
   formatSlot,
@@ -158,7 +159,8 @@ export interface SystemCronServiceLike {
     id: string,
     limit: number,
     accountId: string | null,
-  ): Promise<{ triggers: RecentTrigger[] }>;
+    cursor?: string,
+  ): Promise<{ triggers: RecentTrigger[]; nextCursor?: string | null }>;
 }
 
 /** One claimed slot as returned by recentTriggers. */
@@ -520,19 +522,40 @@ export class SystemCronService implements SystemCronServiceLike {
     id: string,
     limit: number,
     accountId: string | null,
-  ): Promise<{ triggers: RecentTrigger[] }> {
+    cursor?: string,
+  ): Promise<{ triggers: RecentTrigger[]; nextCursor?: string | null }> {
     await this.findScoped(id, accountId);
-    const rows = await this.prisma.systemCronTrigger.findMany({
-      where: { cronId: id },
-      orderBy: [{ scheduledFor: "desc" }, { createdAt: "desc" }],
-      take: limit,
+    // (cronId, scheduledFor) is unique, so (scheduledFor, id) is a total order
+    // consistent with the newest-first listing. The cursor encodes
+    // scheduledFor in the createdAt slot of the shared codec.
+    const where =
+      cursor !== undefined
+        ? {
+            AND: [
+              { cronId: id },
+              cursorWhere(decodeCursor(cursor), "desc", "scheduledFor"),
+            ],
+          }
+        : { cronId: id };
+    // Fetch limit+1 rows to learn whether another page exists.
+    const fetched = await this.prisma.systemCronTrigger.findMany({
+      where,
+      orderBy: [{ scheduledFor: "desc" }, { id: "desc" }],
+      take: limit + 1,
     });
+    const hasMore = fetched.length > limit;
+    const rows = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = rows[rows.length - 1];
     return {
       triggers: rows.map((r) => ({
         scheduledFor: r.scheduledFor.toISOString(),
         claimedAt: r.createdAt.toISOString(),
         taskCount: r.taskCount,
       })),
+      nextCursor:
+        hasMore && last
+          ? encodeCursor({ createdAt: last.scheduledFor, id: last.id })
+          : null,
     };
   }
 

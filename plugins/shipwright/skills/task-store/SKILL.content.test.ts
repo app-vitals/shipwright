@@ -95,3 +95,38 @@ describe("SKILL.md — cron origin convention (SCM-8.2)", () => {
     expect(section).toContain("--origin-cron");
   });
 });
+
+describe("SKILL.md — cursor paging contract (TPG-1.2)", () => {
+  it("documents cursor/nextCursor and the follow-until-null snippet", () => {
+    expect(skillContent).toContain("nextCursor");
+    expect(skillContent).toContain("?cursor=");
+    expect(skillContent).toMatch(/until it is `null`/);
+    expect(skillContent).toContain(
+      "`?cursor` together with `?offset` is a `400`",
+    );
+  });
+
+  it("names every cursor-paginated list route", () => {
+    for (const route of [
+      "/tasks",
+      "/prs",
+      "/prs/:id/events",
+      "/tasks/:id/events",
+      "/sessions",
+      "/verification-checks",
+      "/coverage-snapshots",
+      "/system-crons/:id/triggers",
+    ]) {
+      expect(skillContent).toContain(`\`${route}\``);
+    }
+  });
+
+  it("documents cursor on the /prs table row", () => {
+    const prsRow = skillContent
+      .split("\n")
+      .find((l) => l.includes("| `GET` | `/prs` |"));
+    expect(prsRow).toBeDefined();
+    expect(prsRow).toContain("?cursor");
+    expect(prsRow).toContain("nextCursor");
+  });
+});

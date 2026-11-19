@@ -64,7 +64,7 @@
  *   POST   /tasks/:id/unblock   atomic unblock (409 unless status='blocked') —
  *                              clears blockedReason/blockedAt/claimedBy/claimedAt/
  *                              heartbeatAt and resets skipCount/lastSkippedAt
- *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset)
+ *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset, ?cursor; returns nextCursor)
  */
 
 import { readJson } from "@app-vitals/agent-lib/http";
@@ -972,7 +972,7 @@ const eventsRoute = createRoute({
   summary:
     "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
   description:
-    "Returns `{ events, total, limit, offset }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope.",
+    "Returns `{ events, total, limit, offset, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
   request: {
     params: TaskIdParamSchema,
     query: TaskEventsQuerySchema,
@@ -1541,6 +1541,10 @@ export function createTasksRoutes(
 
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
     const limit =
       limitRaw !== undefined
         ? Number.parseInt(limitRaw, 10) || undefined
@@ -1553,6 +1557,7 @@ export function createTasksRoutes(
     const result = await taskService.getEvents(c.req.param("id"), {
       limit,
       offset,
+      cursor,
     });
 
     return c.json(
@@ -1561,6 +1566,7 @@ export function createTasksRoutes(
         total: result.total,
         limit: limit ?? 50,
         offset: offset ?? 0,
+        nextCursor: result.nextCursor ?? null,
       },
       200,
     );

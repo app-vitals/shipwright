@@ -22,8 +22,8 @@
  * or DEFAULT_ACCOUNT_ID when omitted.
  *
  * Routes:
- *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?owner, ?limit, ?offset, ?accountId)
- *                          returns { sessions, total, limit, offset }
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?owner, ?limit, ?offset, ?cursor, ?accountId)
+ *                          returns { sessions, total, limit, offset, nextCursor }
  *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
  *   POST   /sessions/:slug/lock    acquire the planning lock (PLU-2.4; 409 when held)
  *   DELETE /sessions/:slug/lock    release it (403 for a non-holder)
@@ -71,7 +71,7 @@ const listRoute = createRoute({
   tags: ["sessions"],
   summary: "List sessions",
   description:
-    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
+    "Returns `{ sessions, total, limit, offset, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -315,6 +315,10 @@ export function createSessionsRoutes(
 
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined && offsetRaw !== undefined) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
 
     const filters: SessionListFilters = {
       state: c.req.query("state") as SessionListFilters["state"],
@@ -325,6 +329,7 @@ export function createSessionsRoutes(
       q: c.req.query("q"),
       owner: c.req.query("owner"),
       accountId: resolveAccountScope(c),
+      cursor,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
@@ -339,7 +344,7 @@ export function createSessionsRoutes(
     };
 
     const result = await sessionService.list(filters);
-    return c.json(result, 200);
+    return c.json({ ...result, nextCursor: result.nextCursor ?? null }, 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────

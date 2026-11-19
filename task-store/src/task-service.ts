@@ -27,7 +27,14 @@ import type {
   TaskEvent,
   TaskKind,
 } from "./index.ts";
-import { cursorWhere, decodeCursor, encodeCursor } from "./lib/cursor.ts";
+import {
+  cursorWhere,
+  decodeCursor,
+  decodeKeyCursor,
+  encodeCursor,
+  encodeKeyCursor,
+  keyCursorWhere,
+} from "./lib/cursor.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import type { OriginKind } from "./origin-kinds.ts";
 import {
@@ -546,6 +553,8 @@ export interface TaskListResult {
 interface GetTaskEventsResult {
   events: TaskEvent[];
   total: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 /** The subset of TaskService the routes depend on. */
@@ -595,7 +604,7 @@ export interface TaskServiceLike {
   unblock(id: string, opts?: { to?: UnblockTarget }): Promise<Task>;
   getEvents(
     id: string,
-    opts?: { limit?: number; offset?: number },
+    opts?: { limit?: number; offset?: number; cursor?: string },
   ): Promise<GetTaskEventsResult>;
 }
 
@@ -1743,7 +1752,7 @@ export class TaskService implements TaskServiceLike {
    */
   async getEvents(
     id: string,
-    opts: { limit?: number; offset?: number } = {},
+    opts: { limit?: number; offset?: number; cursor?: string } = {},
   ): Promise<GetTaskEventsResult> {
     const existing = await this.prisma.task.findUnique({
       where: { id },
@@ -1755,18 +1764,36 @@ export class TaskService implements TaskServiceLike {
 
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
+    if (opts.cursor !== undefined && opts.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+    const pageWhere: Prisma.TaskEventWhereInput =
+      opts.cursor !== undefined
+        ? {
+            AND: [
+              { taskId: id },
+              keyCursorWhere(decodeKeyCursor(opts.cursor), "asc", "at"),
+            ],
+          }
+        : { taskId: id };
 
-    const [events, total] = await this.prisma.$transaction([
+    // Fetch limit+1 rows to learn whether another page exists.
+    const [fetched, total] = await this.prisma.$transaction([
       this.prisma.taskEvent.findMany({
-        where: { taskId: id },
-        orderBy: { at: "asc" },
-        take: limit,
+        where: pageWhere,
+        orderBy: [{ at: "asc" }, { id: "asc" }],
+        take: limit + 1,
         skip: offset,
       }),
       this.prisma.taskEvent.count({ where: { taskId: id } }),
     ]);
+    const hasMore = fetched.length > limit;
+    const events = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = events[events.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeKeyCursor({ key: last.at, id: last.id }) : null;
 
-    return { events, total };
+    return { events, total, nextCursor };
   }
 
   /**

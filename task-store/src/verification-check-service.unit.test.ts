@@ -534,7 +534,7 @@ describe("VerificationCheckService.listForTask()", () => {
 
     expect(prisma._findManyCalls).toHaveLength(1);
     expect(prisma._findManyCalls[0].where).toEqual({ taskId: "task-1" });
-    expect(result).toEqual({ checks: [], total: 0 });
+    expect(result).toEqual({ checks: [], total: 0, nextCursor: null });
   });
 
   test("respects limit/offset options", async () => {
@@ -567,7 +567,7 @@ describe("VerificationCheckService.listForPr()", () => {
 
     expect(prisma._findManyCalls).toHaveLength(1);
     expect(prisma._findManyCalls[0].where).toEqual({ prRecordId: "pr-1" });
-    expect(result).toEqual({ checks: [], total: 0 });
+    expect(result).toEqual({ checks: [], total: 0, nextCursor: null });
   });
 });
 
@@ -614,8 +614,11 @@ describe("VerificationCheckService.listByRepoAndCheck()", () => {
       repo: "org/repo",
       checkName: "lint",
     });
-    expect(prisma._findManyCalls[0].orderBy).toEqual({ at: "desc" });
-    expect(result).toEqual({ checks: [], total: 0 });
+    expect(prisma._findManyCalls[0].orderBy).toEqual([
+      { at: "desc" },
+      { id: "desc" },
+    ]);
+    expect(result).toEqual({ checks: [], total: 0, nextCursor: null });
   });
 
   test("does not existence-check a parent — there is no single task/PR to 404 on for this mode", async () => {
@@ -644,7 +647,13 @@ describe("VerificationCheckService.listByRepoAndCheck()", () => {
     await svc.listForTask("task-1");
     await svc.listForPr("pr-1");
 
-    expect(prisma._findManyCalls[0].orderBy).toEqual({ at: "asc" });
-    expect(prisma._findManyCalls[1].orderBy).toEqual({ at: "asc" });
+    expect(prisma._findManyCalls[0].orderBy).toEqual([
+      { at: "asc" },
+      { id: "asc" },
+    ]);
+    expect(prisma._findManyCalls[1].orderBy).toEqual([
+      { at: "asc" },
+      { id: "asc" },
+    ]);
   });
 });

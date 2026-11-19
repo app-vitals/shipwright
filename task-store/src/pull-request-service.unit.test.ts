@@ -382,7 +382,10 @@ describe("PullRequestService.list() sort", () => {
     await svc.list({ sort: "desc" });
 
     expect(prisma._findManyCalls).toHaveLength(1);
-    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "desc" });
+    expect(prisma._findManyCalls[0].orderBy).toEqual([
+      { createdAt: "desc" },
+      { id: "desc" },
+    ]);
   });
 
   test("list({}) orders by createdAt ascending (current/default behavior)", async () => {
@@ -392,7 +395,10 @@ describe("PullRequestService.list() sort", () => {
     await svc.list({});
 
     expect(prisma._findManyCalls).toHaveLength(1);
-    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+    expect(prisma._findManyCalls[0].orderBy).toEqual([
+      { createdAt: "asc" },
+      { id: "asc" },
+    ]);
   });
 
   test("list({ sort: 'asc' }) orders by createdAt ascending (explicit)", async () => {
@@ -402,7 +408,10 @@ describe("PullRequestService.list() sort", () => {
     await svc.list({ sort: "asc" });
 
     expect(prisma._findManyCalls).toHaveLength(1);
-    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+    expect(prisma._findManyCalls[0].orderBy).toEqual([
+      { createdAt: "asc" },
+      { id: "asc" },
+    ]);
   });
 });
 
@@ -1833,7 +1842,7 @@ describe("PullRequestService.getEvents()", () => {
     expect(prisma._findManyCalls).toHaveLength(1);
     const call = prisma._findManyCalls[0];
     expect(call.where).toEqual({ prRecordId: "pr-1" });
-    expect(call.orderBy).toEqual({ at: "asc" });
+    expect(call.orderBy).toEqual([{ at: "asc" }, { id: "asc" }]);
   });
 
   test("defaults limit to 50 and offset to 0 when the caller omits opts", async () => {
@@ -1843,7 +1852,7 @@ describe("PullRequestService.getEvents()", () => {
     await svc.getEvents("pr-1");
 
     const call = prisma._findManyCalls[0];
-    expect(call.take).toBe(50);
+    expect(call.take).toBe(51);
     expect(call.skip).toBe(0);
   });
 
@@ -1854,7 +1863,7 @@ describe("PullRequestService.getEvents()", () => {
     await svc.getEvents("pr-1", { limit: 10, offset: 5 });
 
     const call = prisma._findManyCalls[0];
-    expect(call.take).toBe(10);
+    expect(call.take).toBe(11);
     expect(call.skip).toBe(5);
   });
 

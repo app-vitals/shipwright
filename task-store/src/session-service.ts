@@ -32,8 +32,14 @@
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
-import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "./errors.ts";
 import type { PlanDocument, Prisma, PrismaClient, Task } from "./index.ts";
+import { decodeOffsetCursor, encodeOffsetCursor } from "./lib/cursor.ts";
 import {
   computeSessionRollup,
   type SessionRollupCounts,
@@ -84,6 +90,12 @@ export interface SessionListFilters {
   owner?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Opaque cursor from a previous page's `nextCursor`. Session order is
+   * derived in memory (rollup activity), so it wraps an internal offset.
+   * Mutually exclusive with `offset`.
+   */
+  cursor?: string;
   /**
    * AUTH scope for agent tokens — separate from the `agentId` filter above.
    * When set, a session is visible only if at least one of its tasks
@@ -139,6 +151,8 @@ export interface SessionListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
+  nextCursor?: string | null;
 }
 
 /**
@@ -513,10 +527,23 @@ export class SessionService implements SessionServiceLike {
 
     const total = items.length;
     const limit = filters.limit ?? 50;
-    const offset = filters.offset ?? 0;
-    const sessions = items.slice(offset, offset + limit);
+    if (filters.cursor !== undefined && filters.offset) {
+      throw new BadRequestError("cursor and offset are mutually exclusive");
+    }
+    const offset =
+      filters.cursor !== undefined
+        ? decodeOffsetCursor(filters.cursor)
+        : (filters.offset ?? 0);
+    const end = offset + limit;
+    const sessions = items.slice(offset, end);
 
-    return { sessions, total, limit, offset };
+    return {
+      sessions,
+      total,
+      limit,
+      offset,
+      nextCursor: end < total ? encodeOffsetCursor(end) : null,
+    };
   }
 
   /**

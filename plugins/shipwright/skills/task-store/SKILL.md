@@ -102,6 +102,21 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 All list calls return an envelope with a `.tasks` array. Paginated calls (`?status=`, `?session=`, `?pr=`, `?branch=`, etc.) also include `total`, `limit`, and `offset`. Ready/blocked calls (`?ready=true`, `?state=ready`, `?state=blocked`) return `{ tasks, total }` without pagination. Always unwrap `.tasks` before accessing elements.
 
+**Cursor paging (preferred over `?offset`).** Every list route that takes `?limit` — `GET /tasks`, `/prs`, `/prs/:id/events`, `/tasks/:id/events`, `/sessions`, `/verification-checks`, `/coverage-snapshots`, `/system-crons/:id/triggers` — also accepts `?cursor=` and returns `nextCursor` beside its normal array key (`tasks`, `prs`, `events`, `sessions`, `checks`, `snapshots`, `triggers`). `nextCursor` is an opaque string (never parse or build one): pass it back as `?cursor=` to get the next page, and it is `null` on the last page — `null` is the only completeness signal. Ordering is stable across pages. `?cursor` together with `?offset` is a `400`, as is a malformed cursor; `?offset` still works but is being retired. `?ready=true` / `?state=blocked` on `/tasks` are unpaginated and always return `nextCursor: null`.
+
+Follow `nextCursor` until it is `null` (swap the path and the array key for any other list route, e.g. `/prs` and `.prs`):
+
+```bash
+cursor=""
+while :; do
+  page=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks?limit=100${cursor:+&cursor=$cursor}")
+  echo "$page" | jq -c '.tasks[]'
+  cursor=$(echo "$page" | jq -r '.nextCursor // empty')
+  [ -z "$cursor" ] && break
+done
+```
+
 ### Start a task
 
 Claim atomically instead of a plain PATCH — a read-modify-write PATCH races any other
@@ -260,7 +275,7 @@ Branch statuses: `blocked`, `cancelled`, `deployed`, `released`, `done`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/prs` | List PR records (`?repo`, `?prNumber`, `?state`, `?reviewState`, `?staged`, `?limit`, `?offset`) |
+| `GET` | `/prs` | List PR records (`?repo`, `?prNumber`, `?state`, `?reviewState`, `?staged`, `?limit`, `?cursor`; returns `prs` + `nextCursor` — follow `nextCursor` until `null`) |
 | `POST` | `/prs/claim` | Upsert + claim a PR record → `in_progress` (body: `repo`, `prNumber`, `commitSha`; `claimedBy` — required for non-agent tokens, ignored for agent tokens) |
 | `GET` | `/prs/:id` | Fetch one PR record (404 if missing) |
 | `PATCH` | `/prs/:id` | Update PR fields (partial update) |
