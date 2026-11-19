@@ -83,4 +83,4 @@ PATCH COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-No process narrative. Fold settle-with-rejected refs (5c.5) and out-of-scope `ci:` refs (6b.9) into the PR's bullets.
+No process narrative. Fold settle-with-rejected refs (5c.5) and out-of-scope `ci:` refs (6b.9) into the PR's bullets; they are never dropped to fit the 3-bullet cap (merge them or lead with them).
