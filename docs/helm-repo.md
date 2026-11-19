@@ -96,7 +96,7 @@ entry, so its tag is not stamped. This is not a live-cluster risk, since
 [`check-chart-drift.yml`](../.github/workflows/check-chart-drift.yml) runs daily
 and fails when the newest **published** chart's pins trail the latest release
 tags, when the library pin trails the library index, or when a published
-version (newer than the last pre-tag version, 1.32.312) has no `chart-*` tag.
+version (newer than the last pre-tag version, 1.32.313) has no `chart-*` tag.
 
 ## Automating library chart releases
 

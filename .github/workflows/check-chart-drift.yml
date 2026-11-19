@@ -9,7 +9,7 @@ name: Chart Drift Check
 #      in agent/Dockerfile) and compares it with the pin inside the newest
 #      package on the Pages index. A mismatch means a release did not reach a
 #      publish (a skipped or failed chart-release run).
-#   2. Every published version newer than 1.32.312 (the last version published
+#   2. Every published version newer than 1.32.313 (the last version published
 #      before tagging began) must have an annotated `chart-<version>` tag. A
 #      missing tag means a publish pushed gh-pages but failed to tag; re-run
 #      chart-release.yml (it creates the missing tag without republishing).
@@ -37,7 +37,7 @@ permissions:
 env:
   PAGES_URL: https://app-vitals.github.io/shipwright
   # Last chart version published before chart-<version> tags began (RCN-9.10).
-  CHART_TAG_FLOOR: 1.32.312
+  CHART_TAG_FLOOR: 1.32.313
 
 jobs:
   check-drift:
