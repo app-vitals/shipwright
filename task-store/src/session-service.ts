@@ -679,11 +679,9 @@ export class SessionService implements SessionServiceLike {
 
   /**
    * Rename and/or archive/un-archive the [accountId, slug] session — another
-   * account's same-slug session is never touched. Admin-only at the route
-   * layer (routes/sessions.ts, which passes ?accountId or the default
-   * account) — `actor` is whatever identity the caller attributes the change
-   * to (the route passes a fixed "admin" since only admin tokens ever reach
-   * this method).
+   * account's same-slug session is never touched. Scope-gated at the route
+   * layer (routes/sessions.ts, PWE-1.1, which passes ?accountId or the default
+   * account) — `actor` is the caller's identity (the agent id, or "admin").
    *
    * `archived: true` stamps `archivedAt: this.clock.now()` and
    * `archivedBy: actor`; `archived: false` clears both; omitted leaves the
