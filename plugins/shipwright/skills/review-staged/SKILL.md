@@ -6,7 +6,7 @@ description: Walk through staged PR reviews from the task store conversationally
 # Review Staged
 
 Conversational walkthrough of staged reviews. The owner sees one PR at a time
-and steers each with a verb. No reviews are posted without an explicit "post it".
+and steers each with a number (or verb). No reviews are posted without an explicit "post it".
 
 This skill assumes `/shipwright:review` has already staged the reviews into the
 task store (`staged: true`) and written review files to `state/reviews/PR_REVIEW_{pr}.md`
@@ -120,13 +120,12 @@ screen: a headline, at most 3 bullets, and the ask last.
 ```
 *PR #{pr}: {title}* — {url} — *{APPROVE | COMMENT}*
 - {the 1-3 things that matter most: top Critical/Important finding with file:line, a breaking/API/DB change, or failing CI — one line each, max 3 bullets total}
-- ({N} more suggestions/nits — show on request)   ← only if any
 
 What do you want to do?
 1 post · 2 skip · 3 draft · 4 discuss
 ```
 
-Fold the one-line verdict reasoning into the headline or first bullet. Omit "none" fields,
+Suggestions/nits are not listed (mention the count in a bullet only if it fits the 3). Fold the one-line verdict reasoning into the headline or first bullet. Omit "none" fields,
 the Why/Changes grid, and author/branch/diff-size lines — the owner can ask via `discuss`.
 
 Stop and wait for the owner's response.

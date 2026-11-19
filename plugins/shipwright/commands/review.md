@@ -1974,7 +1974,7 @@ These rules are non-negotiable regardless of policy settings:
   the cause.
 - **Don't contradict CLAUDE.md**: don't suggest patterns the project explicitly avoids.
 - **No filler language**: no "FYI", "Note:", "Just a heads up". Be direct.
-- **Keep it tight**: 2-5 actionable items. Drop low-confidence suggestions and nitpicks.
+- **Keep it tight**: 2-5 actionable items in the review file (the posted body surfaces only the top 1-3). Drop low-confidence suggestions and nitpicks.
 - **Verdict first**: the posted body leads with the verdict and the 1-3 findings that
   matter; inline comments are one issue each, fix suggestion first.
 - **Organize by file and line**: list issues in diff order.
