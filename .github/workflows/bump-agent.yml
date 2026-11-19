@@ -253,12 +253,11 @@ jobs:
       # waits for the CI workflow run on the PR head commit (the fast title
       # check cannot stand in for lint / test), then for the required checks
       # (rerunning failed ones up to 3 attempts), then admin-merges the PR.
-      # A failing or missing check exits 1: the job goes red, the job
-      # goes red, and the PR is left open for a human. The
+      # A failing or missing check exits 1: the job goes red and the PR is left open for a human. The
       # gate re-reads the full required set after the watch (and awaits every
-# rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
-# merged red when a rerun dropped the CI checks from the rollup). The
-# gate is behavior-tested against recorded check timelines in
+      # rerun) and merges only if all of it is SUCCESS/SKIPPED (AXG-1.2: #4639
+      # merged red when a rerun dropped the CI checks from the rollup). The
+      # gate is behavior-tested against recorded check timelines in
       # scripts/platform-bump-gate.unit.test.ts. Its check-rerun helpers
       # mirror auto-bump-chart.yml and test-auto-bump-chart.sh — keep the
       # copies in sync.
