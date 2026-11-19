@@ -63,6 +63,7 @@ describeOrSkip("GET /tasks?column= vs bucketTaskColumn (integration)", () => {
 
   async function clean() {
     await prisma.taskEvent.deleteMany();
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
     await prisma.task.deleteMany();
   }
