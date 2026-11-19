@@ -1,7 +1,7 @@
 name: Preview Test
 
 # Automatic preview test: brings the full stack up on a throwaway kind cluster
-# and runs `helm test` plus the deployed-target canary. Runs on untrusted PR
+# and runs `helm test`, the deployed-target canary and the browser e2e specs. Runs on untrusted PR
 # code (including forks), so: pull_request only (never pull_request_target),
 # read-only token, no secrets, no environment, third-party actions SHA-pinned.
 # Deliberately NOT a required check.
@@ -104,6 +104,18 @@ jobs:
         env:
           ENV_FILE: ${{ steps.preview.outputs.env-file }}
         run: task preview:canary ENV_FILE="$ENV_FILE"
+
+      # Browser specs run from the trusted base checkout only. Nothing from the
+      # PR head is installed or executed here.
+      - name: Install Playwright Chromium
+        working-directory: trusted
+        run: bunx playwright install --with-deps chromium
+
+      - name: Browser e2e
+        working-directory: trusted
+        env:
+          ENV_FILE: ${{ steps.preview.outputs.env-file }}
+        run: task preview:e2e ENV_FILE="$ENV_FILE"
 
       # Pod status, events and logs only. Never Secret objects.
       - name: Collect diagnostics
