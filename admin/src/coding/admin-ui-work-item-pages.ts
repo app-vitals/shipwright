@@ -395,6 +395,9 @@ export function renderTasksPage(
   // calls `new Date()` internally (t2_clock_injection). GET /admin/tasks
   // passes `new Date()` explicitly at its call site.
   now: Date = new Date(),
+  // TPG-2.1: per-column pages for the board (one `?column=` query each).
+  // Absent → the board buckets `fetchedTasks` itself as one complete page.
+  boardColumns?: Partial<Record<string, BoardColumnPage>>,
 ): string {
   // INI-1.2: idea tasks are hidden everywhere (table rows and board column)
   // unless the ?ideas=1 toggle is on.
@@ -461,6 +464,7 @@ export function renderTasksPage(
       renderBlockerBadges,
       renderKindBadge,
       now,
+      boardColumns,
     });
   }
 
@@ -813,6 +817,7 @@ function renderTasksBoard(args: {
   // from renderTasksPage so renderCard (defined below) never calls
   // `new Date()` itself (t2_clock_injection).
   now: Date;
+  boardColumns?: Partial<Record<string, BoardColumnPage>>;
 }): string {
   const {
     tasks,
@@ -828,6 +833,7 @@ function renderTasksBoard(args: {
     renderBlockerBadges,
     renderKindBadge,
     now,
+    boardColumns,
   } = args;
 
   // The board's Status dropdown deliberately omits the closed statuses
@@ -1017,16 +1023,27 @@ function renderTasksBoard(args: {
     ({ key }) => key !== "ideas" || filters.ideas === true,
   )
     .map(({ key, label }) => {
-      const colTasks = tasks.filter(
-        (t) => bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
-      );
+      const page: BoardColumnPage = boardColumns?.[key] ?? {
+        tasks: tasks.filter(
+          (t) =>
+            bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
+        ),
+        total: 0,
+        loadMoreHref: null,
+      };
+      const colTasks = page.tasks;
+      const total = boardColumns?.[key] ? page.total : colTasks.length;
       const cards =
         colTasks.length === 0
           ? `<div class="empty-state" style="font-size:11px">No tasks</div>`
           : colTasks.map(renderCard).join("\n");
+      const loadMore = page.loadMoreHref
+        ? `<a class="btn btn-secondary load-more" rel="next" href="${escapeHtml(page.loadMoreHref)}" style="font-size:11px;padding:3px 10px;margin-top:8px;display:block;text-align:center">Load more</a>`
+        : "";
       return `<div class="column" data-column="${key}">
-        <div class="column-header"><span>${label}</span><span class="column-count">${colTasks.length}</span></div>
+        <div class="column-header"><span>${label}</span><span class="column-count">${total}</span></div>
         ${cards}
+        ${loadMore}
       </div>`;
     })
     .join("\n");
@@ -1731,6 +1748,24 @@ export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
   // Hidden unless ?ideas=1 (INI-1.2) — filtered out at render time.
   { key: "ideas", label: "Ideas" },
 ];
+
+/** Task-store `?column=` value for each rendered board column (TPG-2.1). */
+export const BOARD_COLUMN_QUERY: Partial<Record<TaskBoardColumn, string>> = {
+  planning: "planning",
+  ideas: "ideas",
+  queued: "queued",
+  in_progress: "in_progress",
+  blocked_hitl: "blocked",
+};
+
+/** One board column's loaded cards plus its own total and Load more link. */
+export interface BoardColumnPage {
+  tasks: TaskItem[];
+  /** Exact column size from the server (`total`), not the loaded length. */
+  total: number;
+  /** URL that loads one more page for this column; null when none remain. */
+  loadMoreHref: string | null;
+}
 
 export type TaskKindFilter = "dev" | "prd" | "initiative" | "idea";
 export const TASK_KIND_FILTERS: readonly TaskKindFilter[] = [

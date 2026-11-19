@@ -1,0 +1,310 @@
+name: Preview
+
+# On-request preview: a maintainer-approved, password-gated, public preview of a
+# same-repository pull request, served through a Cloudflare quick tunnel.
+#
+# SECURITY MODEL (enforced by preview-workflow.content.test.ts):
+#   * pull_request_target / workflow_dispatch run THIS file from the default
+#     branch, with secrets. The PR is never trusted.
+#   * Everything executed comes from `trusted/` (default branch). `pr/` (the PR
+#     head) is only an image build context and chart path.
+#   * The password secret is passed to exactly ONE step, which hashes it
+#     BEFORE the PR is checked out. The job token is only used to comment and
+#     to watch the PR.
+#   * The `request` job has no environment, so a fork PR (or any other label)
+#     fails/skips there and never raises an approval request.
+#   * Fails closed until the PREVIEW_PASSWORD secret and the `preview`
+#     environment exist (provisioned separately).
+#
+# `pull_request_target` and `workflow_dispatch` only run once this file is on
+# the default branch.
+on:
+  pull_request_target:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to preview
+        required: true
+        type: string
+      window_minutes:
+        description: How long to keep the preview up (minutes)
+        required: false
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # No environment: validates the request before any approval is asked for.
+  request:
+    name: validate request
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'preview'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.validate.outputs.pr_number }}
+      head_sha: ${{ steps.validate.outputs.head_sha }}
+      window_minutes: ${{ steps.validate.outputs.window_minutes }}
+    steps:
+      - name: Validate the pull request
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_WINDOW: ${{ inputs.window_minutes }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR="$INPUT_PR_NUMBER"
+            WINDOW="${INPUT_WINDOW:-120}"
+            if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+              echo "::error::Run this workflow from the default branch ($DEFAULT_BRANCH), not $REF_NAME."
+              exit 1
+            fi
+          else
+            PR="$EVENT_PR_NUMBER"
+            WINDOW=120
+          fi
+          case "$PR" in ''|*[!0-9]*) echo "::error::pr_number must be a number."; exit 1 ;; esac
+          case "$WINDOW" in ''|*[!0-9]*) echo "::error::window_minutes must be a number."; exit 1 ;; esac
+
+          gh api "repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pr.json"
+          HEAD_REPO=$(jq -r '.head.repo.full_name // ""' "$RUNNER_TEMP/pr.json")
+          BASE_REPO=$(jq -r '.base.repo.full_name' "$RUNNER_TEMP/pr.json")
+          STATE=$(jq -r '.state' "$RUNNER_TEMP/pr.json")
+          SHA=$(jq -r '.head.sha' "$RUNNER_TEMP/pr.json")
+          HAS_LABEL=$(jq -r '[.labels[].name] | index("preview") != null' "$RUNNER_TEMP/pr.json")
+
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::Previews are not available for fork pull requests (head repo '$HEAD_REPO' differs from '$BASE_REPO')."
+            exit 1
+          fi
+          if [ "$STATE" != "open" ]; then
+            echo "::error::Pull request #$PR is not open."
+            exit 1
+          fi
+          if [ "$HAS_LABEL" != "true" ]; then
+            echo "::error::Pull request #$PR does not carry the 'preview' label."
+            exit 1
+          fi
+          case "$SHA" in *[!0-9a-f]*|'') echo "::error::Unexpected head sha."; exit 1 ;; esac
+
+          {
+            echo "pr_number=$PR"
+            echo "head_sha=$SHA"
+            echo "window_minutes=$WINDOW"
+          } >> "$GITHUB_OUTPUT"
+
+  preview:
+    name: preview
+    needs: request
+    environment: preview
+    timeout-minutes: 355
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    # One preview per PR at a time; a second request queues, never cancels.
+    concurrency:
+      group: preview-${{ needs.request.outputs.pr_number }}
+      cancel-in-progress: false
+    env:
+      PR_NUMBER: ${{ needs.request.outputs.pr_number }}
+      HEAD_SHA: ${{ needs.request.outputs.head_sha }}
+      WINDOW_MINUTES: ${{ needs.request.outputs.window_minutes }}
+    steps:
+      # Workspace root, default branch: supplies the composite action's own
+      # `./.github/actions/*` references. Trusted code only.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      # Trusted code: everything executed comes from here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Record job start
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.x"
+
+      - name: Install trusted dependencies
+        working-directory: trusted
+        run: bun install --frozen-lockfile
+
+      # The token cannot read environment protection rules with the two
+      # permissions this job is allowed, so the reviewer rule cannot be
+      # enforced here; warn instead and point at the docs.
+      - name: Preconditions
+        run: |
+          echo "::warning::This preview is only safe when the 'preview' environment has required reviewers and is restricted to the default branch. The job cannot verify this; see the preview environment docs."
+
+      # The ONLY step that references the password secret. It hashes it before
+      # the PR is checked out; the plain text never reaches PR code.
+      - name: Hash the preview password
+        env:
+          PREVIEW_PASSWORD: ${{ secrets.PREVIEW_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_PASSWORD" ]; then
+            echo "::error::PREVIEW_PASSWORD is not configured for the 'preview' environment. See the preview environment docs for one-time setup."
+            exit 1
+          fi
+          printf '%s' "$PREVIEW_PASSWORD" | bun trusted/scripts/preview-gate.ts hash --out "$RUNNER_TEMP/htpasswd"
+
+      # Untrusted: build context and chart path only. Never executed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.request.outputs.head_sha }}
+          path: pr
+          persist-credentials: false
+
+      # Started BEFORE the bring-up: its hostname becomes the ingress host.
+      - name: Start Cloudflare quick tunnel
+        id: tunnel
+        run: |
+          set -euo pipefail
+          VERSION=2026.11.1
+          SHA256=97bb3b02d23a5980fc9c15a1a270e692da1923f103f920d5b16d4931d5ab55e7
+          BIN="$RUNNER_TEMP/cloudflared"
+          curl -fsSL -o "$BIN" "https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/cloudflared-linux-amd64"
+          echo "${SHA256}  ${BIN}" | sha256sum -c -
+          chmod +x "$BIN"
+          nohup "$BIN" tunnel --no-autoupdate --url http://127.0.0.1:18080 > "$RUNNER_TEMP/cloudflared.log" 2>&1 &
+          echo "TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          HOST=""
+          for _ in $(seq 1 60); do
+            HOST=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$RUNNER_TEMP/cloudflared.log" | grep -v '^https://api\.' | head -n1 | sed 's#^https://##' || true)
+            [ -n "$HOST" ] && break
+            sleep 1
+          done
+          if [ -z "$HOST" ]; then
+            echo "::error::The tunnel did not produce a hostname within 60 seconds."
+            tail -n 30 "$RUNNER_TEMP/cloudflared.log" || true
+            exit 1
+          fi
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Bring up the preview stack
+        id: preview
+        uses: ./trusted/.github/actions/preview-env
+        with:
+          source-path: pr
+          trusted-path: trusted
+          host: ${{ steps.tunnel.outputs.host }}
+          htpasswd-file: ${{ runner.temp }}/htpasswd
+
+      - name: helm test
+        run: helm test shipwright --namespace shipwright --timeout 5m
+
+      - name: Canary
+        working-directory: trusted
+        env:
+          ENV_FILE: ${{ steps.preview.outputs.env-file }}
+        run: task preview:canary ENV_FILE="$ENV_FILE"
+
+      - name: Install Playwright Chromium
+        working-directory: trusted
+        run: bunx playwright install --with-deps chromium
+
+      - name: Browser e2e
+        working-directory: trusted
+        env:
+          ENV_FILE: ${{ steps.preview.outputs.env-file }}
+        run: task preview:e2e ENV_FILE="$ENV_FILE"
+
+      - name: Verify the gate through the public URL
+        env:
+          HOST: ${{ steps.tunnel.outputs.host }}
+        run: bun trusted/scripts/preview-gate.ts verify --url "https://${HOST}" --selfcheck "$RUNNER_TEMP/htpasswd.selfcheck"
+
+      - name: Post the preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HOST: ${{ steps.tunnel.outputs.host }}
+        run: |
+          set -euo pipefail
+          bun -e '
+            import { buildComment, computeWindowEnd } from "./trusted/scripts/preview-hold.ts";
+            const jobStartMs = Number(process.env.JOB_START) * 1000;
+            const body = buildComment({
+              status: "live",
+              url: `https://${process.env.HOST}`,
+              sha: process.env.HEAD_SHA ?? "",
+              expiresAtMs: computeWindowEnd(jobStartMs, Date.now(), Number(process.env.WINDOW_MINUTES)),
+            });
+            await Bun.write(`${process.env.RUNNER_TEMP}/comment.md`, body);
+          '
+          ID=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.body | contains("<!-- shipwright-preview -->")) | .id' | head -n1 || true)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@"$RUNNER_TEMP/comment.md" > /dev/null
+          fi
+
+      - name: Hold the preview
+        id: hold
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          REASON=$(bun trusted/scripts/preview-hold.ts --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" --job-start "$JOB_START" --tunnel-pid "$TUNNEL_PID" --window-minutes "$WINDOW_MINUTES")
+          echo "Preview ended: $REASON"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+
+      # Cleanup runs on every exit. The tunnel is stopped FIRST so the URL
+      # stops answering before the comment says it has ended.
+      - name: Stop the tunnel
+        if: always()
+        run: |
+          if [ -n "${TUNNEL_PID:-}" ]; then kill "$TUNNEL_PID" 2>/dev/null || true; fi
+          pkill -x cloudflared 2>/dev/null || true
+
+      - name: Mark the comment expired
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HOLD_REASON: ${{ steps.hold.outputs.reason }}
+        run: |
+          set -euo pipefail
+          # No hold reason means the job ended before or outside the hold
+          # (bring-up failed, cancelled): the tunnel has stopped either way.
+          case "$HOLD_REASON" in
+            job_budget|window_elapsed|label_removed|pr_closed|head_changed|tunnel_dead|poll_failures) ;;
+            *) HOLD_REASON=tunnel_dead ;;
+          esac
+          export HOLD_REASON
+          bun -e '
+            import { buildComment } from "./trusted/scripts/preview-hold.ts";
+            const body = buildComment({ status: "expired", reason: process.env.HOLD_REASON as never });
+            await Bun.write(`${process.env.RUNNER_TEMP}/comment-expired.md`, body);
+          '
+          ID=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.body | contains("<!-- shipwright-preview -->")) | .id' | head -n1 || true)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$ID" -F body=@"$RUNNER_TEMP/comment-expired.md" > /dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@"$RUNNER_TEMP/comment-expired.md" > /dev/null
+          fi

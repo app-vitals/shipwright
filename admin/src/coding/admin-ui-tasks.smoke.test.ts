@@ -41,7 +41,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?state=in_progress&status=pr_open", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("status")).toBe("pr_open");
     expect(capturedParams[0].has("state")).toBe(false);
   });
@@ -60,29 +61,71 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?state=ready", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("state")).toBe("ready");
     expect(capturedParams[0].has("status")).toBe(false);
   });
 
-  it("GET /admin/tasks with no params (default board view) forwards state=open and limit=200 (TBC-2.1)", async () => {
+  it("GET /admin/tasks (default board) queries each column via ?column= with a page-size limit and no state=open window (TPG-2.1)", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 200 };
+          return { tasks: [], total: 0, limit: 50, nextCursor: null };
         },
       }),
     );
     await app.request("/admin/tasks", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
-    expect(capturedParams[0].get("state")).toBe("open");
-    expect(capturedParams[0].has("status")).toBe(false);
-    expect(capturedParams[0].get("limit")).toBe("200");
+    expect(capturedParams.map((p) => p.get("column")).sort()).toEqual([
+      "blocked",
+      "in_progress",
+      "planning",
+      "queued",
+    ]);
+    for (const p of capturedParams) {
+      expect(p.has("state")).toBe(false);
+      expect(p.get("limit")).toBe("50");
+      expect(p.has("cursor")).toBe(false);
+    }
+  });
+
+  it("GET /admin/tasks?more_queued=… follows the cursor for that column only and Load more chains nextCursor (TPG-2.1)", async () => {
+    const calls: Array<{ column: string | null; cursor: string | null }> = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          if (params.has("owner")) return { tasks: [], total: 0, limit: 1 };
+          const column = params.get("column");
+          const cursor = params.get("cursor");
+          calls.push({ column, cursor });
+          return {
+            tasks: [],
+            total: column === "queued" ? 120 : 0,
+            limit: 50,
+            nextCursor: column === "queued" ? "next2" : null,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks?more_queued=abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(calls.filter((c) => c.column === "queued")).toEqual([
+      { column: "queued", cursor: null },
+      { column: "queued", cursor: "abc" },
+    ]);
+    expect(
+      calls.filter((c) => c.column !== "queued").every((c) => !c.cursor),
+    ).toBe(true);
+    expect(html).toContain("more_queued=abc.next2");
+    expect(html).toContain(">120</span>");
+    expect(html.match(/class="btn btn-secondary load-more"/g)?.length).toBe(1);
   });
 
   it("GET /admin/tasks?view=table with no other params forwards neither state nor status, with the standard limit=50 (TBC-2.1)", async () => {
@@ -119,7 +162,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?hitl=true", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("hitl")).toBe("true");
   });
 
@@ -186,7 +230,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?hitl=false", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("hitl")).toBe("false");
   });
 
@@ -204,7 +249,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].has("hitl")).toBe(false);
   });
 
@@ -222,7 +268,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?hitl=garbage", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].has("hitl")).toBe(false);
   });
 
@@ -240,7 +287,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("sort")).toBe("desc");
   });
 
@@ -258,7 +306,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?source=entropy-fix", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].get("source")).toBe("entropy-fix");
   });
 
@@ -276,7 +325,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?repo=a&repo=b&org=app-vitals", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].getAll("repo")).toEqual(["a", "b"]);
     expect(capturedParams[0].getAll("org")).toEqual(["app-vitals"]);
   });
@@ -295,7 +345,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks?repo=org%2Frepo", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].getAll("repo")).toEqual(["org/repo"]);
   });
 
@@ -313,7 +364,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].has("repo")).toBe(false);
     expect(capturedParams[0].has("org")).toBe(false);
   });
@@ -356,7 +408,8 @@ describe("admin UI — tasks page", () => {
     await app.request("/admin/tasks", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(capturedParams.length).toBe(1);
+    // TPG-2.1: the board issues one ?column= query per column.
+    expect(capturedParams.length).toBe(4);
     expect(capturedParams[0].has("source")).toBe(false);
   });
 

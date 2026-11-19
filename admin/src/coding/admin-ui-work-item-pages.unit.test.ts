@@ -6771,3 +6771,62 @@ describe("renderTasksPage — owner, origin and source link (PLU-5.2)", () => {
     expect(html).toContain("cron: nightly");
   });
 });
+
+describe("renderTasksPage board per-column pages (TPG-2.1)", () => {
+  const task = (id: string): TaskItem =>
+    ({ id, title: `T ${id}`, status: "pending", repo: "o/r" }) as TaskItem;
+  const render = (cols: Parameters<typeof renderTasksPage>[13]): string =>
+    renderTasksPage(
+      [],
+      {},
+      false,
+      "u",
+      {},
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      {},
+      "board",
+      new Date(),
+      cols,
+    );
+  const column = (html: string, key: string): string =>
+    html
+      .slice(html.indexOf(`data-column="${key}"`))
+      .split("</div>\n      </div>")[0] ?? "";
+
+  test("empty column shows its zero total, No tasks and no Load more", () => {
+    const html = render({
+      queued: { tasks: [], total: 0, loadMoreHref: null },
+    });
+    const col = column(html, "queued");
+    expect(col).toContain('class="column-count">0<');
+    expect(col).toContain("No tasks");
+    expect(col).not.toContain("load-more");
+  });
+
+  test("single page shows header from total and hides Load more when href is null", () => {
+    const html = render({
+      queued: { tasks: [task("A"), task("B")], total: 2, loadMoreHref: null },
+    });
+    const col = column(html, "queued");
+    expect(col).toContain('class="column-count">2<');
+    expect(col).not.toContain("load-more");
+  });
+
+  test("multi-page column counts from total (not loaded cards) and links Load more", () => {
+    const html = render({
+      queued: {
+        tasks: [task("A")],
+        total: 120,
+        loadMoreHref: "/admin/tasks?more_queued=c1&x=1",
+      },
+    });
+    const col = column(html, "queued");
+    expect(col).toContain('class="column-count">120<');
+    expect(col).toContain('href="/admin/tasks?more_queued=c1&amp;x=1"');
+    expect(col).toContain("Load more");
+  });
+});

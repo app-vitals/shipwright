@@ -66,7 +66,7 @@ env:
   PAGES_URL: https://app-vitals.github.io/shipwright
   # Last chart version published before chart-<version> tags began (RCN-9.10).
   # Must match check-chart-drift.yml's CHART_TAG_FLOOR.
-  CHART_TAG_FLOOR: 1.32.311
+  CHART_TAG_FLOOR: 1.32.312
 
 jobs:
   # Absorbs a burst of near-simultaneous release tags into one publish. Does no
