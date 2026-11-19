@@ -199,6 +199,7 @@ jobs:
           set -euo pipefail
           source .github/workflows/lib/chart-tag-utils.sh
           source .github/workflows/lib/chart-release.sh
+          source .github/workflows/lib/chart-drift-check.sh
           helm package "$SCRATCH/shipwright" --version "$VERSION" -d "$SCRATCH/out"
           LATEST=$(latest_chart_version gh-pages/index.yaml)
           if [ -n "$LATEST" ] && [ -f "gh-pages/shipwright-${LATEST}.tgz" ] \
