@@ -54,3 +54,21 @@ ACM-5.1 drop email keys (agent): 4.1, 3.3
 ACM-5.2 drop email owner (shipwright): 3.3, 3.4
 ```
 Breaking-change safety: every removal (5.1, 5.2) comes after its consumers migrate (4.1, 3.3, 3.4) and is gated on a zero-unexplained-null check. 1.1, 3.1 are additive.
+
+## Pass 2 - 2026-11-19 - consumer compat unblock for ACM-1.1
+
+**Problem.** app-vitals/agent PR #266 (ACM-1.1) adds nullable `memberId` to AgentMember. Its `shipwright consumer compat` check typechecks shipwright against the PR build and fails: shipwright test mocks return AgentMember rows without `memberId`. ACM-1.1 was blocked on this.
+
+**Design.** Add `memberId: null` to the mock return shapes in five shipwright smoke test files. The change is additive and must typecheck against both the pinned 1.73.0 and the #266 build. No production code changes.
+
+| Task | Repo | Title | Depends on |
+|------|------|-------|-----------|
+| ACM-6.1 | app-vitals/shipwright | test: add nullable memberId to AgentMember mocks for consumer compat | none |
+
+ACM-1.1 now depends on ACM-6.1. Once ACM-6.1 merges, re-run the check on #266 and unblock ACM-1.1 (POST /tasks/ACM-1.1/unblock).
+
+Breaking Change Safety: safe to deploy standalone (test fixtures only).
+
+### Decision Log
+- Milestone number: defaulted to 6 (highest existing is 5) per the append rule, even though it gates milestone 1.
+- Single task, haiku tier: five fixture files, no logic.
