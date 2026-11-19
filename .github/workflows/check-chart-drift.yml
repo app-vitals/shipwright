@@ -37,7 +37,7 @@ permissions:
 env:
   PAGES_URL: https://app-vitals.github.io/shipwright
   # Last chart version published before chart-<version> tags began (RCN-9.10).
-  CHART_TAG_FLOOR: 1.32.306
+  CHART_TAG_FLOOR: 1.32.311
 
 jobs:
   check-drift:

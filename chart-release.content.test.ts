@@ -172,6 +172,16 @@ describe("chart-release.yml chart tag", () => {
     expect(floor(text)).toBe(floor(read(".github/workflows/check-chart-drift.yml")));
   });
 
+  it("sets the chart tag floor to the last version published by the retired bump-PR flow", () => {
+    // Every bump-PR publish logged a CHANGELOG entry. Each one above the floor has no
+    // chart-<version> tag or release record, so the drift check would flag it forever.
+    const logged = [...read("charts/shipwright/CHANGELOG.md").matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)]
+      .map((m) => m[1].split(".").map(Number))
+      .sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2]);
+    const floor = (Bun.YAML.parse(text) as { env?: Record<string, unknown> }).env?.CHART_TAG_FLOOR;
+    expect(String(floor)).toBe(logged[0].join("."));
+  });
+
   it("checks out full history and tags, and keeps credentials for the tag push", () => {
     const checkout = publish.steps[0] as Step & {
       with?: Record<string, unknown>;
