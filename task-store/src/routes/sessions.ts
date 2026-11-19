@@ -418,7 +418,7 @@ export function createSessionsRoutes(
     return c.json(session, 200);
   });
 
-  // ─── Patch (rename/archive, SESH-3.1; scoped writes, PWE-1.1) ──────────────────────────────────────
+  // ─── Patch (SESH-3.1; scoped writes, PWE-1.1) ───────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
     // Scope is checked before the body so an out-of-scope caller learns
