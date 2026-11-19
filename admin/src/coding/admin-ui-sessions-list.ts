@@ -4,7 +4,7 @@
  *
  * Renders three sections (Waiting on you / Active / Closed) plus an
  * Archived filter, with state/repo/agent/q/sort query filters and
- * limit/offset pagination. Access is scoped via session-scope.ts (SESH-4.1):
+ * cursor (Prev/Next) pagination. Access is scoped via session-scope.ts (SESH-4.1):
  * an admin sees every session; a non-admin member sees only sessions with a
  * task assigned to one of their agents, or in one of those agents' repos.
  * A member with zero AgentMember rows sees an empty page, not an error.
@@ -35,6 +35,13 @@ import {
   renderRepoOrgFilterFields,
   resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-work-item-pages.ts";
+import {
+  applyCursorState,
+  type CursorPagination,
+  type CursorState,
+  parseCursorState,
+  renderCursorPager,
+} from "./cursor-paging.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
 import {
   documentsSummary,
@@ -124,7 +131,7 @@ export interface SessionsListDeps {
     sessions: Session[];
     total: number;
     limit: number;
-    offset: number;
+    nextCursor?: string | null;
   }>;
   /**
    * Fetch distinct session/repo/org values from the task-store service.
@@ -343,21 +350,19 @@ function renderSessionsListPage(
   userName: string,
   agentNames: Record<string, string>,
   followedSlugs: Set<string>,
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
+  pagination: CursorPagination & {
     /**
      * True when `sessions` was narrowed client-side by the member-visibility
-     * filter, so total/limit/offset describe the task-store's pre-filter
+     * filter, so total/limit describe the task-store's pre-filter
      * result set rather than the rows actually rendered. The summary is
      * relabelled accordingly instead of misstating a visible-row count.
      */
     scoped?: boolean;
   } = {
+    count: 0,
     total: 0,
     limit: 50,
-    offset: 0,
+    state: { prev: [] },
   },
   suggestions?: { orgs?: string[]; repos?: string[]; agents?: string[] },
   timezone?: string,
@@ -371,8 +376,9 @@ function renderSessionsListPage(
   const makeUrl = (
     overrides: Partial<{
       archived: boolean;
-      offset: number;
       owner: string;
+      /** Cursor target; omitted = first page (filter/view changes reset). */
+      cursorState: CursorState;
     }>,
   ): string => {
     const params = new URLSearchParams();
@@ -389,15 +395,14 @@ function renderSessionsListPage(
     if (filters.sort !== "waitingSince") params.set("sort", filters.sort);
     const archived = overrides.archived ?? filters.archived;
     if (archived) params.set("archived", "true");
-    const offset = overrides.offset ?? pagination.offset;
-    if (offset > 0) params.set("offset", String(offset));
+    applyCursorState(params, overrides.cursorState ?? null);
     const qs = params.toString();
     return `${SESSIONS_LIST_PATH}${qs ? `?${qs}` : ""}`;
   };
 
   const archivedToggle = filters.archived
-    ? `<a href="${makeUrl({ archived: false, offset: 0 })}" class="btn btn-secondary" style="font-size:12px">← Back to active sessions</a>`
-    : `<a href="${makeUrl({ archived: true, offset: 0 })}" class="btn btn-secondary" style="font-size:12px">Archived</a>`;
+    ? `<a href="${makeUrl({ archived: false })}" class="btn btn-secondary" style="font-size:12px">← Back to active sessions</a>`
+    : `<a href="${makeUrl({ archived: true })}" class="btn btn-secondary" style="font-size:12px">Archived</a>`;
 
   const ownerSwitch = (() => {
     const tab = (label: string, active: boolean, href: string) =>
@@ -409,8 +414,8 @@ function renderSessionsListPage(
         ? `<span class="badge badge-gray">Owner: ${escapeHtml(view.owner)}</span>`
         : "";
     return `<div id="owner-switch" style="display:flex;gap:6px;align-items:center;margin-bottom:16px">
-      ${userName ? tab("Mine", mine, makeUrl({ owner: userName, offset: 0 })) : ""}
-      ${tab("All", view.mode === "all", makeUrl({ owner: "all", offset: 0 }))}
+      ${userName ? tab("Mine", mine, makeUrl({ owner: userName })) : ""}
+      ${tab("All", view.mode === "all", makeUrl({ owner: "all" }))}
       ${other}
     </div>`;
   })();
@@ -476,32 +481,21 @@ function renderSessionsListPage(
     ).join("\n");
   }
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(pagination.total / pagination.limit),
-  );
-  const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
-  const rangeEnd = Math.min(
-    pagination.offset + pagination.limit,
-    pagination.total,
-  );
   // For a scoped member the rendered rows are a client-side subset of the
-  // task-store page, so "X–Y of Z" would overstate what's actually visible.
-  // Lead with the true visible-row count and label the range/total as the
+  // task-store page, so a plain "N of Z" would overstate what's actually
+  // visible. Lead with the true visible-row count and label the total as the
   // pre-filter result set the Prev/Next controls actually traverse.
-  const summaryHtml = pagination.scoped
-    ? `<span title="Only sessions you have access to are listed; the range and total describe all sessions matching your filters.">${sessions.length} visible in results ${pagination.offset + 1}–${rangeEnd} of ${pagination.total}</span>`
-    : `<span>${pagination.offset + 1}–${rangeEnd} of ${pagination.total}</span>`;
+  const summary = pagination.scoped
+    ? `<span title="Only sessions you have access to are listed; the total describes all sessions matching your filters.">${sessions.length} visible of ${pagination.total} matching</span>`
+    : `${sessions.length} shown of ${pagination.total}`;
   const paginationHtml =
     pagination.total === 0
       ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:12px;color:#6b7280">
-      ${summaryHtml}
-      <div style="display:flex;gap:4px">
-        ${currentPage > 1 ? `<a href="${makeUrl({ offset: Math.max(0, pagination.offset - pagination.limit) })}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
-        ${currentPage < totalPages ? `<a href="${makeUrl({ offset: pagination.offset + pagination.limit })}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
-      </div>
-    </div>`;
+      : renderCursorPager(
+          pagination,
+          (cursorState) => makeUrl({ cursorState }),
+          { summary, topPadding: "12px 0" },
+        );
 
   return renderAdminPage({
     title: "Sessions — Shipwright Admin",
@@ -574,10 +568,10 @@ export function registerSessionsListRoutes(
     const limit = limitRaw
       ? Math.max(1, Number.parseInt(limitRaw, 10) || 50)
       : 50;
-    const offsetRaw = c.req.query("offset");
-    const offset = offsetRaw
-      ? Math.max(0, Number.parseInt(offsetRaw, 10) || 0)
-      : 0;
+    const cursorState = parseCursorState(
+      c.req.query("cursor"),
+      c.req.query("prev"),
+    );
 
     const ownerParam = c.req.query("owner");
 
@@ -612,7 +606,6 @@ export function registerSessionsListRoutes(
           state: "all",
           owner: userEmail,
           limit: "1",
-          offset: "0",
         });
         ownsAny =
           (await deps.fetchTaskStoreSessions(probe, accountId)).total > 0;
@@ -641,15 +634,17 @@ export function registerSessionsListRoutes(
     ) {
       return deps.html(
         renderSessionsListPage([], filters, false, userEmail, {}, new Set(), {
+          count: 0,
           total: 0,
           limit,
-          offset,
+          state: cursorState,
         }),
       );
     }
 
     let sessions: Session[] = [];
     let total = 0;
+    let nextCursor: string | null = null;
     let degraded = false;
     let distinctValues: {
       sessions: string[];
@@ -675,10 +670,10 @@ export function registerSessionsListRoutes(
             agentName: agentId,
             searchByName: (name) => deps.agentService.searchByName(name),
             limit,
-            offset,
+            cursor: cursorState.cursor,
             matches: (session, matchedAgentIds) =>
               session.agentIds.some((id) => matchedAgentIds.has(id)),
-            fetchPage: async (fetchLimit, fetchOffset) => {
+            fetchPage: async (fetchLimit, fetchCursor) => {
               const params = new URLSearchParams();
               // state=all/archived (never the default-omitted filter) —
               // the three main sections are bucketed client-side from the
@@ -692,9 +687,13 @@ export function registerSessionsListRoutes(
               if (ownerView.mode !== "all")
                 params.set("owner", ownerView.owner);
               params.set("limit", String(fetchLimit));
-              params.set("offset", String(fetchOffset));
+              if (fetchCursor) params.set("cursor", fetchCursor);
               const fetched = await fetchTaskStoreSessions(params, accountId);
-              return { items: fetched.sessions, total: fetched.total };
+              return {
+                items: fetched.sessions,
+                total: fetched.total,
+                nextCursor: fetched.nextCursor,
+              };
             },
           }),
           deps.fetchDistinctTaskValues
@@ -703,6 +702,7 @@ export function registerSessionsListRoutes(
         ]);
         sessions = result.items;
         total = result.total;
+        nextCursor = result.nextCursor;
         distinctValues = distinct;
       } catch {
         degraded = true;
@@ -784,11 +784,13 @@ export function registerSessionsListRoutes(
         agentNames,
         followedSlugs,
         {
+          count: sessions.length,
           total,
           limit,
-          offset,
-          // total/limit/offset are the task-store's pre-filter values; flag
-          // that so the summary doesn't claim they describe the rendered rows.
+          state: cursorState,
+          nextCursor,
+          // total is the task-store's pre-filter value; flag that so the
+          // summary doesn't claim it describes the rendered rows.
           scoped,
         },
         suggestions,
