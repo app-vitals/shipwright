@@ -8,7 +8,7 @@ subagentType or null`, phase value `"plan-session"`). The `/shipwright:plan-sess
 is the caller: it owns Step 1 (loading CLAUDE.md, scanning for existing/duplicate tasks in
 this session, scanning open cross-session tasks, and — under `--autonomous` — materializing
 `planning/{session}/PRODUCT-SPEC.md` (spec 1) from the originating PRD task's `description`) and Step 6
-(writing `PLAN.md` to disk, the `/tasks/bulk` POST, the plan-viz link, autonomous PRD
+(writing `PLAN.md` to disk, the `POST /sessions/{session}/plan` write, the plan-viz link, autonomous PRD
 closeout, and opening the plan PR) — none of that is delegated. Once the spec is loaded, the
 caller dispatches whichever subagent is configured for the plan-session phase with the inputs
 below and parses the output shape below regardless of which concrete agent produced it. A
@@ -175,6 +175,6 @@ applies HITL judgment; those are the concrete implementation's concern (see
 `commands/plan-session.md` Steps 2 through 5.5 for the reference implementation's full
 heuristics). It also says nothing about what the caller does with the output afterwards: the
 `/shipwright:plan-session` wrapper continues to own writing `planning/{session}/PLAN.md` to
-disk, POSTing `tasks[]` to `/tasks/bulk`, transitioning the originating PRD task to `done` on
+disk, writing `tasks[]` through `POST /sessions/{session}/plan`, transitioning the originating PRD task to `done` on
 success (or `blocked` on a `hardContradiction`), and opening the docs-only plan PR — the
 subagent does not touch the task store, the filesystem, or GitHub directly.
