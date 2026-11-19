@@ -201,6 +201,24 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "planning",
+                "ideas",
+                "queued",
+                "in_progress",
+                "blocked"
+              ],
+              "example": "blocked",
+              "description": "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400."
+            },
+            "required": false,
+            "description": "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
+            "name": "column",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only."
             },
             "required": false,
@@ -260,6 +278,28 @@
             "required": false,
             "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally.",
             "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "agent-a,agent-b",
+              "description": "Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility."
+            },
+            "required": false,
+            "description": "Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility.",
+            "name": "scopeAgentIds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/a,org/b",
+              "description": "Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`."
+            },
+            "required": false,
+            "description": "Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`.",
+            "name": "scopeRepos",
             "in": "query"
           },
           {

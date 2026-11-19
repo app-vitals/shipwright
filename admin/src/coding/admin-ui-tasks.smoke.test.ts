@@ -34,7 +34,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -53,7 +53,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -72,7 +72,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 200, offset: 0 };
+          return { tasks: [], total: 0, limit: 200 };
         },
       }),
     );
@@ -92,7 +92,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -112,7 +112,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -141,7 +141,6 @@ describe("admin UI — tasks page", () => {
             ],
             total: 1,
             limit: 200,
-            offset: 0,
           };
         },
       }),
@@ -163,7 +162,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -180,7 +179,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -198,7 +197,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -216,7 +215,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -234,7 +233,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -252,7 +251,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -270,7 +269,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -289,7 +288,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -307,7 +306,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -326,7 +325,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchDistinctTaskValues: async () => ({
           sessions: [],
@@ -351,7 +349,7 @@ describe("admin UI — tasks page", () => {
         fetchTaskStoreTasks: async (params) => {
           // PLU-5.2: skip the Mine-view ownership probe (owner + limit=1).
           if (!params.has("owner")) capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -369,7 +367,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -408,7 +405,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -429,7 +425,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -460,7 +455,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -509,11 +503,10 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { prs: [MOCK_JOINED_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_JOINED_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -551,7 +544,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStorePrs: async () => {
           throw new Error("should not be called for a task with no repo/pr");
@@ -585,7 +577,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStorePrs: async () => {
           throw new Error("task store unavailable");
@@ -660,7 +651,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -696,7 +686,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -744,7 +733,6 @@ describe("admin UI — tasks page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -764,7 +752,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchDistinctTaskValues: async () => ({
           sessions: [],
@@ -790,7 +777,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTask: async () => null,
         releaseTask: async (id: string) => {
@@ -815,7 +801,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         releaseTask: async (id: string) => {
           released.push(id);
@@ -838,7 +823,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         releaseTask: async () => {
           throw new Error("task store unavailable");
@@ -866,7 +850,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTask: async () => null,
         releaseTask: async (id: string) => {
@@ -907,7 +890,6 @@ describe("admin UI — tasks page", () => {
             tasks: [],
             total: 0,
             limit: 50,
-            offset: 0,
           }),
           fetchTaskStoreTask: async () => null,
           releaseTask: async (id: string) => {
@@ -936,7 +918,6 @@ describe("admin UI — tasks page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTask: async () => null,
         releaseTask: async (id: string) => {
@@ -1130,7 +1111,7 @@ describe("admin UI — tasks page", () => {
           id === "task-42" ? mockTask : null,
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { prs: [MOCK_PR_ITEM], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR_ITEM], total: 1, limit: 50 };
         },
       }),
     );
@@ -1227,7 +1208,7 @@ describe("admin UI — tasks page", () => {
           id === "task-43" ? mockTask : null,
         fetchTaskStorePrs: async (_params: URLSearchParams) => {
           called = true;
-          return { prs: [], total: 0, limit: 50, offset: 0 };
+          return { prs: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -1278,7 +1259,6 @@ describe("admin UI — tasks page", () => {
             ],
             total: 1,
             limit: 50,
-            offset: 0,
           };
         },
       }),
@@ -1297,6 +1277,50 @@ describe("admin UI — tasks page", () => {
     // so an unqualified request would hand the card the OLDEST page. The route
     // must ask for a window big enough to contain each checkName's latest run.
     expect(Number(captured.get("limit"))).toBeGreaterThan(50);
+  });
+
+  it("GET /admin/tasks?view=table pages by cursor: sends cursor (never offset) and renders Prev/Next with a stack", async () => {
+    const seen: URLSearchParams[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async (params: URLSearchParams) => {
+          seen.push(params);
+          return {
+            tasks: [],
+            total: 120,
+            limit: 50,
+            nextCursor: params.get("cursor") === "c3" ? null : "c-next",
+          };
+        },
+      }),
+    );
+    const get = async (qs: string) => {
+      const res = await app.request(`/admin/tasks?view=table&owner=all${qs}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      return res.text();
+    };
+
+    // First page: no cursor upstream, Next only.
+    const first = await get("");
+    expect(seen.at(-1)?.has("cursor")).toBe(false);
+    expect(first).toContain("cursor=c-next");
+    expect(first).not.toContain("← Prev");
+
+    // Middle page: cursor forwarded, Prev returns via stack, Next pushes it.
+    const middle = await get("&cursor=c2&prev=c1");
+    expect(seen.at(-1)?.get("cursor")).toBe("c2");
+    expect(middle).toContain("← Prev");
+    expect(middle).toContain("cursor=c1");
+    expect(middle).toContain("cursor=c-next&prev=c1.c2");
+
+    // Last page: Prev only.
+    const last = await get("&cursor=c3&prev=c2");
+    expect(last).toContain("← Prev");
+    expect(last).not.toContain("Next →");
+
+    for (const p of seen) expect(p.has("offset")).toBe(false);
   });
 
   it("GET /admin/tasks/:id pages to the newest verification checks when the history exceeds one page", async () => {
@@ -1334,14 +1358,19 @@ describe("admin UI — tasks page", () => {
         fetchVerificationChecks: async (params: URLSearchParams) => {
           requests.push(params);
           const limit = Number(params.get("limit"));
-          const offset = Number(params.get("offset") ?? "0");
-          // Oldest-first pagination: offset 0 is the stale head of the
-          // history, the last page holds the genuinely most recent runs.
-          const checks =
-            offset > 0
-              ? [makeCheck("vc-new", "ran_passed", "2026-06-20T10:00:00.000Z")]
-              : [makeCheck("vc-old", "ran_failed", "2026-06-01T10:00:00.000Z")];
-          return { checks, total: TOTAL, limit, offset };
+          // Oldest-first cursor pagination: the first page is the stale head
+          // of the history and hands back a nextCursor; following it reaches
+          // the last page (nextCursor null) with the most recent runs.
+          const cursor = params.get("cursor");
+          const checks = cursor
+            ? [makeCheck("vc-new", "ran_passed", "2026-06-20T10:00:00.000Z")]
+            : [makeCheck("vc-old", "ran_failed", "2026-06-01T10:00:00.000Z")];
+          return {
+            checks,
+            total: TOTAL,
+            limit,
+            nextCursor: cursor ? null : "cur-2",
+          };
         },
       }),
     );
@@ -1350,13 +1379,13 @@ describe("admin UI — tasks page", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    // Two calls: the first reports total > page size, the second fetches the
-    // tail page at offset = total - limit.
+    // Two calls: the first returns a nextCursor, the second follows it to the
+    // tail page. Neither sends offset (cursor paging).
     expect(requests.length).toBe(2);
-    const firstLimit = Number(requests[0].get("limit"));
-    expect(requests[0].get("offset")).toBeNull();
+    expect(requests[0].get("cursor")).toBeNull();
     expect(requests[1].get("taskId")).toBe("task-99");
-    expect(Number(requests[1].get("offset"))).toBe(TOTAL - firstLimit);
+    expect(requests[1].get("cursor")).toBe("cur-2");
+    for (const r of requests) expect(r.get("offset")).toBeNull();
     // The rendered card reflects the newest run, not the stale first page.
     expect(html).toContain("2026-06-20T10:00:00.000Z");
     expect(html).not.toContain("2026-06-01T10:00:00.000Z");
@@ -1425,7 +1454,7 @@ describe("admin UI — tasks page", () => {
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -1445,7 +1474,7 @@ describe("admin UI — tasks page", () => {
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -1487,7 +1516,6 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
     tasks: [],
     total: 0,
     limit: 50,
-    offset: 0,
   });
 
   it("POST /admin/tasks/quick-add creates a pending initiative and redirects with success", async () => {
@@ -1785,7 +1813,6 @@ describe("admin UI — quick-add and promote (INI-1.3)", () => {
           ],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -1840,7 +1867,7 @@ describe("admin UI — tasks owner, origin and Mine view (PLU-5.2)", () => {
       calls.push(params);
       const owner = params.get("owner");
       const rows = owner ? all.filter((t) => t.owner === owner) : all;
-      return { tasks: rows, total: rows.length, limit: 50, offset: 0 };
+      return { tasks: rows, total: rows.length, limit: 50 };
     };
   }
   const get = (app: ReturnType<typeof createCodingTestApp>, path: string) =>

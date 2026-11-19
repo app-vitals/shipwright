@@ -10,7 +10,8 @@
  *   - account user (flag on): only their account's rows; another account's
  *     task/PR/session id → 404; may rename/archive their own sessions
  *   - platform admin: every row, plus an Account column on the sessions list
- *   - caller with no account (flag off): Tasks/PRs stay admin-only (403)
+ *   - caller with no account (flag off): PRs stay admin-only (403); an agent
+ *     member sees Tasks scoped to their agents (MPV-1.2) but cannot mutate
  */
 
 import { describe, expect, it } from "bun:test";
@@ -250,6 +251,7 @@ function makeMockDeps(overrides?: Partial<CodingMockDeps>): CodingMockDeps {
         id: "m1",
         agentId,
         email,
+        memberId: null,
         createdAt: new Date(),
       }),
       remove: async () => {},
@@ -599,10 +601,10 @@ describe("SSP-6.8 — /admin/tasks scoped by account", () => {
     expect(calls.fetchTaskStoreTasks).toEqual([undefined]);
   });
 
-  it("a caller with no account (flag off) still gets 403", async () => {
+  it("a caller with no account (flag off) is a member: reads tasks, cannot mutate", async () => {
     const { app } = makeApp();
-    expect((await get(app, "/admin/tasks", NO_ACCOUNT)).status).toBe(403);
-    expect((await get(app, "/admin/tasks/A-1", NO_ACCOUNT)).status).toBe(403);
+    expect((await get(app, "/admin/tasks", NO_ACCOUNT)).status).toBe(200);
+    expect((await get(app, "/admin/tasks/A-1", NO_ACCOUNT)).status).toBe(200);
     expect(
       (await post(app, "/admin/tasks/A-1/release", NO_ACCOUNT)).status,
     ).toBe(403);

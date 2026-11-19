@@ -582,38 +582,17 @@ another repo's entries even if both were scanned in the same ISO week.
 
 ## Step 10: Print Summary
 
-Whether or not `--summary` was passed, always print a summary to stdout after the scan:
+Whether or not `--summary` was passed, always print a summary after the scan. Cron runs post
+this to a channel where nobody can reply in the moment, so **cap the final response at
+3-5 lines**: a status line, the counts, and a link. The full detail (findings, skipped tools,
+expired suppressions) stays in `security-report.md` — never repeat it in the response.
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECURITY SCAN COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Repo:            {org/repo}  ({repo-slug})
-  ISO week:        {YYYY-Www}
-  Tools run:       {N} / 5   (skipped: {list})
-
-  NEW        {N} findings
-  REGRESSED  {N} findings
-  ─────────────────────
-  Unchanged (not reported): {N}
-  Suppressed: {N}   (.shipwright/suppressions.yml)
-
-{If any expired entries:}
-  Expired suppressions (no longer suppressing — their findings are reported again):
-    - {rule} {match key} — expired {expires}
-
-{If any new/regressed findings exist:}
-  Run /security-fix to classify these findings and queue task-store tasks.
-
-{If zero new/regressed findings:}
-  ✓ No new or regressed findings since last run.
-
-{If --dry-run: "Dry run — no files written."}
-{Else if --summary: "Summary only — security-report.md not written; ledger still updated."}
-{Else: "Report written to: security-report.md"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY SCAN COMPLETE — {org/repo} ({YYYY-Www}): {N} new, {M} regressed (suppressed: {N})
+Tools run: {N} / 5 (skipped: {list})
+{If new/regressed: "Next: /security-fix to queue tasks."}  {If zero: "✓ No new or regressed findings."}
+{If expired suppressions: "Expired suppressions: {N} — see report."}
+{If --dry-run: "Dry run — no files written."}  {Else if --summary: "Summary only — report not written; ledger still updated."}  {Else: "Report: security-report.md"}
 ```
 
 ---

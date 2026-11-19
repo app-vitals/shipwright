@@ -946,6 +946,55 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
       { OR: [{ repo: { startsWith: "app-vitals/" } }] },
     ]);
   });
+
+  it("list({ scope }) ORs assignee-in-agentIds with repo-in-repos (assignee only, not claimedBy)", async () => {
+    const prisma = makeListPrismaDouble();
+    await new TaskService(prisma).list({
+      scope: { agentIds: ["a", "b"], repos: ["org/r1"] },
+    });
+    const where = prisma._findManyCalls[0].where as { AND?: unknown[] };
+    expect(where.AND).toEqual([
+      { OR: [{ assignee: { in: ["a", "b"] } }, { repo: { in: ["org/r1"] } }] },
+    ]);
+    expect(JSON.stringify(where)).not.toContain("claimedBy");
+  });
+
+  it("list({ scope }) with an empty scope yields an empty OR (matches nothing), never everything", async () => {
+    const prisma = makeListPrismaDouble();
+    await new TaskService(prisma).list({ scope: { agentIds: [], repos: [] } });
+    const where = prisma._findManyCalls[0].where as { AND?: unknown[] };
+    expect(where.AND).toEqual([{ OR: [] }]);
+  });
+
+  it("list({ scope, repo }) ANDs the repo filter on top of the scope", async () => {
+    const prisma = makeListPrismaDouble();
+    await new TaskService(prisma).list({
+      scope: { agentIds: ["a"], repos: [] },
+      repo: "org/r1",
+    });
+    const where = prisma._findManyCalls[0].where as {
+      repo?: string;
+      AND?: unknown[];
+    };
+    expect(where.repo).toBe("org/r1");
+    expect(where.AND).toEqual([{ OR: [{ assignee: { in: ["a"] } }] }]);
+  });
+
+  it("list({ scope, org }) keeps the org OR on where.OR and the scope OR under AND without clobbering", async () => {
+    const prisma = makeListPrismaDouble();
+    await new TaskService(prisma).list({
+      scope: { agentIds: ["a"], repos: ["org/r1"] },
+      org: "org",
+    });
+    const where = prisma._findManyCalls[0].where as {
+      OR?: unknown;
+      AND?: unknown[];
+    };
+    expect(where.OR).toEqual([{ repo: { startsWith: "org/" } }]);
+    expect(where.AND).toEqual([
+      { OR: [{ assignee: { in: ["a"] } }, { repo: { in: ["org/r1"] } }] },
+    ]);
+  });
 });
 
 // ─── TaskService.list() blockedBy dependency lookup scoping ────────────────

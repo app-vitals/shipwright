@@ -206,6 +206,7 @@ function fakeScopeServices(
           id: `mem_${i}`,
           agentId,
           email,
+          memberId: null,
           createdAt: EPOCH,
         })),
     },
@@ -922,7 +923,7 @@ describe("SessionAlertSweeper.tick — per-row resilience", () => {
     const countingMembers = {
       listByEmail: async (email: string) => {
         calls++;
-        return [{ id: "mem_1", agentId: "agt_1", email, createdAt: EPOCH }];
+        return [{ id: "mem_1", agentId: "agt_1", email, memberId: null, createdAt: EPOCH }];
       },
     };
     const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });

@@ -68,7 +68,7 @@ describe("renderTasksPage — row click navigation", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       opts,
       undefined,
     );
@@ -172,7 +172,7 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -190,7 +190,7 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -213,7 +213,7 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -225,19 +225,26 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
     );
   });
 
-  // AC1: page > 1 also triggers ?from=
-  test("row links carry ?from= when page is greater than 1", () => {
+  // AC1: a cursor page also carries its cursor + prev stack in ?from=
+  test("row links carry ?from= with the cursor state when not on the first page", () => {
     const html = renderTasksPage(
       [TASK_ITEM],
       {},
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 2 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { cursor: "c2", prev: ["c1"] },
+      },
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?page=2&view=table");
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?cursor=c2&prev=c1&view=table",
+    );
     expect(html).toContain(
       `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
     );
@@ -251,7 +258,7 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -274,7 +281,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -291,7 +298,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -305,7 +312,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -319,7 +326,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -339,11 +346,19 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
       undefined,
       undefined,
     );
-    expect(html).toContain('href="/admin/tasks?hitl=true&page=2&view=table"');
+    expect(html).toContain(
+      'href="/admin/tasks?hitl=true&cursor=n2&view=table"',
+    );
   });
 
   test("makeStateParams preserves hitl filter in state-tab links", () => {
@@ -353,7 +368,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -378,7 +393,7 @@ describe("renderTasksPage — hitl filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -394,7 +409,7 @@ describe("renderTasksPage — hitl filter", () => {
 // ─── renderTasksPage — datalist autocomplete (AFA-1.2) ───────────────────────
 
 describe("renderTasksPage — datalist autocomplete", () => {
-  const pagination = { total: 0, limit: 50, page: 1 };
+  const pagination = { count: 0, total: 0, limit: 50, state: { prev: [] } };
 
   test("renderTasksPage with sessions suggestions renders session datalist", () => {
     const html = renderTasksPage(
@@ -463,7 +478,7 @@ describe("renderTasksPage — datalist autocomplete", () => {
 // ─── renderTasksPage — org/repo multiselect filters (ORF-2.1) ────────────────
 
 describe("renderTasksPage — org/repo multiselect filters", () => {
-  const pagination = { total: 0, limit: 50, page: 1 };
+  const pagination = { count: 0, total: 0, limit: 50, state: { prev: [] } };
 
   test("renders both an Org and a Repo select-multiple element", () => {
     const html = renderTasksPage(
@@ -678,7 +693,7 @@ describe("renderTasksPage — blocker badges", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -883,7 +898,7 @@ describe("renderTasksPage — kind badge (TKD-1.4)", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -902,7 +917,7 @@ describe("renderTasksPage — kind badge (TKD-1.4)", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       suggestions,
       false,
@@ -1050,7 +1065,7 @@ describe("renderTasksPage — PR column", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1143,7 +1158,7 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1200,7 +1215,7 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      { count: 0, total: 100, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1214,7 +1229,7 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1230,12 +1245,18 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
       undefined,
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&page=2&view=table"',
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&cursor=n2&view=table"',
     );
     expect(html).not.toContain("app-vitals/repo-a,app-vitals/repo-b");
   });
@@ -1247,12 +1268,18 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
       undefined,
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?org=app-vitals&org=other-org&page=2&view=table"',
+      'href="/admin/tasks?org=app-vitals&org=other-org&cursor=n2&view=table"',
     );
   });
 
@@ -1263,7 +1290,7 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1279,7 +1306,7 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1295,12 +1322,18 @@ describe("renderTasksPage — source filter", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
       undefined,
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?repo=app-vitals%2Frepo-a&page=2&view=table"',
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&cursor=n2&view=table"',
     );
   });
 });
@@ -1315,7 +1348,7 @@ describe("renderTasksPage — Created column", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1382,7 +1415,7 @@ describe("renderTasksPage — PR column: renderer guard + prUrl fallback", () =>
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
     );
@@ -1442,7 +1475,7 @@ describe("renderTasksPage — PR column: renderer guard + prUrl fallback", () =>
 
 // ─── renderTasksPage — 4-state toggle ────────────────────────────────────────
 
-const EMPTY_PAGINATION = { total: 0, limit: 50, page: 1 };
+const EMPTY_PAGINATION = { count: 0, total: 0, limit: 50, state: { prev: [] } };
 
 describe("renderTasksPage — 4-state toggle", () => {
   test("no tab highlighted when no state filter (show all)", () => {
@@ -1594,20 +1627,32 @@ describe("renderTasksPage — 4-state toggle", () => {
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
       undefined,
       undefined,
     );
-    // Next button should link to page 2 with state=blocked
+    // Next button should link to the next cursor with state=blocked
     expect(html).toContain("state=blocked");
-    expect(html).toContain("page=2");
+    expect(html).toContain("cursor=n2");
   });
 });
 
 // ─── renderTasksPage — board view (AXR-1.3) ──────────────────────────────────
 
 describe("renderTasksPage — board view (AXR-1.3)", () => {
-  const BOARD_PAGINATION = { total: 0, limit: 50, page: 1 };
+  const BOARD_PAGINATION = {
+    count: 1,
+    total: 0,
+    limit: 50,
+    state: { prev: [] },
+    nextCursor: "n2",
+  };
 
   function renderBoard(
     tasks: TaskItem[],
@@ -1622,7 +1667,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       suggestions,
       false,
@@ -2268,7 +2313,7 @@ describe("renderTasksPage — board full page width (TBF-1.2)", () => {
       false,
       USER_NAME,
       {},
-      { total: 0, limit: 50, page: 1 },
+      { count: 0, total: 0, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       false,
@@ -2288,7 +2333,7 @@ describe("renderTasksPage — board full page width (TBF-1.2)", () => {
       false,
       USER_NAME,
       {},
-      { total: 0, limit: 50, page: 1 },
+      { count: 0, total: 0, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       false,
@@ -2322,7 +2367,7 @@ describe("renderTasksPage — ?view=table toggle (AXR-1.3)", () => {
       status: "in_progress",
     };
     const agentNames = { "agent-1": "Agent One" };
-    const pagination = { total: 1, limit: 50, page: 1 };
+    const pagination = { count: 0, total: 1, limit: 50, state: { prev: [] } };
     const suggestions = { orgs: ["org"], repos: ["org/repo"] };
     const prsByTaskId: Record<string, PrListItem> = {};
 
@@ -2371,7 +2416,7 @@ describe("renderTasksPage — ?view=table toggle (AXR-1.3)", () => {
         assignee: null,
       },
     ];
-    const pagination = { total: 1, limit: 50, page: 1 };
+    const pagination = { count: 0, total: 1, limit: 50, state: { prev: [] } };
     const table = renderTasksPage(
       tasks,
       {},
@@ -3131,7 +3176,12 @@ const PR_LIST_ITEM_2: PrListItem = {
   updatedAt: "2026-06-03T09:00:00Z",
 };
 
-const EMPTY_PR_PAGINATION = { total: 0, limit: 50, page: 1 };
+const EMPTY_PR_PAGINATION = {
+  count: 0,
+  total: 0,
+  limit: 50,
+  state: { prev: [] },
+};
 
 // ─── heartbeatFreshness (AXR-2.1) ────────────────────────────────────────────
 
@@ -3193,7 +3243,7 @@ describe("renderPrsPage", () => {
       degraded,
       USER_NAME,
       { "agent-001": "Alpha Agent" },
-      { total: prs.length, limit: 50, page: 1 },
+      { count: 0, total: prs.length, limit: 50, state: { prev: [] } },
       "America/Los_Angeles",
       undefined,
       {},
@@ -3290,7 +3340,7 @@ describe("renderPrsPage", () => {
       false,
       USER_NAME,
       { "agent-001": "Alpha Agent" },
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       "America/Los_Angeles",
       undefined,
       {
@@ -3308,7 +3358,7 @@ describe("renderPrsPage", () => {
       false,
       USER_NAME,
       { "agent-001": "Alpha Agent" },
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       "America/Los_Angeles",
       undefined,
       {
@@ -3498,7 +3548,7 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
       degraded,
       USER_NAME,
       { "agent-001": "Alpha Agent" },
-      { total: prs.length, limit: 50, page: 1 },
+      { count: 0, total: prs.length, limit: 50, state: { prev: [] } },
     );
   }
 
@@ -3566,7 +3616,13 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
       false,
       USER_NAME,
       {},
-      { total: 200, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 200,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
     );
     expect(html).toContain("blocked=true");
     const nextMatch = html.match(/href="([^"]*)"[^>]*>Next/);
@@ -3578,7 +3634,13 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
 // ─── renderPrsPage — org/repo multiselect filters (ORF-2.2) ──────────────────
 
 describe("renderPrsPage — org/repo multiselect filters", () => {
-  const pagination = { total: 0, limit: 50, page: 1 };
+  const pagination = {
+    count: 1,
+    total: 0,
+    limit: 50,
+    state: { prev: [] },
+    nextCursor: "n2",
+  };
 
   test("renders both an Org and a Repo select-multiple element", () => {
     const html = renderPrsPage(
@@ -3912,10 +3974,16 @@ describe("renderPrsPage — org/repo multiselect pagination/tab round-trip", () 
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
     );
     expect(html).toContain(
-      'href="/admin/prs?repo=org%2Frepo-a&repo=org%2Frepo-b&page=2"',
+      'href="/admin/prs?repo=org%2Frepo-a&repo=org%2Frepo-b&cursor=n2"',
     );
     expect(html).not.toContain("org/repo-a,org/repo-b");
   });
@@ -3927,10 +3995,16 @@ describe("renderPrsPage — org/repo multiselect pagination/tab round-trip", () 
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
     );
     expect(html).toContain(
-      'href="/admin/prs?org=app-vitals&org=other-org&page=2"',
+      'href="/admin/prs?org=app-vitals&org=other-org&cursor=n2"',
     );
   });
 
@@ -3941,9 +4015,15 @@ describe("renderPrsPage — org/repo multiselect pagination/tab round-trip", () 
       false,
       USER_NAME,
       {},
-      { total: 100, limit: 50, page: 1 },
+      {
+        count: 1,
+        total: 100,
+        limit: 50,
+        state: { prev: [] },
+        nextCursor: "n2",
+      },
     );
-    expect(html).toContain('href="/admin/prs?repo=org%2Frepo-a&page=2"');
+    expect(html).toContain('href="/admin/prs?repo=org%2Frepo-a&cursor=n2"');
   });
 
   test("state-tab links (Open/Merged) carry multi-value filters.repo as repeated repo= params", () => {
@@ -4344,7 +4424,7 @@ describe("renderTasksPage — mobile column hiding", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       readOnly,
@@ -4430,7 +4510,7 @@ describe("renderTasksPage — readOnly suppresses internal /admin/ links", () =>
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       readOnly,
@@ -4462,7 +4542,7 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
     );
     // TBF-1.1: carries ?from=/admin/tasks?view=table so the Session Detail
     // back link returns to the table view instead of the board.
@@ -4479,7 +4559,7 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
     );
     expect(html).not.toContain("/admin/sessions/undefined");
     expect(html).not.toContain("/admin/sessions/null");
@@ -4494,9 +4574,14 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 2 },
+      {
+        count: 1,
+        total: 1,
+        limit: 50,
+        state: { cursor: "c2", prev: [] },
+      },
     );
-    const from = "/admin/tasks?status=in_progress&page=2&view=table";
+    const from = "/admin/tasks?status=in_progress&cursor=c2&view=table";
     expect(html).toContain(
       `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${encodeURIComponent(from)}"`,
     );
@@ -4513,7 +4598,7 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
     );
     const from = encodeURIComponent("/admin/tasks?view=table");
     expect(html).toContain(
@@ -4620,7 +4705,7 @@ describe("renderPrsPage — mobile column hiding", () => {
       false,
       USER_NAME,
       { "agent-001": "Alpha Agent" },
-      { total: prs.length, limit: 50, page: 1 },
+      { count: 0, total: prs.length, limit: 50, state: { prev: [] } },
     );
   }
 
@@ -5904,68 +5989,74 @@ interface FakeItem {
 }
 
 describe("resolveAgentNameFilterAndPaginate", () => {
-  test("passthrough: no agentName runs fetchPage once at the caller's own limit/offset, filterActive false", async () => {
-    const fetchPageCalls: Array<{ limit: number; offset: number }> = [];
+  test("passthrough: no agentName runs fetchPage once with the caller's own limit/cursor, filterActive false, nextCursor passed through", async () => {
+    const fetchPageCalls: Array<{ limit: number; cursor?: string }> = [];
     const result = await resolveAgentNameFilterAndPaginate<FakeItem>({
       agentName: undefined,
       searchByName: async () => {
         throw new Error("searchByName must not be called with no agentName");
       },
       limit: 10,
-      offset: 20,
+      cursor: "abc",
       matches: () => true,
-      fetchPage: async (limit, offset) => {
-        fetchPageCalls.push({ limit, offset });
+      fetchPage: async (limit, cursor) => {
+        fetchPageCalls.push({ limit, cursor });
         return {
           items: [{ id: "t1", ownerAgentId: "agent-a" }],
           total: 42,
+          nextCursor: "def",
         };
       },
     });
 
-    expect(fetchPageCalls).toEqual([{ limit: 10, offset: 20 }]);
+    expect(fetchPageCalls).toEqual([{ limit: 10, cursor: "abc" }]);
     expect(result).toEqual({
       items: [{ id: "t1", ownerAgentId: "agent-a" }],
       total: 42,
+      nextCursor: "def",
       filterActive: false,
     });
   });
 
-  test("resolves the name to matching ids (OR semantics across multiple matches), widens the fetch, and re-paginates the filtered set", async () => {
+  test("resolves the name to matching ids (OR semantics across multiple matches), widens the fetch, and re-paginates the filtered set via a local index cursor", async () => {
     const allItems: FakeItem[] = [
       { id: "t1", ownerAgentId: "agent-a" },
       { id: "t2", ownerAgentId: "agent-b" },
-      { id: "t3", ownerAgentId: "agent-c" },
+      { id: "t3", ownerAgentId: "agent-b" },
       { id: "t4", ownerAgentId: null },
     ];
-    const fetchPageCalls: Array<{ limit: number; offset: number }> = [];
+    const fetchPageCalls: Array<{ limit: number; cursor?: string }> = [];
+    const run = (cursor?: string) =>
+      resolveAgentNameFilterAndPaginate<FakeItem>({
+        agentName: "ag",
+        searchByName: async () => [{ id: "agent-a" }, { id: "agent-b" }],
+        limit: 1,
+        cursor,
+        matches: (item, ids) =>
+          item.ownerAgentId !== null && ids.has(item.ownerAgentId),
+        fetchPage: async (limit, c) => {
+          fetchPageCalls.push({ limit, cursor: c });
+          return { items: allItems, total: allItems.length, nextCursor: "up" };
+        },
+      });
 
-    const result = await resolveAgentNameFilterAndPaginate<FakeItem>({
-      agentName: "ag",
-      searchByName: async (name) => {
-        expect(name).toBe("ag");
-        // Fuzzy match hits two agents — OR semantics means items owned by
-        // either should survive the filter.
-        return [{ id: "agent-a" }, { id: "agent-b" }];
-      },
-      limit: 1,
-      offset: 1,
-      matches: (item, ids) =>
-        item.ownerAgentId !== null && ids.has(item.ownerAgentId),
-      fetchPage: async (limit, offset) => {
-        fetchPageCalls.push({ limit, offset });
-        return { items: allItems, total: allItems.length };
-      },
-    });
+    const first = await run();
+    // Widened to the shared 500 page; the local cursor is never sent upstream.
+    expect(fetchPageCalls).toEqual([{ limit: 500, cursor: undefined }]);
+    // Three of four match; total recomputed from the filtered set.
+    expect(first.total).toBe(3);
+    expect(first.filterActive).toBe(true);
+    expect(first.items).toEqual([{ id: "t1", ownerAgentId: "agent-a" }]);
+    expect(first.nextCursor).toBe("1");
 
-    // Widened to the shared 500/0 page instead of the caller's own limit/offset.
-    expect(fetchPageCalls).toEqual([{ limit: 500, offset: 0 }]);
-    // Two of the four items match (t1, t2); total is recomputed from the
-    // filtered set, not the upstream total (4).
-    expect(result.total).toBe(2);
-    expect(result.filterActive).toBe(true);
-    // offset 1, limit 1 over the filtered [t1, t2] set slices to just t2.
-    expect(result.items).toEqual([{ id: "t2", ownerAgentId: "agent-b" }]);
+    const second = await run("1");
+    expect(second.items).toEqual([{ id: "t2", ownerAgentId: "agent-b" }]);
+    expect(second.nextCursor).toBe("2");
+
+    const last = await run("2");
+    expect(last.items).toEqual([{ id: "t3", ownerAgentId: "agent-b" }]);
+    expect(last.nextCursor).toBeNull();
+    for (const call of fetchPageCalls) expect(call.cursor).toBeUndefined();
   });
 
   test("a name with zero matches returns an empty, non-erroring result rather than an unfiltered list", async () => {
@@ -5978,13 +6069,17 @@ describe("resolveAgentNameFilterAndPaginate", () => {
       agentName: "no-such-agent",
       searchByName: async () => [],
       limit: 50,
-      offset: 0,
       matches: (item, ids) =>
         item.ownerAgentId !== null && ids.has(item.ownerAgentId),
       fetchPage: async () => ({ items: allItems, total: allItems.length }),
     });
 
-    expect(result).toEqual({ items: [], total: 0, filterActive: true });
+    expect(result).toEqual({
+      items: [],
+      total: 0,
+      nextCursor: null,
+      filterActive: true,
+    });
   });
 });
 // ─── Drawer/scrim z-index vs sticky toolbar (DNZ-1.1) ─────────────────────────
@@ -6004,7 +6099,7 @@ describe("drawer z-index above sticky toolbar (DNZ-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 1, limit: 50, page: 1 },
+      { count: 0, total: 1, limit: 50, state: { prev: [] } },
     );
 
     const scrimMatch = html.match(/\.task-drawer-scrim\s*\{[^}]*z-index:(\d+)/);
@@ -6071,7 +6166,7 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
           false,
           USER_NAME,
           {},
-          { total: 1, limit: 50, page: 1 },
+          { count: 0, total: 1, limit: 50, state: { prev: [] } },
         ),
     ],
     [
@@ -6092,7 +6187,7 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
           false,
           USER_NAME,
           {},
-          { total: 1, limit: 50, page: 1 },
+          { count: 0, total: 1, limit: 50, state: { prev: [] } },
         ),
     ],
     ["renderPrDetailPage", () => renderPrDetailPage(MINIMAL_PR, USER_NAME)],
@@ -6146,7 +6241,7 @@ describe("unknown legacy task status", () => {
   const task: TaskItem = { id: "TASK-L", title: "Legacy", status: LEGACY };
 
   test("list, board and detail pages render without throwing, with gray badge", () => {
-    const pagination = { total: 1, limit: 50, page: 1 };
+    const pagination = { count: 0, total: 1, limit: 50, state: { prev: [] } };
     for (const view of ["table", "board"] as const) {
       const html = renderTasksPage(
         [task],
@@ -6194,7 +6289,7 @@ describe("admin wide pages (AWT-1.1)", () => {
     false,
     USER_NAME,
     {},
-    { total: 0, limit: 50, page: 1 },
+    { count: 0, total: 0, limit: 50, state: { prev: [] } },
     undefined,
     undefined,
     false,
@@ -6237,7 +6332,7 @@ describe("admin wide pages (AWT-1.1)", () => {
       false,
       USER_NAME,
       {},
-      { total: 0, limit: 50, page: 1 },
+      { count: 0, total: 0, limit: 50, state: { prev: [] } },
       "America/Los_Angeles",
     );
     expectWide(html);
@@ -6335,7 +6430,7 @@ describe("renderTasksPage — planning/ideas columns, kind filter, badges (INI-1
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       false,
@@ -6412,7 +6507,7 @@ describe("renderTasksPage — planning/ideas columns, kind filter, badges (INI-1
       false,
       USER_NAME,
       {},
-      { total: 120, limit: 50, page: 1 },
+      { count: 0, total: 120, limit: 50, state: { prev: [] } },
     );
     expect(html).toContain("kind=initiative");
     expect(html).toContain("ideas=1");
@@ -6477,7 +6572,7 @@ describe("quick-add form and promote buttons (INI-1.3)", () => {
       false,
       USER_NAME,
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       opts.pageOpts,
       undefined,
       opts.readOnly ?? false,
@@ -6605,7 +6700,7 @@ describe("renderTasksPage — owner, origin and source link (PLU-5.2)", () => {
       false,
       "me@example.com",
       {},
-      { total: tasks.length, limit: 50, page: 1 },
+      { count: 0, total: tasks.length, limit: 50, state: { prev: [] } },
       undefined,
       undefined,
       false,

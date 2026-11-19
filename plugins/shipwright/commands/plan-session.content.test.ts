@@ -1480,7 +1480,7 @@ describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
 
 function extractCarryThroughSection(md: string): string {
   const match = md.match(
-    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list and dependency map as a first pass)/,
+    /### Spec-Level Carry-Through[\s\S]*?(?=\nPresent the task list as a first pass)/,
   );
   expect(match).not.toBeNull();
   return match?.[0] ?? "";
@@ -1803,5 +1803,70 @@ describe("plan-session.md — planning lock, append-only passes and docs PR (PLU
     const sec = content.slice(start, content.indexOf("**Step 6d", start));
     expect(sec).toContain("planDocumentId");
     expect(sec).toMatch(/already closed[\s\S]*still link the plan/);
+  });
+});
+
+describe("plan-session.md — staged, concise interactive chat (CSM-2.3)", () => {
+  const slice = (from: string, to: string) => {
+    const start = content.indexOf(from);
+    const end = content.indexOf(to, start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  };
+
+  it("defines chat message rules: ask last, one decision per message, one phone screen", () => {
+    const section = slice("## Chat Message Rules (CSM-2.3)", "## Step 0: Resolve Session");
+    expect(section).toContain("**Ask last.**");
+    expect(section).toContain("**One decision per message.**");
+    expect(section).toContain("one phone screen");
+    expect(section).toContain("`--autonomous` runs have no human and are unchanged");
+  });
+
+  it("orientation is a headline plus 2-3 lines, not a banner", () => {
+    const section = slice("Present a condensed orientation", "If no spec exists");
+    expect(section).toContain("a headline plus 2-3 lines");
+    expect(section).not.toContain("━");
+  });
+
+  it("Step 4 opens with a 3-line approach summary then one decision per message, ask last", () => {
+    const section = slice("**Interactive staging (CSM-2.3).**", "### `--autonomous` Mode");
+    expect(section).toContain("3-line approach summary");
+    expect(section).toContain("Raise each design decision or risk as its own message");
+    expect(section).toContain("the ask **last**");
+    expect(section).toContain("Design approved? 1 yes / 2 adjust");
+  });
+
+  it("Step 5 shows a short numbered task list and keeps the graph and table out of chat", () => {
+    const section = slice("**Interactive presentation (CSM-2.3).**", "### `--autonomous` Mode");
+    expect(section).toContain("short numbered list");
+    expect(section).toContain("`{n}. {id} — {title} (deps: {ids or none})`");
+    expect(section).toContain("Do **not** post the ASCII dependency graph or the summary table in chat");
+    expect(section).toContain("`PLAN.md`");
+    expect(section).toContain("drill in");
+  });
+
+  it("dispatch-path interactive approval also stages the breakdown", () => {
+    const section = slice("#### Interactive Approval", "Once the breakdown has validated");
+    expect(section).toContain("numbered task list");
+    expect(section).toContain("ask last");
+  });
+
+  it("QUEUED block is condensed to 3-4 lines plus links", () => {
+    const section = content.slice(content.indexOf("Confirm with a condensed block"));
+    expect(section).toContain("3-4 lines plus links");
+    expect(section).toContain("QUEUED — {session}: {count} tasks");
+    expect(section).toContain("Plan PR: {url}");
+    expect(section).not.toContain("READY TO START (no dependencies):");
+    expect(section).not.toContain("BLOCKED (waiting on deps):");
+  });
+
+  // Retired (CSM-2.3): the chat-posted ASCII graph and summary table, the
+  // orientation banner and the long QUEUED block must not return.
+  it("does not contain the retired verbose chat output", () => {
+    expect(content).not.toContain("Present the task list and dependency map as a first pass");
+    expect(content).not.toContain("Present the map in two forms:");
+    expect(content).not.toContain("Present a brief orientation:");
+    expect(content).not.toContain("Tasks queued: {count}");
   });
 });

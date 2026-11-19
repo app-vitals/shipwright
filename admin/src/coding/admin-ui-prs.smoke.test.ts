@@ -58,7 +58,6 @@ describe("admin UI — PRs page", () => {
           prs: [MOCK_PR],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -78,7 +77,6 @@ describe("admin UI — PRs page", () => {
           prs: [{ ...MOCK_PR, blocked: true }],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -91,13 +89,52 @@ describe("admin UI — PRs page", () => {
     expect(html).not.toContain("Waiting: HITL");
   });
 
+  it("GET /admin/prs pages by cursor: forwards cursor (never offset) and renders Prev/Next", async () => {
+    const seen: URLSearchParams[] = [];
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          seen.push(params);
+          return {
+            prs: [MOCK_PR],
+            total: 120,
+            limit: 50,
+            nextCursor: params.get("cursor") === "c3" ? null : "c-next",
+          };
+        },
+      }),
+    );
+    const get = async (qs: string) => {
+      const res = await app.request(`/admin/prs${qs}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      return res.text();
+    };
+    const first = await get("");
+    expect(seen.at(-1)?.has("cursor")).toBe(false);
+    expect(first).toContain("cursor=c-next");
+    expect(first).not.toContain("← Prev");
+
+    const middle = await get("?cursor=c2&prev=c1");
+    expect(seen.at(-1)?.get("cursor")).toBe("c2");
+    expect(middle).toContain("← Prev");
+    expect(middle).toContain("Next →");
+
+    const last = await get("?cursor=c3&prev=c2");
+    expect(last).toContain("← Prev");
+    expect(last).not.toContain("Next →");
+
+    for (const p of seen) expect(p.has("offset")).toBe(false);
+  });
+
   it("GET /admin/prs requests sort=desc from the task store", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createCodingTestApp(
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params) => {
           capturedParams.push(params);
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -115,7 +152,7 @@ describe("admin UI — PRs page", () => {
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -135,7 +172,7 @@ describe("admin UI — PRs page", () => {
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedParams = params;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -155,7 +192,7 @@ describe("admin UI — PRs page", () => {
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params) => {
           capturedParams.push(params);
-          return { prs: [], total: 0, limit: 50, offset: 0 };
+          return { prs: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -173,7 +210,7 @@ describe("admin UI — PRs page", () => {
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params) => {
           capturedParams.push(params);
-          return { prs: [], total: 0, limit: 50, offset: 0 };
+          return { prs: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -190,7 +227,7 @@ describe("admin UI — PRs page", () => {
       makeCodingMockDeps({
         fetchTaskStorePrs: async (params) => {
           capturedParams.push(params);
-          return { prs: [], total: 0, limit: 50, offset: 0 };
+          return { prs: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -209,7 +246,6 @@ describe("admin UI — PRs page", () => {
           prs: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchDistinctTaskValues: async () => ({
           sessions: [],
@@ -248,7 +284,6 @@ describe("admin UI — PRs page", () => {
           prs: [MOCK_PR],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTasks: async (params: URLSearchParams) => {
           if (
@@ -262,10 +297,9 @@ describe("admin UI — PRs page", () => {
               ],
               total: 2,
               limit: 50,
-              offset: 0,
             };
           }
-          return { tasks: [], total: 0, limit: 50, offset: 0 };
+          return { tasks: [], total: 0, limit: 50 };
         },
       }),
     );
@@ -285,13 +319,11 @@ describe("admin UI — PRs page", () => {
           prs: [MOCK_PR],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTasks: async (_params: URLSearchParams) => ({
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -311,7 +343,6 @@ describe("admin UI — PRs page", () => {
           prs: [MOCK_PR],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
         fetchTaskStoreTasks: async (_params: URLSearchParams) => {
           throw new Error("task store unavailable");
@@ -333,7 +364,6 @@ describe("admin UI — PRs page", () => {
           prs: [MOCK_PR],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
         // fetchTaskStoreTasks intentionally absent
       }),
@@ -362,7 +392,7 @@ describe("admin UI — PRs page", () => {
             : null,
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedPrsParams = params;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -396,7 +426,7 @@ describe("admin UI — PRs page", () => {
             : null,
         fetchTaskStorePrs: async (params: URLSearchParams) => {
           capturedPrsParams = params;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -427,7 +457,7 @@ describe("admin UI — PRs page", () => {
             : null,
         fetchTaskStorePrs: async (_params: URLSearchParams) => {
           prsCalled = true;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -459,7 +489,7 @@ describe("admin UI — PRs page", () => {
             : null,
         fetchTaskStorePrs: async (_params: URLSearchParams) => {
           prsCalled = true;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -479,7 +509,7 @@ describe("admin UI — PRs page", () => {
         fetchTaskStoreTask: async (_id: string) => null,
         fetchTaskStorePrs: async (_params: URLSearchParams) => {
           prsCalled = true;
-          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+          return { prs: [MOCK_PR], total: 1, limit: 50 };
         },
       }),
     );
@@ -501,7 +531,6 @@ describe("admin UI — PRs page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -524,7 +553,6 @@ describe("admin UI — PRs page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
         fetchVerificationChecks: async (params: URLSearchParams) => {
           capturedParams = params;
@@ -546,7 +574,6 @@ describe("admin UI — PRs page", () => {
             ],
             total: 1,
             limit: 50,
-            offset: 0,
           };
         },
       }),
@@ -611,7 +638,6 @@ describe("admin UI — PRs page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -636,7 +662,6 @@ describe("admin UI — PRs page", () => {
             tasks: [{ id: "TASK-LIVE", title: "Live", status: "done" }],
             total: 1,
             limit: 50,
-            offset: 0,
           };
         },
       }),
@@ -695,7 +720,6 @@ describe("admin UI — PRs page", () => {
           prs: [{ ...MOCK_PR, claimedBy: AGENT_ID }],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -716,7 +740,6 @@ describe("admin UI — PRs page", () => {
           tasks: [],
           total: 0,
           limit: 50,
-          offset: 0,
         }),
       }),
     );

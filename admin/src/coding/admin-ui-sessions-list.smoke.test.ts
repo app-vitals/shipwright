@@ -71,6 +71,7 @@ function makeMemberService(
         id: `member-${i}`,
         agentId: m.agentId,
         email: DEFAULT_EMAIL,
+        memberId: null,
         createdAt: new Date("2024-01-01"),
       })),
   };
@@ -181,7 +182,7 @@ describe("GET /admin/sessions — admin view", () => {
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
         expect(params.get("state")).toBe("all");
-        return { sessions, total: sessions.length, limit: 50, offset: 0 };
+        return { sessions, total: sessions.length, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions");
@@ -200,7 +201,7 @@ describe("GET /admin/sessions — admin view", () => {
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
         captured.sort = params.get("sort");
-        return { sessions: [], total: 0, limit: 50, offset: 0 };
+        return { sessions: [], total: 0, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions");
@@ -222,7 +223,6 @@ describe("GET /admin/sessions — admin view", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -242,7 +242,7 @@ describe("GET /admin/sessions — admin view", () => {
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
         captured.state = params.get("state");
-        return { sessions, total: sessions.length, limit: 50, offset: 0 };
+        return { sessions, total: sessions.length, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions?archived=true");
@@ -286,7 +286,6 @@ describe("GET /admin/sessions — member scoping", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions", {
@@ -327,7 +326,6 @@ describe("GET /admin/sessions — member scoping", () => {
         sessions,
         total: 120,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions", {
@@ -339,9 +337,10 @@ describe("GET /admin/sessions — member scoping", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     // One of the two fetched rows survived the scope filter.
-    expect(html).toContain("1 visible in results 1–50 of 120");
-    // …and never the bare pre-filter range, which would imply 50 visible rows.
-    expect(html).not.toContain(">1–50 of 120<");
+    expect(html).toContain("1 visible of 120 matching");
+    // …and never the bare pre-filter count, which would imply 50 visible rows.
+    expect(html).not.toContain(">120 shown<");
+    expect(html).not.toContain(">1 shown of 120<");
   });
 
   it("keeps the plain range summary for an admin (no client-side filtering)", async () => {
@@ -350,13 +349,12 @@ describe("GET /admin/sessions — member scoping", () => {
         sessions: [makeSession({ slug: "s-1", title: "Some session" })],
         total: 120,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
     const html = await res.text();
-    expect(html).toContain(">1–50 of 120<");
-    expect(html).not.toContain("visible in results");
+    expect(html).toContain(">1 shown of 120<");
+    expect(html).not.toContain("visible of");
   });
 
   it("a member with zero memberships renders an empty page, no error", async () => {
@@ -366,7 +364,7 @@ describe("GET /admin/sessions — member scoping", () => {
       agentMemberService: makeMemberService([]),
       fetchTaskStoreSessions: async () => {
         fetchCalled = true;
-        return { sessions, total: sessions.length, limit: 50, offset: 0 };
+        return { sessions, total: sessions.length, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions", {
@@ -423,7 +421,6 @@ describe("GET /admin/sessions — row actions", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -446,7 +443,6 @@ describe("GET /admin/sessions — row actions", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -465,7 +461,6 @@ describe("GET /admin/sessions — row actions", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -493,7 +488,6 @@ describe("GET /admin/sessions — row actions", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -516,7 +510,6 @@ describe("GET /admin/sessions — row actions", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -551,7 +544,6 @@ describe("GET /admin/sessions — timezone", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -586,7 +578,6 @@ describe("GET /admin/sessions — agent names", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -610,7 +601,6 @@ describe("GET /admin/sessions — merged Session/Slug column", () => {
         sessions: [],
         total: 0,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -639,7 +629,6 @@ describe("GET /admin/sessions — merged Session/Slug column", () => {
         sessions,
         total: sessions.length,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -670,7 +659,6 @@ describe("GET /admin/sessions — filter autocomplete", () => {
         sessions: [],
         total: 0,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -690,7 +678,6 @@ describe("GET /admin/sessions — filter autocomplete", () => {
         sessions: [],
         total: 0,
         limit: 50,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions");
@@ -710,7 +697,7 @@ describe("GET /admin/sessions — org filter forwarding", () => {
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
         captured.org = params.getAll("org");
-        return { sessions: [], total: 0, limit: 50, offset: 0 };
+        return { sessions: [], total: 0, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions?org=my-org&org=other-org");
@@ -752,7 +739,7 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
       ]),
       fetchTaskStoreSessions: async (params) => {
         capturedAgentId = params.get("agentId");
-        return { sessions, total: sessions.length, limit: 500, offset: 0 };
+        return { sessions, total: sessions.length, limit: 500 };
       },
     });
     const res = await app.request("/admin/sessions?agent=Alpha");
@@ -794,7 +781,6 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
         sessions,
         total: sessions.length,
         limit: 500,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions?agent=Test");
@@ -821,7 +807,6 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
         sessions,
         total: sessions.length,
         limit: 500,
-        offset: 0,
       }),
     });
     const res = await app.request("/admin/sessions?agent=no-such-agent-name");
@@ -831,7 +816,41 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
     expect(html).toContain("No sessions.");
   });
 
-  it("keeps pagination correct (limit/offset) when the agent filter is active", async () => {
+  it("pages by cursor: forwards cursor (never offset) and renders first/middle/last Prev/Next", async () => {
+    const seen: URLSearchParams[] = [];
+    const app = buildApp({
+      fetchTaskStoreSessions: async (params) => {
+        seen.push(params);
+        return {
+          sessions: [makeSession({ slug: "s-1", title: "Some session" })],
+          total: 120,
+          limit: 50,
+          nextCursor: params.get("cursor") === "c3" ? null : "c-next",
+        };
+      },
+    });
+    const get = async (qs: string) =>
+      (await app.request(`/admin/sessions${qs}`)).text();
+
+    const first = await get("");
+    expect(seen.at(-1)?.has("cursor")).toBe(false);
+    expect(first).toContain("cursor=c-next");
+    expect(first).not.toContain("← Prev");
+
+    const middle = await get("?cursor=c2&prev=c1");
+    expect(seen.at(-1)?.get("cursor")).toBe("c2");
+    expect(middle).toContain("← Prev");
+    expect(middle).toContain("cursor=c-next&prev=c1.c2");
+
+    const last = await get("?cursor=c3&prev=c1.c2");
+    expect(last).toContain("← Prev");
+    expect(last).toContain("cursor=c2&prev=c1");
+    expect(last).not.toContain("Next →");
+
+    for (const p of seen) expect(p.has("offset")).toBe(false);
+  });
+
+  it("keeps Prev/Next cursor paging correct when the agent filter is active", async () => {
     const sessions = Array.from({ length: 5 }, (_, i) =>
       makeSession({
         slug: `s-${i}`,
@@ -846,15 +865,17 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
       ]),
       fetchTaskStoreSessions: async (params) => {
         // The route must widen to a large page (mirroring the Tasks page's
-        // 500/0) rather than forwarding the caller's own small limit/offset,
-        // since filtering happens client-side after this fetch.
+        // 500) rather than forwarding the caller's own small limit and the
+        // local index cursor, since filtering happens client-side after this
+        // fetch.
         expect(params.get("limit")).toBe("500");
-        expect(params.get("offset")).toBe("0");
-        return { sessions, total: sessions.length, limit: 500, offset: 0 };
+        expect(params.get("cursor")).toBeNull();
+        expect(params.get("offset")).toBeNull();
+        return { sessions, total: sessions.length, limit: 500 };
       },
     });
     const res = await app.request(
-      "/admin/sessions?agent=Match&limit=2&offset=2",
+      "/admin/sessions?agent=Match&limit=2&cursor=2",
     );
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -863,8 +884,12 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
     expect(html).not.toContain("Match session 0");
     expect(html).not.toContain("Match session 1");
     expect(html).not.toContain("Match session 4");
-    // 5 total matches, page 2 of a 2-per-page window: 3–4 of 5.
-    expect(html).toContain("3–4 of 5");
+    // 5 total matches, 2nd page of a 2-per-page window: Prev back to the
+    // first page (no cursor) and Next to index 4 with the stack carrying 2.
+    expect(html).toContain("2 shown of 5");
+    expect(html).toContain("← Prev");
+    expect(html).toContain("cursor=4&prev=2");
+    expect(html).not.toContain("offset=");
   });
 });
 
@@ -875,7 +900,6 @@ describe("GET /admin/sessions — full-width page (AWT-1.1)", () => {
         sessions: [],
         total: 0,
         limit: 50,
-        offset: 0,
       }),
     });
     const html = await (await app.request("/admin/sessions")).text();
@@ -929,7 +953,7 @@ describe("GET /admin/sessions — owner view and documents", () => {
       calls.push(params);
       const owner = params.get("owner");
       const rows = owner ? all.filter((s) => s.owner === owner) : all;
-      return { sessions: rows, total: rows.length, limit: 50, offset: 0 };
+      return { sessions: rows, total: rows.length, limit: 50 };
     };
   }
 
@@ -988,7 +1012,7 @@ describe("GET /admin/sessions — owner view and documents", () => {
     const app = buildApp({
       fetchTaskStoreSessions: async () => {
         if (n++ === 0) throw new Error("boom");
-        return { sessions: all, total: 2, limit: 50, offset: 0 };
+        return { sessions: all, total: 2, limit: 50 };
       },
     });
     const res = await app.request("/admin/sessions", { headers });

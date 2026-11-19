@@ -5,8 +5,8 @@ argument-hint: "{task-id}"
 
 # HITL
 
-Load a human-in-the-loop task from the task store, display its context (title, description,
-acceptance criteria, and `## Human steps` section), assist with hands-on execution (no tool
+Load a human-in-the-loop task from the task store, display a condensed summary of its context (headline, essential
+`## Human steps`, and a link), assist with hands-on execution (no tool
 restrictions — terraform, helm, kubectl, gcloud, and all infra tooling are fair game), and
 mark the task `done` when the human confirms completion.
 
@@ -74,41 +74,30 @@ Continue regardless.
 
 ## Step 4: Display Task Header
 
-Print the full task context:
+Print a condensed header — headline, essential steps, link — never the full task dump. Keep it to
+one phone screen (this often runs in Slack):
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HITL TASK: {TASK_ID}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Title:  {TASK_TITLE}
-Layer:  {TASK_LAYER or "—"}
-Status: {TASK_STATUS}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## Description
-
-{TASK_DESC or "(no description)"}
-
-## Acceptance Criteria
-
-{for each item in TASK_AC: "- {item}" | or "(none specified)" if empty}
+🛠 HITL {TASK_ID}: {TASK_TITLE}  [{TASK_LAYER or "—"} · {TASK_STATUS}]
+{one-sentence summary of what is needed, from TASK_DESC}
 ```
 
-### 4a. Human Steps Section
+### 4a. Essential Steps
 
-If `TASK_DESC` contains a `## Human steps` section (case-insensitive), extract and display it
-prominently:
+If `TASK_DESC` contains a `## Human steps` section (case-insensitive), print it as a numbered list of
+at most ~5 essential steps, each one line (find the heading, capture up to the next `##` heading or
+end of string; merge or trim lines to fit). With no such section, summarize the acceptance criteria
+the same way. Do not reprint the description or the full acceptance-criteria list.
+
+### 4b. Link and Ask (last)
+
+End the printout with a link for detail (the task's PR URL when `TASK_PR` is set, otherwise
+`$SHIPWRIGHT_TASK_STORE_URL/tasks/{TASK_ID}`), then the ask or next action as the **last line**:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## Human Steps
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{content of the ## Human steps section}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Details: {link}
+Ready for step 1? Say "go" to start, or tell me which step to pick up.
 ```
-
-To extract the section, find the `## Human steps` heading in `TASK_DESC` and capture
-everything up to the next `##` heading (or end of string if none follows).
 
 ---
 

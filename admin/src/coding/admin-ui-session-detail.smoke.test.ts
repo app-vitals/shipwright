@@ -61,7 +61,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           };
         },
       }),
@@ -90,7 +89,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -108,7 +106,7 @@ describe("admin UI — session detail page", () => {
       makeCodingMockDeps({
         fetchTaskStoreTasks: async (params) => {
           capturedParams.push(params);
-          return { tasks: [], total: 0, limit: 500, offset: 0 };
+          return { tasks: [], total: 0, limit: 500 };
         },
       }),
     );
@@ -127,7 +125,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -150,7 +147,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -180,7 +176,6 @@ describe("admin UI — session detail page", () => {
             tasks: [],
             total: 0,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -219,7 +214,6 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -259,7 +253,6 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -307,13 +300,11 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 500,
-          offset: 0,
         }),
         fetchTaskStorePrs: async () => ({
           prs: [PR_BLOCKED],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
@@ -360,7 +351,6 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -418,7 +408,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -441,7 +430,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -462,7 +450,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -505,6 +492,7 @@ describe("admin UI — session detail page", () => {
                     id: "m1",
                     agentId: AGENT_ID,
                     email: memberEmail,
+                    memberId: null,
                     createdAt: new Date("2024-01-01"),
                   },
                 ]
@@ -514,6 +502,7 @@ describe("admin UI — session detail page", () => {
             id: "m1",
             agentId: AGENT_ID,
             email: memberEmail,
+            memberId: null,
             createdAt: new Date(),
           }),
           remove: async () => {},
@@ -523,7 +512,6 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -578,6 +566,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -587,6 +576,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
@@ -596,7 +586,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -636,6 +625,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -645,6 +635,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
@@ -681,7 +672,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -715,7 +705,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -743,7 +732,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -788,6 +776,7 @@ describe("admin UI — session detail page", () => {
                       id: "m1",
                       agentId: AGENT_ID,
                       email: MEMBER_EMAIL,
+                      memberId: null,
                       createdAt: new Date("2024-01-01"),
                     },
                   ]
@@ -797,6 +786,7 @@ describe("admin UI — session detail page", () => {
               id: "m1",
               agentId: AGENT_ID,
               email: MEMBER_EMAIL,
+              memberId: null,
               createdAt: new Date(),
             }),
             remove: async () => {},
@@ -833,7 +823,6 @@ describe("admin UI — session detail page", () => {
             tasks: mockTasks,
             total: mockTasks.length,
             limit: 500,
-            offset: 0,
           }),
         }),
       );
@@ -905,12 +894,11 @@ describe("admin UI — session detail page", () => {
           tasks: mockTasks,
           total: mockTasks.length,
           limit: 50,
-          offset: 0,
         }),
       }),
     );
     const listRes = await app.request(
-      "/admin/tasks?status=in_progress&owner=all&page=2",
+      "/admin/tasks?status=in_progress&owner=all",
       {
         headers: { Cookie: `admin_session=${cookie}` },
       },
@@ -929,7 +917,7 @@ describe("admin UI — session detail page", () => {
     expect(sessionRes.status).toBe(200);
     const sessionHtml = await sessionRes.text();
     expect(sessionHtml).toContain(
-      `<a href="/admin/tasks?status=in_progress&amp;owner=all&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks?status=in_progress&amp;owner=all" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -951,7 +939,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -985,7 +972,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
         fetchIsFollowingSession: async () => false,
       }),
@@ -1007,7 +993,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
         fetchIsFollowingSession: async () => true,
       }),
@@ -1028,7 +1013,6 @@ describe("admin UI — session detail page", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
       }),
     );
@@ -1052,7 +1036,6 @@ describe("admin UI — session detail page", () => {
         tasks: [],
         total: 0,
         limit: 500,
-        offset: 0,
       }),
     });
     const prismaWithSessionFollow = deps.prisma as unknown as {
@@ -1196,7 +1179,6 @@ describe("admin UI — session detail documents block", () => {
           tasks: [],
           total: 0,
           limit: 500,
-          offset: 0,
         }),
         fetchTaskStoreSession: async () => session as never,
       }),
@@ -1293,7 +1275,6 @@ describe("admin UI — session detail documents block", () => {
             tasks: [],
             total: 0,
             limit: 500,
-            offset: 0,
           }),
           fetchTaskStoreSession: fetcher as never,
         }),

@@ -569,11 +569,13 @@ Proceed to Step 5.
 
 ## Step 5: Print Handoff
 
+Cron runs post the final response to a channel where nobody can reply in the moment, so **cap
+the final response at 3-5 lines**: a status line, counts and a link. Detail (CI watch logs,
+check tables, bundle-mate lists) stays out of the response. `[silent]` behavior is unchanged.
+
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MERGED: {task_id}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PR:   #{pr} — {pr_title}
 SHA:  {SQUASH_SHA[0..7]}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{pr_url}
 ```

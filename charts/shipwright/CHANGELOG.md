@@ -11,6 +11,36 @@ and no longer committed: see the README "Versioning" section, and the annotated
 `chart-<version>` git tags (message = release record) for what each version
 shipped.
 
+## [1.32.311] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.311 triggered by release tag(s): `admin-v1.368.1`
+
+## [1.32.310] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.310 triggered by release tag(s): `admin-v1.368.0`
+
+## [1.32.309] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.309 triggered by release tag(s): `admin-v1.367.0`, `task-store-v1.266.0`
+
+## [1.32.308] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.308 triggered by release tag(s): `agent-v1.510.0`
+
+## [1.32.307] - 2026-11-19
+
+### Changed
+
+- auto-bump to chart v1.32.307 triggered by release tag(s): `admin-v1.366.0`, `agent-v1.508.0`, `metrics-v1.204.0`, `task-store-v1.265.0`
+
 ## [1.32.306] - 2026-11-19
 
 ### Changed

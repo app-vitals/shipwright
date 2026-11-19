@@ -43,7 +43,10 @@ import {
 } from "./pull-request-service.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES, type TaskColumn } from "./statuses.ts";
+
+export type { TaskColumn };
+
 import { writeTaskEvents } from "./task-transition-diff.ts";
 import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
@@ -508,6 +511,11 @@ export interface TaskListFilters {
   hitl?: boolean;
   /** TaskKind narrowing (TKD-1.1) — `?kind=dev` / `?kind=prd`. */
   kind?: TaskKind;
+  /**
+   * TPG-1.3: board-column membership, computed server-side so it matches the
+   * admin board's bucketTaskColumn exactly (see applyColumnFilter).
+   */
+  column?: TaskColumn;
   limit?: number;
   offset?: number;
   /**
@@ -537,6 +545,13 @@ export interface TaskListFilters {
    * A separate `?repo=X` filter still applies as an additional AND condition.
    */
   agentScope?: { agentId: string; repos: string[] };
+  /**
+   * Admin multi-agent visibility scope. A task matches iff its `assignee` is in
+   * `agentIds` OR its `repo` is in `repos` (assignee only — not claimedBy,
+   * mirroring agentScope). An empty scope matches nothing. ANDed with every
+   * other filter; combines with agentScope/repo-org ORs under `where.AND`.
+   */
+  scope?: { agentIds: string[]; repos: string[] };
   /**
    * Account (tenant) scope (SSP-6.5). A string restricts the result to rows
    * with that accountId; null/undefined is unrestricted (admin token without
@@ -721,6 +736,37 @@ export class TaskService implements TaskServiceLike {
     }
     if (filters.assignee) where.assignee = filters.assignee;
     if (isAccountScoped(filters.accountId)) where.accountId = filters.accountId;
+    if (filters.scope) {
+      const branches: Prisma.TaskWhereInput[] = [];
+      if (filters.scope.agentIds.length > 0) {
+        branches.push({ assignee: { in: filters.scope.agentIds } });
+      }
+      if (filters.scope.repos.length > 0) {
+        branches.push({ repo: { in: filters.scope.repos } });
+      }
+      // `OR: []` matches nothing in Prisma, so an empty scope is empty, never everything.
+      const existingAnd = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      where.AND = [...existingAnd, { OR: branches }];
+    }
+    if (filters.column) {
+      // ANDed in (never spread onto where.OR/where.AND wholesale) so it can't
+      // clobber agentScope's OR or the repo/org fragment. `total` and the
+      // page query both see it, so per-column totals are exact.
+      const columnWhere = await this.columnWhere(
+        filters.column,
+        filters.accountId,
+      );
+      const existing = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      where.AND = [...existing, columnWhere];
+    }
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -789,6 +835,110 @@ export class TaskService implements TaskServiceLike {
     }));
 
     return { tasks, total, limit, offset, nextCursor };
+  }
+
+  /**
+   * Prisma where-fragment selecting exactly the tasks the admin board's
+   * bucketTaskColumn (admin/src/coding/admin-ui-work-item-pages.ts) places in
+   * `column`. Precedence mirrors it: closed → kind initiative/idea → blocked
+   * (status blocked | hitl | unmet dependency | joined PR blocked) →
+   * in-flight → unclaimed pending.
+   *
+   * Two of the blocked signals are not columns on Task, so they are resolved
+   * up front and fed in as id / (repo, pr) lists: unmet dependencies (via
+   * computeBlockedBy, within each task's own account) and PullRequest.blocked
+   * (joined on repo + prNumber, as the board does).
+   */
+  private async columnWhere(
+    column: TaskColumn,
+    accountId?: string | null,
+  ): Promise<Prisma.TaskWhereInput> {
+    const open: Prisma.TaskWhereInput = {
+      status: { notIn: [...CLOSED_STATUSES] },
+    };
+    if (column === "planning") return { AND: [open, { kind: "initiative" }] };
+    if (column === "ideas") return { AND: [open, { kind: "idea" }] };
+
+    const accountWhere: Prisma.TaskWhereInput = isAccountScoped(accountId)
+      ? { accountId }
+      : {};
+    const withDeps = await this.prisma.task.findMany({
+      where: {
+        ...accountWhere,
+        ...open,
+        dependencies: { isEmpty: false },
+      },
+    });
+    const depIds = [...new Set(withDeps.flatMap((t: Task) => t.dependencies))];
+    const depRows = depIds.length
+      ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
+      : [];
+    const depBlockedIds = withDeps
+      .filter((t: Task) =>
+        computeBlockedBy(t, sameAccount(depRows, t.accountId)).some(
+          (b) => b.type === "dependency",
+        ),
+      )
+      .map((t: Task) => t.id);
+
+    const blockedPrs = await this.prisma.pullRequest.findMany({
+      where: {
+        blocked: true,
+        ...(isAccountScoped(accountId) ? { accountId } : {}),
+      },
+      select: { repo: true, prNumber: true, accountId: true },
+    });
+
+    const isBlocked: Prisma.TaskWhereInput = {
+      OR: [
+        { status: "blocked" },
+        { hitl: true },
+        ...(depBlockedIds.length ? [{ id: { in: depBlockedIds } }] : []),
+        ...blockedPrs.map((p) => ({
+          accountId: p.accountId,
+          repo: p.repo,
+          pr: p.prNumber,
+        })),
+      ],
+    };
+    // The exact complement of isBlocked. Not `NOT: isBlocked`: hitl, pr and
+    // repo are nullable and SQL's NOT(NULL = x) is NULL, which would silently
+    // drop every task with a null hitl/pr from the non-blocked columns.
+    const notBlocked: Prisma.TaskWhereInput = {
+      AND: [
+        { status: { not: "blocked" } },
+        { OR: [{ hitl: null }, { hitl: false }] },
+        ...(depBlockedIds.length ? [{ id: { notIn: depBlockedIds } }] : []),
+        ...blockedPrs.map((p) => ({
+          OR: [
+            { pr: null },
+            { pr: { not: p.prNumber } },
+            { repo: null },
+            { repo: { not: p.repo } },
+            { accountId: { not: p.accountId } },
+          ],
+        })),
+      ],
+    };
+    // kind is non-nullable (default dev), so notIn needs no null branch.
+    const board: Prisma.TaskWhereInput = {
+      AND: [open, { kind: { notIn: ["initiative", "idea"] } }],
+    };
+    if (column === "blocked") return { AND: [board, isBlocked] };
+    if (column === "in_progress") {
+      return {
+        AND: [
+          board,
+          notBlocked,
+          { status: { in: ["in_progress", "pr_open", "approved"] } },
+        ],
+      };
+    }
+    // queued: pending and unclaimed. ("claimed" pending tasks have their own
+    // bucket; no other open status can fall through to "queued".)
+    return {
+      AND: [board, notBlocked, { status: "pending", claimedBy: null }],
+    };
   }
 
   /**

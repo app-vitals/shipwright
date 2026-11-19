@@ -84,6 +84,7 @@ import {
 } from "./admin-ui-work-item-pages.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
+import { type CursorState, parseCursorState } from "./cursor-paging.ts";
 import { parseOutcomeParams } from "./outcome-filter.ts";
 import {
   resolveOwnerView,
@@ -96,12 +97,19 @@ import {
 import {
   deriveSessionVisibilityFromTasks,
   isSessionVisible,
+  isTaskVisible,
   type SessionForVisibility,
 } from "./session-scope.ts";
 import type { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
+import { withTaskScope } from "./task-store-fetchers.ts";
 import { fetchRecentVerificationChecks } from "./verification-checks.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** TaskStoreViewScope plus the MPV-1.2 `member` kind (Tasks read routes only). */
+type TaskReadViewScope =
+  | TaskStoreViewScope
+  | { kind: "member"; agentIds: string[]; repos: string[] };
 
 /** The task-store fetchers (task-store-fetchers.ts); each is optional. */
 export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
@@ -116,7 +124,7 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
     tasks: TaskItem[];
     total: number;
     limit: number;
-    offset: number;
+    nextCursor?: string | null;
   }>;
   /**
    * Fetch a single task by ID from the task-store service. If absent, the
@@ -168,7 +176,7 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
     prs: PrListItem[];
     total: number;
     limit: number;
-    offset: number;
+    nextCursor?: string | null;
   }>;
   /**
    * Fetch a single pull request by its ID from the task-store service.
@@ -193,7 +201,7 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
     checks: VerificationCheckItem[];
     total: number;
     limit: number;
-    offset: number;
+    nextCursor?: string | null;
   }>;
   /**
    * Fetch a paginated list of sessions from the task-store service (SESH-4.2).
@@ -207,7 +215,7 @@ export interface CodingTaskStoreFetchers extends SystemCronsFetchers {
     sessions: Session[];
     total: number;
     limit: number;
-    offset: number;
+    nextCursor?: string | null;
   }>;
   /**
    * Fetch a single session (its agentIds/repos, for visibility checks) from
@@ -659,16 +667,47 @@ export function createCodingAdminUIApp(
   }
 
   /**
+   * MPV-1.2: like resolveTaskStoreView, but a non-admin, non-account caller
+   * with at least one agent membership resolves to a `member` scope (their
+   * agents + those agents' repos, same as the sessions list). Zero memberships
+   * stays `none`. Only the Tasks list/detail read routes use this; every other
+   * route keeps resolveTaskStoreView, so members stay out of PRs, sessions and
+   * the task mutation routes.
+   */
+  async function resolveTaskReadView(
+    isAdmin: boolean,
+    userEmail: string,
+  ): Promise<TaskReadViewScope> {
+    const view = await resolveTaskStoreView(isAdmin, userEmail);
+    if (view.kind !== "none") return view;
+    const scope = await resolveVisibilityScope(
+      isAdmin,
+      userEmail,
+      callerScopeResolver,
+      agentService,
+    );
+    if (scope.agentIds === "all" || scope.agentIds.length === 0) return view;
+    return { kind: "member", agentIds: scope.agentIds, repos: scope.repos };
+  }
+
+  /**
    * The task-store fetchers bound to one account (`?accountId=`, sent with
    * the admin token) — or unbound (every account) when `accountId` is
    * undefined. Each route reads through these, so every task-store call it
    * makes, including PR/task joins and suggestion lookups, stays in scope.
    */
-  function scopedTaskStore(accountId: string | undefined) {
+  function scopedTaskStore(
+    accountId: string | undefined,
+    memberScope?: { agentIds: string[]; repos: string[] },
+  ) {
     return {
       fetchTasks:
         fetchTaskStoreTasks &&
-        ((params: URLSearchParams) => fetchTaskStoreTasks(params, accountId)),
+        ((params: URLSearchParams) =>
+          fetchTaskStoreTasks(
+            memberScope ? withTaskScope(params, memberScope) : params,
+            accountId,
+          )),
       fetchTask:
         fetchTaskStoreTask &&
         ((id: string) => fetchTaskStoreTask(id, accountId)),
@@ -696,9 +735,9 @@ export function createCodingAdminUIApp(
   }
 
   /** Agent-name suggestions: an account user only sees their own agents. */
-  async function agentSuggestions(view: TaskStoreViewScope): Promise<string[]> {
+  async function agentSuggestions(view: TaskReadViewScope): Promise<string[]> {
     const agents =
-      view.kind === "account"
+      view.kind === "account" || view.kind === "member"
         ? await agentService.listByIds(view.agentIds)
         : await agentService.listOptions();
     return agents.map((a) => a.name);
@@ -709,14 +748,12 @@ export function createCodingAdminUIApp(
   // ─── Tasks page ───────────────────────────────────────────────────────────
 
   app.get("/admin/tasks", requireAuth, async (c) => {
-    const scopeView = await resolveTaskStoreView(
-      c.var.isAdmin,
-      c.var.userEmail,
-    );
+    const scopeView = await resolveTaskReadView(c.var.isAdmin, c.var.userEmail);
     if (scopeView.kind === "none")
       return new Response("Forbidden", { status: 403 });
     const ts = scopedTaskStore(
       scopeView.kind === "account" ? scopeView.accountId : undefined,
+      scopeView.kind === "member" ? scopeView : undefined,
     );
     // AXR-1.3: the board is the default layout; ?view=table opts back into
     // the pre-redesign dense table (any other/absent value falls back to
@@ -754,18 +791,22 @@ export function createCodingAdminUIApp(
     const ownerParam = c.req.query("owner");
     const error = c.req.query("error") ?? undefined;
     const success = c.req.query("success") ?? undefined;
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
+    // TPG-2.2: Prev/Next cursor paging (?cursor= + ?prev= stack). The board
+    // renders one fixed window and has no pager, so it ignores both.
+    const cursorState: CursorState =
+      view === "board"
+        ? { prev: [] }
+        : parseCursorState(c.req.query("cursor"), c.req.query("prev"));
     // TBC-2.1: the default board view scopes its outbound query to the
     // active (non-closed) statuses and raises the cap from 50 to 200, since
     // Claimed/Done tasks (which churn fastest) no longer share the same
     // top-N-by-recency window as Queued/In Progress/Blocked-HITL. ?view=table
     // is untouched — same limit, same state/status behavior as before.
     const limit = view === "board" ? BOARD_TASK_LIMIT : 50;
-    const offset = (page - 1) * limit;
 
     let tasks: TaskItem[] = [];
     let total = 0;
+    let nextCursor: string | null = null;
     let degraded = false;
     let agentFilterActive = false;
     let distinctValues: {
@@ -785,7 +826,6 @@ export function createCodingAdminUIApp(
         const probe = new URLSearchParams({
           owner: c.var.userEmail,
           limit: "1",
-          offset: "0",
         });
         ownsAny = (await fetchTasks(probe)).total > 0;
       } catch {
@@ -802,11 +842,11 @@ export function createCodingAdminUIApp(
             agentName: agent,
             searchByName: (name) => agentService.searchByName(name),
             limit,
-            offset,
+            cursor: cursorState.cursor,
             matches: (t, ids) =>
               (!!t.assignee && ids.has(t.assignee)) ||
               (!!t.claimedBy && ids.has(t.claimedBy)),
-            fetchPage: async (fetchLimit, fetchOffset) => {
+            fetchPage: async (fetchLimit, fetchCursor) => {
               const params = new URLSearchParams();
               if (status) {
                 params.set("status", status);
@@ -833,10 +873,14 @@ export function createCodingAdminUIApp(
               if (ownerView.mode !== "all")
                 params.set("owner", ownerView.owner);
               params.set("limit", String(fetchLimit));
-              params.set("offset", String(fetchOffset));
+              if (fetchCursor) params.set("cursor", fetchCursor);
               params.set("sort", "desc");
               const fetched = await fetchTasks(params);
-              return { items: fetched.tasks, total: fetched.total };
+              return {
+                items: fetched.tasks,
+                total: fetched.total,
+                nextCursor: fetched.nextCursor,
+              };
             },
           }),
           fetchDistinct
@@ -845,6 +889,7 @@ export function createCodingAdminUIApp(
         ]);
         tasks = result.items;
         total = result.total;
+        nextCursor = result.nextCursor;
         agentFilterActive = result.filterActive;
         distinctValues = distinct;
       } catch {
@@ -875,9 +920,14 @@ export function createCodingAdminUIApp(
     const suggestions =
       fetchDistinct && distinctValues
         ? {
-            sessions: distinctValues.sessions,
-            repos: distinctValues.repos,
-            orgs: distinctValues.orgs,
+            // A member's suggestions never expose values outside their scope.
+            sessions:
+              scopeView.kind === "member" ? [] : distinctValues.sessions,
+            repos:
+              scopeView.kind === "member"
+                ? scopeView.repos
+                : distinctValues.repos,
+            orgs: scopeView.kind === "member" ? [] : distinctValues.orgs,
             agents: await agentSuggestions(scopeView),
           }
         : undefined;
@@ -901,7 +951,13 @@ export function createCodingAdminUIApp(
         degraded,
         c.var.userEmail,
         agentNames,
-        { total, limit, page },
+        {
+          count: tasks.length,
+          total,
+          limit,
+          state: cursorState,
+          nextCursor,
+        },
         {
           ...(error ? { error } : {}),
           ...(success ? { success } : {}),
@@ -918,7 +974,7 @@ export function createCodingAdminUIApp(
   });
 
   app.get("/admin/tasks/:id", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    const view = await resolveTaskReadView(c.var.isAdmin, c.var.userEmail);
     if (view.kind === "none") return new Response("Forbidden", { status: 403 });
     const ts = scopedTaskStore(
       view.kind === "account" ? view.accountId : undefined,
@@ -936,6 +992,14 @@ export function createCodingAdminUIApp(
     // SSP-6.8: for an account user a missing task and another account's task
     // are the same 404, so ids from other accounts can't be probed.
     if (!task && view.kind === "account") return NOT_FOUND();
+    // MPV-1.2: a member gets the same 404 for a missing task and one outside
+    // their scope, so existence isn't leaked.
+    if (
+      view.kind === "member" &&
+      (!task ||
+        !isTaskVisible(task, { agentIds: view.agentIds, repos: view.repos }))
+    )
+      return NOT_FOUND();
     if (!task) return c.redirect("/admin/tasks?error=task_not_found", 302);
 
     // Resolve agent IDs → names from the local admin DB
@@ -1199,7 +1263,6 @@ export function createCodingAdminUIApp(
       // Fetch ALL tasks for the session, not one page — sessions are typically
       // a handful of tasks, well under this ceiling.
       params.set("limit", "500");
-      params.set("offset", "0");
       params.set("sort", "desc");
       try {
         const result = await fetchTasks(params);
@@ -1373,13 +1436,15 @@ export function createCodingAdminUIApp(
     const org = c.req.queries("org");
     const taskId = c.req.query("taskId") ?? undefined;
     const blockedParam = c.req.query("blocked") ?? undefined;
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
+    const cursorState = parseCursorState(
+      c.req.query("cursor"),
+      c.req.query("prev"),
+    );
     const limit = 50;
-    const offset = (page - 1) * limit;
 
     let prs: PrListItem[] = [];
     let total = 0;
+    let nextCursor: string | null = null;
     let degraded = false;
 
     const fetchPrs = ts.fetchPrs;
@@ -1444,12 +1509,13 @@ export function createCodingAdminUIApp(
         }
         if (blockedParam === "true") params.set("blocked", "true");
         params.set("limit", String(limit));
-        params.set("offset", String(offset));
+        if (cursorState.cursor) params.set("cursor", cursorState.cursor);
         params.set("sort", "desc");
         try {
           const result = await fetchPrs(params);
           prs = result.prs;
           total = result.total;
+          nextCursor = result.nextCursor ?? null;
         } catch {
           degraded = true;
         }
@@ -1525,7 +1591,13 @@ export function createCodingAdminUIApp(
         degraded,
         c.var.userEmail,
         agentNames,
-        { total, limit, page },
+        {
+          count: prs.length,
+          total,
+          limit,
+          state: cursorState,
+          nextCursor,
+        },
         timezone,
         suggestions,
         linkedTasksByPr,
@@ -1623,7 +1695,6 @@ export function createCodingAdminUIApp(
       params.set("repo", publicRepo);
       if (source) params.set("source", source);
       params.set("limit", "50");
-      params.set("offset", "0");
       params.set("sort", "desc");
       try {
         const result = await fetchTaskStoreTasks(params);
@@ -1641,7 +1712,12 @@ export function createCodingAdminUIApp(
         degraded,
         "",
         {},
-        { total, limit: 50, page: 1 },
+        {
+          count: tasks.length,
+          total,
+          limit: 50,
+          state: { prev: [] },
+        },
         undefined,
         undefined,
         true, // readOnly
