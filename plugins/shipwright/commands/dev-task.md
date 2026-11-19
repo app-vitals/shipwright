@@ -91,7 +91,8 @@ record `agent_error` and continue. Do not push from here.
 
 Confirm verification outcomes were recorded (record them if not; never block the push), push, then reuse
 the branch's open PR or create one via `gh pr create --body-file` (task id in the temp path). Failure
-cleanup: [push-and-ci.md](../references/dev-task/push-and-ci.md).
+cleanup: [push-and-ci.md](../references/dev-task/push-and-ci.md). The PR body is bottom-line-first with
+reviewer-relevant bullets and no narrative of your process (layout in push-and-ci.md).
 
 **Proof:** PR number and URL printed.
 
@@ -109,8 +110,8 @@ attempts, each a fresh subagent given prior attempts). Exhausted → PATCH `stat
 
 PATCH the task to `status: pr_open` with `pr`, `prCreatedAt`, `ciFixAttempts`, the `simplify*` counts,
 `coverageDelta`, and `model` (capture the HTTP code; non-2xx → abort, do not report success). Then print
-the `DONE: {id}` handoff block. Fields and format:
-[handoff.md](../references/dev-task/handoff.md).
+the `DONE: {id}` handoff: a headline plus at most 3 bullets and the PR link; risk, breaking changes, and
+follow-ups are never trimmed. Format: [handoff.md](../references/dev-task/handoff.md).
 
 **Proof:** `DONE: {id}` block printed after a 2xx PATCH.
 

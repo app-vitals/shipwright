@@ -11,5 +11,6 @@ PATCH_CODE=$(curl -s -o /tmp/task_patch_10a.json -w '%{http_code}' -X PATCH -H "
 2xx → print the task and the handoff. Non-2xx → print `⚠ Step 10a PATCH failed with status $PATCH_CODE — handoff aborted.` and
 stop; the store would otherwise still show the task unclaimed with an open PR.
 
-Handoff block (inside `━` rules): `DONE: {id}`, PR number and URL, Simplify fixes, CI (Pass or N fix attempts),
-Coverage before → after, Reqs met/total, Docs (files and lines, or skipped reason).
+Handoff (inside `━` rules): a headline starting `DONE: {id}`, then at most 3 bullets, then the PR link. Risk, breaking
+changes, and follow-ups go in the headline or the first bullets and are never trimmed. Other stats (simplify fixes, CI
+attempts, coverage, reqs, docs) are logged and PATCHed, not listed unless notable.
