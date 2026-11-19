@@ -26,7 +26,7 @@ import type { TaskToken, TokenServiceLike } from "./token-service.ts";
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -167,7 +167,7 @@ function fakeTaskService(): TaskServiceLike {
       return { updated: [], unchanged: [], skipped: [] };
     },
     async list() {
-      return { tasks: [], total: 0, limit: 50, offset: 0 };
+      return { tasks: [], total: 0, limit: 50 };
     },
     async listReady() {
       return [];

@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -506,9 +506,14 @@ describeOrSkip("Task store schema (integration)", () => {
       },
     });
 
-    const result = await taskService.listBlocked(undefined, undefined, undefined, {
-      session: "session-a",
-    });
+    const result = await taskService.listBlocked(
+      undefined,
+      undefined,
+      undefined,
+      {
+        session: "session-a",
+      },
+    );
 
     const titles = result.map((t) => t.title);
     expect(titles).toContain("Dependent (in-scope session)");
@@ -1226,9 +1231,14 @@ describeOrSkip("Task store schema (integration)", () => {
       },
     });
 
-    // limit:1, offset:1 selects only "Dependent task" — "Dependency task"
-    // (offset:0) is excluded from the returned page entirely.
-    const result = await taskService.list({ limit: 1, offset: 1, sort: "asc" });
+    // Page 1 is "Dependency task"; resuming from its nextCursor selects only
+    // "Dependent task", so the dependency is outside the returned page.
+    const firstPage = await taskService.list({ limit: 1, sort: "asc" });
+    const result = await taskService.list({
+      limit: 1,
+      sort: "asc",
+      cursor: firstPage.nextCursor ?? undefined,
+    });
 
     expect(result.tasks.map((t) => t.id)).toEqual([dependent.id]);
     expect(result.tasks[0].blockedBy).toEqual([

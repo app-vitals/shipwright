@@ -42,7 +42,7 @@ import type { TokenServiceLike } from "./token-service.ts";
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;

@@ -120,7 +120,6 @@ function fakeTaskService(
         tasks,
         total: tasks.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
       };
     },
     async listReady() {
@@ -181,7 +180,7 @@ function fakeTaskService(
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;

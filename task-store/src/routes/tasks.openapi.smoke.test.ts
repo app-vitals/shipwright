@@ -104,7 +104,7 @@ function fakeTaskService(
     eventsResult?: { events: TaskEvent[]; total: number } | Error;
     getEventsCalls?: Array<{
       id: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }>;
   } = {},
 ): TaskServiceLike {
@@ -119,7 +119,6 @@ function fakeTaskService(
         tasks: tasks.map(withBlockedBy),
         total: tasks.length,
         limit: 50,
-        offset: 0,
       };
     },
     async listReady() {
@@ -997,7 +996,7 @@ describe("POST / and POST /bulk — strip removed 'hitlNotifiedAt' field (HSR-1.
 });
 
 describe("GET /:id/events (TCS-1.2)", () => {
-  it("returns 200 with an events array in ascending `at` order, plus total/limit/offset", async () => {
+  it("returns 200 with an events array in ascending `at` order, plus total/limit", async () => {
     const task = makeTask({ id: "t-1" });
     const events = [
       makeEvent({
@@ -1030,7 +1029,6 @@ describe("GET /:id/events (TCS-1.2)", () => {
       events: TaskEvent[];
       total: number;
       limit: number;
-      offset: number;
     };
     expect(body.events).toHaveLength(2);
     expect(body.events[0]?.id).toBe("event-1");
@@ -1039,7 +1037,7 @@ describe("GET /:id/events (TCS-1.2)", () => {
     expect(body.events[1]?.at).toBe("2026-08-17T01:00:00.000Z");
     expect(body.total).toBe(2);
     expect(typeof body.limit).toBe("number");
-    expect(typeof body.offset).toBe("number");
+    expect(body).not.toHaveProperty("offset");
   });
 
   it("returns 404 when the task does not exist", async () => {
@@ -1067,11 +1065,11 @@ describe("GET /:id/events (TCS-1.2)", () => {
     expect(body.total).toBe(0);
   });
 
-  it("?limit=&offset= parses limit/offset and forwards them to the service", async () => {
+  it("?limit= parses limit and forwards it to the service", async () => {
     const task = makeTask({ id: "t-1" });
     const getEventsCalls: Array<{
       id: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }> = [];
     const app = createTasksRoutes(
       fakeTaskService({
@@ -1082,19 +1080,18 @@ describe("GET /:id/events (TCS-1.2)", () => {
     );
     const parent = makeAdminParent(app);
 
-    const res = await parent.request("/t-1/events?limit=10&offset=5");
+    const res = await parent.request("/t-1/events?limit=10");
     expect(res.status).toBe(200);
     expect(getEventsCalls).toHaveLength(1);
     expect(getEventsCalls[0]?.id).toBe("t-1");
     expect(getEventsCalls[0]?.opts?.limit).toBe(10);
-    expect(getEventsCalls[0]?.opts?.offset).toBe(5);
   });
 
-  it("without limit/offset leaves them undefined (service applies defaults)", async () => {
+  it("without limit leaves it undefined (service applies defaults)", async () => {
     const task = makeTask({ id: "t-1" });
     const getEventsCalls: Array<{
       id: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }> = [];
     const app = createTasksRoutes(
       fakeTaskService({
@@ -1109,7 +1106,6 @@ describe("GET /:id/events (TCS-1.2)", () => {
     expect(res.status).toBe(200);
     expect(getEventsCalls).toHaveLength(1);
     expect(getEventsCalls[0]?.opts?.limit).toBeUndefined();
-    expect(getEventsCalls[0]?.opts?.offset).toBeUndefined();
   });
 
   it("agent token with no ownership (not assignee/claimant, repo outside scope) -> 403", async () => {
@@ -1144,6 +1140,14 @@ describe("GET /:id/events (TCS-1.2)", () => {
 // ─── Unknown query parameters (PLU-1.1) ───────────────────────────────────────
 
 describe("GET /tasks unknown query parameters (PLU-1.1)", () => {
+  it("rejects ?offset with a 400 now that offset pagination is removed (TPG-3.1)", async () => {
+    const parent = makeAdminParent(createTasksRoutes(fakeTaskService()));
+    const res = await parent.request("/?offset=5");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("offset");
+  });
+
   it("returns 400 naming an unrecognised parameter", async () => {
     const parent = makeAdminParent(createTasksRoutes(fakeTaskService()));
     const res = await parent.request("/?bogus=1");

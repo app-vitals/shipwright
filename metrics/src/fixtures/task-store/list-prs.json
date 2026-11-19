@@ -103,8 +103,7 @@
         }
       ],
       "total": 7,
-      "limit": 200,
-      "offset": 0
+      "limit": 200
     }
   },
   "listPrs_not_found": {

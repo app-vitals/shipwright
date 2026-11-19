@@ -153,13 +153,18 @@ describeOrSkip("GET /tasks?column= vs bucketTaskColumn (integration)", () => {
     expect(ids).toEqual(expected);
   });
 
-  it("works with offset paging and desc sort", async () => {
+  it("works with cursor paging and desc sort", async () => {
     const expected = (await expectedByColumn()).blocked ?? [];
+    const first = await service.list({
+      column: "blocked",
+      limit: 2,
+      sort: "desc",
+    });
     const page = await service.list({
       column: "blocked",
       limit: 2,
-      offset: 2,
       sort: "desc",
+      cursor: first.nextCursor ?? undefined,
     });
     expect(page.total).toBe(expected.length);
     expect(page.tasks.map((t) => t.id)).toEqual(

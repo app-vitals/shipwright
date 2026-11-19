@@ -143,9 +143,8 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
 
       const total = sorted.length;
       const limit = filters.limit ?? 50;
-      const offset = filters.offset ?? 0;
-      const paged = sorted.slice(offset, offset + limit).map(toItem);
-      return { sessions: paged, total, limit, offset };
+      const paged = sorted.slice(0, limit).map(toItem);
+      return { sessions: paged, total, limit };
     },
 
     async get(
@@ -563,7 +562,7 @@ describe("GET /sessions (smoke)", () => {
     expect(body.total).toBe(0);
   });
 
-  it("GET /sessions returns 401-shaped auth is enforced upstream — smoke here covers 200 shape: { sessions, total, limit, offset }", async () => {
+  it("GET /sessions returns 401-shaped auth is enforced upstream — smoke here covers 200 shape: { sessions, total, limit }", async () => {
     const parent = makeAdminParent(makeApp());
     const res = await parent.request("/");
     expect(res.status).toBe(200);
@@ -571,7 +570,7 @@ describe("GET /sessions (smoke)", () => {
     expect(Array.isArray(body.sessions)).toBe(true);
     expect(typeof body.total).toBe("number");
     expect(typeof body.limit).toBe("number");
-    expect(typeof body.offset).toBe("number");
+    expect(body).not.toHaveProperty("offset");
   });
 });
 

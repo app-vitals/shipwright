@@ -37,7 +37,7 @@ const stubTaskService: TaskServiceLike = {
     return { updated: [], unchanged: [], skipped: [] };
   },
   async list() {
-    return { tasks: [], total: 0, limit: 50, offset: 0 };
+    return { tasks: [], total: 0, limit: 50 };
   },
   async listReady() {
     return [];
@@ -110,7 +110,7 @@ const stubTokenService: TokenServiceLike = {
 
 const stubPrService: PullRequestServiceLike = {
   async list() {
-    return { prs: [], total: 0, limit: 50, offset: 0 };
+    return { prs: [], total: 0, limit: 50 };
   },
   async get() {
     return null;
@@ -167,7 +167,7 @@ const stubPrService: PullRequestServiceLike = {
 
 const stubSessionService: SessionServiceLike = {
   async list() {
-    return { sessions: [], total: 0, limit: 50, offset: 0 };
+    return { sessions: [], total: 0, limit: 50 };
   },
   async get() {
     return null;

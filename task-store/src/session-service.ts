@@ -32,12 +32,7 @@
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { DEFAULT_ACCOUNT_ID } from "./default-account.ts";
-import {
-  BadRequestError,
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-} from "./errors.ts";
+import { ConflictError, ForbiddenError, NotFoundError } from "./errors.ts";
 import type {
   PlanDocument,
   Prisma,
@@ -95,11 +90,9 @@ export interface SessionListFilters {
   /** Exact match on the session's owner (email). */
   owner?: string;
   limit?: number;
-  offset?: number;
   /**
    * Opaque cursor from a previous page's `nextCursor`. Session order is
    * derived in memory (rollup activity), so it wraps an internal offset.
-   * Mutually exclusive with `offset`.
    */
   cursor?: string;
   /**
@@ -156,7 +149,6 @@ export interface SessionListResult {
   sessions: SessionListItem[];
   total: number;
   limit: number;
-  offset: number;
   /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
   nextCursor?: string | null;
 }
@@ -573,13 +565,8 @@ export class SessionService implements SessionServiceLike {
 
     const total = items.length;
     const limit = filters.limit ?? 50;
-    if (filters.cursor !== undefined && filters.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const offset =
-      filters.cursor !== undefined
-        ? decodeOffsetCursor(filters.cursor)
-        : (filters.offset ?? 0);
+      filters.cursor !== undefined ? decodeOffsetCursor(filters.cursor) : 0;
     const end = offset + limit;
     const sessions = items.slice(offset, end);
 
@@ -587,7 +574,6 @@ export class SessionService implements SessionServiceLike {
       sessions,
       total,
       limit,
-      offset,
       nextCursor: end < total ? encodeOffsetCursor(end) : null,
     };
   }

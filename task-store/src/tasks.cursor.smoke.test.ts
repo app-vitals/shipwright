@@ -124,7 +124,6 @@ function fakeTaskService(opts: {
         tasks,
         total: tasks.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
         nextCursor: opts.listNextCursor,
       };
     },
@@ -199,7 +198,7 @@ function fakeTaskService(opts: {
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -248,7 +247,7 @@ describe("GET /tasks keyset cursor (smoke)", () => {
     expect(body.nextCursor).toBe("abc_-123");
     expect(typeof body.total).toBe("number");
     expect(body.limit).toBe(1);
-    expect(body.offset).toBe(0);
+    expect(body).not.toHaveProperty("offset");
   });
 
   it("returns nextCursor: null on the last page", async () => {
@@ -272,18 +271,6 @@ describe("GET /tasks keyset cursor (smoke)", () => {
     const app = makeApp(fakeTaskService({ capturedListFilters }));
     await app.request("/tasks?cursor=opaque", { headers: auth() });
     expect(capturedListFilters[0]?.cursor).toBe("opaque");
-  });
-
-  it("?cursor together with ?offset is a 400 and never reaches list()", async () => {
-    const capturedListFilters: TaskListFilters[] = [];
-    const app = makeApp(fakeTaskService({ capturedListFilters }));
-    for (const offset of ["0", "5"]) {
-      const res = await app.request(`/tasks?cursor=opaque&offset=${offset}`, {
-        headers: auth(),
-      });
-      expect(res.status).toBe(400);
-    }
-    expect(capturedListFilters).toHaveLength(0);
   });
 
   it("?ready=true returns nextCursor: null", async () => {

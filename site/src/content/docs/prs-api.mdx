@@ -75,7 +75,7 @@ Set `staged` via `PATCH /prs/:id`. Once the review is posted, call `POST /prs/:i
 
 ### GET /prs
 
-List PR records. Returns `{ prs, total, limit, offset }`.
+List PR records. Returns `{ prs, total, limit, nextCursor }`.
 
 | Query param | Type | Description |
 |---|---|---|
@@ -85,7 +85,7 @@ List PR records. Returns `{ prs, total, limit, offset }`.
 | `reviewState` | string | Filter by review state: `pending`, `in_progress`, `posted`, `approved` |
 | `staged` | boolean | `true` to return only staged reviews |
 | `limit` | int | Max results (pagination) |
-| `offset` | int | Start offset (pagination) |
+| `cursor` | string | Opaque cursor from a previous response's `nextCursor` (pagination) |
 
 ```bash
 # All pending PR records in a repo

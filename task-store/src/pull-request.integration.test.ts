@@ -1024,7 +1024,6 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     const result = await service.list();
     expect(result.total).toBe(2);
     expect(result.limit).toBe(50);
-    expect(result.offset).toBe(0);
     expect(result.prs).toHaveLength(2);
   });
 
@@ -1099,7 +1098,7 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(combined.prs[0].prNumber).toBe(2001);
   });
 
-  it("list() respects limit and offset for pagination", async () => {
+  it("list() respects limit and cursor for pagination", async () => {
     await prisma.pullRequest.createMany({
       data: [
         { repo: "app-vitals/shipwright", prNumber: 1020 },
@@ -1108,15 +1107,18 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
       ],
     });
 
-    const page1 = await service.list({ limit: 2, offset: 0 });
+    const page1 = await service.list({ limit: 2 });
     expect(page1.prs).toHaveLength(2);
     expect(page1.total).toBe(3);
     expect(page1.limit).toBe(2);
-    expect(page1.offset).toBe(0);
+    expect(page1.nextCursor).not.toBeNull();
 
-    const page2 = await service.list({ limit: 2, offset: 2 });
+    const page2 = await service.list({
+      limit: 2,
+      cursor: page1.nextCursor ?? undefined,
+    });
     expect(page2.prs).toHaveLength(1);
-    expect(page2.offset).toBe(2);
+    expect(page2.nextCursor).toBeNull();
   });
 
   it("get() returns the PR when it exists", async () => {
@@ -2143,7 +2145,7 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
     expect(caught).toBeInstanceOf(NotFoundError);
   });
 
-  it("respects limit/offset pagination while preserving ascending `at` order", async () => {
+  it("respects limit/cursor pagination while preserving ascending `at` order", async () => {
     const repo = "app-vitals/shipwright";
     const prNumber = 9102;
     const commitSha = "sha-events-paginate";
@@ -2178,12 +2180,15 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
     const full = await svcPatch.getEvents(seeded.id);
     expect(full.total).toBeGreaterThanOrEqual(3);
 
-    const page1 = await svcPatch.getEvents(seeded.id, { limit: 1, offset: 0 });
+    const page1 = await svcPatch.getEvents(seeded.id, { limit: 1 });
     expect(page1.events).toHaveLength(1);
     expect(page1.total).toBe(full.total);
     expect(page1.events[0]?.at).toBe(full.events[0]?.at);
 
-    const page2 = await svcPatch.getEvents(seeded.id, { limit: 1, offset: 1 });
+    const page2 = await svcPatch.getEvents(seeded.id, {
+      limit: 1,
+      cursor: page1.nextCursor ?? undefined,
+    });
     expect(page2.events).toHaveLength(1);
     expect(page2.events[0]?.at).toBe(full.events[1]?.at);
   });

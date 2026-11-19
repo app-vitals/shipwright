@@ -441,7 +441,7 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
  * still be a dependency of an in-scope task, and must still contribute a
  * blockedBy entry for it).
  *
- * Deliberately excludes status/state/limit/offset/sort/updatedSince/
+ * Deliberately excludes status/state/limit/sort/updatedSince/
  * agentScope: the ready/blocked sets' status semantics are structural (see
  * ready.ts / listBlocked()'s doc comment) — status/state itself is never a
  * user-settable narrowing filter here, since it's what defines the ready/
@@ -517,11 +517,10 @@ export interface TaskListFilters {
    */
   column?: TaskColumn;
   limit?: number;
-  offset?: number;
   /**
    * Opaque keyset cursor (see lib/cursor.ts): return rows strictly after the
-   * encoded (createdAt, id) position in the current sort order. Mutually
-   * exclusive with `offset` (BadRequestError). Malformed → BadRequestError.
+   * encoded (createdAt, id) position in the current sort order. Malformed →
+   * BadRequestError.
    */
   cursor?: string;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
@@ -566,7 +565,6 @@ export interface TaskListResult {
   tasks: TaskWithBlockedBy[];
   total: number;
   limit: number;
-  offset: number;
   /** Cursor for the next page; null on the last page. TaskService always sets it; test doubles may omit (route coerces to null). */
   nextCursor?: string | null;
 }
@@ -627,7 +625,7 @@ export interface TaskServiceLike {
   unblock(id: string, opts?: { to?: UnblockTarget }): Promise<Task>;
   getEvents(
     id: string,
-    opts?: { limit?: number; offset?: number; cursor?: string },
+    opts?: { limit?: number; cursor?: string },
   ): Promise<GetTaskEventsResult>;
 }
 
@@ -769,7 +767,6 @@ export class TaskService implements TaskServiceLike {
     }
 
     const limit = filters.limit ?? 50;
-    const offset = filters.offset ?? 0;
     const sort = filters.sort ?? "asc";
 
     // The cursor is only a position — never a row lookup — so a deleted or
@@ -778,9 +775,6 @@ export class TaskService implements TaskServiceLike {
     // the whole filtered set, so it uses `where` without the cursor clause.
     let pageWhere: Prisma.TaskWhereInput = where;
     if (filters.cursor !== undefined) {
-      if (filters.offset) {
-        throw new BadRequestError("cursor and offset are mutually exclusive");
-      }
       const existing = where.AND
         ? Array.isArray(where.AND)
           ? where.AND
@@ -807,7 +801,6 @@ export class TaskService implements TaskServiceLike {
         where: pageWhere,
         orderBy: [{ createdAt: sort }, { id: sort }],
         take: limit + 1,
-        skip: offset,
       }),
       this.prisma.task.count({ where }),
     ]);
@@ -834,7 +827,7 @@ export class TaskService implements TaskServiceLike {
       blockedBy: computeBlockedBy(t, sameAccount(allTasks, t.accountId)),
     }));
 
-    return { tasks, total, limit, offset, nextCursor };
+    return { tasks, total, limit, nextCursor };
   }
 
   /**
@@ -1924,7 +1917,7 @@ export class TaskService implements TaskServiceLike {
    */
   async getEvents(
     id: string,
-    opts: { limit?: number; offset?: number; cursor?: string } = {},
+    opts: { limit?: number; cursor?: string } = {},
   ): Promise<GetTaskEventsResult> {
     const existing = await this.prisma.task.findUnique({
       where: { id },
@@ -1935,10 +1928,6 @@ export class TaskService implements TaskServiceLike {
     }
 
     const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
-    if (opts.cursor !== undefined && opts.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const pageWhere: Prisma.TaskEventWhereInput =
       opts.cursor !== undefined
         ? {
@@ -1955,7 +1944,6 @@ export class TaskService implements TaskServiceLike {
         where: pageWhere,
         orderBy: [{ at: "asc" }, { id: "asc" }],
         take: limit + 1,
-        skip: offset,
       }),
       this.prisma.taskEvent.count({ where: { taskId: id } }),
     ]);

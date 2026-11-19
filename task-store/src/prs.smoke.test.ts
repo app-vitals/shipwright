@@ -13,6 +13,7 @@
  *   - Agent token scope rejection → 400 on claim with out-of-scope repo
  *   - GET /prs?reviewState=posted filter
  *   - GET /prs?taskId=X is an ignored unknown query param, not a 400 (PTL-3.1)
+ *   - GET /prs?offset=N is ignored (offset pagination removed in TPG-3.1)
  *   - PATCH /prs/:id → update fields
  *   - GET /prs/:id → 404 when missing
  *   - POST /prs/:id/heartbeat → updates heartbeatAt
@@ -45,7 +46,7 @@ import type { TokenServiceLike } from "./token-service.ts";
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -251,7 +252,7 @@ function fakePrService(
     eventsResult?: GetEventsResult | Error;
     getEventsCalls?: Array<{
       prId: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }>;
     capturedListFilters?: PullRequestListFilters[];
   } = {},
@@ -290,7 +291,6 @@ function fakePrService(
         prs,
         total: prs.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
       };
     },
 
@@ -530,7 +530,7 @@ function fakePrService(
 
     async getEvents(
       prId: string,
-      eventsOpts?: { limit?: number; offset?: number },
+      eventsOpts?: { limit?: number },
     ): Promise<GetEventsResult> {
       opts.getEventsCalls?.push({ prId, opts: eventsOpts });
       if (opts.eventsResult !== undefined) {
@@ -651,7 +651,7 @@ function fakeTaskService(): TaskServiceLike {
       return { updated: [], unchanged: [], skipped: [] };
     },
     async list() {
-      return { tasks: [], total: 0, limit: 50, offset: 0 };
+      return { tasks: [], total: 0, limit: 50 };
     },
     async listReady() {
       return [];
@@ -1273,6 +1273,21 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequestListResult;
     expect(body.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
+  });
+
+  it("GET /prs?offset=N is ignored and returns the first page, not a 400 (TPG-3.1)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", prNumber: 1 }));
+    store.set("pr-2", makePr({ id: "pr-2", prNumber: 2 }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?offset=1", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
+    expect(body).not.toHaveProperty("offset");
   });
 
   it("GET /prs?repo=... (single) returns records matching that repo only", async () => {
@@ -2658,7 +2673,7 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("GET /prs/:id/events returns 200 with an events array in ascending `at` order, plus total/limit/offset", async () => {
+  it("GET /prs/:id/events returns 200 with an events array in ascending `at` order, plus total/limit", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
     const events = [
@@ -2694,7 +2709,6 @@ describe("/prs routes (smoke)", () => {
       events: PullRequestEvent[];
       total: number;
       limit: number;
-      offset: number;
     };
     expect(body.events).toHaveLength(2);
     expect(body.events[0]?.id).toBe("event-1");
@@ -2703,7 +2717,7 @@ describe("/prs routes (smoke)", () => {
     expect(body.events[1]?.at).toBe("2026-08-17T01:00:00.000Z");
     expect(body.total).toBe(2);
     expect(typeof body.limit).toBe("number");
-    expect(typeof body.offset).toBe("number");
+    expect(body).not.toHaveProperty("offset");
   });
 
   it("GET /prs/:id/events returns 200 with an empty array when the PR has zero events (not 404)", async () => {
@@ -2728,12 +2742,12 @@ describe("/prs routes (smoke)", () => {
     expect(body.total).toBe(0);
   });
 
-  it("GET /prs/:id/events?limit=&offset= parses limit/offset and forwards them to the service", async () => {
+  it("GET /prs/:id/events?limit= parses limit and forwards it to the service", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
     const getEventsCalls: Array<{
       prId: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }> = [];
     const app = makeApp({
       prService: fakePrService({
@@ -2743,22 +2757,21 @@ describe("/prs routes (smoke)", () => {
       }),
     });
 
-    const res = await app.request("/prs/pr-1/events?limit=10&offset=5", {
+    const res = await app.request("/prs/pr-1/events?limit=10", {
       headers: adminAuth(),
     });
     expect(res.status).toBe(200);
     expect(getEventsCalls).toHaveLength(1);
     expect(getEventsCalls[0]?.prId).toBe("pr-1");
     expect(getEventsCalls[0]?.opts?.limit).toBe(10);
-    expect(getEventsCalls[0]?.opts?.offset).toBe(5);
   });
 
-  it("GET /prs/:id/events without limit/offset leaves them undefined (service applies defaults)", async () => {
+  it("GET /prs/:id/events without limit leaves it undefined (service applies defaults)", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
     const getEventsCalls: Array<{
       prId: string;
-      opts?: { limit?: number; offset?: number };
+      opts?: { limit?: number };
     }> = [];
     const app = makeApp({
       prService: fakePrService({
@@ -2774,7 +2787,6 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     expect(getEventsCalls).toHaveLength(1);
     expect(getEventsCalls[0]?.opts?.limit).toBeUndefined();
-    expect(getEventsCalls[0]?.opts?.offset).toBeUndefined();
   });
 
   // ─── POST /prs/census (POM-1.1) ───────────────────────────────────────────

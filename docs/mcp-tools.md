@@ -34,7 +34,7 @@ List pull requests
 - **Method:** GET
 - **Path:** `/prs`
 - **Has body:** No
-- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query), `origin` (query)
+- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query), `origin` (query)
 
 ## `prs_update`
 
@@ -61,7 +61,7 @@ List sessions
 - **Method:** GET
 - **Path:** `/sessions`
 - **Has body:** No
-- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `org` (query), `q` (query), `limit` (query), `offset` (query)
+- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `org` (query), `q` (query), `limit` (query)
 
 ## `tasks_bulk`
 
@@ -106,7 +106,7 @@ List tasks
 - **Method:** GET
 - **Path:** `/tasks`
 - **Has body:** No
-- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `org` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `hitl` (query), `kind` (query), `sort` (query), `updatedSince` (query)
+- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `org` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `ready` (query), `hitl` (query), `kind` (query), `sort` (query), `updatedSince` (query)
 
 ## `tasks_update`
 

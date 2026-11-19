@@ -507,7 +507,6 @@ describe("createTaskStoreClient query()", () => {
           tasks: [FAKE_TASK],
           total: 1,
           limit: 50,
-          offset: 0,
         }),
       }) as Response) as unknown as typeof fetch;
 
@@ -522,7 +521,7 @@ describe("createTaskStoreClient query()", () => {
     const fakeFetch = (async () =>
       ({
         ok: true,
-        json: async () => ({ tasks: [], total: 0, limit: 50, offset: 0 }),
+        json: async () => ({ tasks: [], total: 0, limit: 50 }),
       }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient({ fetchFn: fakeFetch });

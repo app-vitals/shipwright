@@ -56,8 +56,7 @@ export interface ListCoverageSnapshotsOptions {
   /** ISO timestamp; only snapshots measured at or after it. */
   since?: string;
   limit?: number;
-  offset?: number;
-  /** Opaque keyset cursor on (measuredAt, id), newest first. Mutually exclusive with `offset`. */
+  /** Opaque keyset cursor on (measuredAt, id), newest first. */
   cursor?: string;
 }
 
@@ -220,7 +219,6 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
     scope: CoverageSnapshotScope = UNRESTRICTED_SCOPE,
   ): Promise<ListCoverageSnapshotsResult> {
     const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
     // An empty repo scope can see nothing; an out-of-scope ?repo= likewise
     // returns empty (mirrors verification-checks).
     if (scope.repos !== null) {
@@ -235,9 +233,6 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
       ...(opts.repo ? { repo: opts.repo } : {}),
       ...(opts.since ? { measuredAt: { gte: new Date(opts.since) } } : {}),
     };
-    if (opts.cursor !== undefined && opts.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const pageWhere =
       opts.cursor !== undefined
         ? {
@@ -253,7 +248,6 @@ export class CoverageSnapshotService implements CoverageSnapshotServiceLike {
         where: pageWhere,
         orderBy: [{ measuredAt: "desc" }, { id: "desc" }],
         take: limit + 1,
-        skip: offset,
       }),
       this.prisma.coverageSnapshot.count({ where }),
     ]);

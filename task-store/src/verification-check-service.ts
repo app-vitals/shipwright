@@ -34,11 +34,6 @@
 
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "./errors.ts";
-import {
-  decodeKeyCursor,
-  encodeKeyCursor,
-  keyCursorWhere,
-} from "./lib/cursor.ts";
 import type {
   PrismaClient,
   VerificationCheck,
@@ -49,6 +44,11 @@ import {
   VerificationCheckReasonCategory as ReasonCategoryEnum,
   VerificationCheckStatus as StatusEnum,
 } from "./index.ts";
+import {
+  decodeKeyCursor,
+  encodeKeyCursor,
+  keyCursorWhere,
+} from "./lib/cursor.ts";
 
 /** Derived from the runtime enums rather than hand-listed, so these stay in
  * sync with the Prisma schema without a second literal list to update
@@ -125,12 +125,12 @@ export interface VerificationCheckServiceLike {
   ): Promise<VerificationCheck>;
   listForTask(
     taskId: string,
-    opts?: { limit?: number; offset?: number; cursor?: string },
+    opts?: { limit?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   listForPr(
     prId: string,
-    opts?: { limit?: number; offset?: number; cursor?: string },
+    opts?: { limit?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   /**
@@ -144,7 +144,7 @@ export interface VerificationCheckServiceLike {
   listByRepoAndCheck(
     repo: string,
     checkName: string,
-    opts?: { limit?: number; offset?: number; cursor?: string },
+    opts?: { limit?: number; cursor?: string },
     scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
 }
@@ -290,7 +290,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
 
   async listForTask(
     taskId: string,
-    opts: { limit?: number; offset?: number; cursor?: string } = {},
+    opts: { limit?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     await this.findScopedTask(taskId, scope);
@@ -299,7 +299,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
 
   async listForPr(
     prId: string,
-    opts: { limit?: number; offset?: number; cursor?: string } = {},
+    opts: { limit?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     await this.findScopedPr(prId, scope);
@@ -309,7 +309,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
   async listByRepoAndCheck(
     repo: string,
     checkName: string,
-    opts: { limit?: number; offset?: number; cursor?: string } = {},
+    opts: { limit?: number; cursor?: string } = {},
     scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     if (!repo) {
@@ -341,14 +341,10 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
       | { taskId: string }
       | { prRecordId: string }
       | { repo: string; checkName: string; accountId?: string },
-    opts: { limit?: number; offset?: number; cursor?: string },
+    opts: { limit?: number; cursor?: string },
     order: "asc" | "desc",
   ): Promise<ListVerificationChecksResult> {
     const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
-    if (opts.cursor !== undefined && opts.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const pageWhere =
       opts.cursor !== undefined
         ? {
@@ -365,7 +361,6 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
         where: pageWhere,
         orderBy: [{ at: order }, { id: order }],
         take: limit + 1,
-        skip: offset,
       }),
       this.prisma.verificationCheck.count({ where }),
     ]);

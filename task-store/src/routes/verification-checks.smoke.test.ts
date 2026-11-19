@@ -51,7 +51,7 @@ const ADMIN_TOKEN = "admin-token";
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -74,7 +74,7 @@ function fakeTaskService(): TaskServiceLike {
       return { updated: [], unchanged: [], skipped: [] };
     },
     async list() {
-      return { tasks: [], total: 0, limit: 50, offset: 0 };
+      return { tasks: [], total: 0, limit: 50 };
     },
     async listReady() {
       return [];
@@ -237,11 +237,11 @@ function makePrismaDouble(opts: DoubleOpts = {}): PrismaClient {
             (a, b) => dir * String(a.at).localeCompare(String(b.at)),
           );
         }
-        const offset = skip ?? 0;
+        const start = skip ?? 0;
         const limited =
           take !== undefined
-            ? matched.slice(offset, offset + take)
-            : matched.slice(offset);
+            ? matched.slice(start, start + take)
+            : matched.slice(start);
         return Promise.resolve(limited);
       },
       count({ where }: { where: Record<string, unknown> }) {
@@ -449,7 +449,6 @@ describe("/verification-checks routes (smoke)", () => {
       checks: Array<Record<string, unknown>>;
       total: number;
       limit: number;
-      offset: number;
     };
     expect(body.total).toBe(2);
     expect(body.checks).toHaveLength(2);

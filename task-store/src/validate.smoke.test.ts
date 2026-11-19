@@ -137,7 +137,7 @@ function fakeTaskService(
       return { updated: [], unchanged: [], skipped: [] };
     },
     async list(_filters?: TaskListFilters): Promise<TaskListResult> {
-      return { tasks: [], total: 0, limit: 50, offset: 0 };
+      return { tasks: [], total: 0, limit: 50 };
     },
     async listReady() {
       return [];
@@ -209,7 +209,7 @@ function agentAuth(): Record<string, string> {
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;

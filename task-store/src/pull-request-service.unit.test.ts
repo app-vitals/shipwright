@@ -1845,7 +1845,7 @@ describe("PullRequestService.getEvents()", () => {
     expect(call.orderBy).toEqual([{ at: "asc" }, { id: "asc" }]);
   });
 
-  test("defaults limit to 50 and offset to 0 when the caller omits opts", async () => {
+  test("defaults limit to 50 when the caller omits opts", async () => {
     const prisma = makeEventsPrismaDouble(true);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1853,18 +1853,18 @@ describe("PullRequestService.getEvents()", () => {
 
     const call = prisma._findManyCalls[0];
     expect(call.take).toBe(51);
-    expect(call.skip).toBe(0);
+    expect(call.skip).toBeUndefined();
   });
 
-  test("forwards caller-supplied limit/offset to the findMany() call", async () => {
+  test("forwards caller-supplied limit to the findMany() call", async () => {
     const prisma = makeEventsPrismaDouble(true);
     const svc = new PullRequestService(prisma as never, clock);
 
-    await svc.getEvents("pr-1", { limit: 10, offset: 5 });
+    await svc.getEvents("pr-1", { limit: 10 });
 
     const call = prisma._findManyCalls[0];
     expect(call.take).toBe(11);
-    expect(call.skip).toBe(5);
+    expect(call.skip).toBeUndefined();
   });
 
   test("returns events and total from the underlying findMany()/count() results", async () => {
