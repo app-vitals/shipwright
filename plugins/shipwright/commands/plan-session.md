@@ -64,6 +64,14 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 ---
 
+## Chat Message Rules (CSM-2.3)
+
+Interactive mode only; `--autonomous` runs have no human and are unchanged. This session often runs in a chat surface (Slack, a phone). Every message you send that needs a reply follows these rules; `planning/{session}/PLAN.md` and the plan PR keep full detail, so nothing is lost by being brief in chat:
+
+- **Ask last.** The ask is the final line of the message, never buried mid-message. Where the answer is a choice, number the options: `Look right? 1 yes / 2 adjust`.
+- **One decision per message.** Never stack two questions.
+- **Fits one phone screen** — about 8-10 lines. Cut before you wrap, and point to `PLAN.md` or the PR for the rest instead of pasting it.
+
 ## Step 0: Resolve Session, Specs and Repos
 
 Runs before any file is written. Use `$SHIPWRIGHT_TASK_STORE_URL` and `Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN` for every call.
@@ -164,20 +172,16 @@ When `--autonomous {task-id}` was passed, the spec arrives through the originati
 
 The interactive fallback below — asking **"What are we building?"** — must never run under `--autonomous`; there is no one to answer it. (The originating task `{task-id}` is already excluded from 1.3's duplicate scan by that step's own `select(.id != $t)` filter — no further action here.)
 
-Present a brief orientation:
+Present a condensed orientation — a headline plus 2-3 lines (Chat Message Rules), no banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PLAN SESSION: {session}
-Home repo: {home}
-Repos: {target repos}
-Owner: {owner or none}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Specs: {numbers planned / none found}
-{If found: 1-2 sentences summarizing what's being built}
+PLAN SESSION: {session} — {home}, specs {numbers planned / none found}
+Repos: {target repos} · Owner: {owner or none}
+{If found: one sentence on what's being built}
 {If not found: "No PRODUCT-SPEC.md found — I'll ask for a description."}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+Keep `Home repo`, `Repos`, `Specs` and `Owner` visible so the human can correct them (Step 0.6).
 
 If no spec exists (and `--autonomous` was not passed — see the `--autonomous` Mode subsection above), ask: **"What are we building?"** and collect enough to proceed. Keep it brief — this is an engineering session, not a discovery session.
 
@@ -279,7 +283,7 @@ Bias toward the simplest solution that fits existing patterns. Summarize finding
 
 ## Step 4: Propose a Design
 
-Present a concrete technical design organized by layer:
+Work out a concrete technical design organized by layer. It is written in full to the plan (`PLAN.md`); in chat it is staged (see "Interactive staging" below), not pasted. The design covers:
 
 **Business logic** — what rules/behaviors are added or changed and where they live in the code
 **Views/UX** — what components or pages change and how
@@ -296,6 +300,12 @@ Keep it simple. If two approaches exist, recommend one and explain why.
 If the spec is ambiguous or silent on a decision that affects the design, state the assumption you're making and flag it explicitly for confirmation during this feedback loop — don't pick an interpretation silently.
 
 Iterate on feedback. Do not move to task breakdown until the design is approved.
+
+**Interactive staging (CSM-2.3).** In interactive mode, do not paste the full design. Stage it:
+
+1. **Open with a 3-line approach summary** — what changes, where it lives, how it fits existing patterns — and nothing else. Then move straight to the decisions.
+2. **Raise each design decision or risk as its own message.** One decision per message: a headline, at most 3 bullets (the options, with your recommendation first and why), and the ask **last**, e.g. `Which approach? 1 {recommended} / 2 {alternative} / 3 other`. Wait for the answer before the next message. An assumption on a spec ambiguity counts as a decision: state it and ask `Confirm? 1 yes / 2 change`.
+3. When no decisions or risks remain, close with `Design approved? 1 yes / 2 adjust` as the final line, then proceed to Step 5. The full design still goes to `PLAN.md` unchanged.
 
 ### `--autonomous` Mode
 
@@ -380,7 +390,7 @@ Tasks that are tightly coupled — where splitting into separate PRs would produ
 
 ### Dependency Map
 
-Present the map in two forms:
+Build the map in two forms. Both are written to `PLAN.md` only — they are not posted in chat (see Step 5's interactive presentation):
 
 **1. Visual graph:**
 ```
@@ -445,7 +455,9 @@ Skip this check when the spec has neither a `Success Criteria` nor a `Priorities
 - **Priorities & Sequence** — each ordering or gating statement (including "enable X only after Y") must be enforced by a `dependencies` edge. If it is an action no task performs, add it to a task.
 - **Not carried** — a statement deliberately left out (the repo's merge gate already enforces it, e.g. "`task ci` passes", or the approved design overrides it) is listed under a `Not carried:` heading after the Dependency Map, one line each with the reason. Under `--autonomous`, record these in the `## Decision Log` instead.
 
-Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
+Present the task list as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
+
+**Interactive presentation (CSM-2.3).** In chat, show the tasks as a short numbered list, one line per task: `{n}. {id} — {title} (deps: {ids or none})`, plus a `⚠ HITL` marker where it applies. Do **not** post the ASCII dependency graph or the summary table in chat; both are written to `PLAN.md` (Step 6a), which keeps them. End with the ask last: `Approve? 1 yes / 2 adjust / or name a task number (e.g. 3) to drill in`. Drilling into a task shows its description, acceptance criteria and complexity in one message, ending with the ask again.
 
 ### `--autonomous` Mode
 
@@ -766,8 +778,9 @@ itself satisfies that precondition, so the gate is re-established here rather th
   path: Step 4's and Step 5's `--autonomous` subsections already replace iterate-until-approved
   with accept-first-pass. Treat the validated breakdown as approved and proceed to Step 6.
 - **Interactive** — **do not proceed to Step 6 on the first response.** Present the returned
-  breakdown to the human first — the `planMarkdown`'s design summary, its task table and
-  Dependency Map, and any HITL-flagged tasks — then ask for approval explicitly. A subagent
+  breakdown to the human first, staged per the Chat Message Rules — a 3-line design summary,
+  then the numbered task list (id, title, deps; HITL-flagged tasks marked), not the task table
+  or Dependency Map, which stay in `planMarkdown` — then ask for approval explicitly, ask last. A subagent
   dispatched with `run_in_background: false` has no channel back to the user, so it cannot run
   the contract's interactive "keeps iterating with the human" loop itself; this command owns
   that loop on its behalf. On feedback, re-dispatch the same `PLAN_SESSION_SUBAGENT_TYPE` with
@@ -1026,27 +1039,14 @@ When a PR was opened (or already existed), surface it in the confirmation as `Pl
 
 ---
 
-Confirm with:
+Confirm with a condensed block — 3-4 lines plus links (Chat Message Rules). Do not list every task; the full list lives in `PLAN.md` and the task store:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QUEUED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Session: {session}
+QUEUED — {session}: {count} tasks ({N} ready, {M} blocked)
+Ready first: {ids of tasks with no deps}
+{if SHIPWRIGHT_AGENT_ID is set:} The execution cron will pick up ready tasks automatically.
+{if SHIPWRIGHT_AGENT_ID is unset:} Run /shipwright:dev-task {first ready task id} to start.
 Plan: planning/{session}/PLAN.md
 Plan viz: {url}   ← omit this line if the render step was skipped
 Plan PR: {url}    ← omit this line if Step 6d skipped or failed
-Tasks queued: {count}
-
-READY TO START (no dependencies):
-{list tasks with no deps}
-
-BLOCKED (waiting on deps):
-{list tasks with deps → what they're waiting on}
-
-{if SHIPWRIGHT_AGENT_ID is set:}
-The execution cron will pick up ready tasks automatically.
-{if SHIPWRIGHT_AGENT_ID is unset (no agent configured):}
-Run /shipwright:dev-task {first ready task id} to build the first task.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
