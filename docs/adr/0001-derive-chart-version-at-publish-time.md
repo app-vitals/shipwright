@@ -31,7 +31,7 @@ them.**
   `agent.provisioning.images.coding`. It does not pin `admin`, `metrics`,
   `taskStore`, `agent` or `chat`.
 - Those five resolve from `charts/shipwright/values.yaml` defaults (or from
-  `infra/helm/shipwright/values-prod.yaml` in `vitals-os`, which is referenced
+  the environment-specific values file in the private deployment repo, which is referenced
   as `valueFiles` and which I could not inspect from this workspace; **verify
   before RCN-9.10 lands**).
 - Templates fall back to `.Chart.AppVersion` (a static `"0.1.0"`) when a tag is
@@ -118,7 +118,7 @@ Also coupled: `helm.yml` runs `ct lint --check-version-increment`, and
 
 ## Implementation steps for RCN-9.10
 
-1. Confirm `vitals-os` `values-prod.yaml` does not override the five service
+1. Confirm the private deployment repo's environment-specific values file does not override the five service
    image tags; if it does not, no gitops change is required (stamping keeps
    defaults); note the result in the PR.
 2. In `chart-release.yml`: add a `derive version` step (floor from
