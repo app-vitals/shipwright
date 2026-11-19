@@ -48,7 +48,7 @@ do not need to be *committed*. They are stamped at package time (below).
 |---|---|
 | `check-chart-drift.yml` | **Yes.** Compares committed `values.yaml` pins to the latest git tags (`lib/chart-tag-utils.sh`), and the committed library pin to the Pages `index.yaml`. If pins are no longer committed, the first half is meaningless and must change (see Decision 4). The library-pin half is unaffected. |
 | `library-chart-release.yml` | **Partly.** `bump_library_pin` (`lib/library-pin.sh`) re-pins `agent-platform` in `Chart.yaml`/`Chart.lock`, **patch-bumps the chart version**, rewrites the changelog and annotation, and opens `chore/library-chart-release`. The dependency re-pin stays a committed change (Chart.lock is real source); the version bump, changelog entry and annotation rewrite go away. |
-| `sync-plugin-version.yml` | **No.** Triggered by `agent-v*`, edits plugin/package version files only, never `charts/`. No change. (`ci.yml`'s skip-CI allowlist names `Chart.yaml`/`CHANGELOG.md`; trim it once those are no longer auto-committed.) |
+| `sync-plugin-version.yml` | **No.** Triggered by `agent-v*`, edits plugin/package version files only, never `charts/`. No change. (`ci.yml`'s skip-CI allowlist names `Chart.yaml`/`CHANGELOG.md`; trim it once those are no longer auto-committed.) Superseded: #5524 deleted this workflow and the committed plugin version, so there is no version-sync bot PR any more. |
 
 Also coupled: `helm.yml` runs `ct lint --check-version-increment`, and
 `test-auto-bump-chart.sh` mirrors the inline bump logic.
