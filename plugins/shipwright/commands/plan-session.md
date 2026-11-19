@@ -109,7 +109,7 @@ plan_lock_release() {
 }
 ```
 
-Run `plan_lock_acquire`. On `PLAN_LOCK=held` **stop**: print the holder and time it reported, write nothing, and do not release (this pass never held the lock). A missing session row (404), or an unreachable lock endpoint, never blocks — there is nothing to race on a brand-new session. After a successful acquire, **every exit from this pass releases the lock** (`plan_lock_release`): the normal end in Step 6e, and also every stop or failure after the acquire — a hard-contradiction block, a failed bulk write, an abandoned design, a failed schema validation, a missing checkout. Release first, then print the stop message.
+Run `plan_lock_acquire`. On `PLAN_LOCK=held` **stop**: print the holder and time it reported, write nothing, and do not release (this pass never held the lock). A missing session row (404), or an unreachable lock endpoint, never blocks — there is nothing to race on a brand-new session. After a successful acquire, **every exit from this pass releases the lock** (`plan_lock_release`): the normal end in Step 6e, and also every stop or failure after the acquire — a hard-contradiction block, a failed plan write, an abandoned design, a failed schema validation, a missing checkout. Release first, then print the stop message.
 
 ---
 
@@ -821,7 +821,7 @@ Source-neutral, and verbatim either way: on the built-in path this markdown is w
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
-**Step 6a.2 — Register the plan document** (skip when `DOCS_API=off`): `POST $SHIPWRIGHT_TASK_STORE_URL/documents` with `{"session": "{session}", "kind": "plan", "repo": "{home}", "path": "planning/{session}/PLAN.md", "owner": "{owner}", "repos": [{target repos}]}` (omit `owner` when empty). Registration is idempotent on `(session, kind, number)`. Keep the returned `id` as `PLAN_DOC_ID`; a failure prints a warning, leaves `PLAN_DOC_ID` empty and continues. Each planned spec's id is its `SPEC_DOC_ID` from Step 0.3.
+**Step 6a.2 — Plan document and spec ids** (skip when `DOCS_API=off`): the plan document is no longer registered by a call of its own — the single `POST /sessions/{session}/plan` in Step 6b registers it (number 1, idempotent on `(session, kind, number)`), and returns its id as `planDocumentId`. Nothing is written to the store here. Each planned spec's id is its `SPEC_DOC_ID` from Step 0.3, and the numbers of the specs this pass plans become `specs` in the Step 6b body.
 
 **Link to the plan visualization (additive — never blocks the plan).** The
 `PLAN.md` write above is complete and unchanged; this step only surfaces a
@@ -846,7 +846,7 @@ Slack channel/thread. Omit it if the step was skipped.
 
 **Step 6b — Write tasks to the store:**
 
-Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk. `repo` is the full `org/repo` of the task's target repo, one of the session's target repos. `planDocumentId` is `PLAN_DOC_ID` and `specDocumentId` is the `SPEC_DOC_ID` of the spec the task implements (its `specNumber`); `originKind` is `"document"` and `originRef` is `PLAN_DOC_ID`. `owner` is the spec's owner (Step 0.6: resolved by Step 0.6 precedence: `--owner`, then initiative, then the spec's own), which the plan and its tasks inherit; omit `owner` when empty. Omit `planDocumentId`, `specDocumentId`, `originKind`, `originRef` when `DOCS_API=off` or the registration failed:
+Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{session}/PLAN.md"` on every task — this links each task back to the plan on disk. `repo` is the full `org/repo` of the task's target repo, one of the session's target repos. `specDocumentId` is the `SPEC_DOC_ID` of the spec the task implements (its `specNumber`). `owner` is the spec's owner (Step 0.6: resolved by Step 0.6 precedence: `--owner`, then initiative, then the spec's own), which the plan and its tasks inherit; omit `owner` when empty. Do not send `planDocumentId`, `originKind` or `originRef`: on the document path the store stamps them (with `session`) from the plan document it registers, so each task gets `originKind: "document"` and `originRef` = the plan document id. Omit `specDocumentId` when `DOCS_API=off`:
 
 ```json
 [
@@ -855,11 +855,8 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
     "source": "planning/{session}/PLAN.md",
     "session": "{session}",
     "repo": "{target-repo}",
-    "planDocumentId": "{PLAN_DOC_ID}",
     "specDocumentId": "{SPEC_DOC_ID}",
     "owner": "{owner}",
-    "originKind": "document",
-    "originRef": "{PLAN_DOC_ID}",
     "title": "feat: verb-first summary",
     "description": "...",
     "acceptanceCriteria": ["...", "..."],
@@ -878,7 +875,24 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 
 Set `"hitl": true` (and include the `## Human steps` section in `description`) for every Type A HITL task in the breakdown, whichever path produced it — flagged by Step 5.5 on the built-in path, or already carried as `hitl: true` plus an injected `## Human steps` section on the returned `tasks[]` on the Configured Methodology Dispatch path. Step 6b writes the flag through as received on that path; it does not re-run Step 5.5's detection over a dispatched breakdown. That write-through is safe because the dispatch section's Schema Validation gate (check 12) already rejected any returned task whose `hitl` is missing or non-boolean, or whose `hitl: true` came without a `## Human steps` section — nothing unvalidated reaches this step.
 
-Post the tasks to the store:
+Post the plan to the store in one call. `POST /sessions/{session}/plan` is a single transaction: it ensures the session row, registers the plan document, creates the tasks, and sets `plannedAt` on the listed specs. The session's repos are derived from its tasks and documents, so there is no separate `PATCH /sessions/{session}` to widen them. Build the body with `jq`: `plan` is `{"repo": "{home}", "path": "planning/{session}/PLAN.md", "owner": "{owner}", "repos": [{target repos}]}` (omit `owner` when empty), `tasks` is the file above, and `specs` is the array of spec numbers this pass plans.
+
+```bash
+jq -n --slurpfile tasks /tmp/new-tasks-{session}.json \
+  --arg home "{home}" --arg path "planning/{session}/PLAN.md" --arg owner "{owner}" \
+  --argjson repos '["{target-repo}"]' --argjson specs '[{spec numbers}]' \
+  '{plan: ({repo: $home, path: $path, repos: $repos} + (if $owner == "" then {} else {owner: $owner} end)),
+    tasks: $tasks[0], specs: $specs}' > /tmp/plan-body-{session}.json
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/sessions/{session}/plan" \
+  --data-binary @/tmp/plan-body-{session}.json | jq .
+```
+
+The response is `{"planDocumentId": "...", "inserted": N}`; keep `planDocumentId` as `PLAN_DOC_ID` (Step 6c.2 links it to the initiative). The write is all-or-nothing: a `409` (the planning lock is held by someone else, or a task id is already taken), a `400` (an invalid task or an unregistered spec number), a `403` (a repo outside the token's scope) or a `502` leaves the store untouched — no session row, plan document, tasks or `plannedAt`. On any of them release the planning lock (Step 0.7), print the response body and stop; do not run Step 6c, 6c.2 or 6d. Re-sending the same plan is safe for the document but a `409` for task ids that now exist, so a retry after a success is not needed.
+
+**`DOCS_API=off` path** (the store lacks the document endpoints, so `/sessions/{session}/plan` does not exist either): post the same tasks file with the original bulk call, omitting `planDocumentId`, `originKind` and `originRef`, and skip `plannedAt` and the session repos entirely:
 
 ```bash
 curl -sf -X POST \
@@ -888,11 +902,11 @@ curl -sf -X POST \
   --data-binary @/tmp/new-tasks-{session}.json | jq .
 ```
 
-**Step 6b.2 — Mark specs planned and widen the session** (skip when `DOCS_API=off`; every failure here prints a warning and continues). Only after the bulk POST succeeded: for each planned spec, `PATCH $SHIPWRIGHT_TASK_STORE_URL/documents/{SPEC_DOC_ID}` with `{"plannedAt": "{now ISO}"}`; then `PATCH $SHIPWRIGHT_TASK_STORE_URL/sessions/{session}` with `{"repos": [{target repos}]}` to widen the session's declared repos (the array replaces the stored list, so send the union of the existing declared repos and this pass's targets).
+**Step 6b.2 — Spec state and session repos are written by Step 6b** (nothing to run here): `plannedAt` is set on the specs listed in `specs` and the session's repos follow from its tasks and documents, both inside the Step 6b transaction, so no step marks specs planned or widens the session afterwards. On the `DOCS_API=off` path there are no spec documents or session repos to update.
 
 **Step 6c — Autonomous mode: close out the originating PRD task** (only when `--autonomous {task-id}` was passed):
 
-Once Step 6b's bulk POST succeeds (real tasks are in the queue), transition the originating PRD task to `done` and point its `source` at the plan just written:
+Once Step 6b's plan POST succeeds (real tasks are in the queue), transition the originating PRD task to `done` and point its `source` at the plan just written:
 
 ```bash
 curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -901,11 +915,11 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -d "{\"status\": \"done\", \"source\": \"planning/{session}/PLAN.md\"}" | jq .
 ```
 
-Only run this after the bulk write succeeds — a failed or partial `tasks/bulk` POST must not mark the originating task done.
+Only run this after the Step 6b write succeeds — a failed write (or a partial `tasks/bulk` POST on the `DOCS_API=off` path) must not mark the originating task done.
 
 **Step 6c.2 — Initiative close-out** (only when `--initiative {task-id}` was passed):
 
-Both the built-in path and the Configured Methodology Dispatch path converge on Step 6b, so this step runs identically after either one. Run it only once Step 6b's bulk POST has succeeded — if the bulk write fails (or is only partial), skip it entirely.
+Both the built-in path and the Configured Methodology Dispatch path converge on Step 6b, so this step runs identically after either one. Run it only once Step 6b's write has succeeded — if the write fails (or is only partial), skip it entirely.
 
 1. `GET $SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}` (same auth header as above). On 404 or any other failure, print a warning and continue.
 2. If `kind` is not `initiative` or `idea`, print a warning and continue.
