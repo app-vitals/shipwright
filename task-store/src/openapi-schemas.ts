@@ -37,7 +37,7 @@ const cursorQueryParam = (what: string) =>
     .string()
     .optional()
     .openapi({
-      description: `Opaque cursor from a previous response's \`nextCursor\`. Returns the next page of ${what}. Mutually exclusive with \`offset\` (400); a malformed cursor is a 400.`,
+      description: `Opaque cursor from a previous response's \`nextCursor\`. Returns the next page of ${what}. A malformed cursor is a 400.`,
     });
 
 /** `nextCursor` response field shared by every cursor-paginated list route (TPG-1.2). */
@@ -776,7 +776,6 @@ export const SessionListQuerySchema = z
         "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
     }),
     limit: z.string().optional().openapi({ example: "50" }),
-    offset: z.string().optional().openapi({ example: "0" }),
     cursor: cursorQueryParam("sessions"),
   })
   .openapi("SessionListQuery");
@@ -787,7 +786,6 @@ export const SessionListResponseSchema = z
     sessions: z.array(SessionSchema),
     total: z.number().int().openapi({ example: 10 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("SessionListResponse");
@@ -962,15 +960,14 @@ export const TaskListQuerySchema = z.object({
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
   pr: z.string().optional().openapi({ example: "42" }),
   limit: z.string().optional().openapi({ example: "50" }),
-  offset: z.string().optional().openapi({ example: "0" }),
   column: z.enum(TASK_COLUMNS).optional().openapi({
     example: "blocked",
     description:
-      "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor/offset; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
+      "Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor; `total` is the exact column size. Paginated list only; an unknown value is a 400.",
   }),
   cursor: z.string().optional().openapi({
     description:
-      "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only.",
+      "Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. A malformed cursor is a 400. Paginated list only.",
   }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   accountId: z.string().optional().openapi({
@@ -1334,10 +1331,6 @@ export const PrListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "50", description: "Max records to return" }),
-    offset: z
-      .string()
-      .optional()
-      .openapi({ example: "0", description: "Pagination offset" }),
     ready: z.enum(["true", "false"]).optional().openapi({
       example: "true",
       description:
@@ -1374,7 +1367,6 @@ export const PrListResponseSchema = z
       .openapi({ description: "Array of pull requests" }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("PrListResponse");
@@ -1499,10 +1491,6 @@ export const PrEventsQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "50", description: "Max records to return" }),
-    offset: z
-      .string()
-      .optional()
-      .openapi({ example: "0", description: "Pagination offset" }),
     cursor: cursorQueryParam("events"),
   })
   .openapi("PrEventsQuery");
@@ -1516,7 +1504,6 @@ export const PrEventsResponseSchema = z
     }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("PrEventsResponse");
@@ -1528,10 +1515,6 @@ export const TaskEventsQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "50", description: "Max records to return" }),
-    offset: z
-      .string()
-      .optional()
-      .openapi({ example: "0", description: "Pagination offset" }),
     cursor: cursorQueryParam("events"),
   })
   .openapi("TaskEventsQuery");
@@ -1545,7 +1528,6 @@ export const TaskEventsResponseSchema = z
     }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("TaskEventsResponse");
@@ -1810,10 +1792,6 @@ export const VerificationCheckListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "50", description: "Max records to return" }),
-    offset: z
-      .string()
-      .optional()
-      .openapi({ example: "0", description: "Pagination offset" }),
     cursor: cursorQueryParam("verification checks"),
   })
   .openapi("VerificationCheckListQuery");
@@ -1827,7 +1805,6 @@ export const VerificationCheckListResponseSchema = z
     }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("VerificationCheckListResponse");
@@ -1941,10 +1918,6 @@ export const CoverageSnapshotListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "50", description: "Max records to return" }),
-    offset: z
-      .string()
-      .optional()
-      .openapi({ example: "0", description: "Pagination offset" }),
     accountId: z.string().optional().openapi({
       example: "default",
       description: "Admin tokens only: narrow to one account.",
@@ -1972,7 +1945,6 @@ export const CoverageSnapshotListResponseSchema = z
     }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
-    offset: z.number().int().openapi({ example: 0 }),
     nextCursor: nextCursorField,
   })
   .openapi("CoverageSnapshotListResponse");

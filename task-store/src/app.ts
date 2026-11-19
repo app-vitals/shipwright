@@ -64,7 +64,7 @@ import type { VerificationCheckServiceLike } from "./verification-check-service.
 /** No-op PullRequestService used when the feature is not wired up in a test context. */
 const noopPrService: PullRequestServiceLike = {
   async list() {
-    return { prs: [], total: 0, limit: 50, offset: 0 };
+    return { prs: [], total: 0, limit: 50 };
   },
   async get() {
     return null;

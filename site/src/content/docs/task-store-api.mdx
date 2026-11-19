@@ -82,8 +82,8 @@ Terminal statuses (dependency resolution treats these as satisfied):
 
 ### GET /tasks
 
-List tasks. Returns `{ tasks, total }` for ready/blocked queries; `{ tasks, total, limit, offset }`
-for all other queries.
+List tasks. Returns `{ tasks, total }` for ready/blocked queries; `{ tasks, total, limit, nextCursor }`
+for all other queries. Page with `cursor` and follow `nextCursor` until it is `null`.
 
 | Query param | Description |
 |---|---|
@@ -101,7 +101,7 @@ for all other queries.
 | `pr` | Filter by PR number |
 | `claimedBy` | Filter by the agent that claimed the task |
 | `limit` | Max results (pagination) |
-| `offset` | Start offset (pagination) |
+| `cursor` | Opaque cursor from a previous response's `nextCursor` (pagination) |
 
 ```bash
 # All pending tasks assigned to this agent

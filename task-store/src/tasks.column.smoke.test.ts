@@ -125,7 +125,6 @@ function fakeTaskService(opts: {
         tasks,
         total: tasks.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
         nextCursor: opts.listNextCursor,
       };
     },
@@ -200,7 +199,7 @@ function fakeTaskService(opts: {
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;

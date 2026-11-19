@@ -5,9 +5,8 @@
  * limit-taking list route except GET /tasks (see tasks.cursor.smoke.test.ts):
  * sessions, PRs, PR events, task events, verification-checks,
  * coverage-snapshots and system-cron triggers. Each route must forward
- * ?cursor to its service, return `nextCursor` (never omitted; null when the
- * service omits it) beside its unchanged array key, and 400 on
- * ?cursor + ?offset without reaching the service.
+ * ?cursor to its service and return `nextCursor` (never omitted; null when the
+ * service omits it) beside its unchanged array key.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -88,7 +87,7 @@ const SETUPS: Record<string, Setup> = {
         sessionService: stub<SessionServiceLike>({
           async list(filters: unknown) {
             calls.push(filters);
-            return { sessions: [], total: 0, limit: 50, offset: 0, nextCursor };
+            return { sessions: [], total: 0, limit: 50, nextCursor };
           },
         }),
       }),
@@ -102,7 +101,7 @@ const SETUPS: Record<string, Setup> = {
         pullRequestService: stub<PullRequestServiceLike>({
           async list(filters: unknown) {
             calls.push(filters);
-            return { prs: [], total: 0, limit: 50, offset: 0, nextCursor };
+            return { prs: [], total: 0, limit: 50, nextCursor };
           },
         }),
       }),
@@ -231,21 +230,6 @@ describe("cursor / nextCursor on list routes (smoke)", () => {
         expect(res.status).toBe(200);
         expect(s.readCursor(calls)).toBe("opaque");
       });
-
-      if (name !== "GET /system-crons/:id/triggers") {
-        it("?cursor together with ?offset is a 400 and never reaches the service", async () => {
-          const calls: Captured = [];
-          for (const offset of ["0", "5"]) {
-            const res = await s
-              .build(calls, null)
-              .request(withQuery(s.path, `cursor=opaque&offset=${offset}`), {
-                headers: ADMIN,
-              });
-            expect(res.status).toBe(400);
-          }
-          expect(calls).toHaveLength(0);
-        });
-      }
     });
   }
 });

@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List tasks
-         * @description Returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400), and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
+         * @description Returns `{ tasks, total, limit, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. Unknown query params (including `?offset`) are a 400, and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
          */
         get: {
             parameters: {
@@ -37,8 +37,9 @@ export interface paths {
                     branch?: string;
                     pr?: string;
                     limit?: string;
-                    offset?: string;
-                    /** @description Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. Mutually exclusive with `offset` (400); a malformed cursor is a 400. Paginated list only. */
+                    /** @description Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor; `total` is the exact column size. Paginated list only; an unknown value is a 400. */
+                    column?: "planning" | "ideas" | "queued" | "in_progress" | "blocked";
+                    /** @description Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. A malformed cursor is a 400. Paginated list only. */
                     cursor?: string;
                     ready?: "true" | "false";
                     /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
@@ -46,6 +47,10 @@ export interface paths {
                     hitl?: "true" | "false";
                     /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally. */
                     kind?: "dev" | "prd" | "initiative" | "idea";
+                    /** @description Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility. */
+                    scopeAgentIds?: string;
+                    /** @description Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`. */
+                    scopeRepos?: string;
                     sort?: "asc" | "desc";
                     /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
                     updatedSince?: string;
@@ -1163,16 +1168,14 @@ export interface paths {
         };
         /**
          * Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, offset, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
+         * @description Returns `{ events, total, limit, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
                 query?: {
                     /** @description Max records to return */
                     limit?: string;
-                    /** @description Pagination offset */
-                    offset?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -1437,7 +1440,7 @@ export interface paths {
         };
         /**
          * List pull requests
-         * @description Returns `{ prs, total, limit, offset, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
+         * @description Returns `{ prs, total, limit, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
          */
         get: {
             parameters: {
@@ -1454,8 +1457,6 @@ export interface paths {
                     staged?: "true" | "false";
                     /** @description Max records to return */
                     limit?: string;
-                    /** @description Pagination offset */
-                    offset?: string;
                     /** @description When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does. */
                     ready?: "true" | "false";
                     /** @description When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open). */
@@ -1466,7 +1467,7 @@ export interface paths {
                     updatedSince?: string;
                     /** @description Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values. */
                     origin?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -2276,16 +2277,14 @@ export interface paths {
         };
         /**
          * Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, offset, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
+         * @description Returns `{ events, total, limit, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
                 query?: {
                     /** @description Max records to return */
                     limit?: string;
-                    /** @description Pagination offset */
-                    offset?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -2333,7 +2332,7 @@ export interface paths {
         };
         /**
          * List sessions
-         * @description Returns `{ sessions, total, limit, offset, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
+         * @description Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the union of task repos and declared repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -2355,8 +2354,7 @@ export interface paths {
                     /** @description Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account. */
                     accountId?: string;
                     limit?: string;
-                    offset?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -3001,7 +2999,7 @@ export interface paths {
         };
         /**
          * List verification checks for a task, a PR, or a repo+checkName pair
-         * @description Returns `{ checks, total, limit, offset, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
+         * @description Returns `{ checks, total, limit, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -3015,9 +3013,7 @@ export interface paths {
                     checkName?: string;
                     /** @description Max records to return */
                     limit?: string;
-                    /** @description Pagination offset */
-                    offset?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -3126,7 +3122,7 @@ export interface paths {
         };
         /**
          * List coverage snapshots, newest first
-         * @description Returns `{ snapshots, total, limit, offset, nextCursor }` ordered by `measuredAt` descending (default `limit=50`, `offset=0`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.
+         * @description Returns `{ snapshots, total, limit, nextCursor }` ordered by `measuredAt` descending (default `limit=50`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
          */
         get: {
             parameters: {
@@ -3137,11 +3133,9 @@ export interface paths {
                     since?: string;
                     /** @description Max records to return */
                     limit?: string;
-                    /** @description Pagination offset */
-                    offset?: string;
                     /** @description Admin tokens only: narrow to one account. */
                     accountId?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -3756,7 +3750,7 @@ export interface paths {
                     accountId?: string;
                     /** @description Max triggers to return (1-50, default 5). */
                     limit?: number;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. Mutually exclusive with `offset` (400); a malformed cursor is a 400. */
+                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. A malformed cursor is a 400. */
                     cursor?: string;
                 };
                 header?: never;
@@ -4191,8 +4185,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null
@@ -4257,8 +4249,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null
@@ -4665,8 +4655,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null
@@ -4679,8 +4667,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null
@@ -5117,8 +5103,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null
@@ -5234,8 +5218,6 @@ export interface components {
             total: number;
             /** @example 50 */
             limit: number;
-            /** @example 0 */
-            offset: number;
             /**
              * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
              * @example null

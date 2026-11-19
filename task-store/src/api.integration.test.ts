@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
@@ -238,7 +238,7 @@ describeOrSkip("task-store API (integration)", () => {
 
   // ─── List response shape ───────────────────────────────────────────────────
 
-  it("GET /tasks returns { tasks, total, limit, offset }", async () => {
+  it("GET /tasks returns { tasks, total, limit, nextCursor } with no offset", async () => {
     await createPendingTask("A");
     await createPendingTask("B");
     const res = await app.request("/tasks", { headers: auth() });
@@ -247,12 +247,13 @@ describeOrSkip("task-store API (integration)", () => {
       tasks: unknown[];
       total: number;
       limit: number;
-      offset: number;
+      nextCursor: string | null;
     };
     expect(Array.isArray(body.tasks)).toBe(true);
     expect(body.total).toBe(2);
     expect(body.limit).toBe(50);
-    expect(body.offset).toBe(0);
+    expect(body.nextCursor).toBeNull();
+    expect(body).not.toHaveProperty("offset");
   });
 
   // ─── ?state filter ─────────────────────────────────────────────────────────
@@ -299,12 +300,12 @@ describeOrSkip("task-store API (integration)", () => {
 
   // ─── Pagination ────────────────────────────────────────────────────────────
 
-  it("GET /tasks?limit=2&offset=0 returns first page", async () => {
+  it("GET /tasks?limit=2 returns first page and a nextCursor", async () => {
     await createPendingTask("T1");
     await createPendingTask("T2");
     await createPendingTask("T3");
 
-    const res = await app.request("/tasks?limit=2&offset=0", {
+    const res = await app.request("/tasks?limit=2", {
       headers: auth(),
     });
     expect(res.status).toBe(200);
@@ -312,32 +313,35 @@ describeOrSkip("task-store API (integration)", () => {
       tasks: unknown[];
       total: number;
       limit: number;
-      offset: number;
+      nextCursor: string | null;
     };
     expect(body.total).toBe(3);
     expect(body.tasks.length).toBe(2);
     expect(body.limit).toBe(2);
-    expect(body.offset).toBe(0);
+    expect(body.nextCursor).not.toBeNull();
   });
 
-  it("GET /tasks?limit=2&offset=2 returns second page", async () => {
+  it("GET /tasks?limit=2&cursor= returns the second page", async () => {
     await createPendingTask("T1");
     await createPendingTask("T2");
     await createPendingTask("T3");
 
-    const res = await app.request("/tasks?limit=2&offset=2", {
-      headers: auth(),
-    });
+    const first = (await (
+      await app.request("/tasks?limit=2", { headers: auth() })
+    ).json()) as { nextCursor: string };
+    const res = await app.request(
+      `/tasks?limit=2&cursor=${encodeURIComponent(first.nextCursor)}`,
+      { headers: auth() },
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       tasks: unknown[];
       total: number;
-      limit: number;
-      offset: number;
+      nextCursor: string | null;
     };
     expect(body.total).toBe(3);
     expect(body.tasks.length).toBe(1);
-    expect(body.offset).toBe(2);
+    expect(body.nextCursor).toBeNull();
   });
 
   // ─── ready=true filter ─────────────────────────────────────────────────────

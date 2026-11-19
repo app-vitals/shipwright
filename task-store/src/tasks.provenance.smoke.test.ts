@@ -45,7 +45,7 @@ function makeApp(captured: {
   const taskService = {
     async list(filters?: TaskListFilters) {
       if (filters) captured.filters.push({ ...filters });
-      return { tasks: [], total: 0, limit: 50, offset: 0 };
+      return { tasks: [], total: 0, limit: 50 };
     },
     async create(data: unknown) {
       captured.created.push(data);

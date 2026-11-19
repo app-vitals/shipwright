@@ -65,7 +65,7 @@ function fakePrService(
     ): Promise<PullRequestListResult> {
       opts.onList?.(filters);
       const prs = Array.from(store.values());
-      return { prs, total: prs.length, limit: 50, offset: 0 };
+      return { prs, total: prs.length, limit: 50 };
     },
 
     async get(id: string): Promise<PullRequest | null> {

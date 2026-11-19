@@ -537,11 +537,11 @@ describe("VerificationCheckService.listForTask()", () => {
     expect(result).toEqual({ checks: [], total: 0, nextCursor: null });
   });
 
-  test("respects limit/offset options", async () => {
+  test("respects the limit option", async () => {
     const prisma = makePrismaDouble();
     const svc = new VerificationCheckService(prisma as never, clock);
 
-    await svc.listForTask("task-1", { limit: 10, offset: 5 });
+    await svc.listForTask("task-1", { limit: 10 });
 
     // findMany args aren't captured beyond `where` by this double's
     // signature, but the call must still have happened scoped correctly.
@@ -631,11 +631,11 @@ describe("VerificationCheckService.listByRepoAndCheck()", () => {
     expect(prisma._prFindUniqueArgs).toHaveLength(0);
   });
 
-  test("respects limit/offset options", async () => {
+  test("respects the limit option", async () => {
     const prisma = makePrismaDouble();
     const svc = new VerificationCheckService(prisma as never, clock);
 
-    await svc.listByRepoAndCheck("org/repo", "lint", { limit: 5, offset: 1 });
+    await svc.listByRepoAndCheck("org/repo", "lint", { limit: 5 });
 
     expect(prisma._findManyCalls).toHaveLength(1);
   });

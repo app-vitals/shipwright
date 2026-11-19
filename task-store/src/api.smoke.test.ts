@@ -14,11 +14,12 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
+import type { ScopeResolver } from "./auth.ts";
 import {
+  BadRequestError,
   ConflictError,
   NotFoundError,
   WebhookDeliveryError,
-  BadRequestError,
 } from "./errors.ts";
 import type { Task } from "./index.ts";
 import type { SessionServiceLike } from "./session-service.ts";
@@ -29,13 +30,12 @@ import type {
   TaskWithBlockedBy,
 } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
-import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -195,7 +195,6 @@ function fakeTaskService(
         tasks,
         total: tasks.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
       };
     },
     async listReady() {
@@ -722,7 +721,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(opts?) {
         capturedAssignees.push(opts?.assignee);
-        return { tasks: [], total: 0, limit: 50, offset: 0 };
+        return { tasks: [], total: 0, limit: 50 };
       },
     };
 
@@ -946,7 +945,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(filters?) {
         capturedFilters.push(filters ?? {});
-        return { tasks: [], total: 0, limit: 50, offset: 0 };
+        return { tasks: [], total: 0, limit: 50 };
       },
     };
 
@@ -984,7 +983,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(filters?) {
         capturedFilters.push(filters ?? {});
-        return { tasks: [], total: 0, limit: 50, offset: 0 };
+        return { tasks: [], total: 0, limit: 50 };
       },
     };
 
@@ -1180,7 +1179,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async list(filters?) {
         capturedFilters.push(filters ?? {});
-        return { tasks: [], total: 0, limit: 50, offset: 0 };
+        return { tasks: [], total: 0, limit: 50 };
       },
     };
 

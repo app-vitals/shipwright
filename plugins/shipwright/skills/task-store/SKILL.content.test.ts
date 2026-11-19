@@ -101,14 +101,12 @@ describe("SKILL.md — cursor paging contract (TPG-1.2)", () => {
     expect(skillContent).toContain("nextCursor");
     expect(skillContent).toContain("?cursor=");
     expect(skillContent).toMatch(/until it is `null`/);
-    expect(skillContent).toContain(
-      "`?cursor` together with `?offset` is a `400`",
-    );
+    expect(skillContent).toContain("`?offset` is no longer accepted");
   });
 
-  it("no longer describes offset paging (only the cursor+offset 400 is mentioned)", () => {
+  it("no longer describes offset paging (only the removal note mentions offset)", () => {
     const stripped = skillContent.replace(
-      "`?cursor` together with `?offset` is a `400`",
+      "`?offset` is no longer accepted: a leftover `?offset` is a `400` on `GET /tasks` and `GET /sessions` (unknown query parameters are rejected there) and is ignored on the other list routes.",
       "",
     );
     expect(stripped).not.toContain("offset");
@@ -148,7 +146,9 @@ describe("SKILL.md — plan write endpoint (PWE-3.2)", () => {
   });
 
   it("lists the plan endpoint in the API reference table", () => {
-    expect(skillContent).toMatch(/\|\s*`POST`\s*\|\s*`\/sessions\/:slug\/plan`/);
+    expect(skillContent).toMatch(
+      /\|\s*`POST`\s*\|\s*`\/sessions\/:slug\/plan`/,
+    );
   });
 
   it("keeps POST /tasks/bulk documented for the other fix skills", () => {

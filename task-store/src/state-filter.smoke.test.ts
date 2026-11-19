@@ -123,7 +123,6 @@ function fakeTaskService(opts: {
         tasks,
         total: tasks.length,
         limit: filters?.limit ?? 50,
-        offset: filters?.offset ?? 0,
       };
     },
     async listReady(agentId?: string) {
@@ -197,7 +196,7 @@ function fakeTaskService(opts: {
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -460,7 +459,7 @@ describe("GET /tasks state filter (smoke)", () => {
     const body = (await res.json()) as TaskListResult;
     expect(typeof body.total).toBe("number");
     expect(typeof body.limit).toBe("number");
-    expect(typeof body.offset).toBe("number");
+    expect(body).not.toHaveProperty("offset");
     expect(Array.isArray(body.tasks)).toBe(true);
   });
 

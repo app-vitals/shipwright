@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
 import { BadRequestError } from "./errors.ts";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { SessionService } from "./session-service.ts";
 import { SystemCronService } from "./system-cron-service.ts";
@@ -199,13 +199,6 @@ describeOrSkip("cursor walks on list services (integration)", () => {
       return { items: r.prs, nextCursor: r.nextCursor };
     });
     expect(new Set(rows.map((p) => p.id)).size).toBe(N);
-  });
-
-  it("GET /prs — ?cursor together with offset is a 400", async () => {
-    const service = new PullRequestService(prisma);
-    await expect(service.list({ cursor: "x", offset: 1 })).rejects.toThrow(
-      BadRequestError,
-    );
   });
 
   it("GET /verification-checks — asc (task) and desc (repo+check) walks", async () => {

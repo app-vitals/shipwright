@@ -225,11 +225,10 @@ export interface PullRequestListFilters {
   reviewState?: string;
   staged?: boolean;
   limit?: number;
-  offset?: number;
   /**
    * Opaque keyset cursor (see lib/cursor.ts): return PRs strictly after the
-   * encoded (createdAt, id) position. Mutually exclusive with `offset`.
-   * With `blocked` (in-memory filtering) the cursor wraps an internal offset.
+   * encoded (createdAt, id) position. With `blocked` (in-memory filtering)
+   * the cursor wraps an internal offset.
    */
   cursor?: string;
   /**
@@ -295,7 +294,6 @@ export interface PullRequestListResult {
   prs: PullRequest[];
   total: number;
   limit: number;
-  offset: number;
   /** Cursor for the next page; null on the last page. Route coerces undefined to null. */
   nextCursor?: string | null;
 }
@@ -440,7 +438,7 @@ export interface PullRequestServiceLike {
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
   getEvents(
     prId: string,
-    opts?: { limit?: number; offset?: number; cursor?: string },
+    opts?: { limit?: number; cursor?: string },
   ): Promise<GetEventsResult>;
   lookupBlockedPrNumbers(pairs: BlockedPrLookupKey[]): Promise<Set<number>>;
   /**
@@ -532,12 +530,8 @@ export class PullRequestService implements PullRequestServiceLike {
         : callerWhere;
 
     const limit = filters.limit ?? 50;
-    const offset = filters.offset ?? 0;
     const sortDir = filters.sort ?? ("asc" as const);
     const orderBy = [{ createdAt: sortDir }, { id: sortDir }];
-    if (filters.cursor !== undefined && filters.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
 
     if (filters.blocked) {
       // The blocked predicate depends on linked Task rows, which are joined
@@ -589,15 +583,12 @@ export class PullRequestService implements PullRequestServiceLike {
 
       // The blocked set is derived in memory, so the cursor wraps an offset.
       const start =
-        filters.cursor !== undefined
-          ? decodeOffsetCursor(filters.cursor)
-          : offset;
+        filters.cursor !== undefined ? decodeOffsetCursor(filters.cursor) : 0;
       const end = start + limit;
       return {
         prs: blockedPrs.slice(start, end),
         total: blockedPrs.length,
         limit,
-        offset: start,
         nextCursor: end < blockedPrs.length ? encodeOffsetCursor(end) : null,
       };
     }
@@ -617,7 +608,6 @@ export class PullRequestService implements PullRequestServiceLike {
         where: pageWhere,
         orderBy,
         take: limit + 1,
-        skip: offset,
         include: { findings: true, events: true },
       }),
       this.prisma.pullRequest.count({ where }),
@@ -630,7 +620,7 @@ export class PullRequestService implements PullRequestServiceLike {
         ? encodeCursor({ createdAt: last.createdAt, id: last.id })
         : null;
 
-    return { prs, total, limit, offset, nextCursor };
+    return { prs, total, limit, nextCursor };
   }
 
   async get(id: string): Promise<PullRequest | null> {
@@ -1523,7 +1513,7 @@ export class PullRequestService implements PullRequestServiceLike {
    */
   async getEvents(
     prId: string,
-    opts: { limit?: number; offset?: number; cursor?: string } = {},
+    opts: { limit?: number; cursor?: string } = {},
   ): Promise<GetEventsResult> {
     const existing = await this.prisma.pullRequest.findUnique({
       where: { id: prId },
@@ -1534,11 +1524,6 @@ export class PullRequestService implements PullRequestServiceLike {
     }
 
     const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
-
-    if (opts.cursor !== undefined && opts.offset) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const pageWhere: Prisma.PullRequestEventWhereInput =
       opts.cursor !== undefined
         ? {
@@ -1555,7 +1540,6 @@ export class PullRequestService implements PullRequestServiceLike {
         where: pageWhere,
         orderBy: [{ at: "asc" }, { id: "asc" }],
         take: limit + 1,
-        skip: offset,
       }),
       this.prisma.pullRequestEvent.count({ where: { prRecordId: prId } }),
     ]);

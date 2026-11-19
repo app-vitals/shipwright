@@ -26,11 +26,11 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?column=planning|ideas|queued|in_progress|blocked, ?limit, ?offset, ?cursor, ?sort, ?ready=true)
- *                              returns { tasks, total, nextCursor, scopeDegraded } — scopeDegraded
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?column=planning|ideas|queued|in_progress|blocked, ?limit, ?cursor, ?sort, ?ready=true)
+ *                              returns { tasks, total, limit, nextCursor, scopeDegraded } — scopeDegraded
  *                              nextCursor is an opaque keyset cursor (createdAt,id) for the next
  *                              page, null on the last page (and always null for ?ready/?state=blocked);
- *                              ?cursor and ?offset together are a 400. scopeDegraded
+ *                              Unknown query params (including ?offset) are a 400. scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
  *                              failed upstream; see auth.ts)
@@ -64,7 +64,7 @@
  *   POST   /tasks/:id/unblock   atomic unblock (409 unless status='blocked') —
  *                              clears blockedReason/blockedAt/claimedBy/claimedAt/
  *                              heartbeatAt and resets skipCount/lastSkippedAt
- *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset, ?cursor; returns nextCursor)
+ *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?cursor; returns nextCursor)
  */
 
 import { readJson } from "@app-vitals/agent-lib/http";
@@ -469,7 +469,7 @@ const listRoute = createRoute({
   tags: ["tasks"],
   summary: "List tasks",
   description:
-    "Returns `{ tasks, total, limit, offset, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400), and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
+    "Returns `{ tasks, total, limit, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. Unknown query params (including `?offset`) are a 400, and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
   request: {
     query: TaskListQuerySchema,
   },
@@ -1004,7 +1004,7 @@ const eventsRoute = createRoute({
   summary:
     "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
   description:
-    "Returns `{ events, total, limit, offset, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. `?cursor` and `?offset` are mutually exclusive (400) and a malformed cursor is a 400.",
+    "Returns `{ events, total, limit, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.",
   request: {
     params: TaskIdParamSchema,
     query: TaskEventsQuerySchema,
@@ -1063,7 +1063,7 @@ export function createTasksRoutes(
     const originKind = c.req.query("originKind") as OriginKind | undefined;
     const originRef = c.req.query("originRef");
 
-    // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
+    // Note: ?updatedSince and ?limit are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
     // the ?state=blocked branch). Both are convenience endpoints computed
     // over the *entire* task graph (dependency resolution needs every task,
@@ -1130,7 +1130,6 @@ export function createTasksRoutes(
     }
 
     const limitRaw = c.req.query("limit");
-    const offsetRaw = c.req.query("offset");
     const state =
       stateRaw === "open" || stateRaw === "closed" || stateRaw === "in_progress"
         ? stateRaw
@@ -1148,9 +1147,6 @@ export function createTasksRoutes(
     }
 
     const cursor = c.req.query("cursor");
-    if (cursor !== undefined && offsetRaw !== undefined) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
 
     // Multi-agent scope is admin-token only; an agent token must never widen
     // its own visibility with it.
@@ -1197,10 +1193,6 @@ export function createTasksRoutes(
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
-          : undefined,
-      offset:
-        offsetRaw !== undefined
-          ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
       sort: c.req.query("sort") === "desc" ? "desc" : undefined,
       updatedSince: c.req.query("updatedSince"),
@@ -1585,23 +1577,14 @@ export function createTasksRoutes(
     );
 
     const limitRaw = c.req.query("limit");
-    const offsetRaw = c.req.query("offset");
     const cursor = c.req.query("cursor");
-    if (cursor !== undefined && offsetRaw !== undefined) {
-      throw new BadRequestError("cursor and offset are mutually exclusive");
-    }
     const limit =
       limitRaw !== undefined
         ? Number.parseInt(limitRaw, 10) || undefined
         : undefined;
-    const offset =
-      offsetRaw !== undefined
-        ? Number.parseInt(offsetRaw, 10) || undefined
-        : undefined;
 
     const result = await taskService.getEvents(c.req.param("id"), {
       limit,
-      offset,
       cursor,
     });
 
@@ -1610,7 +1593,6 @@ export function createTasksRoutes(
         events: result.events,
         total: result.total,
         limit: limit ?? 50,
-        offset: offset ?? 0,
         nextCursor: result.nextCursor ?? null,
       },
       200,

@@ -4,6 +4,21 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `?offset` removed from list endpoints _(TPG-3.1)_
+
+**Version**: next (TPG-3.1)
+
+**Who this affects**: any task-store API client that paginates with `?offset=`.
+
+- `?offset` is removed from every list route (`GET /tasks`, `/prs`, `/sessions`, `/verification-checks`,
+  `/coverage-snapshots`, and the `/tasks/:id/events` and `/prs/:id/events` lists). Page with `?cursor=`
+  and follow `nextCursor` until it is `null`.
+- Responses no longer carry an `offset` field; `nextCursor` replaces it as the paging signal.
+- A leftover `?offset` is a `400` on `GET /tasks` and `GET /sessions` (unknown query parameter, see
+  PLU-1.1 below) and is ignored on the other list routes.
+
+---
+
 ## Breaking: `GET /tasks` and `GET /sessions` reject unknown query parameters _(PLU-1.1)_
 
 **Version**: next (PLU-1.1)

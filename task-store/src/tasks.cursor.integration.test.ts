@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { BadRequestError } from "./errors.ts";
 import { encodeCursor } from "./lib/cursor.ts";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -75,15 +75,6 @@ describeOrSkip("TaskService.list keyset cursor (integration)", () => {
     throw new Error("cursor walk did not terminate");
   }
 
-  async function walkOffset(limit: number, sort: "asc" | "desc") {
-    const ids: string[] = [];
-    for (let offset = 0; offset < ROWS.length; offset += limit) {
-      const page = await service.list({ limit, offset, sort });
-      ids.push(...page.tasks.map((t) => t.id));
-    }
-    return ids;
-  }
-
   const expected = (sort: "asc" | "desc") => {
     const asc = [...ROWS]
       .sort(
@@ -103,26 +94,12 @@ describeOrSkip("TaskService.list keyset cursor (integration)", () => {
         expect(new Set(ids).size).toBe(ROWS.length);
       });
     }
-
-    it(`cursor walk equals an offset walk (sort=${sort})`, async () => {
-      expect(await walkCursor(3, sort)).toEqual(await walkOffset(3, sort));
-    });
   }
 
   it("nextCursor is null when the page is exactly the remainder", async () => {
     const page = await service.list({ limit: ROWS.length });
     expect(page.tasks).toHaveLength(ROWS.length);
     expect(page.nextCursor).toBeNull();
-  });
-
-  it("nextCursor is set in offset mode too, and resumes correctly", async () => {
-    const first = await service.list({ limit: 4, offset: 2 });
-    expect(first.nextCursor).not.toBeNull();
-    const next = await service.list({
-      limit: 4,
-      cursor: first.nextCursor as string,
-    });
-    expect(next.tasks.map((t) => t.id)).toEqual(expected("asc").slice(6, 10));
   });
 
   it("a cursor whose row was deleted still resumes at its position", async () => {
@@ -198,11 +175,7 @@ describeOrSkip("TaskService.list keyset cursor (integration)", () => {
     expect(ids).toEqual(["k-01", "k-02", "k-03", "k-04"]);
   });
 
-  it("rejects cursor + offset and malformed cursors with BadRequestError", async () => {
-    const cursor = encodeCursor({ createdAt: T1, id: "k-01" });
-    await expect(service.list({ cursor, offset: 2 })).rejects.toBeInstanceOf(
-      BadRequestError,
-    );
+  it("rejects malformed cursors with BadRequestError", async () => {
     await expect(service.list({ cursor: "garbage!!" })).rejects.toBeInstanceOf(
       BadRequestError,
     );

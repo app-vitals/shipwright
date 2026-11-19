@@ -35,8 +35,7 @@
         }
       ],
       "total": 2,
-      "limit": 200,
-      "offset": 0
+      "limit": 200
     }
   },
   "listTasks_server_error": {

@@ -12,7 +12,7 @@
  *     row updated, still exactly one row
  *   - POST → 400 on linesTotal 0 / covered > total (any pair) / empty
  *     commitSha / malformed repo; agent token out-of-scope repo → 403
- *   - GET ?repo= newest first, honouring since/limit/offset
+ *   - GET ?repo= newest first, honouring since/limit
  *   - GET /latest → exactly one row per repo, newest by measuredAt
  *   - Agent tokens only see their own account; admin may pass accountId
  */
@@ -36,7 +36,7 @@ const AGENT_TOKEN = "agent-token";
 function fakeSessionService(): SessionServiceLike {
   return {
     async list() {
-      return { sessions: [], total: 0, limit: 50, offset: 0 };
+      return { sessions: [], total: 0, limit: 50 };
     },
     async get() {
       return null;
@@ -235,11 +235,11 @@ function makePrismaDouble() {
             return true;
           });
         }
-        const offset = skip ?? 0;
+        const start = skip ?? 0;
         return Promise.resolve(
           take !== undefined
-            ? matched.slice(offset, offset + take)
-            : matched.slice(offset),
+            ? matched.slice(start, start + take)
+            : matched.slice(start),
         );
       },
       count({ where = {} }: { where?: Record<string, unknown> }) {
@@ -410,7 +410,7 @@ describe("/coverage-snapshots routes (smoke)", () => {
       }
     }
 
-    it("?repo= returns only that repo, newest first, with total/limit/offset", async () => {
+    it("?repo= returns only that repo, newest first, with total/limit", async () => {
       const { app } = makeApp();
       await seed(app);
       const res = await app.request("/coverage-snapshots?repo=org/a", {
@@ -421,17 +421,16 @@ describe("/coverage-snapshots routes (smoke)", () => {
         snapshots: { commitSha: string }[];
         total: number;
         limit: number;
-        offset: number;
       };
       expect(body.snapshots.map((s) => s.commitSha)).toEqual([
         "s3",
         "s2",
         "s1",
       ]);
-      expect(body).toMatchObject({ total: 3, limit: 50, offset: 0 });
+      expect(body).toMatchObject({ total: 3, limit: 50 });
     });
 
-    it("honours since, limit and offset", async () => {
+    it("honours since and limit", async () => {
       const { app } = makeApp();
       await seed(app);
       const since = await app.request(
@@ -445,17 +444,18 @@ describe("/coverage-snapshots routes (smoke)", () => {
       expect(sb.snapshots.map((s) => s.commitSha)).toEqual(["s3", "s2"]);
       expect(sb.total).toBe(2);
 
-      const page = await app.request(
-        "/coverage-snapshots?repo=org/a&limit=1&offset=1",
-        { headers: admin },
-      );
+      const page = await app.request("/coverage-snapshots?repo=org/a&limit=1", {
+        headers: admin,
+      });
       const pb = (await page.json()) as {
         snapshots: { commitSha: string }[];
         limit: number;
-        offset: number;
+        nextCursor: string | null;
       };
-      expect(pb.snapshots.map((s) => s.commitSha)).toEqual(["s2"]);
-      expect(pb).toMatchObject({ limit: 1, offset: 1 });
+      expect(pb.snapshots.map((s) => s.commitSha)).toEqual(["s3"]);
+      expect(pb).toMatchObject({ limit: 1 });
+      expect(pb.nextCursor).not.toBeNull();
+      expect(pb).not.toHaveProperty("offset");
     });
 
     it("400 on malformed since", async () => {
