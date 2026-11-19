@@ -23,3 +23,13 @@ export const OPEN_STATUSES = [
   "approved",
   "blocked",
 ] as const;
+
+/** Board columns filterable via GET /tasks?column= (TPG-1.3). */
+export const TASK_COLUMNS = [
+  "planning",
+  "ideas",
+  "queued",
+  "in_progress",
+  "blocked",
+] as const;
+export type TaskColumn = (typeof TASK_COLUMNS)[number];

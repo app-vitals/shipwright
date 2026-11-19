@@ -26,7 +26,7 @@
  *     identical whether the id is taken in its own account or another.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?limit, ?offset, ?cursor, ?sort, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?owner, ?originKind=document|skill|cron|human, ?originRef, ?createdFrom, ?createdTo, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd|initiative|idea, ?column=planning|ideas|queued|in_progress|blocked, ?limit, ?offset, ?cursor, ?sort, ?ready=true)
  *                              returns { tasks, total, nextCursor, scopeDegraded } — scopeDegraded
  *                              nextCursor is an opaque keyset cursor (createdAt,id) for the next
  *                              page, null on the last page (and always null for ?ready/?state=blocked);
@@ -110,6 +110,7 @@ import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import {
   MAX_BULK_TASKS,
   MAX_PATCH_BY_PR_NUMBERS,
+  type TaskColumn,
   type TaskServiceLike,
   UNBLOCK_TARGETS,
   type UnblockTarget,
@@ -1024,6 +1025,8 @@ export function createTasksRoutes(
     // TKD-1.1. The zod query schema already rejects anything outside the enum
     // with a 400, so a present value is always a TaskKind here.
     const kind = c.req.query("kind") as TaskKind | undefined;
+    // TPG-1.3: the zod enum already 400s unknown columns.
+    const column = c.req.query("column") as TaskColumn | undefined;
     // PLU-2.5: same registered-list guarantee for originKind.
     const owner = c.req.query("owner");
     const originKind = c.req.query("originKind") as OriginKind | undefined;
@@ -1134,6 +1137,7 @@ export function createTasksRoutes(
       originRef,
       hitl,
       kind,
+      column,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
