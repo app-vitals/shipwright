@@ -107,7 +107,7 @@ const dialRows = [
         <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
           Crons: <code class="sw-mono">dev-task</code> on.
           <code class="sw-mono">review</code>, <code class="sw-mono">patch</code>,
-          <code class="sw-mono">deploy</code> off.
+          <code class="sw-mono">merge</code> off.
         </p>
       </div>
       <div class="sw-card flex flex-col gap-2">
@@ -120,7 +120,7 @@ const dialRows = [
         </p>
         <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
           Crons: <code class="sw-mono">dev-task</code>, <code class="sw-mono">review</code>,
-          <code class="sw-mono">patch</code> on. <code class="sw-mono">deploy</code> off.
+          <code class="sw-mono">patch</code> on. <code class="sw-mono">merge</code> off.
         </p>
       </div>
       <div class="sw-card flex flex-col gap-2">
@@ -128,7 +128,7 @@ const dialRows = [
         <h3 class="text-xl">Close the loop.</h3>
         <p>
           The agent merges approved PRs and watches post-merge CI. Plan,
-          build, review, patch, deploy, without manual intervention.
+          build, review, patch, merge, without manual intervention.
         </p>
         <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
           Crons: all on.
@@ -139,7 +139,7 @@ const dialRows = [
     <div class="sw-callout mt-6 max-w-3xl">
       <p>
         Only turn on Stage 3 once the safeguards are in place: CI gates,
-        required reviewers, and a working deploy pre-check. The docs say the
+        required reviewers, and a working merge pre-check. The docs say the
         same thing, and we mean it.
       </p>
     </div>
@@ -189,7 +189,7 @@ const dialRows = [
       </li>
       <li>
         <strong>Bring your own PR:</strong> skip the queue entirely. Open a
-        PR yourself and let review, patch, and deploy take it from there.
+        PR yourself and let review, patch, and merge take it from there.
       </li>
     </ul>
   </section>

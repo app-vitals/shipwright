@@ -65,12 +65,12 @@ test("all three stages render with their crons", async ({ page }) => {
 
   expect(text).toContain("close the loop.");
   expect(text).toContain(
-    "plan, build, review, patch, deploy, without manual intervention",
+    "plan, build, review, patch, merge, without manual intervention",
   );
 
   // Stage 3 safeguards callout.
   expect(text).toContain("ci gates, required reviewers");
-  expect(text).toContain("deploy pre-check");
+  expect(text).toContain("merge pre-check");
 });
 
 test("the dial-in-detail table lists the four agent-policy settings", async ({
