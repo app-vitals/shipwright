@@ -10,12 +10,15 @@ The headline machine-checkable verdict — computed by `${CLAUDE_PLUGIN_ROOT}/sc
 (CGT-1.2), rendered verbatim below. See Process step for the render step's refusal
 behavior when this block cannot be computed. `line_coverage_pct` is nullable: render a
 number as `87%`, and a `null` (line coverage unmeasured — no `shipwright-coverage` artifact) as
-`not reporting`, with `line_coverage_source` giving the reason.
+`not reporting`, with `line_coverage_source` giving the reason. `branch_coverage_pct` is
+nullable too: a `null` (the coverage artifact carries no branch data) renders as
+`not measured` and does not affect the verdict.
 
 | Field | Value |
 |---|---|
 | Feature coverage | {{FEATURE_COVERAGE_PCT}}% (target {{FEATURE_TARGET}}%) — source: {{FEATURE_COVERAGE_SOURCE}} |
 | Line coverage | {{LINE_COVERAGE_PCT}} (target {{LINE_TARGET}}%) — source: {{LINE_COVERAGE_SOURCE}} |
+| Branch coverage | {{BRANCH_COVERAGE_PCT}} (target {{BRANCH_TARGET}}%) — source: {{BRANCH_COVERAGE_SOURCE}} |
 | **Verdict** | **{{COVERAGE_VERDICT}}** |
 
 ## 1. Where we are now

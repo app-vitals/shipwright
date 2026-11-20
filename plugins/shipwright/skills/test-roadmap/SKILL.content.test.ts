@@ -204,6 +204,16 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
     expect(section).not.toContain("Lines:");
   });
 
+  it("sources branchPct from the same reader result, unmeasured as null and non-blocking", () => {
+    const section = coverageGateStepSection().replace(/\s+/g, " ");
+    expect(section).toContain("branchPct");
+    expect(section).toContain("branches.covered / branches.total");
+    expect(section).toContain("no second call");
+    expect(section).toContain("branchPct: null");
+    expect(section).toContain("does not block");
+    expect(section).toContain("`not measured`");
+  });
+
   it("sources featurePct from test-inventory.md's feature_coverage_pct", () => {
     const section = coverageGateStepSection();
     expect(section).toContain("featurePct");
@@ -279,21 +289,24 @@ describe("SKILL.md — refuses to write test-readiness-plan.md on script failure
 });
 
 describe("SKILL.md — template placeholders wired from the script output", () => {
-  it("lists all seven Coverage Gate placeholders in the render step", () => {
+  it("lists all ten Coverage Gate placeholders in the render step", () => {
     const renderIdx = content.indexOf(
       // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted skill text, not JS interpolation
       "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
     );
     expect(renderIdx).toBeGreaterThan(-1);
-    const section = content.slice(renderIdx, renderIdx + 800);
+    const section = content.slice(renderIdx, renderIdx + 900);
     for (const placeholder of [
       "{{FEATURE_COVERAGE_PCT}}",
       "{{FEATURE_COVERAGE_SOURCE}}",
       "{{LINE_COVERAGE_PCT}}",
       "{{LINE_COVERAGE_SOURCE}}",
+      "{{BRANCH_COVERAGE_PCT}}",
+      "{{BRANCH_COVERAGE_SOURCE}}",
       "{{COVERAGE_VERDICT}}",
       "{{FEATURE_TARGET}}",
       "{{LINE_TARGET}}",
+      "{{BRANCH_TARGET}}",
     ]) {
       expect(section).toContain(placeholder);
     }
@@ -504,15 +517,18 @@ describe("test-readiness-plan.md.tmpl — Coverage Gate section", () => {
     expect(headerIdx).toBeLessThan(section1Idx);
   });
 
-  it("has placeholders for all six coverage_gate fields plus both targets", () => {
+  it("has placeholders for every coverage_gate field plus all three targets", () => {
     for (const placeholder of [
       "{{FEATURE_COVERAGE_PCT}}",
       "{{FEATURE_COVERAGE_SOURCE}}",
       "{{LINE_COVERAGE_PCT}}",
       "{{LINE_COVERAGE_SOURCE}}",
+      "{{BRANCH_COVERAGE_PCT}}",
+      "{{BRANCH_COVERAGE_SOURCE}}",
       "{{COVERAGE_VERDICT}}",
       "{{FEATURE_TARGET}}",
       "{{LINE_TARGET}}",
+      "{{BRANCH_TARGET}}",
     ]) {
       expect(templateContent).toContain(placeholder);
     }
@@ -526,12 +542,14 @@ describe("test-readiness-plan.md.tmpl — Coverage Gate section", () => {
 });
 
 describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2 output wiring)", () => {
-  it("fills all seven Coverage Gate placeholders from a sample computeCoverageGate() output", () => {
+  it("fills all ten Coverage Gate placeholders from a sample computeCoverageGate() output", () => {
     const gate = computeCoverageGate({
       featurePct: 92,
       featureSource: "docs/test-readiness/test-inventory.md",
       linePct: 95,
       lineSource: "CI run https://example.invalid/run/1 @ abc1234",
+      branchPct: 83,
+      branchSource: "CI run https://example.invalid/run/1 @ abc1234",
     });
 
     const headerIdx = templateContent.indexOf("## Coverage Gate");
@@ -545,9 +563,13 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
       .replaceAll("{{LINE_COVERAGE_SOURCE}}", gate.line_coverage_source)
       .replaceAll("{{COVERAGE_VERDICT}}", gate.verdict)
       .replaceAll("{{FEATURE_TARGET}}", String(gate.targets.feature))
-      .replaceAll("{{LINE_TARGET}}", String(gate.targets.line));
+      .replaceAll("{{LINE_TARGET}}", String(gate.targets.line))
+      .replaceAll("{{BRANCH_COVERAGE_PCT}}", `${gate.branch_coverage_pct}%`)
+      .replaceAll("{{BRANCH_COVERAGE_SOURCE}}", gate.branch_coverage_source)
+      .replaceAll("{{BRANCH_TARGET}}", String(gate.targets.branch));
 
     expect(filled).not.toMatch(/\{\{[A-Z_]+\}\}/);
+    expect(filled).toContain("Branch coverage | 83% (target 80%)");
     expect(filled).toContain("92% (target 90%)");
     expect(filled).toContain("95% (target 90%)");
     expect(filled).toContain("docs/test-readiness/test-inventory.md");
@@ -574,6 +596,31 @@ describe("test-readiness-plan.md.tmpl — template substitution fixture (CGT-1.2
       );
     expect(filled).toContain("Line coverage | not reporting (target");
     expect(gate.verdict).toBe("BLOCKED: line coverage not reporting");
+  });
+
+  it("renders a null branch_coverage_pct as 'not measured' without blocking", () => {
+    const gate = computeCoverageGate({
+      featurePct: 92,
+      featureSource: "docs/test-readiness/test-inventory.md",
+      linePct: 95,
+      lineSource: "CI run https://example.invalid/run/3 @ 0a1b2c3",
+    });
+    const headerIdx = templateContent.indexOf("## Coverage Gate");
+    const section1Idx = templateContent.indexOf("## 1. Where we are now");
+    const filled = templateContent
+      .slice(headerIdx, section1Idx)
+      .replaceAll(
+        "{{BRANCH_COVERAGE_PCT}}",
+        gate.branch_coverage_pct === null
+          ? "not measured"
+          : `${gate.branch_coverage_pct}%`,
+      )
+      .replaceAll("{{BRANCH_COVERAGE_SOURCE}}", gate.branch_coverage_source)
+      .replaceAll("{{BRANCH_TARGET}}", String(gate.targets.branch));
+    expect(filled).toContain(
+      "Branch coverage | not measured (target 80%) — source: not measured",
+    );
+    expect(gate.verdict).toBe("READY");
   });
 
   it("renders a BLOCKED verdict verbatim (not paraphrased) when a gate fails", () => {

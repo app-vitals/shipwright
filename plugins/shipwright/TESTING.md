@@ -1315,6 +1315,15 @@ filing the uncited row and prints `Skipping {T-NNN} — line-coverage task has n
 feature/error-path mapping (possible coverage gaming)`; a line-coverage row that does cite a
 genuine uncovered error path (e.g. an untested `catch` block) files normally.
 
+### TR-28b — Coverage Gate reports branch coverage, blocking only when it is measured
+**Steps:** `bun test plugins/shipwright/scripts/check-coverage-gate.unit.test.ts` covers the
+verdict logic. For the prompt side, run `/test-roadmap` against (a) a repo whose
+`shipwright-coverage` artifact carries branch data below 80%, and (b) a repo whose toolchain
+emits no branch data.
+**Expected:** (a) the Coverage Gate table has a `Branch coverage` row with the measured
+percentage and the verdict reads `BLOCKED: ... branch coverage <n>% < 80%`. (b) the row reads
+`not measured` and the verdict is decided by feature and line coverage alone.
+
 ---
 
 ## Versioning Checklist (for every PR to this repo)
