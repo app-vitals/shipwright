@@ -44,6 +44,9 @@ never percentages, so reports can be summed:
 ```
 
 `lines` is required. `branches`, `functions` and `tool` are optional.
+When `branches` is present, the test-readiness Coverage Gate holds it to a
+branch target (80% by default); when it is absent, branch coverage is reported
+as not measured and does not block the gate.
 `covered` and `total` must be integers with `0 <= covered <= total`; a file
 that violates this is treated as invalid.
 

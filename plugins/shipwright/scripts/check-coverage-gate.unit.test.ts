@@ -12,7 +12,11 @@
  */
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { computeCoverageGate, parseCliInput } from "./check-coverage-gate";
+import {
+  BRANCH_NOT_MEASURED_SOURCE,
+  computeCoverageGate,
+  parseCliInput,
+} from "./check-coverage-gate";
 
 const SCRIPT_PATH = join(import.meta.dir, "check-coverage-gate.ts");
 
@@ -49,7 +53,7 @@ describe("computeCoverageGate", () => {
     );
     expect(result.line_coverage_pct).toBe(95);
     expect(result.line_coverage_source).toBe("coverage/lcov.info");
-    expect(result.targets).toEqual({ feature: 90, line: 90 });
+    expect(result.targets).toEqual({ feature: 90, line: 90, branch: 80 });
   });
 
   it("treats exactly 90% as passing for both gates (boundary)", () => {
@@ -94,9 +98,9 @@ describe("computeCoverageGate", () => {
     expect(result.verdict).toContain("line coverage 84% < 90%");
   });
 
-  it("defaults targets to { feature: 90, line: 90 } when not supplied", () => {
+  it("defaults targets to { feature: 90, line: 90, branch: 80 } when not supplied", () => {
     const result = computeCoverageGate(BASE_INPUT);
-    expect(result.targets).toEqual({ feature: 90, line: 90 });
+    expect(result.targets).toEqual({ feature: 90, line: 90, branch: 80 });
   });
 
   it("respects caller-supplied targets", () => {
@@ -109,7 +113,7 @@ describe("computeCoverageGate", () => {
     expect(result.verdict).toContain("BLOCKED");
     expect(result.verdict).toContain("feature coverage 92% < 95%");
     expect(result.verdict).toContain("line coverage 92% < 95%");
-    expect(result.targets).toEqual({ feature: 95, line: 95 });
+    expect(result.targets).toEqual({ feature: 95, line: 95, branch: 80 });
   });
 
   it("throws when featurePct is missing", () => {
@@ -238,6 +242,167 @@ describe("computeCoverageGate", () => {
         verdict: recomputed.verdict,
       }),
     ).not.toThrow();
+  });
+});
+
+describe("computeCoverageGate — branch coverage", () => {
+  const BRANCH_INPUT = {
+    ...BASE_INPUT,
+    branchPct: 85,
+    branchSource: "CI run https://example.invalid/run/1 @ abc1234",
+  };
+
+  it("reports branch coverage and stays READY when branchPct meets the 80% default", () => {
+    const r = computeCoverageGate(BRANCH_INPUT);
+    expect(r.verdict).toBe("READY");
+    expect(r.branch_coverage_pct).toBe(85);
+    expect(r.branch_coverage_source).toBe(BRANCH_INPUT.branchSource);
+  });
+
+  it("treats exactly 80% as passing (boundary)", () => {
+    expect(
+      computeCoverageGate({ ...BRANCH_INPUT, branchPct: 80 }).verdict,
+    ).toBe("READY");
+  });
+
+  it("returns BLOCKED naming branch coverage when only the branch gate fails", () => {
+    const r = computeCoverageGate({ ...BRANCH_INPUT, branchPct: 40 });
+    expect(r.verdict).toBe("BLOCKED: branch coverage 40% < 80%");
+  });
+
+  it("names all three gates in feature, line, branch order when all fail", () => {
+    const r = computeCoverageGate({
+      ...BRANCH_INPUT,
+      featurePct: 70,
+      linePct: 84,
+      branchPct: 40,
+    });
+    expect(r.verdict).toBe(
+      "BLOCKED: feature coverage 70% < 90%, line coverage 84% < 90%, branch coverage 40% < 80%",
+    );
+  });
+
+  it("does not block when branchPct is absent (unmeasured)", () => {
+    const r = computeCoverageGate(BASE_INPUT);
+    expect(r.verdict).toBe("READY");
+    expect(r.branch_coverage_pct).toBeNull();
+    expect(r.branch_coverage_source).toBe(BRANCH_NOT_MEASURED_SOURCE);
+  });
+
+  it("does not block when branchPct is null, and keeps a supplied reason", () => {
+    const r = computeCoverageGate({
+      ...BASE_INPUT,
+      branchPct: null,
+      branchSource: "artifact carries no branch data",
+    });
+    expect(r.verdict).toBe("READY");
+    expect(r.branch_coverage_pct).toBeNull();
+    expect(r.branch_coverage_source).toBe("artifact carries no branch data");
+  });
+
+  it("treats a measured 0% as a real failing value, not as unmeasured", () => {
+    const r = computeCoverageGate({ ...BRANCH_INPUT, branchPct: 0 });
+    expect(r.branch_coverage_pct).toBe(0);
+    expect(r.verdict).toBe("BLOCKED: branch coverage 0% < 80%");
+  });
+
+  it("throws when branchPct is a number but branchSource is missing", () => {
+    expect(() => computeCoverageGate({ ...BASE_INPUT, branchPct: 85 })).toThrow(
+      /branchSource/,
+    );
+  });
+
+  it("respects a caller-supplied branch target", () => {
+    const r = computeCoverageGate({
+      ...BRANCH_INPUT,
+      targets: { feature: 90, line: 90, branch: 90 },
+    });
+    expect(r.verdict).toBe("BLOCKED: branch coverage 85% < 90%");
+  });
+
+  it("fills the branch target default when targets omits it (pre-branch callers)", () => {
+    const r = computeCoverageGate({
+      ...BRANCH_INPUT,
+      branchPct: 75,
+      targets: { feature: 95, line: 95 },
+    });
+    expect(r.targets).toEqual({ feature: 95, line: 95, branch: 80 });
+    expect(r.verdict).toBe("BLOCKED: branch coverage 75% < 80%");
+  });
+
+  it("throws on a supplied READY verdict when the branch gate fails", () => {
+    expect(() =>
+      computeCoverageGate({ ...BRANCH_INPUT, branchPct: 40, verdict: "READY" }),
+    ).toThrow(/inconsistent/);
+  });
+});
+
+describe("parseCliInput — branch coverage", () => {
+  it("passes branchPct and branchSource through", () => {
+    const input = parseCliInput(
+      JSON.stringify({ ...BASE_INPUT, branchPct: 81, branchSource: "run" }),
+    );
+    expect(input.branchPct).toBe(81);
+    expect(input.branchSource).toBe("run");
+  });
+
+  it("omits the branch fields when absent", () => {
+    const input = parseCliInput(JSON.stringify(BASE_INPUT));
+    expect("branchPct" in input).toBe(false);
+    expect("branchSource" in input).toBe(false);
+  });
+
+  it("accepts an explicit null branchPct", () => {
+    const input = parseCliInput(
+      JSON.stringify({ ...BASE_INPUT, branchPct: null }),
+    );
+    expect(input.branchPct).toBeNull();
+  });
+
+  it("throws when branchPct is not a number or null", () => {
+    expect(() =>
+      parseCliInput(JSON.stringify({ ...BASE_INPUT, branchPct: "81" })),
+    ).toThrow(/branchPct/);
+  });
+
+  it("throws when branchPct is a number without a branchSource", () => {
+    expect(() =>
+      parseCliInput(JSON.stringify({ ...BASE_INPUT, branchPct: 81 })),
+    ).toThrow(/branchSource/);
+  });
+
+  it("throws when branchSource is not a string", () => {
+    expect(() =>
+      parseCliInput(JSON.stringify({ ...BASE_INPUT, branchSource: 5 })),
+    ).toThrow(/branchSource/);
+  });
+
+  it("throws when a target is not a number", () => {
+    expect(() =>
+      parseCliInput(
+        JSON.stringify({ ...BASE_INPUT, targets: { branch: "80" } }),
+      ),
+    ).toThrow(/targets\.branch/);
+  });
+
+  it("throws when targets is not an object", () => {
+    expect(() =>
+      parseCliInput(JSON.stringify({ ...BASE_INPUT, targets: 90 })),
+    ).toThrow(/targets/);
+  });
+});
+
+describe("CLI entrypoint (subprocess) — branch coverage", () => {
+  it("prints the branch fields and a branch-gap verdict", async () => {
+    const { exitCode, stdout } = await runCli(
+      JSON.stringify({ ...BASE_INPUT, branchPct: 40, branchSource: "run" }),
+    );
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.branch_coverage_pct).toBe(40);
+    expect(parsed.branch_coverage_source).toBe("run");
+    expect(parsed.targets.branch).toBe(80);
+    expect(parsed.verdict).toBe("BLOCKED: branch coverage 40% < 80%");
   });
 });
 
