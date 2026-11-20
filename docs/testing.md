@@ -9,7 +9,7 @@
 | **Unit** | `bun test` | Pure logic — no I/O of any kind (no filesystem, network, or subprocess). | `*.unit.test.ts` |
 | **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles, or real filesystem I/O on committed repo content — exercises the seam without a live external service. Exception: critical infrastructure like containerized browser launches where recorded fixtures would miss runtime-environment issues (e.g., securityContext sandbox compliance). | `*.integration.test.ts` |
 | **Smoke** | `bun test` + Hono `app.request()`, or `Bun.serve()` + `fetch()` | HTTP route contracts (status, shape, auth, errors). Prefer in-process `app.request()` (no real socket) for Hono apps; a real `Bun.serve()` boot with live `fetch()` is permitted when there's no in-process request seam (e.g. a bare-`Bun.serve()` server with no Hono app factory). | `*.smoke.test.ts` |
-| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`); admin UI (`admin/e2e/*.e2e.ts`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`, `admin/e2e/`) |
+| **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`); admin UI (`admin/e2e/*.e2e.ts`); a deployed preview stack (`preview/e2e/*.e2e.ts`, run via `task preview:e2e`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`, `admin/e2e/`, `preview/e2e/`) |
 | **Content** | `bun test` | Markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. | `*.content.test.ts` |
 
 The layer is encoded in the filename suffix. When adding a test, classify in order: no I/O → **unit**; calls an external service → **integration** (inject a recorded double); tests an HTTP route → **smoke** (`app.request()`, or a real `Bun.serve()` boot only if there's no in-process seam); multi-step browser flow → **e2e**; static content assertions → **content**. If none fit, escalate — don't invent a sixth layer.
@@ -43,7 +43,7 @@ The marketing site is **not** part of the root `bun test` scan — run its Playw
 cd site && npm test                  # playwright (*.spec.ts)
 ```
 
-> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, `admin/e2e/**`, and `**/*.canary.test.ts` from the root runner (and preloads `scripts/test-env-preload.ts` to force `NODE_ENV=test`). Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash. Canary tests (`preview/canary/*.canary.test.ts`) run via their own entry point, `task preview:canary`, which bypasses the exclusion with `--config=/dev/null`.
+> `bunfig.toml` excludes `site/**`, `metrics/e2e/**`, `admin/e2e/**`, `preview/e2e/**`, and `**/*.canary.test.ts` from the root runner (and preloads `scripts/test-env-preload.ts` to force `NODE_ENV=test`). Keep site tests as `*.spec.ts` and E2E tests as `*.e2e.ts` to stay isolated — Bun would otherwise try to execute Playwright specs and crash. Canary tests (`preview/canary/*.canary.test.ts`) run via their own entry point, `task preview:canary`, which bypasses the exclusion with `--config=/dev/null`.
 
 ### Per-component layers
 
