@@ -62,7 +62,54 @@ export interface RepositoryLookup {
   listRepositories(accountId?: string | null): Promise<{
     configured: boolean;
     repos: { fullName: string; archived: boolean }[];
+    /** Cache state; absent on older platform versions (treated as ready). */
+    syncState?: "syncing" | "ready" | "stale" | "failed";
+    fetchedAt?: string | number | Date | null;
+    progress?: { reposSeen: number; totalCount?: number | null } | null;
   }>;
+}
+
+type RepoEntry = { fullName: string; archived: boolean };
+
+/** What the checklist knows about an account's repo listing. */
+export type RepoListing =
+  | { state: "unconfigured" | "failed" }
+  | {
+      state: "ready" | "syncing" | "stale";
+      repos: RepoEntry[];
+      fetchedAt?: string | number | Date | null;
+      progress?: { reposSeen: number; totalCount?: number | null } | null;
+    };
+
+/** Maps a lookup result onto a RepoListing; unknown/absent syncState means ready. */
+export function toRepoListing(
+  r: Awaited<ReturnType<RepositoryLookup["listRepositories"]>>,
+): RepoListing {
+  if (!r.configured) return { state: "unconfigured" };
+  if (r.syncState === "failed" && r.repos.length === 0)
+    return { state: "failed" };
+  const state =
+    r.syncState === "syncing" || r.syncState === "stale"
+      ? r.syncState
+      : r.syncState === "failed"
+        ? "stale"
+        : "ready";
+  return {
+    state,
+    repos: r.repos,
+    fetchedAt: r.fetchedAt,
+    progress: r.progress,
+  };
+}
+
+function ago(at: string | number | Date | null | undefined, now: number) {
+  const t = at == null ? Number.NaN : new Date(at).getTime();
+  if (Number.isNaN(t)) return "a while ago";
+  const m = Math.max(0, Math.round((now - t) / 60000));
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
 export interface SystemCronsFetchers {
@@ -133,13 +180,10 @@ interface PageOpts {
   };
   /**
    * Repos the lookup App can see, keyed by account (CRS-2.2; `""` is the
-   * deployment-wide listing for a cron without an accountId). A missing or
-   * null entry means unconfigured or the listing failed.
+   * deployment-wide listing for a cron without an accountId). A missing
+   * entry means no lookup is wired.
    */
-  repoListings?: Record<
-    string,
-    { fullName: string; archived: boolean }[] | null
-  >;
+  repoListings?: Record<string, RepoListing>;
 }
 
 const accountKey = (c: Pick<SystemCronItem, "accountId">): string =>
@@ -151,15 +195,31 @@ function scopeSummary(c: SystemCronItem): string {
   return `${n} ${n === 1 ? "repo" : "repos"}`;
 }
 
+function repoListNote(listing: RepoListing | undefined): string {
+  const style = "font-size:12px;color:#6b7280;margin:4px 0";
+  if (!listing || listing.state === "unconfigured") return "";
+  if (listing.state === "failed")
+    return `<p data-repo-list="failed" class="alert alert-warning" style="margin:4px 0">The last repository refresh failed, so the list is unavailable; only the current selection is shown.</p>`;
+  if (listing.state === "syncing") {
+    const p = listing.progress;
+    const prog = p ? ` (${p.reposSeen} of ${p.totalCount ?? "?"})` : "";
+    return `<p data-repo-list="syncing" class="alert alert-info" style="margin:4px 0">Syncing repositories${prog}; the list below is partial.</p>`;
+  }
+  if (listing.state === "stale")
+    return `<p data-repo-list="stale" style="${style}">Stale, synced ${escapeHtml(ago(listing.fetchedAt, Date.now()))}.</p>`;
+  return "";
+}
+
 function renderScopeControl(
   c: SystemCronItem,
   draft: PageOpts["draft"],
-  listing: { fullName: string; archived: boolean }[] | null | undefined,
+  listing: RepoListing | undefined,
 ): string {
   const cid = escapeHtml(c.id);
   const scope = (draft?.repoScope ?? c.repoScope ?? "all") as string;
   const selected = new Set(draft?.repos ?? c.repos ?? []);
-  const known = new Map((listing ?? []).map((r) => [r.fullName, r]));
+  const list = listing && "repos" in listing ? listing.repos : null;
+  const known = new Map((list ?? []).map((r) => [r.fullName, r]));
   // Selected repos absent from the listing stay visible (and flagged) so a
   // save never silently drops them. With no listing, the selection is all we have.
   const missing = [...selected].filter((r) => !known.has(r));
@@ -167,9 +227,10 @@ function renderScopeControl(
     ...missing.map((r) => ({
       fullName: r,
       archived: false,
-      flag: listing ? "not in the current listing" : "",
+      flag:
+        list && listing?.state === "ready" ? "not in the current listing" : "",
     })),
-    ...(listing ?? []).map((r) => ({ ...r, flag: "" })),
+    ...(list ?? []).map((r) => ({ ...r, flag: "" })),
   ]
     .map((r) => {
       const flags = [
@@ -181,16 +242,18 @@ function renderScopeControl(
       return `<label data-repo-row data-repo-name="${escapeHtml(r.fullName.toLowerCase())}" style="display:flex;align-items:center;gap:8px;padding:2px 0;font-size:13px"><input type="checkbox" name="repos" value="${escapeHtml(r.fullName)}"${selected.has(r.fullName) ? " checked" : ""} /> <span>${escapeHtml(r.fullName)}</span> ${flags}</label>`;
     })
     .join("");
-  const note = listing
-    ? ""
-    : `<p data-repo-list="unavailable" style="font-size:12px;color:#6b7280;margin:4px 0">The repository list is unavailable until the GitHub lookup App is configured; only the current selection is shown.</p>`;
+  const note = repoListNote(listing);
+  const unusedNote =
+    list || listing?.state === "failed"
+      ? ""
+      : `<p data-repo-list="unavailable" style="font-size:12px;color:#6b7280;margin:4px 0">The repository list is unavailable until the GitHub lookup App is configured; only the current selection is shown.</p>`;
   return `<fieldset class="form-group" data-repo-scope="${cid}" style="border:0;padding:0;margin:0 0 12px">
     <legend class="form-label">Repositories</legend>
     <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="all"${scope === "all" ? " checked" : ""} /> All repositories <span style="color:#6b7280">(current and future)</span></label>
     <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="selected"${scope === "selected" ? " checked" : ""} /> Only select repositories</label>
     <div data-repo-checklist style="margin-top:8px">
       <input type="search" class="form-input" data-repo-search placeholder="Search repositories" aria-label="Search repositories" />
-      ${note}
+      ${note}${unusedNote}
       <div style="max-height:200px;overflow:auto;margin-top:6px">${rows || `<p class="empty-state" style="margin:4px 0">No repositories to show.</p>`}</div>
     </div>
   </fieldset>`;
@@ -371,12 +434,11 @@ export function registerSystemCronsRoutes(
         [...new Set(crons.map((cron) => cron.accountId ?? null))].map(
           async (accountId) => {
             try {
-              const listing = await lookup.listRepositories(accountId);
-              repoListings[accountId ?? ""] = listing.configured
-                ? listing.repos
-                : null;
+              repoListings[accountId ?? ""] = toRepoListing(
+                await lookup.listRepositories(accountId),
+              );
             } catch {
-              repoListings[accountId ?? ""] = null;
+              repoListings[accountId ?? ""] = { state: "failed" };
             }
           },
         ),
