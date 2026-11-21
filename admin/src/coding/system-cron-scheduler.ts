@@ -20,9 +20,12 @@
  *      account's repos are listed ONCE per tick via the platform's lookup App
  *      (AdminPlatformServices.githubLookup.listRepositories(accountId)).
  *      `configured: false` → log and skip that account's definitions only,
- *      recording nothing. A lister failure rejects the tick before anything
- *      is fired (every account is listed before the first fire). Archived
- *      repos are dropped; an account with none left is skipped likewise.
+ *      recording nothing. The listing is cache-backed and per-account
+ *      failures are tolerated: a never-synced lookup (syncing, no repos) or a
+ *      rejected listing skips that account only (logged, nothing recorded);
+ *      a stale snapshot is used with its age logged. A lookup problem never
+ *      rejects the tick or blocks other accounts. Archived repos are
+ *      dropped; an account with none left is skipped likewise.
  *      The tick status is 'fired' unless EVERY due definition was skipped by
  *      its account's listing (then skipped-unconfigured when all were
  *      unconfigured, else skipped-no-repos).
@@ -82,6 +85,9 @@ export interface LookupRepositoryLister {
   listRepositories(accountId?: string | null): Promise<{
     configured: boolean;
     repos: { fullName: string; archived: boolean }[];
+    /** Cache state; absent on older platform versions (treated as ready). */
+    syncState?: "syncing" | "ready" | "stale" | "failed";
+    fetchedAt?: string | number | Date | null;
   }>;
 }
 
@@ -115,6 +121,21 @@ const P = SYSTEM_CRON_SCHEDULER_LOG_PREFIX;
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Human-readable age of a cache snapshot, "age unknown" when untimed. */
+function snapshotAge(
+  fetchedAt: string | number | Date | null | undefined,
+  now: Date,
+): string {
+  const t = fetchedAt == null ? NaN : new Date(fetchedAt).getTime();
+  if (Number.isNaN(t)) return "age unknown";
+  const mins = Math.max(0, Math.round((now.getTime() - t) / 60_000));
+  return mins < 60
+    ? `${mins}m old`
+    : mins < 1440
+      ? `${Math.round(mins / 60)}h old`
+      : `${Math.round(mins / 1440)}d old`;
 }
 
 /** The catch-up baseline: max(last claimed slot, enable time). */
@@ -189,8 +210,8 @@ export class SystemCronScheduler {
     }
     if (due.length === 0) return { status: "idle", fired, errors };
 
-    // One listing per distinct account, all before the first fire so a lister
-    // failure rejects the tick with nothing recorded.
+    // One listing per distinct account. A problem with one account's lookup
+    // is a skip for that account only; it never rejects the tick.
     const listings = new Map<
       string | null,
       { unconfigured: true } | { repos: string[] }
@@ -198,13 +219,36 @@ export class SystemCronScheduler {
     for (const { accountId } of due) {
       if (listings.has(accountId)) continue;
       const label = accountId ?? "deployment-wide";
-      const listing = await this.deps.lookup.listRepositories(accountId);
+      let listing: Awaited<
+        ReturnType<LookupRepositoryLister["listRepositories"]>
+      >;
+      try {
+        listing = await this.deps.lookup.listRepositories(accountId);
+      } catch (err) {
+        this.log(
+          `${P} account ${label}: lookup listing failed (${message(err)}); skipping its definition(s) (nothing recorded)`,
+        );
+        listings.set(accountId, { unconfigured: true });
+        continue;
+      }
       if (!listing.configured) {
         this.log(
           `${P} account ${label}: lookup App not configured; skipping its definition(s) (nothing recorded)`,
         );
         listings.set(accountId, { unconfigured: true });
         continue;
+      }
+      if (listing.syncState === "syncing" && listing.repos.length === 0) {
+        this.log(
+          `${P} account ${label}: lookup has not synced yet; skipping its definition(s) (nothing recorded)`,
+        );
+        listings.set(accountId, { unconfigured: true });
+        continue;
+      }
+      if (listing.syncState === "stale" || listing.syncState === "failed") {
+        this.log(
+          `${P} account ${label}: using stale lookup snapshot (${snapshotAge(listing.fetchedAt, now)})`,
+        );
       }
       const repos = listing.repos
         .filter((r) => !r.archived)
