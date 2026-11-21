@@ -20,7 +20,7 @@ Insert a RELEASE GATE between the **Expand** (step 1) and **Migrate** (step 2) t
 
 1. The producer PR merges in `app-vitals/agent` (the task reaches `merged`/`deployed`).
 2. The agent `build-agent` workflow cuts `vX.Y.Z` (this needs a `feat:`/`fix:`/`perf:` commit — otherwise **no release is cut**), publishes the three npm packages and three images, then runs `Consumer smoke`.
-3. The release conductor in `app-vitals/vitals-os` sees the agent release and dispatches `bump-agent.yml` in `app-vitals/shipwright` with the version and the release run id. (The agent's own notify step is skipped since `LEGACY_RELEASE_NOTIFY=false` on `app-vitals/agent`, 2026-11-18.)
+3. The release conductor sees the agent release and dispatches `bump-agent.yml` in `app-vitals/shipwright` with the version and the release run id. (The agent's own notify step is skipped since `LEGACY_RELEASE_NOTIFY=false` on `app-vitals/agent`, 2026-11-18.)
 4. `bump-agent.yml` (the standard bump workflow) opens or updates the bump PR (branch `chore/platform-release`), waits for required checks, and admin-merges it. If the required checks stay red it gives up and **leaves the PR open for a human to fix or merge**.
 5. **Done** when shipwright `main` pins `@app-vitals/agent-*` >= `X.Y.Z`.
 

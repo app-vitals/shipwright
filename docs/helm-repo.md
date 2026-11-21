@@ -26,7 +26,7 @@ The publish job runs on:
   debounce that collapses a burst of tags into one publish (a newer tag cancels
   the older debounce);
 - a change to `PLATFORM_VERSION` in `agent/Dockerfile` on `main` (the
-  platform bump, which the release conductor in app-vitals/vitals-os
+  platform bump, which the release conductor
   dispatches as `bump-agent.yml` with the agent release version and run id
   (the legacy `platform-release` path stays until RCN-7.2 and RCN-9.12 remove
   it); the publish builds the
