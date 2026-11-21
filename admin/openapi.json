@@ -3762,6 +3762,22 @@
             "type": "string",
             "description": "When the GitHub rate limit resets (ISO 8601)."
           },
+          "attempts": {
+            "type": "integer",
+            "description": "Failed refresh attempts; absent when zero."
+          },
+          "nextAttemptAt": {
+            "type": "string",
+            "description": "Next refresh attempt while backing off (ISO 8601)."
+          },
+          "leaseHolder": {
+            "type": "string",
+            "description": "Holder of a live refresh lease, if any."
+          },
+          "lastTickAt": {
+            "type": "string",
+            "description": "Last refresh tick on the snapshot (ISO 8601)."
+          },
           "orgs": {
             "type": "array",
             "items": {
@@ -3792,6 +3808,22 @@
                 "rateLimitResetAt": {
                   "type": "string",
                   "description": "When the GitHub rate limit resets (ISO 8601)."
+                },
+                "attempts": {
+                  "type": "integer",
+                  "description": "Failed refresh attempts; absent when zero."
+                },
+                "nextAttemptAt": {
+                  "type": "string",
+                  "description": "Next refresh attempt while backing off (ISO 8601)."
+                },
+                "leaseHolder": {
+                  "type": "string",
+                  "description": "Holder of a live refresh lease, if any."
+                },
+                "lastTickAt": {
+                  "type": "string",
+                  "description": "Last refresh tick on the snapshot (ISO 8601)."
                 },
                 "repos": {
                   "type": "array",
@@ -9084,6 +9116,76 @@
           },
           "403": {
             "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/github-enterprise/refresh": {
+      "post": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Request a refresh of the GitHub cache",
+        "description": "Admin-only. Marks the cached GitHub repo lists stale and clears retry waits so the background refresher works them next, then returns at once. It makes no GitHub call and does not wait for the refresher; reload the page to see progress. The refresher still honours its per-org lease and rate-limit window.",
+        "responses": {
+          "202": {
+            "description": "Refresh requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    },
+                    "snapshots": {
+                      "type": "integer"
+                    },
+                    "accessPairs": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "snapshots",
+                    "accessPairs"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Refresh is not available",
             "content": {
               "application/json": {
                 "schema": {
