@@ -20,8 +20,8 @@ Insert a RELEASE GATE between the **Expand** (step 1) and **Migrate** (step 2) t
 
 1. The producer PR merges in `app-vitals/agent` (the task reaches `merged`/`deployed`).
 2. The agent `build-agent` workflow cuts `vX.Y.Z` (this needs a `feat:`/`fix:`/`perf:` commit — otherwise **no release is cut**), publishes the three npm packages and three images, then runs `Consumer smoke`.
-3. The agent release dispatches `platform-release` in `app-vitals/shipwright`.
-4. `platform-release` opens or updates the bump PR (branch `chore/platform-release`), waits for required checks (rerunning failed ones up to 3x), and admin-merges it.
+3. The release conductor sees the agent release and dispatches `bump-agent.yml` in `app-vitals/shipwright` with the version and the release run id. (The agent's own notify step is skipped since `LEGACY_RELEASE_NOTIFY=false` on `app-vitals/agent`, 2026-11-18.)
+4. `bump-agent.yml` (the standard bump workflow) opens or updates the bump PR (branch `chore/platform-release`), waits for required checks, and admin-merges it. If the required checks stay red it gives up and **leaves the PR open for a human to fix or merge**.
 5. **Done** when shipwright `main` pins `@app-vitals/agent-*` >= `X.Y.Z`.
 
 ## Gate behavior
@@ -49,15 +49,17 @@ scripts/check-platform-pin.sh <package> <minVersion>
 ## Watch list
 
 - agent `Release` run and `Consumer smoke` (agent repo Actions). Red means fix it in agent; the gate keeps waiting.
-- shipwright `platform-release` run and the `platform-bump-exhausted` marker comment on the bump PR.
+- shipwright `Bump Agent` run (`bump-agent.yml`) and the `platform-bump-exhausted` marker comment on the bump PR.
 
 ## Failure playbook
 
 - **Red bump PR.** Usually the new package broke a shipwright check, which is a plan error: the producer change was not additive. The fix is a consumer task, then re-dispatch:
-  `gh workflow run platform-release.yml -R app-vitals/shipwright -f version=X.Y.Z`
-- **Bump PR `CONFLICTING`.** The workflow re-dispatches itself once; after that, re-dispatch by hand with the command above.
+  `gh workflow run bump-agent.yml -R app-vitals/shipwright -f version=X.Y.Z`
+  A failed bump leaves the PR open; a human fixes or merges it, or re-dispatches once fixed.
+- **Bump PR `CONFLICTING`.** The workflow regenerates the bump once against the new `main`; after that, re-dispatch by hand with the command above.
+- **Legacy path.** `platform-release.yml` (the `platform-release` repository dispatch) still exists as the legacy path until RCN-7.2 and RCN-9.12 remove it; the conductor no longer uses it, but it can still be dispatched by hand with `gh workflow run platform-release.yml -R app-vitals/shipwright -f version=X.Y.Z`.
 - **No release cut.** The producer commit lacked a `feat:`/`fix:`/`perf:` prefix.
-- **Force-push refused (non-bot commits).** The bump branch has an open PR and holds commits not authored by the bump bot (from a patch pass or a human fix). The `platform-release` workflow refuses to force-push over them to prevent data loss. Merge or rebase the PR by hand, then re-dispatch. (If the branch has no open PR — a stale leftover — the force-push proceeds.)
+- **Force-push refused (non-bot commits).** The bump branch has an open PR and holds commits not authored by the bump bot (from a patch pass or a human fix). The bump workflow (`bump-agent.yml`, and the legacy `platform-release.yml`) refuses to force-push over them to prevent data loss. Merge or rebase the PR by hand, then re-dispatch. (If the branch has no open PR — a stale leftover — the force-push proceeds.)
 - **Unblock with a target:** if a task's PR already merged and you need to unblock it, use `POST /tasks/:id/unblock { to: "deployed" }` (or `released`) to avoid resetting to `pending`. Omitting `to` infers the target from the task's `pr` and the linked PullRequest row (a task with no `pr` goes to `pending`; a closed-unmerged PR with no explicit `to` returns 409). Valid targets are `pending`, `pr_open`, `merged`, `deployed` and `released`; a non-`pending` target on a task with no `pr` returns 400.
 
 See also [Local cross-repo development](./local-platform-development.md) for how the platform bump works.
