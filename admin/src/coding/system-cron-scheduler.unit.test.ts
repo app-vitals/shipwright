@@ -238,14 +238,16 @@ describe("SystemCronScheduler — lookup App and errors", () => {
     );
   });
 
-  it("propagates a lister failure without firing (nothing recorded)", async () => {
-    const { store, scheduler } = setup(
+  it("skips (not rejects) the tick when the lister fails, recording nothing", async () => {
+    const { store, scheduler, logs } = setup(
       "2026-11-14T07:00:05Z",
       lister(new Error("GitHub 502")),
     );
     store.defs = [def()];
-    await expect(scheduler.tick()).rejects.toThrow("GitHub 502");
+    const result = await scheduler.tick();
+    expect(result.status).toBe("skipped-unconfigured");
     expect(store.fires).toEqual([]);
+    expect(logs.some((l) => l.includes("GitHub 502"))).toBe(true);
   });
 
   it("skips (records nothing) when every visible repo is archived", async () => {
@@ -579,5 +581,64 @@ describe("SystemCronScheduler — per-account listing (CRS-2.2)", () => {
     store.defs = [def(due)];
     await scheduler.tick();
     expect(lookup.accounts).toEqual([null]);
+  });
+});
+
+describe("SystemCronScheduler — tolerant per-account lookup (GLC-3.3)", () => {
+  type R = Awaited<ReturnType<LookupRepositoryLister["listRepositories"]>>;
+  const repo = (fullName: string) => ({ fullName, archived: false });
+  const due = { enabledAt: "2026-11-13T08:00:00.000Z" };
+  const twoAccounts = (a1: R | Error) => ({
+    async listRepositories(accountId?: string | null): Promise<R> {
+      if (accountId === "a1") {
+        if (a1 instanceof Error) throw a1;
+        return a1;
+      }
+      return { configured: true, repos: [repo("beta/app")] };
+    },
+  });
+  const run = async (a1: R | Error) => {
+    const ctx = setup("2026-11-14T07:00:05Z", twoAccounts(a1) as never);
+    ctx.store.defs = [
+      def({ id: "d1", accountId: "a1", ...due }),
+      def({ id: "d2", accountId: "a2", ...due }),
+    ];
+    const result = await ctx.scheduler.tick();
+    return { ...ctx, result };
+  };
+
+  it("skips a never-synced account with a log line; other accounts still fire", async () => {
+    const { store, logs, result } = await run({
+      configured: true,
+      repos: [],
+      syncState: "syncing",
+    });
+    expect(result.status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["d2"]);
+    expect(logs.some((l) => l.includes("has not synced yet"))).toBe(true);
+  });
+
+  it("uses a stale snapshot and logs its age", async () => {
+    const { store, logs } = await run({
+      configured: true,
+      repos: [repo("acme/widgets")],
+      syncState: "stale",
+      fetchedAt: "2026-11-14T05:00:05Z",
+    });
+    expect(store.fires.map((f) => f.id).sort()).toEqual(["d1", "d2"]);
+    expect(store.fires.find((f) => f.id === "d1")?.repos).toEqual([
+      "acme/widgets",
+    ]);
+    expect(logs.some((l) => l.includes("stale lookup snapshot (2h old)"))).toBe(
+      true,
+    );
+  });
+
+  it("a rejecting lister skips only that account and never rejects the tick", async () => {
+    const { store, logs, errors, result } = await run(new Error("boom"));
+    expect(result.status).toBe("fired");
+    expect(store.fires.map((f) => f.id)).toEqual(["d2"]);
+    expect(logs.some((l) => l.includes("boom"))).toBe(true);
+    expect(errors).toEqual([]);
   });
 });
