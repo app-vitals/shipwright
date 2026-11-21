@@ -7,6 +7,6 @@ Shipwright consumes the platform as pinned registry packages and an image:
 - `@app-vitals/agent-runtime`, `@app-vitals/agent-admin` and `@app-vitals/agent-lib`, pinned exactly in the workspace `package.json` files.
 - `ghcr.io/app-vitals/agent`, the base of `agent/Dockerfile` (`ARG PLATFORM_VERSION`).
 
-A platform release reaches Shipwright through `.github/workflows/platform-release.yml` (the `platform-release` repository dispatch, with Renovate as a fallback), which opens a bump PR re-pinning all of the above. See [Local cross-repo development](./local-platform-development.md) for working on the platform and Shipwright together, and the read-only [platform docs snapshot](./platform/agent.md) for the platform reference.
+A platform release reaches Shipwright through `.github/workflows/bump-agent.yml`, which the release conductor in `app-vitals/vitals-os` dispatches with the version and run id when it sees an agent release (Renovate is the fallback; the legacy `.github/workflows/platform-release.yml` repository-dispatch path remains until RCN-7.2 and RCN-9.12 remove it), which opens a bump PR re-pinning all of the above. See [Local cross-repo development](./local-platform-development.md) for working on the platform and Shipwright together, and the read-only [platform docs snapshot](./platform/agent.md) for the platform reference.
 
 Design history: `planning/agent-repo-extraction/PLAN.md`.

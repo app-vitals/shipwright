@@ -26,7 +26,9 @@ The publish job runs on:
   debounce that collapses a burst of tags into one publish (a newer tag cancels
   the older debounce);
 - a change to `PLATFORM_VERSION` in `agent/Dockerfile` on `main` (the
-  `platform-release` dispatch from app-vitals/agent, which publishes the
+  platform bump that the release conductor dispatches as `bump-agent.yml`
+  (the legacy `platform-release` dispatch from app-vitals/agent is pending
+  removal), which publishes the
   `ghcr.io/app-vitals/agent-chat` image; the pin is credited as
   `agent-chat-vX.Y.Z` and `chat.image.tag` holds the bare `X.Y.Z`);
 - a push to `main` touching `charts/shipwright/**`;
