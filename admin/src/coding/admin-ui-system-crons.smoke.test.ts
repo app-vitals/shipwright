@@ -505,4 +505,74 @@ describe("Repo selection (CRS-1.3)", () => {
     expect(card("docs-sweep")).not.toContain("acme/a1-repo");
     expect(card("third")).toContain("acme/a1-repo");
   });
+
+  describe("lookup cache states (GLC-3.2)", () => {
+    const repos = [{ fullName: "acme/web", archived: false }];
+    const render = async (result: object | Error) => {
+      const app = createCodingTestApp({
+        ...makeCodingMockDeps(),
+        ...makeStore([
+          makeCron({ repoScope: "selected", repos: ["acme/web"] }),
+        ]),
+        githubLookup: {
+          listRepositories: async () => {
+            if (result instanceof Error) throw result;
+            return result as never;
+          },
+        },
+        githubEnterpriseApi: gheApi({}),
+      });
+      return (
+        await app.request(PATH, { headers: { Cookie: await adminCookie() } })
+      ).text();
+    };
+
+    it("renders a syncing listing partially with progress", async () => {
+      const html = await render({
+        configured: true,
+        repos,
+        syncState: "syncing",
+        progress: { reposSeen: 1, totalCount: 5 },
+      });
+      expect(html).toContain('data-repo-list="syncing"');
+      expect(html).toContain("1 of 5");
+      expect(html).toContain('value="acme/web" checked');
+    });
+
+    it("renders a stale listing with its age", async () => {
+      const html = await render({
+        configured: true,
+        repos,
+        syncState: "stale",
+        fetchedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+      });
+      expect(html).toContain('data-repo-list="stale"');
+      expect(html).toContain("synced 3h ago");
+      expect(html).toContain("acme/web");
+    });
+
+    it("shows an explicit failed state when the lookup rejects or fails empty", async () => {
+      for (const r of [
+        new Error("boom"),
+        { configured: true, repos: [], syncState: "failed" },
+      ]) {
+        const html = await render(r);
+        expect(html).toContain('data-repo-list="failed"');
+        expect(html).not.toContain('data-repo-list="unavailable"');
+        expect(html).toContain('value="acme/web" checked');
+      }
+    });
+
+    it("keeps the unconfigured state distinct", async () => {
+      const html = await render({ configured: false, repos: [] });
+      expect(html).toContain('data-repo-list="unavailable"');
+      expect(html).not.toContain('data-repo-list="failed"');
+    });
+
+    it("renders the older platform shape (no new fields) unchanged", async () => {
+      const html = await render({ configured: true, repos });
+      expect(html).not.toContain("data-repo-list=");
+      expect(html).toContain("acme/web");
+    });
+  });
 });
