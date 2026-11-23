@@ -2,6 +2,8 @@
 
 Repo: app-vitals/shipwright
 
+**Status:** superseded. GHSA-vfj7-8cjw-p6xm was withdrawn on 2026-10-23; the suppression configs and their content test were removed.
+
 ## Context
 GHSA-vfj7-8cjw-p6xm (braces <= 3.0.3) has no upstream fix (OSV `last_affected: 3.0.3`, no `fixed`).
 braces is build/dev-only: root `bun.lock` via semantic-release -> micromatch; `site/bun.lock` via
@@ -17,9 +19,6 @@ No suppression config exists in the repo; scans (security-scan SKILL.md 3.2/3.3)
 2. `.grype.yaml` at repo root: ignore rule `vulnerability: GHSA-vfj7-8cjw-p6xm`,
    `package: {name: braces, version: 3.0.3}`, with a comment carrying the same re-check date.
    grype has no native expiry; a different braces version no longer matches the rule.
-3. Unit content test asserting the `.grype.yaml` re-check date equals the osv `ignoreUntil`
-   (drift guard). Deliberately NOT a fail-after-date test: it would break unrelated PRs; the osv
-   expiry resurfaces the finding and the weekly scan files a task.
 
 Open points: confirm osv-scanner per-directory config discovery for `site/` during implementation
 (fallback: pass `--config` in the skill). Tools are not installed in the agent sandbox; download pinned
