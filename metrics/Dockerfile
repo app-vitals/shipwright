@@ -20,7 +20,7 @@
 #   SHIPWRIGHT_ENV_FILE        — dotenv file loaded at startup (default: ~/.shipwright/.env)
 
 # ─── Stage 1: dependencies ────────────────────────────────────────────────────
-FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS deps
+FROM oven/bun:1.4.5-slim@sha256:b780593f3e10918cbdaec3d5a08d52224b9198069a65eb47812085c2ec007643 AS deps
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ COPY patches/ ./patches/
 RUN bun install --frozen-lockfile
 
 # ─── Stage 2: production image ────────────────────────────────────────────────
-FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS production
+FROM oven/bun:1.4.5-slim@sha256:b780593f3e10918cbdaec3d5a08d52224b9198069a65eb47812085c2ec007643 AS production
 
 # Install system dependencies (ca-certificates only — stateless service, no toolchain needed)
 RUN apt-get update && apt-get upgrade -y \
