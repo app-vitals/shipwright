@@ -5,9 +5,9 @@
     "": {
       "name": "shipwright-monorepo",
       "dependencies": {
-        "@app-vitals/agent-admin": "1.86.1",
-        "@app-vitals/agent-lib": "1.86.1",
-        "@app-vitals/agent-runtime": "1.86.1",
+        "@app-vitals/agent-admin": "1.87.0",
+        "@app-vitals/agent-lib": "1.87.0",
+        "@app-vitals/agent-runtime": "1.87.0",
         "@prisma/client": "^7.0.0",
         "@shipwright/admin": "workspace:*",
       },
@@ -24,8 +24,8 @@
       "name": "@shipwright/admin",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-admin": "1.86.1",
-        "@app-vitals/agent-lib": "1.86.1",
+        "@app-vitals/agent-admin": "1.87.0",
+        "@app-vitals/agent-lib": "1.87.0",
         "@hono/zod-openapi": "^1.0.0",
         "hono": "^4.13.1",
       },
@@ -40,9 +40,9 @@
       "name": "@shipwright/agent",
       "version": "1.504.0",
       "dependencies": {
-        "@app-vitals/agent-admin": "1.86.1",
-        "@app-vitals/agent-lib": "1.86.1",
-        "@app-vitals/agent-runtime": "1.86.1",
+        "@app-vitals/agent-admin": "1.87.0",
+        "@app-vitals/agent-lib": "1.87.0",
+        "@app-vitals/agent-runtime": "1.87.0",
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
         "@slack/bolt": "^5.0.0",
@@ -79,7 +79,7 @@
       "name": "@shipwright/metrics",
       "version": "1.504.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "1.86.1",
+        "@app-vitals/agent-lib": "1.87.0",
         "@hono/zod-openapi": "^1.0.0",
         "@sentry/bun": "^10.63.0",
         "@sentry/hono": "^10.63.0",
@@ -97,7 +97,7 @@
       "name": "@shipwright/plugin",
       "version": "1.504.0",
       "dependencies": {
-        "@app-vitals/agent-runtime": "1.86.1",
+        "@app-vitals/agent-runtime": "1.87.0",
         "js-yaml": "^5.0.0",
       },
       "devDependencies": {
@@ -110,7 +110,7 @@
       "name": "@shipwright/task-store",
       "version": "0.1.0",
       "dependencies": {
-        "@app-vitals/agent-lib": "1.86.1",
+        "@app-vitals/agent-lib": "1.87.0",
         "@hono/zod-openapi": "^1.0.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
@@ -157,11 +157,11 @@
 
     "@apm-js-collab/code-transformer-bundler-plugins": ["@apm-js-collab/code-transformer-bundler-plugins@0.7.4", "", { "dependencies": { "@apm-js-collab/code-transformer": "^0.18.1", "es-module-lexer": "^2.1.0", "magic-string": "^0.30.21", "module-details-from-path": "^1.0.4" } }, "sha512-nAfOeZPSUAQvJa1iFT/5oCrTm5YQhMMrfCNthNnaXHZiOQhu1KGuLoIx7HtbAi3wfwaBYLaICPIeenIaEwcXIg=="],
 
-    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.86.1", "", { "dependencies": { "@anthropic-ai/sdk": "0.137.0", "@app-vitals/agent-lib": "1.86.1", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" }, "hasInstallScript": true }, "sha512-RTXB/yDto10Uzh8YhqgsbUtWfp1pEZ/Pb0bZlfXutv9HEZ4BtA/J34fWA5Nkwp3h281bge3RowmNu2sj6WSc+g=="],
+    "@app-vitals/agent-admin": ["@app-vitals/agent-admin@1.87.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.137.0", "@app-vitals/agent-lib": "1.87.0", "@hono/zod-openapi": "^1.0.0", "@prisma/adapter-pg": "^7.10.0", "@prisma/client": "^7.10.0", "@sentry/bun": "^10.63.0", "@sentry/hono": "^10.63.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "pg": "^8.16.3", "zod": "^4" }, "hasInstallScript": true }, "sha512-v6TztTZceP9MSbQoHHllGnB3ofyoyHst84lf2XmGonvofE4ZswaimbGd+CsEZx0m3IhowrlUV3nDwrcYcHQJGg=="],
 
-    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@1.86.1", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-mduOIiQSTQwDjniTxdU9L77rurKUpKjiJVXrS6MdPqroDzDt8v143ORTvKJq9Dpyc90iOWPyf3/YvwCcGLc62w=="],
+    "@app-vitals/agent-lib": ["@app-vitals/agent-lib@1.87.0", "", { "dependencies": { "@sentry/bun": "^10.63.0" } }, "sha512-Qv7vYlUmPynKZwxNmSjzOw3iJZNucIRa8+wWqwVZruG/GXRKTMgyucZKj4KIPX9oZgHGq9tuBurLeAD/WAX1Gg=="],
 
-    "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@1.86.1", "", { "dependencies": { "@app-vitals/agent-admin": "1.86.1", "@app-vitals/agent-lib": "1.86.1", "@octokit/auth-app": "^8.2.0", "@sentry/bun": "^10.63.0", "@slack/bolt": "^5.0.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "node-cron": "^4.6.0", "openapi-fetch": "^0.17.0", "playwright": "1.65.1" } }, "sha512-jBhJvKbndWTkqKPYDCK9a+RIzjqpBz0EtzgaxgV1Djw++CIL7363r0kN640luXsDBzHvWonZCqKcDsOTt6DQXw=="],
+    "@app-vitals/agent-runtime": ["@app-vitals/agent-runtime@1.87.0", "", { "dependencies": { "@app-vitals/agent-admin": "1.87.0", "@app-vitals/agent-lib": "1.87.0", "@octokit/auth-app": "^8.2.0", "@sentry/bun": "^10.63.0", "@slack/bolt": "^5.0.0", "@slack/web-api": "^8.1.0", "hono": "^4.13.1", "node-cron": "^4.6.0", "openapi-fetch": "^0.17.0", "playwright": "1.65.1" } }, "sha512-cq27lognUIA/CsLejW74bmC74EABrPupucmXkRDZJXtlNnq62Eeoe5HqCM0nRM/J7lFbqj4X+kXV6dCOAS1qpA=="],
 
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@9.1.0", "", { "dependencies": { "openapi3-ts": "^4.6.0" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-pLMeRgRYS7/vZIgAAkOe2P6+XGTifR1MT9pqDoxZ11EmcJJ+DPmdPqLN8ZZF4U8R9KHCCQCS9c2wtuE8wSrfkw=="],
 
