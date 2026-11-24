@@ -34,3 +34,31 @@ Safe to deploy standalone: yes (additive config only).
 
 ## Decision Log
 (interactive session — design approved by Dan)
+
+## Pass 2 — 2026-11-24 — specs none (verbal description)
+
+### Context
+GHSA-vfj7-8cjw-p6xm was withdrawn from the advisory database as "not a practically exploitable
+vulnerability". A withdrawn advisory is no longer reported, so the Pass 1 suppressions
+(`.grype.yaml`, `osv-scanner.toml`, `site/osv-scanner.toml`) suppress nothing. An earlier
+external attempt (PR #5568) is gone; this pass redoes the cleanup from main.
+
+### Design
+Delete the three config files and `braces-suppression.content.test.ts` (its only subject is
+those files; leaving it would fail CI). Remove the test's reference in
+`docs/test-readiness/test-migration.md`. `test-inventory.md` only says the files are "config,
+not code units" and stays. Pass 1 above is unchanged.
+Consumer check: the security-scan skill and workflows pass no `--config` and never reference
+these files; osv-scanner and grype auto-discover them, so removal is safe.
+Test layer: content test retired because its subject is gone; no new tests.
+
+### Tasks
+| Task | Depends on | Blocks | HITL |
+|------|-----------|--------|------|
+| BRS-2.1 chore: remove withdrawn braces advisory suppressions | — | — | |
+
+Safe to deploy standalone: yes (removes config that suppresses nothing).
+
+### Decision Log
+- interactive session — design approved by Dan 2026-11-24
+- session `braces-suppression` was closed/archived; reused per Dan's choice
