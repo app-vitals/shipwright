@@ -430,6 +430,10 @@ export class TaskStoreProvider implements MetricsProvider {
     const completed = tasks.filter(isCompleted);
     const blocked = tasks.filter((t) => t.status === BLOCKED_STATUS);
 
+    if (completed.length > 0 && prs.length === 0) {
+      await this.warnZeroPrs(win, tasks.length, completed.length, prs.length);
+    }
+
     // CI gates: completed tasks that recorded a ciFixAttempts value.
     const ciTasks = completed.filter((t) => num(t.ciFixAttempts) !== null);
     const ciFirst = ciTasks.filter((t) => num(t.ciFixAttempts) === 0).length;
@@ -518,6 +522,39 @@ export class TaskStoreProvider implements MetricsProvider {
     ];
 
     return table(columns, [row]);
+  }
+
+  /**
+   * Structured diagnostic (STB-1.1): the window has completed tasks but the
+   * PR read came back empty — the usual cause is a task-store token that is
+   * scoped such that GET /prs returns nothing, which renders the SHIP IT KPI
+   * as "--%". `prsPreWindow` is the raw updatedSince pre-filter count (before
+   * client-side repo/window filtering); `prsPostWindow` is what summary() saw.
+   * Logs only counts and the window — never tokens or URLs. Best-effort: a
+   * failure of the extra read must not break the summary.
+   */
+  private async warnZeroPrs(
+    win: { from: string; to: string },
+    tasksTotal: number,
+    tasksCompleted: number,
+    prsPostWindow: number,
+  ): Promise<void> {
+    let prsPreWindow: number | null = null;
+    try {
+      prsPreWindow = (await this.taskStore.listPrsUpdatedSince(win.from))
+        .length;
+    } catch {
+      // diagnostic only
+    }
+    console.warn("[metrics] summary: completed tasks in window but zero PRs", {
+      event: "summary_zero_prs_with_tasks",
+      window: { from: win.from, to: win.to },
+      repo: this.repo ?? null,
+      tasks: tasksCompleted,
+      tasksTotal,
+      prsPreWindow,
+      prsPostWindow,
+    });
   }
 
   // ─ Summary cycle time ─
