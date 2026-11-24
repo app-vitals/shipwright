@@ -107,11 +107,10 @@ new tests locally (after `bun install --frozen-lockfile`), not assumed:
    agent/plugin source+tests (grep).
 2. **New smoke tests, Reuse:** `metrics/src/api.validation.smoke.test.ts`,
    `task-store/src/validation.smoke.test.ts` (in-process `app.request()`, wire contract only).
-3. **New content tests, Reuse:** root `braces-suppression.content.test.ts`,
-   `plugins/shipwright/test/own-login-helper.content.test.ts`.
+3. **New content tests, Reuse:** `plugins/shipwright/test/own-login-helper.content.test.ts`.
 4. **Local runs:** agent (`gh-owner-resolver`, `gh-token-files`, `github-installations*`, `owner-routing`)
-   94 pass / 0 fail across 9 files; plugin `login-*` + `own-login-helper.content` 45 pass / 0 fail;
-   `braces-suppression.content` 2 pass / 0 fail. The admin DB-backed integration test was not run
+   94 pass / 0 fail across 9 files; plugin `login-*` + `own-login-helper.content` 45 pass / 0 fail.
+   The admin DB-backed integration test was not run
    in-sandbox (no test DB); it is judged by shape (real-DB integration, correct layer) and CI.
 5. **Counts:** `*.test.ts` files excluding `node_modules`: 423 (was 407; +16 net, all new files in the
    window listed above plus tests added alongside the other modified units). No Net-new, Rebuild,
