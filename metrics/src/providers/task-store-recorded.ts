@@ -228,3 +228,75 @@ export function createRecordedPrsFetch(
   fn.requests = requests;
   return fn;
 }
+
+// ─── Recorded live-shape /prs pages (STB-1.1) ────────────────────────────────
+// Clock 2026-06-10T12:00Z. LA windows: today 2026-06-10T07:00Z..06-11T06:59Z,
+// 7d from 2026-06-04T07:00Z, 30d from 2026-05-12T07:00Z.
+
+const recordedPr = (
+  id: string,
+  reviewState: NonNullable<PrRecord["reviewState"]>,
+  createdAt: string,
+  mergedAt: string | null,
+): PrRecord => ({
+  id,
+  repo: "org/alpha",
+  reviewState,
+  createdAt,
+  mergedAt,
+  state: mergedAt ? "merged" : "open",
+  reviewCycles: 0,
+  patchCycles: 0,
+});
+
+/** Live-shape rows: merged rows carry mergedAt, open rows only createdAt. */
+export const PAGE_1: RecordedPrsPage = {
+  nextCursor: "cursor-2",
+  prs: [
+    // merged today (created long before: anchor must be mergedAt)
+    recordedPr(
+      "p1",
+      "approved",
+      "2026-06-01T04:30:00.000Z",
+      "2026-06-10T15:00:00.000Z",
+    ),
+    // open, created today
+    recordedPr("p2", "pending", "2026-06-10T10:00:00.000Z", null),
+    // merged within 7d
+    recordedPr(
+      "p3",
+      "approved",
+      "2026-06-05T01:00:00.000Z",
+      "2026-06-06T05:00:00.000Z",
+    ),
+    recordedPr(
+      "p4",
+      "posted",
+      "2026-06-07T01:00:00.000Z",
+      "2026-06-08T05:00:00.000Z",
+    ),
+  ],
+};
+export const PAGE_2: RecordedPrsPage = {
+  nextCursor: null,
+  prs: [
+    // open, created within 7d
+    recordedPr("p5", "approved", "2026-06-09T01:00:00.000Z", null),
+    // open, created within 30d only
+    recordedPr("p6", "pending", "2026-05-20T01:00:00.000Z", null),
+    // merged within 30d only
+    recordedPr(
+      "p7",
+      "approved",
+      "2026-05-15T01:00:00.000Z",
+      "2026-05-16T05:00:00.000Z",
+    ),
+    // outside every window
+    recordedPr(
+      "p8",
+      "approved",
+      "2026-04-01T01:00:00.000Z",
+      "2026-04-02T05:00:00.000Z",
+    ),
+  ],
+};

@@ -10,13 +10,11 @@ import { describe, expect, test } from "bun:test";
 import { createMetricsApp } from "./api.ts";
 import { HttpTaskStoreClient } from "./lib/task-store-client.ts";
 import { FixedClock, makeAccountsClientMock } from "./lib/test-helpers.ts";
-import {
-  PAGE_1,
-  PAGE_2,
-} from "./providers/task-store-provider.ship-it-rate.integration.test.ts";
 import { TaskStoreProvider } from "./providers/task-store-provider.ts";
 import {
   createRecordedPrsFetch,
+  PAGE_1,
+  PAGE_2,
   RecordedAdminMetricsClient,
 } from "./providers/task-store-recorded.ts";
 
