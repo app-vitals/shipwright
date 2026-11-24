@@ -2,7 +2,7 @@
  * admin/src/admin-spec.smoke.test.ts
  * Smoke test: GET /doc returns 200 with a valid OpenAPI 3.1.0 document.
  *
- * Verifies that a locally-assembled root app (runtime + admin + /doc) returns a
+ * Verifies that a locally-assembled root app (the platform's shared mount + /doc) returns a
  * valid 3.1.0 spec. `buildSpecApp()` wires the /doc endpoint directly — this test
  * does NOT verify that production `main.ts` exposes /doc (it does not today;
  * wiring /doc in the factory is a planned follow-up).
@@ -20,16 +20,15 @@ import { resolve } from "node:path";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
+  mountRouteContributions,
+  resolveAdminExtensions,
 } from "@app-vitals/agent-admin/admin-extension";
 import { NoopAgentProvisioner } from "@app-vitals/agent-admin/agent-provisioner";
-import { createAgentTemplatesApp } from "@app-vitals/agent-admin/agent-templates-api";
+import { parseAdminApiKeys } from "@app-vitals/agent-admin/agents-api";
 import {
-  createAdminApp,
-  parseAdminApiKeys,
-} from "@app-vitals/agent-admin/agents-api";
-import { createAgentRuntimeApp } from "@app-vitals/agent-admin/api";
-import { createGithubEnterpriseApp } from "@app-vitals/agent-admin/github-enterprise-api";
-import { createPrincipalsApp } from "@app-vitals/agent-admin/principals-api";
+  mountPlatformApis,
+  type PlatformApiDeps,
+} from "@app-vitals/agent-admin/platform-routes";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { adminExtensions } from "./main.ts";
 import {
@@ -42,7 +41,7 @@ const SESSION_SECRET = "spec-test-session-secret-32bytes!";
 const ADMIN_API_KEY = "spec-test-admin-key";
 
 function buildSpecApp() {
-  const runtimeApp = createAgentRuntimeApp({
+  const runtimeDeps: PlatformApiDeps["runtime"] = {
     agentEnvService: {
       async getConfigBundle() {
         return null;
@@ -74,9 +73,9 @@ function buildSpecApp() {
     adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
-  });
+  };
 
-  const adminApp = createAdminApp({
+  const adminApiDeps: PlatformApiDeps["adminApi"] = {
     agentService: {
       create: async () => ({
         id: "a1",
@@ -360,47 +359,64 @@ function buildSpecApp() {
     decrypt: (value: string) => value,
     sessionSecret: SESSION_SECRET,
     adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
-  });
+  };
 
-  const root = new OpenAPIHono();
-  root.route("/agents", runtimeApp);
-  root.route("/", adminApp);
-  // The /github-enterprise routes live in their own app, mounted at the root
-  // in admin-boot.ts; stub deps suffice since only the spec is read.
-  root.route(
-    "/",
-    createGithubEnterpriseApp({
+  const adminApiKeys = parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`);
+  const bootRoot = new OpenAPIHono();
+  // The platform's shared mount (the same function startAdmin calls); stub deps
+  // suffice since only the registered routes are read.
+  const { mounted } = mountPlatformApis(bootRoot, {
+    runtime: runtimeDeps,
+    adminApi: adminApiDeps,
+    accounts: {
+      accountService: {} as never,
+      accountLifecycle: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys,
+      agentTokenService: { validate: async () => null },
+    },
+    principals: {
+      lookup: {} as never,
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys,
+      agentTokenService: { validate: async () => null },
+    },
+    templates: {
+      templateService: {} as never,
+      callerScopeResolver: async () => ({ kind: "all" }),
+      sessionSecret: SESSION_SECRET,
+      adminApiKeys,
+      agentTokenService: { validate: async () => null },
+    },
+    githubEnterprise: {
       appService: {} as never,
       agentService: {} as never,
       agentEnvService: {} as never,
       sessionSecret: SESSION_SECRET,
-      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      adminApiKeys,
       agentTokenService: { validate: async () => null },
-    }),
-  );
-  // The /templates routes (ATP-1.3) are likewise their own app mounted at the
-  // root in admin-boot.ts.
-  root.route(
-    "/",
-    createAgentTemplatesApp({
-      templateService: {} as never,
-      callerScopeResolver: async () => ({ kind: "all" }),
-      sessionSecret: SESSION_SECRET,
-      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
-      agentTokenService: { validate: async () => null },
-    }),
-  );
-  // The /principals lookup routes (ACM-1.1) are likewise their own app
-  // mounted at the root in admin-boot.ts.
-  root.route(
-    "/",
-    createPrincipalsApp({
-      lookup: {} as never,
-      sessionSecret: SESSION_SECRET,
-      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
-      agentTokenService: { validate: async () => null },
-    }),
-  );
+    },
+  });
+  // Shipwright's extension API routes, mounted after the platform as the real
+  // boot does. Resolved against a stub context: only route registration matters.
+  const extensionRoutes = resolveAdminExtensions(adminExtensions, {
+    env: {},
+    prisma: {} as never,
+    sessionSecret: SESSION_SECRET,
+    adminApiKeys,
+    adminAllowedEmails: [],
+    appBaseUrl: "http://localhost",
+    services: {} as never,
+  }).apiRoutes;
+  mountRouteContributions(bootRoot, extensionRoutes);
+  // The committed spec leaves out apps the platform flags `inSpec: false`
+  // (e.g. the flag-gated accounts API), exactly as buildPlatformAdminSpec does,
+  // so the doc root re-mounts only the spec'd apps from the shared mount's list.
+  const root = new OpenAPIHono();
+  for (const { prefix, app, inSpec } of mounted) {
+    if (inSpec) root.route(prefix, app);
+  }
+  mountRouteContributions(root, extensionRoutes);
   root.doc("/doc", {
     openapi: "3.1.0",
     info: { title: "Shipwright Admin API", version: "0.1.0" },
