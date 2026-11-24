@@ -18,6 +18,7 @@ import {
 import {
   type CoverageSnapshotRecord,
   type CronTaskQuery,
+  type FetchLike,
   inWindow,
   matchesRepo,
   type PrRecord,
@@ -183,4 +184,47 @@ export class FaultingBothAdminMetricsClient implements AdminMetricsClient {
   async chatTokenStats(): Promise<ChatTokenStats> {
     throw new AdminMetricsClientError(500, "chat stats endpoint failed");
   }
+}
+
+// ─── Paginated /prs transport double ─────────────────────────────────────────
+
+/** One recorded `/prs` page: the rows plus the keyset `nextCursor`. */
+export interface RecordedPrsPage {
+  prs: PrRecord[];
+  nextCursor: string | null;
+}
+
+/**
+ * A `FetchLike` that replays recorded `GET /prs` pages keyed by `?cursor=`
+ * (first page = no cursor), exactly like the live keyset contract. Injected
+ * into HttpTaskStoreClient so the real pagination + windowing code runs with
+ * no network and no global.fetch override. `requests` records every URL hit
+ * and `headers` the headers sent, so tests can assert on pagination.
+ */
+export function createRecordedPrsFetch(
+  pagesByCursor: Record<string, RecordedPrsPage>,
+  emptyTasks: TaskRecord[] = [],
+): FetchLike & { requests: string[] } {
+  const requests: string[] = [];
+  const fn = (async (input: string) => {
+    requests.push(input);
+    const url = new URL(input);
+    let body: unknown;
+    if (url.pathname.endsWith("/prs")) {
+      const page = pagesByCursor[url.searchParams.get("cursor") ?? ""];
+      body = page ?? { prs: [], nextCursor: null };
+    } else if (url.pathname.endsWith("/tasks")) {
+      body = { tasks: emptyTasks, nextCursor: null };
+    } else {
+      body = {};
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(body),
+      json: async () => body,
+    };
+  }) as FetchLike & { requests: string[] };
+  fn.requests = requests;
+  return fn;
 }
