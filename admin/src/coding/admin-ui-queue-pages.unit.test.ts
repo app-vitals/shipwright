@@ -1258,10 +1258,10 @@ describe("renderMergedQueueActivityPage", () => {
     expect(html).toContain("<th>Eligible agents</th>");
     expect(html).toContain("<th>Queued by</th>");
     expect(html).toContain(
-      '<a href="/admin/agents/agent-alpha" style="color:#6366f1;text-decoration:none">Alpha Agent</a>',
+      '<a href="/admin/agents/agent-alpha" style="color:var(--vos-brand, #6366f1);text-decoration:none">Alpha Agent</a>',
     );
     expect(html).toContain(
-      '<a href="/admin/agents/agent-beta" style="color:#6366f1;text-decoration:none">Beta Agent</a>',
+      '<a href="/admin/agents/agent-beta" style="color:var(--vos-brand, #6366f1);text-decoration:none">Beta Agent</a>',
     );
   });
 
@@ -1292,7 +1292,7 @@ describe("renderMergedQueueActivityPage", () => {
     });
     expect(html).toContain("<th>Agent</th>");
     expect(html).toContain(
-      '<a href="/admin/agents/agent-beta" style="color:#6366f1;text-decoration:none">Beta Agent</a>',
+      '<a href="/admin/agents/agent-beta" style="color:var(--vos-brand, #6366f1);text-decoration:none">Beta Agent</a>',
     );
     // Cron-filter link is scoped to the run's own agent, not a single agent.
     expect(html).toContain(

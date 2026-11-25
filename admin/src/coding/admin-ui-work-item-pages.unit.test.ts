@@ -1087,7 +1087,9 @@ describe("renderTasksPage — PR column", () => {
     // Should render a link to the PR
     expect(html).toContain("https://github.com/org/repo/pull/42");
     expect(html).toContain("#42");
-    expect(html).toContain('style="color:#6366f1;text-decoration:none"');
+    expect(html).toContain(
+      'style="color:var(--vos-brand, #6366f1);text-decoration:none"',
+    );
   });
 
   test("task without pr value shows em-dash", () => {
@@ -1113,13 +1115,13 @@ describe("renderTasksPage — PR column", () => {
       repo: "app-vitals/shipwright",
     };
     const html = render([taskWithPr]);
-    // PR link should match ID link style: color:#6366f1
+    // PR link should match ID link style: color:var(--vos-brand, #6366f1)
     const prLinkMatch = html.match(
       /<a href="https:\/\/github\.com\/[^"]*"[^>]*>.*#99.*<\/a>/,
     );
     expect(prLinkMatch).not.toBeNull();
     if (prLinkMatch) {
-      expect(prLinkMatch[0]).toContain("color:#6366f1");
+      expect(prLinkMatch[0]).toContain("color:var(--vos-brand, #6366f1)");
     }
   });
 
@@ -1195,7 +1197,9 @@ describe("renderTasksPage — source filter", () => {
   test("row without source shows em-dash placeholder", () => {
     const taskWithoutSource: TaskItem = { ...TASK_ITEM, source: null };
     const html = render([taskWithoutSource]);
-    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+    expect(html).toContain(
+      '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>',
+    );
   });
 
   test("row escapes HTML in task.source", () => {
@@ -1382,7 +1386,7 @@ describe("renderTasksPage — Created column", () => {
     };
     const html = render([taskWithoutCreatedAt]);
     const createdTdPattern =
-      /<td class="col-created"[^>]*>\s*<span style="color:#9ca3af">—<\/span>\s*<\/td>/;
+      /<td class="col-created"[^>]*>\s*<span style="color:var\(--vos-text-faint, #9ca3af\)">—<\/span>\s*<\/td>/;
     expect(html).toMatch(createdTdPattern);
   });
 
@@ -1490,7 +1494,9 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
     );
     // No tab should have active (indigo) styling
-    expect(html).not.toContain("background:#6366f1;color:#fff");
+    expect(html).not.toContain(
+      "background:var(--vos-brand, #6366f1);color:var(--vos-on-brand, #fff)",
+    );
     // All tabs are present
     expect(html).toContain("Ready");
     expect(html).toContain("In Progress");
@@ -1531,13 +1537,20 @@ describe("renderTasksPage — 4-state toggle", () => {
     // In Progress tab link contains ?state=in_progress
     expect(html).toContain("state=in_progress");
     // In Progress tab has active styling — find the active tab text near the indigo bg
-    const activePattern = /background:#6366f1;color:#fff[^>]*>In Progress/;
+    const activePattern =
+      /background:var\(--vos-brand, #6366f1\);color:var\(--vos-on-brand, #fff\)[^>]*>In Progress/;
     expect(html).toMatch(activePattern);
     // Ready, Blocked, Closed tabs are not active (no indigo on those links)
     // They should be white background
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Ready/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Blocked/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Closed/,
+    );
   });
 
   test("Blocked tab is active when state=blocked", () => {
@@ -1552,10 +1565,18 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
     );
     expect(html).toContain("state=blocked");
-    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Blocked/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+    expect(html).toMatch(
+      /background:var\(--vos-brand, #6366f1\);color:var\(--vos-on-brand, #fff\)[^>]*>Blocked/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Ready/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>In Progress/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Closed/,
+    );
   });
 
   test("Closed tab is active when state=closed", () => {
@@ -1570,10 +1591,18 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
     );
     expect(html).toContain("state=closed");
-    expect(html).toMatch(/background:#6366f1;color:#fff[^>]*>Closed/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Ready/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
+    expect(html).toMatch(
+      /background:var\(--vos-brand, #6366f1\);color:var\(--vos-on-brand, #fff\)[^>]*>Closed/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Ready/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>In Progress/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Blocked/,
+    );
   });
 
   test("Ready tab is active and links to ?state=ready when state=ready", () => {
@@ -1588,15 +1617,23 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
     );
     // Ready tab has active (indigo) styling
-    expect(html).toContain("background:#6366f1;color:#fff");
+    expect(html).toContain(
+      "background:var(--vos-brand, #6366f1);color:var(--vos-on-brand, #fff)",
+    );
     // Ready tab href contains state=ready and stays in table view
     expect(html).toMatch(
       /href="\/admin\/tasks\?state=ready&view=table"[^>]*>Ready</,
     );
     // Other tabs are not active
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
-    expect(html).toMatch(/background:#fff;color:#374151[^>]*>Closed/);
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>In Progress/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Blocked/,
+    );
+    expect(html).toMatch(
+      /background:var\(--vos-surface, #fff\);color:var\(--vos-text-body, #374151\)[^>]*>Closed/,
+    );
   });
 
   test("Tab links preserve session and repo query params", () => {
@@ -2741,7 +2778,7 @@ describe("renderTaskDetailPage — back link (TBL-1.1)", () => {
       "UTC",
     );
     expect(html).toContain(
-      `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -2757,7 +2794,7 @@ describe("renderTaskDetailPage — back link (TBL-1.1)", () => {
       backHref,
     );
     expect(html).toContain(
-      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -2783,7 +2820,7 @@ describe("renderSessionDetailPage — back link (ABL-1.1)", () => {
   test("defaults to bare /admin/tasks when backHref is not provided", () => {
     const html = renderSessionDetailPage("session-abc", [], "user@example.com");
     expect(html).toContain(
-      `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -2798,7 +2835,7 @@ describe("renderSessionDetailPage — back link (ABL-1.1)", () => {
       backHref,
     );
     expect(html).toContain(
-      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -3374,7 +3411,9 @@ describe("renderPrsPage", () => {
 
   test("renders empty-state dash when a PR has no linked tasks", () => {
     const html = render([PR_LIST_ITEM_1]);
-    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+    expect(html).toContain(
+      '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>',
+    );
   });
 
   test("degraded warning shown when degraded=true", () => {
@@ -3570,14 +3609,18 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
       /<a href="[^"]*blocked=true[^"]*"[^>]*>Blocked<\/a>/,
     );
     expect(blockedTabMatch).toBeTruthy();
-    expect(blockedTabMatch?.[0]).toContain("background:#6366f1");
+    expect(blockedTabMatch?.[0]).toContain(
+      "background:var(--vos-brand, #6366f1)",
+    );
   });
 
   test("Open tab is not shown as active when blocked=true", () => {
     const html = render([], { state: "open", blocked: "true" });
     const openTabMatch = html.match(/<a href="[^"]*state=open"[^>]*>Open<\/a>/);
     expect(openTabMatch).toBeTruthy();
-    expect(openTabMatch?.[0]).not.toContain("background:#6366f1");
+    expect(openTabMatch?.[0]).not.toContain(
+      "background:var(--vos-brand, #6366f1)",
+    );
   });
 
   test("PR with blocked:true renders the 'Waiting: Blocked' badge in the list", () => {
@@ -4602,7 +4645,7 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
     );
     const from = encodeURIComponent("/admin/tasks?view=table");
     expect(html).toContain(
-      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${from}" style="color:#6366f1;text-decoration:none">`,
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${from}" style="color:var(--vos-brand, #6366f1);text-decoration:none">`,
     );
   });
 });
@@ -4674,14 +4717,14 @@ describe("renderTaskDetailPage — kind field (TKD-1.4)", () => {
     const html = render({ kind: null });
     // The Kind label should not appear in the HTML
     expect(html).not.toContain(
-      '<td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
+      '<td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
     );
   });
 
   test("no Kind row when kind is undefined", () => {
     const html = render({ kind: undefined });
     expect(html).not.toContain(
-      '<td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
+      '<td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
     );
   });
 
@@ -5071,7 +5114,7 @@ describe("renderSessionDetailPage", () => {
       USER_NAME,
     );
     expect(html).toContain(
-      '<td class="col-source mono" style="font-size:11px"><span style="color:#9ca3af">—</span></td>',
+      '<td class="col-source mono" style="font-size:11px"><span style="color:var(--vos-text-faint, #9ca3af)">—</span></td>',
     );
   });
 

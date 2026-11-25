@@ -84,6 +84,18 @@
   function initThemeToggle() {
     const root = document.documentElement;
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    // When the shared toolbar ships its own site-wide toggle, it owns the
+    // theme (same storage key, same data-theme attribute). The dashboard then
+    // drops its own button and only re-colours its charts on each change.
+    if (document.getElementById("vos-theme-toggle")) {
+      const own = document.getElementById("theme-toggle");
+      if (own) own.hidden = true;
+      document.addEventListener("vos-theme-change", (e) => {
+        applyTheme(e.detail?.theme === "dark" ? "dark" : "light");
+      });
+      applyTheme(root.getAttribute("data-theme") === "dark" ? "dark" : "light");
+      return;
+    }
     applyTheme(
       root.getAttribute("data-theme") ??
         resolveTheme(readStoredTheme(), Boolean(mq?.matches)),

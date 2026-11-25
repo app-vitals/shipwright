@@ -70,7 +70,7 @@ function formatHour12(hour: number): string {
 
 function renderFollowRow(follow: SessionFollowRow): string {
   return `<tr>
-    <td><a href="/admin/sessions/${encodeURIComponent(follow.sessionSlug)}" style="color:#6366f1;text-decoration:none">${escapeHtml(follow.sessionSlug)}</a></td>
+    <td><a href="/admin/sessions/${encodeURIComponent(follow.sessionSlug)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(follow.sessionSlug)}</a></td>
     <td style="text-align:right">
       <form method="POST" action="${NOTIFICATION_SETTINGS_PATH}/unfollow" style="margin:0">
         <input type="hidden" name="sessionSlug" value="${escapeHtml(follow.sessionSlug)}" />
@@ -126,7 +126,7 @@ function renderNotificationSettingsPage(opts: {
       <div class="card-title">Push notifications</div>
       ${
         pushToggleHtml ||
-        `<p style="font-size:13px;color:#6b7280;margin:0">Push notifications are not configured on this server.</p>`
+        `<p style="font-size:13px;color:var(--vos-text-muted, #6b7280);margin:0">Push notifications are not configured on this server.</p>`
       }
       ${pushToggleHtml ? renderPushTestControl() : ""}
     </div>
@@ -143,7 +143,7 @@ function renderNotificationSettingsPage(opts: {
           />
           <label class="form-label" for="autoFollowSessions" style="margin-bottom:0">Automatically follow new sessions I can see</label>
         </div>
-        <p style="font-size:12px;color:#6b7280;margin:-8px 0 12px 22px">Covers any session in the agents and repos you have access to — not just ones you started — from the moment you turn this on.</p>
+        <p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:-8px 0 12px 22px">Covers any session in the agents and repos you have access to — not just ones you started — from the moment you turn this on.</p>
         <div class="form-group">
           <label class="form-label" for="reminderHourLocal">Reminder hour (0–23, ${escapeHtml(opts.timezone)} time)</label>
           <input
@@ -157,7 +157,7 @@ function renderNotificationSettingsPage(opts: {
             style="max-width:120px"
             value="${opts.prefs.reminderHourLocal}"
           />
-          <p style="font-size:12px;color:#6b7280;margin:4px 0 0">Currently ${formatHour12(opts.prefs.reminderHourLocal)} ${escapeHtml(opts.timezone)}.</p>
+          <p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:4px 0 0">Currently ${formatHour12(opts.prefs.reminderHourLocal)} ${escapeHtml(opts.timezone)}.</p>
         </div>
         <button type="submit" class="btn btn-primary">Save</button>
       </form>

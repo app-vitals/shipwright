@@ -957,7 +957,7 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
     // Merged cron-run table's Agent column (AC2).
     expect(html).toContain("<th>Agent</th>");
     expect(html).toContain(
-      '<a href="/admin/agents/agent-alpha" style="color:#6366f1;text-decoration:none">Alpha Agent</a>',
+      '<a href="/admin/agents/agent-alpha" style="color:var(--vos-brand, #6366f1);text-decoration:none">Alpha Agent</a>',
     );
 
     // Merged work-queue table's Eligible agents / Queued by columns (AC3).
