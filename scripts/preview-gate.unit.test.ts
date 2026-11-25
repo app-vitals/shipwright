@@ -120,13 +120,36 @@ describe("verifyGate", () => {
     expect(res.ok).toBe(false);
   });
 
-  it("fails when the self-check credential does not get 200", async () => {
+  it("fails when the self-check credential is rejected", async () => {
     const res = await verifyGate(
       "http://x",
       SELF,
       fakeFetch(() => 401),
     );
     expect(res.ok).toBe(false);
+  });
+
+  it("passes when the self-check credential is redirected past the gate", async () => {
+    // The admin UI answers `/` with a redirect once basic auth has passed.
+    for (const code of [302, 307, 204]) {
+      const res = await verifyGate(
+        "http://x",
+        SELF,
+        fakeFetch((a) => (a === selfHeader ? code : 401)),
+      );
+      expect(res).toEqual({ ok: true });
+    }
+  });
+
+  it("fails when the self-check credential gets a client or server error", async () => {
+    for (const code of [403, 404, 500, 502]) {
+      const res = await verifyGate(
+        "http://x",
+        SELF,
+        fakeFetch((a) => (a === selfHeader ? code : 401)),
+      );
+      expect(res.ok).toBe(false);
+    }
   });
 
   it("never puts a password in the failure reason", async () => {

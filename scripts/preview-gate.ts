@@ -8,7 +8,7 @@ import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
  *
  *   hash   --out <file>                    password on STDIN (never argv) ->
  *                                          htpasswd file + <file>.selfcheck
- *   verify --url <u> --selfcheck <file>    401 / 401 / 200 gate check
+ *   verify --url <u> --selfcheck <file>    401 / 401 / 2xx-3xx gate check
  *
  * Findings (P5): ingress-nginx accepts bcrypt (`htpasswd -B`, `$2y$`) and
  * apr1; the admin rejects a forwarded `Authorization: Basic` header, so the
@@ -107,10 +107,12 @@ export async function verifyGate(
       };
     }
     const good = await status(basic(selfCheck.user, selfCheck.password));
-    if (good !== 200) {
+    // Redirects are not followed, so a 3xx is the app answering behind the
+    // gate (the admin UI redirects `/`). Any 2xx or 3xx means it let us in.
+    if (good < 200 || good >= 400) {
       return {
         ok: false,
-        reason: `self-check credentials: expected 200, got ${good}`,
+        reason: `self-check credentials: expected 2xx or 3xx, got ${good}`,
       };
     }
     return { ok: true };
@@ -168,7 +170,7 @@ async function main(): Promise<void> {
     );
     if (!res.ok) throw new Error(`gate check failed: ${res.reason}`);
     console.log(
-      "[gate] OK: 401 without credentials, 401 wrong, 200 self-check",
+      "[gate] OK: 401 without credentials, 401 wrong, self-check let through",
     );
     return;
   }
