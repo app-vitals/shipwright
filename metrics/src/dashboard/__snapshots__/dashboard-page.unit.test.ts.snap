@@ -6,7 +6,9 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
@@ -191,6 +193,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -534,7 +537,9 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
@@ -719,6 +724,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -1062,7 +1068,9 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
@@ -1247,6 +1255,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -1590,7 +1599,9 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
@@ -1775,6 +1786,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -2118,7 +2130,9 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
@@ -2292,6 +2306,7 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>

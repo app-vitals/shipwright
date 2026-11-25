@@ -22,6 +22,90 @@
   let coverageTrendChart = null;
   let lastCoverageTrend = [];
 
+  // ─── Theme ───────────────────────────────────────────────────────────────
+
+  // Must match THEME_STORAGE_KEY in dashboard-page.ts (the <head> boot script).
+  const THEME_STORAGE_KEY = "shipwright-theme";
+
+  /** A saved choice wins; otherwise the system preference; otherwise light. */
+  function resolveTheme(stored, prefersDark) {
+    if (stored === "dark" || stored === "light") return stored;
+    return prefersDark ? "dark" : "light";
+  }
+
+  function nextTheme(current) {
+    return current === "dark" ? "light" : "dark";
+  }
+
+  function readStoredTheme() {
+    try {
+      return localStorage.getItem(THEME_STORAGE_KEY);
+    } catch {
+      return null; // storage blocked (private mode, sandboxed frame)
+    }
+  }
+
+  // A canvas cannot resolve CSS custom properties, so chart colours are read
+  // from the computed style of <html> when a chart is drawn or re-themed.
+  function themeColor(name) {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  /** Re-colour a live chart's legend, ticks and grid for the current theme. */
+  function applyChartTheme(chart) {
+    if (!chart) return;
+    const legend = chart.options?.plugins?.legend?.labels;
+    if (legend) legend.color = themeColor("--text");
+    for (const scale of Object.values(chart.options?.scales ?? {})) {
+      if (scale?.ticks) scale.ticks.color = themeColor("--text-dim");
+      if (scale?.grid) scale.grid.color = themeColor("--surface-raised");
+    }
+    chart.update("none");
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    const btn = document.getElementById("theme-toggle");
+    if (btn) btn.setAttribute("aria-pressed", String(theme === "dark"));
+    for (const chart of [
+      trendsChart,
+      tokenTrendsChart,
+      modalChart,
+      mergedPrsBarChart,
+      mergedPrsTrendChart,
+      coverageTrendChart,
+    ]) {
+      applyChartTheme(chart);
+    }
+  }
+
+  function initThemeToggle() {
+    const root = document.documentElement;
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    applyTheme(
+      root.getAttribute("data-theme") ??
+        resolveTheme(readStoredTheme(), Boolean(mq?.matches)),
+    );
+    const btn = document.getElementById("theme-toggle");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        const theme = nextTheme(root.getAttribute("data-theme"));
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, theme);
+        } catch {
+          // storage blocked: the choice still applies for this page view
+        }
+        applyTheme(theme);
+      });
+    }
+    // With no saved choice, keep following the system setting as it changes.
+    mq?.addEventListener?.("change", (e) => {
+      if (readStoredTheme() === null) applyTheme(resolveTheme(null, e.matches));
+    });
+  }
+
   // Fixed origin taxonomy + colors, shared by the bar and trend charts so
   // legend/tooltip semantics stay identical across both (unknown is grey).
   const ORIGIN_KEYS = [
@@ -801,7 +885,7 @@
           plugins: {
             legend: {
               labels: {
-                color: "var(--text)",
+                color: themeColor("--text"),
                 font: { family: "'JetBrains Mono', monospace", size: 11 },
                 boxWidth: 12,
               },
@@ -821,19 +905,19 @@
             x: {
               stacked: true,
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
                 maxRotation: 45,
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
             y: {
               stacked: true,
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
           },
         },
@@ -860,7 +944,7 @@
 
     if (periods.length === 0) {
       ctx.font = "14px var(--mono)";
-      ctx.fillStyle = "var(--text-dim)";
+      ctx.fillStyle = themeColor("--text-dim");
       ctx.textAlign = "center";
       ctx.fillText(
         "No data for this period",
@@ -889,7 +973,7 @@
           plugins: {
             legend: {
               labels: {
-                color: "var(--text)",
+                color: themeColor("--text"),
                 font: { family: "'JetBrains Mono', monospace", size: 11 },
                 boxWidth: 12,
               },
@@ -898,18 +982,18 @@
           scales: {
             x: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
                 maxRotation: 45,
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
             y: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
           },
         },
@@ -1054,7 +1138,7 @@
     if (trendEmptyEl) trendEmptyEl.style.display = hasTrend ? "none" : "";
     if (!hasTrend) return;
     const tickStyle = {
-      color: "var(--text-dim)",
+      color: themeColor("--text-dim"),
       font: { family: "'JetBrains Mono', monospace", size: 10 },
     };
     try {
@@ -1069,7 +1153,7 @@
             plugins: {
               legend: {
                 labels: {
-                  color: "var(--text)",
+                  color: themeColor("--text"),
                   font: { family: "'JetBrains Mono', monospace", size: 11 },
                   boxWidth: 12,
                 },
@@ -1078,9 +1162,12 @@
             scales: {
               x: {
                 ticks: { ...tickStyle, maxRotation: 45 },
-                grid: { color: "var(--surface-raised)" },
+                grid: { color: themeColor("--surface-raised") },
               },
-              y: { ticks: tickStyle, grid: { color: "var(--surface-raised)" } },
+              y: {
+                ticks: tickStyle,
+                grid: { color: themeColor("--surface-raised") },
+              },
             },
           },
         },
@@ -1135,7 +1222,7 @@
 
     if (!rows || rows.length === 0) {
       ctx.font = "14px var(--mono)";
-      ctx.fillStyle = "var(--text-dim)";
+      ctx.fillStyle = themeColor("--text-dim");
       ctx.textAlign = "center";
       ctx.fillText(
         "No data for this period",
@@ -1174,7 +1261,7 @@
           plugins: {
             legend: {
               labels: {
-                color: "var(--text)",
+                color: themeColor("--text"),
                 font: { family: "'JetBrains Mono', monospace", size: 11 },
                 boxWidth: 12,
               },
@@ -1183,18 +1270,18 @@
           scales: {
             x: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
                 maxRotation: 45,
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
             y: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
           },
         },
@@ -1219,7 +1306,7 @@
 
     if (!rows || rows.length === 0) {
       ctx.font = "14px var(--mono)";
-      ctx.fillStyle = "var(--text-dim)";
+      ctx.fillStyle = themeColor("--text-dim");
       ctx.textAlign = "center";
       ctx.fillText(
         "No data for this period",
@@ -1264,7 +1351,7 @@
           plugins: {
             legend: {
               labels: {
-                color: "var(--text)",
+                color: themeColor("--text"),
                 font: { family: "'JetBrains Mono', monospace", size: 11 },
                 boxWidth: 12,
               },
@@ -1273,18 +1360,18 @@
           scales: {
             x: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
                 maxRotation: 45,
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
             y: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
           },
         },
@@ -1467,7 +1554,7 @@
         type: "line",
         data: {
           labels,
-          datasets: [makeDataset(entry.label, data, "#4f46e5")],
+          datasets: [makeDataset(entry.label, data, themeColor("--accent"))],
         },
         options: {
           responsive: true,
@@ -1478,18 +1565,18 @@
           scales: {
             x: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
                 maxRotation: 45,
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
             y: {
               ticks: {
-                color: "var(--text-dim)",
+                color: themeColor("--text-dim"),
                 font: { family: "'JetBrains Mono', monospace", size: 10 },
               },
-              grid: { color: "var(--surface-raised)" },
+              grid: { color: themeColor("--surface-raised") },
             },
           },
         },
@@ -1805,6 +1892,7 @@
     document.addEventListener("DOMContentLoaded", () => {
       const activeBtn = document.querySelector(".date-btn.active");
       if (activeBtn) currentRange = rangeFromButton(activeBtn);
+      initThemeToggle();
       initDateRangePicker();
       initMetricClicks();
       initTokenTrendsToggles();
@@ -1825,6 +1913,8 @@
       fmtCoverageDelta,
       buildAdminTasksHref,
       fmtAsOfMeta,
+      resolveTheme,
+      nextTheme,
     };
   }
 })();

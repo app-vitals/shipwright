@@ -762,6 +762,53 @@ test.describe("Dashboard — tablet viewport (1024px)", () => {
   });
 });
 
+// ─── Dashboard — light and dark theme ────────────────────────────────────────
+
+test.describe("Dashboard — theme toggle", () => {
+  test("follows the system preference when nothing is saved", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("#theme-toggle")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator("body")).toHaveCSS(
+      "background-color",
+      "rgb(15, 17, 23)",
+    );
+  });
+
+  test("the toggle switches theme and the choice survives a reload", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    await page.locator("#theme-toggle").click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator(".vos-toolbar")).toHaveCSS(
+      "background-color",
+      "rgb(23, 26, 34)",
+    );
+
+    await page.reload({ waitUntil: "networkidle" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("#theme-toggle")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+});
+
 // ─── Dashboard — metric graph modal ──────────────────────────────────────────
 
 test.describe("Dashboard — metric graph modal", () => {
