@@ -53,7 +53,7 @@ To end one early, remove the label or close the PR. To preview new commits, remo
 
 - The workflow file runs from the default branch. Everything executed comes from a `trusted/` checkout of the default branch; the PR head is checked out to `pr/` only as an image build context and chart path, and is never executed.
 - The password secret is passed to exactly one step, which hashes it (bcrypt htpasswd) before the PR is checked out. PR code never sees the plain text.
-- The ingress enforces basic authentication in front of every route. The job then checks through the public URL that no credentials and wrong credentials get `401`, and that a random per-run self-check credential gets `200`, before it posts the comment.
+- The ingress enforces basic authentication in front of every route. The job then checks through the public URL that no credentials and wrong credentials get `401`, and that a random per-run self-check credential is let through (a `2xx` or a redirect), before it posts the comment.
 - The ingress strips the forwarded `Authorization` header, because the admin rejects a forwarded `Basic` header. This uses a configuration snippet, so the bring-up enables snippet annotations on the throwaway ingress controller.
 - A first job with no environment validates the request, so a fork PR or a wrong label fails there and never raises an approval request.
 - The job token is used only to comment and to watch the PR, with `contents: read` and `pull-requests: write`.
