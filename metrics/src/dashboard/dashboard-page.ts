@@ -264,64 +264,6 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         </div>
       </section>
 
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started${infoIcon("Tasks that moved from pending to in_progress in the period")}</span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved${infoIcon("PRs that received a SHIP IT review verdict")}</span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged${infoIcon("PRs merged to main in the selected period")}</span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked${infoIcon("Tasks stuck on a human-blocking issue")}</span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time${infoIcon("Mean wall-clock hours from task start to PR merge")}</span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate${infoIcon("% of started tasks that ended up in a blocked state")}</span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task${infoIcon("Mean number of review findings (bugs/suggestions) per task")}</span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
       <!-- Merged PRs by repo -->
       <section class="section" aria-label="Merged PRs by repo">
         <div class="section-header">

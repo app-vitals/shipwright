@@ -199,10 +199,9 @@ body {
   }
 }
 
-/* ─── Quality Grid / Queue Grid ─────────────────────────────────────────── */
+/* ─── Quality Grid ──────────────────────────────────────────────────────── */
 
-.quality-grid,
-.queue-grid {
+.quality-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
@@ -621,8 +620,7 @@ body {
   .kpi-grid {
     grid-template-columns: repeat(3, 1fr);
   }
-  .quality-grid,
-  .queue-grid {
+  .quality-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -637,8 +635,7 @@ body {
   .kpi-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .quality-grid,
-  .queue-grid {
+  .quality-grid {
     grid-template-columns: 1fr;
   }
   .efficiency-grid {

@@ -762,49 +762,6 @@ test.describe("Dashboard — tablet viewport (1024px)", () => {
   });
 });
 
-// ─── Dashboard — pipeline queue section ──────────────────────────────────────
-
-test.describe("Dashboard — pipeline queue section", () => {
-  test("renders real values in queue section", async ({ page }) => {
-    await mockMetricsAPIs(page, {
-      queueOverrides: {
-        tasksStarted: 55,
-        tasksMerged: 48,
-        tasksBlocked: 4,
-        tasksApproved: 45,
-        blockRate: 7.27,
-        avgCycleTimeDays: 2.1,
-        avgReviewFindings: 3.0,
-      },
-    });
-    await injectSessionCookie(page);
-    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
-
-    await expect(page.locator("#queue-started")).toHaveText("55");
-    await expect(page.locator("#queue-merged")).toHaveText("48");
-    await expect(page.locator("#queue-blocked")).toHaveText("4");
-  });
-
-  test("shows -- placeholder when queue data is null", async ({ page }) => {
-    await mockMetricsAPIs(page, {
-      queueOverrides: {
-        tasksStarted: 0,
-        tasksMerged: 0,
-        tasksBlocked: 0,
-        tasksApproved: 0,
-        blockRate: null,
-        avgCycleTimeDays: null,
-        avgReviewFindings: null,
-      },
-    });
-    await injectSessionCookie(page);
-    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
-
-    await expect(page.locator("#queue-cycle-time")).toHaveText("--");
-    await expect(page.locator("#queue-review-findings")).toHaveText("--");
-  });
-});
-
 // ─── Dashboard — metric graph modal ──────────────────────────────────────────
 
 test.describe("Dashboard — metric graph modal", () => {
@@ -941,21 +898,6 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
-  });
-
-  test("clicking tasks-started stat opens modal", async ({ page }) => {
-    await mockMetricsAPIsWithFullTrends(page);
-    await injectSessionCookie(page);
-    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
-
-    const el = page.locator('[data-metric="tasks-started"]').first();
-    await el.click();
-
-    const modal = page.locator("#metric-modal");
-    await expect(modal).not.toHaveAttribute("hidden");
-    await expect(page.locator("#metric-modal-title")).toContainText(
-      "Tasks Started",
-    );
   });
 
   test("modal renders the metric-chart canvas", async ({ page }) => {
