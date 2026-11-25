@@ -3923,6 +3923,28 @@
             },
             "description": "Configured agent repos the bound user can no longer push to. The agent's repos are never added to."
           },
+          "selectionSwitches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "org": {
+                  "type": "string"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "org",
+                "repos"
+              ]
+            },
+            "description": "Orgs whose agent App installation is on All repositories. Sync switches each to Selected repositories (first 50 repos in the switch, the rest added in batches) before any add or remove; `repos` is the resulting list: the installed repos minus the org's confirmed removals. An org the bound user can push to nothing in is skipped (see `skippedOrgs`) and stays on All repositories."
+          },
           "skippedOrgs": {
             "type": "array",
             "items": {
@@ -4085,6 +4107,28 @@
             "items": {
               "type": "string"
             }
+          },
+          "selectionSwitches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "org": {
+                  "type": "string"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "org",
+                "repos"
+              ]
+            },
+            "description": "Orgs whose agent App installation is on All repositories. Sync switches each to Selected repositories (first 50 repos in the switch, the rest added in batches) before any add or remove; `repos` is the resulting list: the installed repos minus the org's confirmed removals. An org the bound user can push to nothing in is skipped (see `skippedOrgs`) and stays on All repositories."
           },
           "notApplied": {
             "type": "array",
@@ -4730,6 +4774,69 @@
         },
         "required": [
           "agentId"
+        ]
+      },
+      "GithubEnterpriseUninstallResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "preview",
+              "uninstalled"
+            ]
+          },
+          "org": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "number"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agent's repos in the org, removed from the agent."
+          },
+          "openWork": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "repo"
+              ]
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "auditId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "org",
+          "installationId",
+          "repos",
+          "openWork",
+          "warnings"
         ]
       },
       "AgentTemplatesList": {
@@ -9640,6 +9747,196 @@
           },
           "502": {
             "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "GitHub unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "github-enterprise"
+        ],
+        "summary": "Uninstall an agent's App from an organization",
+        "description": "Admin-only. Finds the agent App's installation on the org (client id, slug or app id) and deletes it with the installer App, removes that org's repos from the agent's repos, blocks the agent's open tasks and PRs on them through the open-work port (a port failure is a warning) and writes one audit row (uninstall:org). `preview=true` lists the repos and open work that would be affected and changes nothing. 404 when the App is not installed on the org; 422 when more than 10 repos would be removed without `confirmRemovals=true`; 502 (with a failed audit row) when GitHub refuses.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+              "example": "example-org"
+            },
+            "required": true,
+            "name": "org",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Account whose App pair to read/write. Omit for the deployment-wide pair."
+            },
+            "required": false,
+            "description": "Account whose App pair to read/write. Omit for the deployment-wide pair.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "example": "agent-id"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "true: list the repos and open work an uninstall would affect and change nothing."
+            },
+            "required": false,
+            "description": "true: list the repos and open work an uninstall would affect and change nothing.",
+            "name": "preview",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "Required when more than 10 agent repos would be removed."
+            },
+            "required": false,
+            "description": "Required when more than 10 agent repos would be removed.",
+            "name": "confirmRemovals",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uninstalled, or the preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubEnterpriseUninstallResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (non-admin caller)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (or not found at GitHub)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Installer App not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused or rejected by GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "GitHub refused the configured App credentials or permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "GitHub rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub unavailable or returned an unexpected response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Uninstall is not available",
             "content": {
               "application/json": {
                 "schema": {
