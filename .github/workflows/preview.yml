@@ -187,19 +187,34 @@ jobs:
           curl -fsSL -o "$BIN" "https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/cloudflared-linux-amd64"
           echo "${SHA256}  ${BIN}" | sha256sum -c -
           chmod +x "$BIN"
-          nohup "$BIN" tunnel --no-autoupdate --url http://127.0.0.1:18080 > "$RUNNER_TEMP/cloudflared.log" 2>&1 &
-          echo "TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          # Quick tunnels are rate-limited per source address and shared runners
+          # are often refused (HTTP 429). Retry with a growing pause so one
+          # refusal does not cost an approval.
           HOST=""
-          for _ in $(seq 1 60); do
-            HOST=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$RUNNER_TEMP/cloudflared.log" | grep -v '^https://api\.' | head -n1 | sed 's#^https://##' || true)
+          PID=""
+          for ATTEMPT in 1 2 3 4 5; do
+            nohup "$BIN" tunnel --no-autoupdate --url http://127.0.0.1:18080 > "$RUNNER_TEMP/cloudflared.log" 2>&1 &
+            PID=$!
+            for _ in $(seq 1 60); do
+              HOST=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$RUNNER_TEMP/cloudflared.log" | grep -v '^https://api\.' | head -n1 | sed 's#^https://##' || true)
+              [ -n "$HOST" ] && break
+              # cloudflared exits when provisioning is refused: stop waiting.
+              kill -0 "$PID" 2>/dev/null || break
+              sleep 1
+            done
             [ -n "$HOST" ] && break
-            sleep 1
+            echo "::warning::Tunnel attempt $ATTEMPT of 5 produced no hostname."
+            tail -n 5 "$RUNNER_TEMP/cloudflared.log" || true
+            kill "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+            [ "$ATTEMPT" -lt 5 ] && sleep $((ATTEMPT * 20))
           done
           if [ -z "$HOST" ]; then
-            echo "::error::The tunnel did not produce a hostname within 60 seconds."
+            echo "::error::The tunnel did not produce a hostname after 5 attempts."
             tail -n 30 "$RUNNER_TEMP/cloudflared.log" || true
             exit 1
           fi
+          echo "TUNNEL_PID=$PID" >> "$GITHUB_ENV"
           echo "host=$HOST" >> "$GITHUB_OUTPUT"
 
       - name: Install Task

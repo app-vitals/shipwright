@@ -265,6 +265,18 @@ describe("cleanup", () => {
   });
 });
 
+describe("tunnel start", () => {
+  it("retries a refused quick tunnel and records the pid of the one that came up", () => {
+    const run = String((steps[tunnel()] as Step).run);
+    expect(run).toMatch(/for ATTEMPT in 1 2 3 4 5/);
+    // The pid is exported only after the loop, so it is the live tunnel's.
+    expect(run.indexOf('echo "TUNNEL_PID=$PID"')).toBeGreaterThan(
+      run.lastIndexOf("done"),
+    );
+    expect(run).not.toContain('echo "TUNNEL_PID=$!"');
+  });
+});
+
 describe("pinned cloudflared", () => {
   it("verifies a SHA-256 before running the binary", () => {
     const s = steps[tunnel()] as Step;
