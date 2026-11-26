@@ -162,7 +162,11 @@ describe("buildComment", () => {
       expiresAtMs: T0,
     });
     expect(body).toContain(COMMENT_MARKER);
-    expect(body).toContain("https://x.trycloudflare.com");
+    // The link goes to the session-starting route, not the bare host, which
+    // would land on a sign-in page with no provider to choose.
+    expect(body).toContain(
+      "- URL: https://x.trycloudflare.com/admin/dev-login\n",
+    );
     expect(body).toContain("`preview`");
     expect(body).toContain("abcdef1");
     expect(body).not.toContain(SHA);

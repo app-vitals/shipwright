@@ -35,7 +35,7 @@ The job token cannot read environment protection rules, so the workflow cannot v
 
 ## Requesting and ending a preview
 
-**Request:** add the `preview` label to a pull request from a branch in the same repository. A maintainer approves the run on the Actions page. After the stack is up, one comment on the PR shows the URL, the username `preview`, the short commit SHA and the expiry. Maintainers hold the password. You can also run the Preview workflow manually from the default branch with a PR number and an optional window in minutes (default 120).
+**Request:** add the `preview` label to a pull request from a branch in the same repository. A maintainer approves the run on the Actions page. After the stack is up, one comment on the PR shows the URL, the username `preview`, the short commit SHA and the expiry. Maintainers hold the password. The URL in the comment ends in `/admin/dev-login`: the preview has no sign-in provider, so that route is what starts an admin session after the password prompt. If you open the bare host you get a sign-in page saying no provider is configured; add `/admin/dev-login` to the address. You can also run the Preview workflow manually from the default branch with a PR number and an optional window in minutes (default 120).
 
 **End:** a preview ends by itself when any of these happens, and the comment is updated in place to say why. The tunnel is stopped before the comment changes.
 

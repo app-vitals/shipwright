@@ -130,6 +130,13 @@ export type CommentInput =
   | { status: "live"; url: string; sha: string; expiresAtMs: number }
   | { status: "expired"; reason: StopReason };
 
+/**
+ * The preview runs the admin UI without a sign-in provider, so its plain URL
+ * lands on a sign-in page with nothing to click. This route starts a session
+ * and redirects into the admin UI.
+ */
+export const PREVIEW_ENTRY_PATH = "/admin/dev-login";
+
 /** Build the single PR comment. Never includes the password. */
 export function buildComment(input: CommentInput): string {
   if (input.status === "expired") {
@@ -145,12 +152,13 @@ export function buildComment(input: CommentInput): string {
     COMMENT_MARKER,
     "### Preview ready",
     "",
-    `- URL: ${input.url}`,
+    `- URL: ${input.url}${PREVIEW_ENTRY_PATH}`,
     `- Username: \`${PREVIEW_USERNAME}\``,
     `- Commit: \`${input.sha.slice(0, 7)}\``,
     `- Expires: ${new Date(input.expiresAtMs).toISOString()}`,
     "",
     "Maintainers hold the password; ask one of them for it.",
+    "The link signs you in to the admin UI once you are past the password prompt.",
   ].join("\n");
 }
 
