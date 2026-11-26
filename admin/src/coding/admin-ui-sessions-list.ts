@@ -232,7 +232,8 @@ function formatTimestamp(
 }
 
 function badgeList(values: string[], badgeClass: string): string {
-  if (values.length === 0) return '<span style="color:#9ca3af">—</span>';
+  if (values.length === 0)
+    return '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
   return values
     .map(
       (v) =>
@@ -254,7 +255,7 @@ function sessionRow(
   // above, so a separate slug line underneath would just duplicate it.
   const slugHtml =
     session.slug !== title
-      ? `<div class="mono" style="font-size:11px;color:#9ca3af">${escapeHtml(session.slug)}</div>`
+      ? `<div class="mono" style="font-size:11px;color:var(--vos-text-faint, #9ca3af)">${escapeHtml(session.slug)}</div>`
       : "";
   const agentLabels = session.agentIds.map((id) => agentNames[id] ?? id);
   // SESH-6.2/FLW-1.1: live Follow/Following toggle, mirroring the session
@@ -272,7 +273,7 @@ function sessionRow(
   const docs = documentsSummary(session.documents);
   const documentsCell =
     docs.specCount === 0 && !docs.needsAttention
-      ? '<span style="color:#9ca3af">—</span>'
+      ? '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'
       : `${docs.specCount} ${docs.specCount === 1 ? "spec" : "specs"}${
           docs.needsAttention
             ? ' <span class="badge badge-warning" title="A document is a draft, has an open PR, or was abandoned">unmerged</span>'
@@ -282,8 +283,8 @@ function sessionRow(
     ? `<td style="font-size:12px">${badgeList(session.accountId ? [session.accountId] : [], "badge-gray")}</td>`
     : "";
   return `<tr>
-    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}${accountQuery}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>${accountCell}
-    <td style="font-size:12px">${session.owner ? escapeHtml(session.owner) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}${accountQuery}" style="color:var(--vos-brand, #6366f1);text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>${accountCell}
+    <td style="font-size:12px">${session.owner ? escapeHtml(session.owner) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
     <td style="font-size:12px">${badgeList(agentLabels, "badge-gray")}</td>
     <td style="font-size:12px">${badgeList(session.repos, "badge-purple")}</td>
     <td style="font-size:12px">${documentsCell}</td>
@@ -305,7 +306,7 @@ function renderSection(
   showAccount = false,
 ): string {
   return `<div class="card" style="margin-bottom:16px">
-    <div class="card-title" style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">${escapeHtml(label)} (${sessions.length})</div>
+    <div class="card-title" style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">${escapeHtml(label)} (${sessions.length})</div>
     <div class="data-table-wrapper">
       <table class="data-table">
         <thead>

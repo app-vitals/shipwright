@@ -118,13 +118,13 @@ const STATE_BADGE: Record<SessionDocument["state"], string> = {
   abandoned: "badge-red",
 };
 
-const DASH = '<span style="color:#9ca3af">—</span>';
+const DASH = '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
 
 function documentRow(doc: SessionDocument): string {
   const label = `${doc.kind === "plan" ? "Plan" : `Spec ${doc.number}`}`;
   const link = documentLink(doc);
   const linkHtml = link
-    ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:#6366f1;text-decoration:none">${escapeHtml(doc.state === "merged" ? "File" : "PR")}</a>`
+    ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(doc.state === "merged" ? "File" : "PR")}</a>`
     : DASH;
   const planned =
     doc.kind === "spec" ? (doc.plannedAt ? "Planned" : "Not planned") : DASH;
@@ -145,7 +145,7 @@ export function renderDocumentsBlock(
 ): string {
   if (!documents || documents.length === 0) return "";
   return `<div class="card" id="session-documents" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Documents</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Documents</div>
       <div class="data-table-wrapper">
         <table class="data-table">
           <thead>
@@ -180,5 +180,5 @@ export function renderOwnershipHeader(
     );
   }
   if (parts.length === 0) return "";
-  return `<div id="session-ownership" style="font-size:13px;color:#374151;margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap">${parts.join("")}</div>`;
+  return `<div id="session-ownership" style="font-size:13px;color:var(--vos-text-body, #374151);margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap">${parts.join("")}</div>`;
 }

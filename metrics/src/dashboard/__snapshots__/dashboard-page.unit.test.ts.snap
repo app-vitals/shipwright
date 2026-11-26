@@ -6,7 +6,9 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
@@ -211,6 +213,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -554,7 +557,9 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
@@ -759,6 +764,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -1102,7 +1108,9 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
@@ -1307,6 +1315,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -1650,7 +1659,9 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
@@ -1855,6 +1866,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>
@@ -2198,7 +2210,9 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>(function(){var t="light";try{var s=localStorage.getItem("shipwright-theme");if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
@@ -2394,6 +2408,7 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>

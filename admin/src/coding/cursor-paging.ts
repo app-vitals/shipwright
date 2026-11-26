@@ -101,7 +101,7 @@ export function renderCursorPager(
   const summary =
     opts.summary ??
     `${p.count} shown${typeof p.total === "number" ? ` of ${p.total}` : ""}`;
-  return `<div class="cursor-pager" style="display:flex;justify-content:space-between;align-items:center;padding:${opts.topPadding ?? "12px 0 0"};font-size:12px;color:#6b7280">
+  return `<div class="cursor-pager" style="display:flex;justify-content:space-between;align-items:center;padding:${opts.topPadding ?? "12px 0 0"};font-size:12px;color:var(--vos-text-muted, #6b7280)">
       <span>${summary}</span>
       <div style="display:flex;gap:4px">
         ${prevState ? `<a href="${hrefFor(prevState)}" rel="prev" ${BTN}>← Prev</a>` : ""}

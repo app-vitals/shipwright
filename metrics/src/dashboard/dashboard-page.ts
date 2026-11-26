@@ -40,6 +40,14 @@ function infoIcon(tip: string): string {
   return `<span class="info-icon" data-tooltip="${tip}" tabindex="0" aria-label="${tip}">i</span>`;
 }
 
+/**
+ * Runs in <head> before the stylesheet paints, so a dark-theme visitor never
+ * sees a light flash. Saved choice wins; otherwise follow the system setting.
+ * Storage or matchMedia being unavailable falls back to light.
+ */
+export const THEME_STORAGE_KEY = "shipwright-theme";
+const THEME_BOOT_SCRIPT = `(function(){var t="light";try{var s=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(s==="dark"||s==="light"){t=s}else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches){t="dark"}}catch(e){}document.documentElement.setAttribute("data-theme",t)})();`;
+
 export function renderDashboardPage(opts: DashboardPageOptions): string {
   const base = opts.basePath ?? "";
   const readOnly = opts.readOnly ?? false;
@@ -209,7 +217,9 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Metrics — Vitals OS</title>
+  <script>${THEME_BOOT_SCRIPT}</script>
   <style>${baseStyles()}</style>
   <link rel="stylesheet" href="${base}/dashboard/styles.css" />
 </head>
@@ -226,6 +236,7 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         <button class="date-btn" data-range="90d" type="button">90D</button>
       </div>
       <div class="page-meta">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
         <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
       </div>

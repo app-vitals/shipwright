@@ -41,3 +41,37 @@ describe("dashboard tooltips", () => {
     expect(hidden).not.toMatch(/white-space:\s*nowrap/);
   });
 });
+
+/** Body of the first rule for `selector`, wherever it sits in the file. */
+function blockBody(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+  if (!match) throw new Error(`rule not found: ${selector}`);
+  return match[1];
+}
+
+describe("dashboard themes", () => {
+  it("keys the dark palette off data-theme on the root element", () => {
+    const dark = blockBody(':root[data-theme="dark"]');
+    expect(dark).toMatch(/color-scheme:\s*dark;/);
+    expect(dark).toMatch(/--bg:\s*#[0-9a-f]{6};/);
+  });
+
+  it("has no hard-coded colours outside the two palette blocks", () => {
+    const withoutPalettes = css
+      .replace(/:root\s*\{[^}]*\}/, "")
+      .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "");
+    const hex: string[] = withoutPalettes.match(/#[0-9a-f]{3,8}\b/gi) ?? [];
+    // Neutral black shadows and the modal backdrop read the same in both themes.
+    const rgb: string[] = (
+      withoutPalettes.match(/rgba?\([^)]*\)/g) ?? []
+    ).filter((c) => !c.startsWith("rgba(0, 0, 0, "));
+    expect([...hex, ...rgb]).toEqual([]);
+  });
+
+  it("restyles the shared toolbar in dark", () => {
+    expect(blockBody('[data-theme="dark"] .vos-toolbar')).toMatch(
+      /background:\s*var\(--surface\);/,
+    );
+  });
+});

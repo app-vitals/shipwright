@@ -40,7 +40,7 @@ import {
 
 /** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links. */
 export function taskLink(taskId: string): string {
-  return `<a href="/admin/tasks/${escapeHtml(taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(taskId)}</a>`;
+  return `<a href="/admin/tasks/${escapeHtml(taskId)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(taskId)}</a>`;
 }
 
 /**
@@ -50,7 +50,7 @@ export function taskLink(taskId: string): string {
  * human-readable while still routing by id.
  */
 export function agentLink(agentId: string, label?: string): string {
-  return `<a href="/admin/agents/${escapeHtml(agentId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(label ?? agentId)}</a>`;
+  return `<a href="/admin/agents/${escapeHtml(agentId)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(label ?? agentId)}</a>`;
 }
 
 // Inline type — mirrors task-store/src/blocked-by.ts without cross-package coupling.
@@ -309,12 +309,12 @@ export async function resolveAgentNameFilterAndPaginate<T>(options: {
 
 // Shared by both the board (default) and table (?view=table) layouts.
 const TASKS_PAGE_EXTRA_STYLES = `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
-    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+    .badge-blue { background:var(--vos-info-bg, #dbeafe);color:var(--vos-info-text, #1d4ed8);border:1px solid var(--vos-info-border, #bfdbfe); }
+    .badge-green { background:var(--vos-success-bg, #dcfce7);color:var(--vos-success-text, #166534);border:1px solid var(--vos-success-border, #bbf7d0); }
+    .badge-red { background:var(--vos-danger-bg, #fee2e2);color:var(--vos-danger-text, #991b1b);border:1px solid var(--vos-danger-border, #fecaca); }
+    .badge-hitl { background:var(--vos-warning-bg, #fff7ed);color:var(--vos-warning-text, #c2410c);border:1px solid var(--vos-warning-border, #fed7aa); }
+    .badge-dep { background:var(--vos-warning-bg, #fefce8);color:var(--vos-warning-text, #a16207);border:1px solid var(--vos-warning-border, #fde047); }
+    .alert-warning { background:var(--vos-warning-bg, #fefce8);color:var(--vos-warning-text, #854d0e);border:1px solid var(--vos-warning-border, #fde047);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
     /* ─── Task board card slide-over drawer (AXR-1.4) ────────────────────── */
     .task-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
     .task-drawer-scrim {
@@ -325,7 +325,7 @@ const TASKS_PAGE_EXTRA_STYLES = `
     .task-drawer {
       position:fixed;top:0;right:0;bottom:0;z-index:102;
       width:100%;max-width:400px;min-width:300px;
-      background:#fff;border-left:1px solid #e8e8ee;
+      background:var(--vos-surface, #fff);border-left:1px solid var(--vos-border, #e8e8ee);
       overflow-y:auto;
       transform:translateX(100%);
       transition:transform 0.2s ease;
@@ -520,15 +520,15 @@ export function renderTasksPage(
               ? readOnly
                 ? escapeHtml(agentNames[agentId] ?? agentId)
                 : agentLink(agentId, agentNames[agentId] ?? agentId)
-              : '<span style="color:#9ca3af">—</span>';
+              : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
             const kindBadge = renderKindBadge(t.kind);
             const prCell =
               t.pr && t.repo
-                ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+                ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View PR">#${t.pr}</a>`
                 : t.prUrl
-                  ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
-                  : '<span style="color:#9ca3af">—</span>';
+                  ? `<a href="${escapeHtml(t.prUrl)}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
+                  : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             const createdCell = t.createdAt
               ? escapeHtml(
                   (() => {
@@ -542,7 +542,7 @@ export function renderTasksPage(
                         });
                   })(),
                 )
-              : '<span style="color:#9ca3af">—</span>';
+              : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
             // Joined PR data attributes — rendered only when the join map
             // has an entry for this task (i.e. only from GET /admin/tasks;
@@ -555,7 +555,7 @@ export function renderTasksPage(
               ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
               : "";
             return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
-    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
+    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
     <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}${kindBadge}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
@@ -563,10 +563,10 @@ export function renderTasksPage(
       t.session
         ? readOnly
           ? escapeHtml(t.session)
-          : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
-        : '<span style="color:#9ca3af">—</span>'
+          : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.session)}</a>`
+        : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'
     }</td>
-    <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
     <td class="col-source mono" style="font-size:11px">${renderSourceCell(t, readOnly)}</td>
     <td class="col-origin" style="font-size:11px">${renderOriginText(t) ?? DASH_HTML}</td>
     <td class="col-owner" style="font-size:12px">${t.owner ? escapeHtml(t.owner) : DASH_HTML}</td>
@@ -610,18 +610,18 @@ export function renderTasksPage(
   const activeState = filters.state;
   const tabStyle = (state: string) =>
     activeState === state
-      ? "background:#6366f1;color:#fff;font-weight:600"
-      : "background:#fff;color:#374151";
+      ? "background:var(--vos-brand, #6366f1);color:var(--vos-on-brand, #fff);font-weight:600"
+      : "background:var(--vos-surface, #fff);color:var(--vos-text-body, #374151)";
   const stateToggle = `
-    <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
+    <div style="display:flex;gap:0;border:1px solid var(--vos-border, #e5e7eb);border-radius:6px;overflow:hidden;width:fit-content">
       <a href="/admin/tasks${makeStateParams("ready")}"
          class="state-tab" style="font-size:12px;text-decoration:none;${tabStyle("ready")}">Ready</a>
       <a href="/admin/tasks${makeStateParams("in_progress")}"
-         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("in_progress")}">In Progress</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid var(--vos-border, #e5e7eb);${tabStyle("in_progress")}">In Progress</a>
       <a href="/admin/tasks${makeStateParams("blocked")}"
-         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("blocked")}">Blocked</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid var(--vos-border, #e5e7eb);${tabStyle("blocked")}">Blocked</a>
       <a href="/admin/tasks${makeStateParams("closed")}"
-         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("closed")}">Closed</a>
+         class="state-tab" style="font-size:12px;text-decoration:none;border-left:1px solid var(--vos-border, #e5e7eb);${tabStyle("closed")}">Closed</a>
     </div>`;
 
   const statusOptions = [
@@ -929,14 +929,14 @@ function renderTasksBoard(args: {
         : "";
     const prLink =
       t.pr && t.repo
-        ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+        ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View PR">#${t.pr}</a>`
         : t.prUrl
-          ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
+          ? `<a href="${escapeHtml(t.prUrl)}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
           : "";
     const sessionLink = t.session
       ? readOnly
         ? escapeHtml(t.session)
-        : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
+        : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.session)}</a>`
       : "";
     const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
     // Same <span title="{ISO}">{relative}</span> pattern as the Queue/
@@ -960,8 +960,8 @@ function renderTasksBoard(args: {
           <div style="font-size:13px;font-weight:600">${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}</div>
           <span class="badge ${statusBadgeClass(t.status)}" style="font-size:10px;white-space:nowrap">${escapeHtml(t.status)}</span>
         </div>
-        <div class="mono" style="font-size:11px;color:#9ca3af;margin-top:2px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.id)}</a>`}</div>
-        <div style="font-size:11px;color:#6b7280;margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <div class="mono" style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:2px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.id)}</a>`}</div>
+        <div style="font-size:11px;color:var(--vos-text-muted, #6b7280);margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           ${t.repo ? `<span class="mono">${escapeHtml(t.repo)}</span>` : ""}
           ${agentCell}
           ${sessionLink}
@@ -984,26 +984,26 @@ function renderTasksBoard(args: {
         <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px">
           <div>
             <h2 style="font-size:16px;font-weight:600;margin-bottom:4px">${escapeHtml(t.title)}</h2>
-            <div class="mono" style="font-size:12px;color:#9ca3af">${escapeHtml(t.id)}</div>
+            <div class="mono" style="font-size:12px;color:var(--vos-text-faint, #9ca3af)">${escapeHtml(t.id)}</div>
           </div>
-          <label for="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer;color:#6b7280;font-size:20px;line-height:1">×</label>
+          <label for="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer;color:var(--vos-text-muted, #6b7280);font-size:20px;line-height:1">×</label>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:16px">
           <span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span>
         </div>
-        ${t.repo ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Repo:</strong> ${escapeHtml(t.repo)}</div>` : ""}
-        ${t.session ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Session:</strong> ${escapeHtml(t.session)}</div>` : ""}
-        ${agentId ? `<div style="font-size:12px;color:#6b7280;margin-bottom:16px"><strong>Agent:</strong> ${escapeHtml(agentNames[agentId] ?? agentId)}</div>` : ""}
-        ${t.description ? `<div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:16px">${renderMarkdown(t.description)}</div>` : ""}
+        ${t.repo ? `<div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:8px"><strong>Repo:</strong> ${escapeHtml(t.repo)}</div>` : ""}
+        ${t.session ? `<div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:8px"><strong>Session:</strong> ${escapeHtml(t.session)}</div>` : ""}
+        ${agentId ? `<div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:16px"><strong>Agent:</strong> ${escapeHtml(agentNames[agentId] ?? agentId)}</div>` : ""}
+        ${t.description ? `<div style="font-size:13px;color:var(--vos-text-body, #374151);line-height:1.6;margin-bottom:16px">${renderMarkdown(t.description)}</div>` : ""}
         ${
           joinedPr
             ? `
-          <div style="border-top:1px solid #e8e8ee;padding-top:16px">
+          <div style="border-top:1px solid var(--vos-border, #e8e8ee);padding-top:16px">
             <h3 style="font-size:13px;font-weight:600;margin-bottom:8px">Pull Request</h3>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Number:</strong> <a href="https://github.com/${escapeHtml(joinedPr.repo)}/pull/${joinedPr.prNumber}" style="color:#6366f1;text-decoration:none">#${joinedPr.prNumber}</a></div>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>State:</strong> ${escapeHtml(joinedPr.state)}</div>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Review State:</strong> ${escapeHtml(joinedPr.reviewState)}</div>
-            ${joinedPr.blocked ? `<div style="font-size:12px;color:#dc2626"><strong>Blocked:</strong> ${escapeHtml(joinedPr.blockedReason ?? "Yes")}</div>` : ""}
+            <div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:4px"><strong>Number:</strong> <a href="https://github.com/${escapeHtml(joinedPr.repo)}/pull/${joinedPr.prNumber}" style="color:var(--vos-brand, #6366f1);text-decoration:none">#${joinedPr.prNumber}</a></div>
+            <div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:4px"><strong>State:</strong> ${escapeHtml(joinedPr.state)}</div>
+            <div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:4px"><strong>Review State:</strong> ${escapeHtml(joinedPr.reviewState)}</div>
+            ${joinedPr.blocked ? `<div style="font-size:12px;color:var(--vos-danger, #dc2626)"><strong>Blocked:</strong> ${escapeHtml(joinedPr.blockedReason ?? "Yes")}</div>` : ""}
           </div>
         `
             : ""
@@ -1179,7 +1179,7 @@ export function renderTaskDetailPage(
   ): string {
     if (!value) return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px${mono ? ";font-family:monospace;font-size:12px" : ""}">${escapeHtml(value)}</td>
     </tr>`;
   }
@@ -1190,7 +1190,7 @@ export function renderTaskDetailPage(
   ): string {
     if (!agentId) return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
     </tr>`;
   }
@@ -1202,8 +1202,8 @@ export function renderTaskDetailPage(
   ): string {
     if (!url) return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
-      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#6366f1">${escapeHtml(text ?? url)}</a></td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:var(--vos-brand, #6366f1)">${escapeHtml(text ?? url)}</a></td>
     </tr>`;
   }
 
@@ -1220,7 +1220,7 @@ export function renderTaskDetailPage(
       )
       .join("");
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
       <td style="padding:8px 12px"><ul style="margin:0;padding-left:16px">${listItems}</ul></td>
     </tr>`;
   }
@@ -1236,7 +1236,7 @@ export function renderTaskDetailPage(
           timeZone: timezone,
         });
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>
     </tr>`;
   }
@@ -1251,26 +1251,26 @@ export function renderTaskDetailPage(
           ? dateField("Patched", pullRequest.patchedAt)
           : "";
         return `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Pull Request Review</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Pull Request Review</div>
       <table class="detail-table"><tbody>
         <tr>
-          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">GitHub PR</td>
-          <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(prUrl)}" target="_blank" rel="noopener" style="color:#6366f1">#${escapeHtml(String(pullRequest.prNumber))}</a></td>
+          <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">GitHub PR</td>
+          <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(prUrl)}" target="_blank" rel="noopener" style="color:var(--vos-brand, #6366f1)">#${escapeHtml(String(pullRequest.prNumber))}</a></td>
         </tr>
         <tr>
-          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">State</td>
+          <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">State</td>
           <td style="padding:8px 12px;font-size:13px"><span class="badge badge-gray">${escapeHtml(pullRequest.state)}</span></td>
         </tr>
         <tr>
-          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Review State</td>
+          <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">Review State</td>
           <td style="padding:8px 12px;font-size:13px"><span class="badge badge-gray">${escapeHtml(pullRequest.reviewState)}</span></td>
         </tr>
         <tr>
-          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Review Cycles</td>
+          <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">Review Cycles</td>
           <td style="padding:8px 12px;font-size:13px">${escapeHtml(String(pullRequest.reviewCycles))}</td>
         </tr>
         <tr>
-          <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">Patch Cycles</td>
+          <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">Patch Cycles</td>
           <td style="padding:8px 12px;font-size:13px">${escapeHtml(String(pullRequest.patchCycles))}</td>
         </tr>
         ${reviewedFmt}
@@ -1302,16 +1302,16 @@ export function renderTaskDetailPage(
   const planSessionHint =
     task.kind === "initiative"
       ? `<div class="card" style="margin-bottom:16px">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Plan this initiative</div>
-        <div style="font-size:13px;color:#374151;margin-bottom:6px">Run one of these in a planning session; the initiative closes when the run finishes:</div>
-        <div style="margin-bottom:4px"><code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:prd &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
-        <div><code class="mono" style="font-size:12px;user-select:all;background:#f3f4f6;padding:4px 8px;border-radius:4px">/shipwright:plan-session &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
+        <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Plan this initiative</div>
+        <div style="font-size:13px;color:var(--vos-text-body, #374151);margin-bottom:6px">Run one of these in a planning session; the initiative closes when the run finishes:</div>
+        <div style="margin-bottom:4px"><code class="mono" style="font-size:12px;user-select:all;background:var(--vos-surface-subtle, #f3f4f6);padding:4px 8px;border-radius:4px">/shipwright:prd &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
+        <div><code class="mono" style="font-size:12px;user-select:all;background:var(--vos-surface-subtle, #f3f4f6);padding:4px 8px;border-radius:4px">/shipwright:plan-session &lt;session&gt; --initiative ${escapeHtml(task.id)}</code></div>
       </div>`
       : "";
 
   const descriptionSection = task.description
     ? `<div class="card" style="margin-bottom:16px">
-        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Description</div>
+        <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Description</div>
         <div class="markdown-body" style="font-size:14px;line-height:1.6">${renderMarkdown(task.description)}</div>
       </div>`
     : "";
@@ -1319,7 +1319,7 @@ export function renderTaskDetailPage(
   const acSection =
     task.acceptanceCriteria && task.acceptanceCriteria.length > 0
       ? `<div class="card" style="margin-bottom:16px">
-          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Acceptance Criteria</div>
+          <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Acceptance Criteria</div>
           <ul style="margin:0;padding-left:16px">
             ${task.acceptanceCriteria.map((c) => `<li style="font-size:14px;line-height:1.6;margin-bottom:6px">${renderMarkdown(c)}</li>`).join("")}
           </ul>
@@ -1329,7 +1329,7 @@ export function renderTaskDetailPage(
   const blockersSection =
     task.blockedBy && task.blockedBy.length > 0
       ? `<div class="card" style="margin-bottom:16px">
-          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Blockers</div>
+          <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Blockers</div>
           <ul style="margin:0;padding-left:16px">
             ${task.blockedBy
               .map((b) => {
@@ -1363,8 +1363,8 @@ export function renderTaskDetailPage(
     agentField("Claimed By", task.claimedBy),
     task.session
       ? `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
-      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px"><a href="/admin/sessions/${encodeURIComponent(task.session)}?from=${encodeURIComponent(`/admin/tasks/${encodeURIComponent(task.id)}`)}" style="color:#6366f1">${escapeHtml(task.session)}</a></td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px"><a href="/admin/sessions/${encodeURIComponent(task.session)}?from=${encodeURIComponent(`/admin/tasks/${encodeURIComponent(task.id)}`)}" style="color:var(--vos-brand, #6366f1)">${escapeHtml(task.session)}</a></td>
     </tr>`
       : "",
     field("Repo", task.repo, true),
@@ -1421,11 +1421,11 @@ export function renderTaskDetailPage(
   return renderAdminPage({
     title: `${task.title} — Tasks — Shipwright Admin`,
     extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-blue { background:var(--vos-info-bg, #dbeafe);color:var(--vos-info-text, #1d4ed8);border:1px solid var(--vos-info-border, #bfdbfe); }
     .detail-table { width:100%;border-collapse:collapse; }
-    .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
-    .markdown-body pre { background:#f3f4f6; border-radius:4px; padding:12px; overflow-x:auto; font-size:12px; }
-    .markdown-body code { background:#f3f4f6; border-radius:3px; padding:1px 4px; font-size:12px; }
+    .detail-table tr:not(:last-child) td { border-bottom:1px solid var(--vos-surface-subtle, #f3f4f6); }
+    .markdown-body pre { background:var(--vos-surface-subtle, #f3f4f6); border-radius:4px; padding:12px; overflow-x:auto; font-size:12px; }
+    .markdown-body code { background:var(--vos-surface-subtle, #f3f4f6); border-radius:3px; padding:1px 4px; font-size:12px; }
     .markdown-body pre code { background:none; padding:0; }
     .markdown-body ul, .markdown-body ol { padding-left:20px; margin:8px 0; }
     .markdown-body li { margin-bottom:4px; }
@@ -1433,13 +1433,13 @@ export function renderTaskDetailPage(
     body: `${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page vos-page-wide">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <a href="${escapeHtml(backHref)}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(task.title)}</h1>
       <span class="badge ${statusClass}">${escapeHtml(task.status)}</span>
       ${releaseButton}
       ${promoteButton}
     </div>
-    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(task.id)}</div>
+    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:var(--vos-text-faint, #9ca3af)">${escapeHtml(task.id)}</div>
     ${noticeHtml}
     ${planSessionHint}
     ${blockersSection}
@@ -1458,7 +1458,7 @@ export function renderTaskDetailPage(
     ${
       datesRows
         ? `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
       <table class="detail-table"><tbody>${datesRows}</tbody></table>
     </div>`
         : ""
@@ -1650,13 +1650,13 @@ function renderNeedsYouPanel(
       const since = task.updatedAt ?? null;
       const prLink =
         task.prUrl != null
-          ? `<a href="${escapeHtml(task.prUrl)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">PR</a>`
-          : '<span style="color:#9ca3af">—</span>';
+          ? `<a href="${escapeHtml(task.prUrl)}" target="_blank" rel="noopener" style="color:var(--vos-brand, #6366f1);text-decoration:none">PR</a>`
+          : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
       return `<tr>
         <td><span class="badge ${WAITING_KIND_BADGE_CLASS[kind]}">${escapeHtml(WAITING_KIND_LABEL[kind])}</span></td>
-        <td style="font-size:12px">${reason ? escapeHtml(reason) : '<span style="color:#9ca3af">—</span>'}</td>
-        <td style="font-size:12px">${since ? escapeHtml(since) : '<span style="color:#9ca3af">—</span>'}</td>
-        <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(task.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(task.id)}</a></td>
+        <td style="font-size:12px">${reason ? escapeHtml(reason) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
+        <td style="font-size:12px">${since ? escapeHtml(since) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
+        <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(task.id)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(task.id)}</a></td>
         <td style="font-size:12px">${prLink}</td>
         <td class="mono" style="font-size:11px"><code>${escapeHtml(waitingTaskHint(entry))}</code></td>
       </tr>`;
@@ -1664,7 +1664,7 @@ function renderNeedsYouPanel(
     .join("\n");
 
   return `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Needs you</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Needs you</div>
       <div class="data-table-wrapper">
         <table class="data-table">
           <thead>
@@ -1836,7 +1836,7 @@ function renderPromoteForm(
       </form>`;
 }
 
-const DASH_HTML = '<span style="color:#9ca3af">—</span>';
+const DASH_HTML = '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
 
 /**
  * The Source cell. A task linked to a plan/spec document (and a session to
@@ -1847,7 +1847,7 @@ function renderSourceCell(t: TaskItem, readOnly: boolean): string {
   if (!t.source) return DASH_HTML;
   const linked = !!(t.planDocumentId || t.specDocumentId) && !!t.session;
   if (!linked || readOnly) return escapeHtml(t.source);
-  return `<a href="/admin/sessions/${encodeURIComponent(t.session as string)}#session-documents" style="color:#6366f1;text-decoration:none">${escapeHtml(t.source)}</a>`;
+  return `<a href="/admin/sessions/${encodeURIComponent(t.session as string)}#session-documents" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.source)}</a>`;
 }
 
 /** "kind: ref" for a task's typed origin (unescaped), or null when none. */
@@ -2134,12 +2134,12 @@ function renderDependencyGraph(nodes: DependencyNode[]): string {
 
   const nodeCard = (n: DependencyNode): string => {
     const pos = layout.positions.get(n.id);
-    const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
+    const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:var(--vos-brand, #6366f1);text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
     const statusHtml = `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`;
-    const titleHtml = `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`;
+    const titleHtml = `<div style="font-size:12px;color:var(--vos-text-body, #374151);margin-top:2px">${escapeHtml(n.title)}</div>`;
     const dependsOnHtml =
       n.dependsOn.length > 0
-        ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">needs ${n.dependsOn
+        ? `<div style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:4px">needs ${n.dependsOn
             .map((d) =>
               byId.has(d)
                 ? `<a href="/admin/tasks/${escapeHtml(d)}" style="color:inherit;text-decoration:underline">${escapeHtml(d)}</a>`
@@ -2157,7 +2157,7 @@ function renderDependencyGraph(nodes: DependencyNode[]): string {
         : "";
     const left = pos?.x ?? 0;
     const top = pos?.y ?? 0;
-    return `<div data-task-id="${escapeHtml(n.id)}" style="position:absolute;left:${left}px;top:${top}px;width:${LAYOUT_CARD_WIDTH}px;border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+    return `<div data-task-id="${escapeHtml(n.id)}" style="position:absolute;left:${left}px;top:${top}px;width:${LAYOUT_CARD_WIDTH}px;border:1px solid var(--vos-border, #e5e7eb);${borderLeft}border-radius:6px;padding:8px 10px;background:var(--vos-surface, #fff);box-shadow:0 1px 2px rgba(0,0,0,0.03)">
         <div>${idHtml}${statusHtml}</div>
         ${titleHtml}
         ${dependsOnHtml}
@@ -2243,7 +2243,7 @@ export function renderSessionDetailPage(
   // account user viewing their own account's session).
   const adminActionsHtml = isAdmin
     ? `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Admin actions</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Admin actions</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/archive${escapeHtml(actionsQuery)}" style="margin:0">
           <button type="submit" class="btn btn-secondary">Archive</button>
@@ -2266,7 +2266,7 @@ export function renderSessionDetailPage(
   const stateBadgeHtml = `<span class="badge ${SESSION_STATE_BADGE_CLASS[sessionState]}">${escapeHtml(SESSION_STATE_LABEL[sessionState])}</span>`;
   const waitingSinceHtml =
     sessionState === "waiting" && waitingSince
-      ? `<span style="font-size:12px;color:#6b7280">Waiting since ${escapeHtml(waitingSince)}</span>`
+      ? `<span style="font-size:12px;color:var(--vos-text-muted, #6b7280)">Waiting since ${escapeHtml(waitingSince)}</span>`
       : "";
 
   // SESH-5.3: Follow/Unfollow button. Initial label/data-following reflect
@@ -2297,13 +2297,13 @@ export function renderSessionDetailPage(
 
   function taskRow(t: TaskItem): string {
     return `<tr>
-    <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.id)}</a></td>
+    <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(t.id)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.id)}</a></td>
     <td>${escapeHtml(t.title)}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
-    <td style="font-size:12px">${t.layer ? escapeHtml(t.layer) : '<span style="color:#9ca3af">—</span>'}</td>
-    <td style="font-size:12px">${t.hours !== null && t.hours !== undefined ? escapeHtml(String(t.hours)) : '<span style="color:#9ca3af">—</span>'}</td>
-    <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
-    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td style="font-size:12px">${t.layer ? escapeHtml(t.layer) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
+    <td style="font-size:12px">${t.hours !== null && t.hours !== undefined ? escapeHtml(String(t.hours)) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
+    <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>'}</td>
   </tr>`;
   }
 
@@ -2313,7 +2313,7 @@ export function renderSessionDetailPage(
       : TASK_STATE_GROUPS.map(({ key, label }) => {
           const group = tasksByState.get(key);
           if (!group || group.length === 0) return "";
-          return `<tr><td colspan="7" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
+          return `<tr><td colspan="7" style="background:var(--vos-surface-muted, #f9fafb);font-size:11px;font-weight:600;color:var(--vos-text-body, #374151);padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
         })
           .filter(Boolean)
           .join("\n");
@@ -2321,7 +2321,7 @@ export function renderSessionDetailPage(
   const depsSection =
     dependencyNodes.length > 0
       ? `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
       <div class="data-table-wrapper">
       ${renderDependencyGraph(dependencyNodes)}
     </div>
@@ -2330,22 +2330,22 @@ export function renderSessionDetailPage(
 
   const statCard = (label: string, value: string) => `
     <div class="card" style="flex:1;min-width:120px;text-align:center">
-      <div style="font-size:24px;font-weight:700;color:#111827">${value}</div>
-      <div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(label)}</div>
+      <div style="font-size:24px;font-weight:700;color:var(--vos-text, #111827)">${value}</div>
+      <div style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-top:4px">${escapeHtml(label)}</div>
     </div>`;
 
   return renderAdminPage({
     title: `Session ${sessionId} — Shipwright Admin`,
     extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+    .badge-blue { background:var(--vos-info-bg, #dbeafe);color:var(--vos-info-text, #1d4ed8);border:1px solid var(--vos-info-border, #bfdbfe); }
+    .badge-green { background:var(--vos-success-bg, #dcfce7);color:var(--vos-success-text, #166534);border:1px solid var(--vos-success-border, #bbf7d0); }
+    .badge-red { background:var(--vos-danger-bg, #fee2e2);color:var(--vos-danger-text, #991b1b);border:1px solid var(--vos-danger-border, #fecaca); }
+    .alert-warning { background:var(--vos-warning-bg, #fefce8);color:var(--vos-warning-text, #854d0e);border:1px solid var(--vos-warning-border, #fde047);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   `,
     body: `${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page vos-page-wide">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <a href="${escapeHtml(backHref)}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
       ${stateBadgeHtml}
       ${waitingSinceHtml}
@@ -2362,7 +2362,7 @@ export function renderSessionDetailPage(
       ${statCard("Layers", String(distinctLayers))}
     </div>
     ${needsYouSection}
-    <div style="font-size:13px;color:#374151;margin-bottom:12px">
+    <div style="font-size:13px;color:var(--vos-text-body, #374151);margin-bottom:12px">
       ${TASK_STATE_GROUPS.map(
         ({ key, label }) =>
           `<strong>${tasksByState.get(key)?.length ?? 0}</strong> ${escapeHtml(label.toLowerCase())}`,
@@ -2521,12 +2521,12 @@ export function renderPrsPage(
                   pr.claimedBy,
                   agentNames[pr.claimedBy] ?? pr.claimedBy,
                 )}`
-              : '<span style="color:#9ca3af">—</span>';
+              : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             const linkedTasks = linkedTasksByPr[pr.id] ?? [];
             const taskCell =
               linkedTasks.length > 0
                 ? linkedTasks.map((t) => taskLink(t.id)).join(", ")
-                : '<span style="color:#9ca3af">—</span>';
+                : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             const createdCell = pr.createdAt
               ? escapeHtml(
                   (() => {
@@ -2540,9 +2540,9 @@ export function renderPrsPage(
                         });
                   })(),
                 )
-              : '<span style="color:#9ca3af">—</span>';
+              : '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>';
             return `<tr data-href="/admin/prs/${escapeHtml(pr.id)}" style="cursor:pointer">
-    <td style="font-size:12px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none;font-weight:500">#${escapeHtml(String(pr.prNumber))}</a></td>
+    <td style="font-size:12px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:var(--vos-brand, #6366f1);text-decoration:none;font-weight:500">#${escapeHtml(String(pr.prNumber))}</a></td>
     <td style="font-size:12px">${escapeHtml(pr.repo)}</td>
     <td style="font-size:12px">${taskCell}</td>
     <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span>${renderBlockedBadge(pr)}</td>
@@ -2584,21 +2584,21 @@ export function renderPrsPage(
   // filters.blocked === "true", regardless of the current filters.state.
   const tabStyle = (tabState: string) =>
     !blockedActive && activeState === tabState
-      ? "background:#6366f1;color:#fff;font-weight:600"
-      : "background:#fff;color:#374151";
+      ? "background:var(--vos-brand, #6366f1);color:var(--vos-on-brand, #fff);font-weight:600"
+      : "background:var(--vos-surface, #fff);color:var(--vos-text-body, #374151)";
 
   const blockedTabStyle = blockedActive
-    ? "background:#6366f1;color:#fff;font-weight:600"
-    : "background:#fff;color:#374151";
+    ? "background:var(--vos-brand, #6366f1);color:var(--vos-on-brand, #fff);font-weight:600"
+    : "background:var(--vos-surface, #fff);color:var(--vos-text-body, #374151)";
 
   const stateToggle = `
-    <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
+    <div style="display:flex;gap:0;border:1px solid var(--vos-border, #e5e7eb);border-radius:6px;overflow:hidden;width:fit-content">
       <a href="/admin/prs${makeTabParams("open")}"
          style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("open")}">Open</a>
       <a href="/admin/prs${makeTabParams("merged")}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("merged")}">Merged</a>
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid var(--vos-border, #e5e7eb);${tabStyle("merged")}">Merged</a>
       <a href="/admin/prs${makeBlockedTabParams()}"
-         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${blockedTabStyle}">Blocked</a>
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid var(--vos-border, #e5e7eb);${blockedTabStyle}">Blocked</a>
     </div>`;
 
   // Pagination
@@ -2681,15 +2681,15 @@ export function renderPrsPage(
         <table class="data-table" style="width:100%;border-collapse:collapse">
           <thead>
             <tr>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">PR#</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
-              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times this PR has been sent back for review">Review Cycles</span></th>
-              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times a patch was applied to address review feedback">Patch Cycles</span></th>
-              <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
-              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Created</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">PR#</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">Repo</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">Task</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">State</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">Review State</th>
+              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)"><span class="header-tooltip" data-tip="How many times this PR has been sent back for review">Review Cycles</span></th>
+              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)"><span class="header-tooltip" data-tip="How many times a patch was applied to address review feedback">Patch Cycles</span></th>
+              <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">Claimed By</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:var(--vos-text-muted, #6b7280);border-bottom:1px solid var(--vos-border, #e5e7eb)">Created</th>
             </tr>
           </thead>
           <tbody>
@@ -2730,7 +2730,7 @@ export function renderPrDetailPage(
   ): string {
     if (value === null || value === undefined || value === "") return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px${mono ? ";font-family:monospace;font-size:12px" : ""}">${escapeHtml(value)}</td>
     </tr>`;
   }
@@ -2746,7 +2746,7 @@ export function renderPrDetailPage(
           timeZone: timezone,
         });
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px" title="${escapeHtml(iso)}">${escapeHtml(fmt)}</td>
     </tr>`;
   }
@@ -2758,8 +2758,8 @@ export function renderPrDetailPage(
   ): string {
     if (!url) return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
-      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#6366f1">${escapeHtml(text ?? url)}</a></td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:var(--vos-brand, #6366f1)">${escapeHtml(text ?? url)}</a></td>
     </tr>`;
   }
 
@@ -2769,7 +2769,7 @@ export function renderPrDetailPage(
   ): string {
     if (!agentId) return "";
     return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
       <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
     </tr>`;
   }
@@ -2782,7 +2782,7 @@ export function renderPrDetailPage(
     linkField("PR Number", githubPrUrl, `#${pr.prNumber}`),
     linkedTasks.length > 0
       ? `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
       <td style="padding:8px 12px;font-size:13px">${linkedTasks.map((t) => taskLink(t.id)).join(", ")}</td>
     </tr>`
       : "",
@@ -2824,21 +2824,21 @@ export function renderPrDetailPage(
   return renderAdminPage({
     title: `PR #${pr.prNumber} — ${pr.repo} — Shipwright Admin`,
     extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
-    .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-blue { background:var(--vos-info-bg, #dbeafe);color:var(--vos-info-text, #1d4ed8);border:1px solid var(--vos-info-border, #bfdbfe); }
+    .badge-green { background:var(--vos-success-bg, #dcfce7);color:var(--vos-success-text, #166534);border:1px solid var(--vos-success-border, #bbf7d0); }
+    .badge-gray { background:var(--vos-surface-subtle, #f3f4f6);color:var(--vos-text-body, #374151);border:1px solid var(--vos-border, #e5e7eb); }
+    .badge-blocked { background:var(--vos-warning-bg, #fff7ed);color:var(--vos-warning-text, #c2410c);border:1px solid var(--vos-warning-border, #fed7aa); }
     .detail-table { width:100%;border-collapse:collapse; }
-    .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
+    .detail-table tr:not(:last-child) td { border-bottom:1px solid var(--vos-surface-subtle, #f3f4f6); }
   `,
     body: `${renderAdminToolbar(userName, "/admin/prs")}
   <div class="vos-page vos-page-wide">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="/admin/prs" style="color:#6b7280;font-size:13px;text-decoration:none">← PRs</a>
+      <a href="/admin/prs" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← PRs</a>
       <h1 class="page-title" style="margin:0;flex:1">${escapeHtml(pr.repo)} #${escapeHtml(String(pr.prNumber))}</h1>
       <span class="badge badge-gray">${escapeHtml(pr.state)}</span>
     </div>
-    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:#9ca3af">${escapeHtml(pr.id)}</div>
+    <div style="margin-top:4px;margin-bottom:16px;font-family:monospace;font-size:11px;color:var(--vos-text-faint, #9ca3af)">${escapeHtml(pr.id)}</div>
 
     <div class="card" style="margin-bottom:16px">
       <table class="detail-table">
@@ -2851,7 +2851,7 @@ export function renderPrDetailPage(
     ${
       timelineRows
         ? `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Timeline</div>
       <table class="detail-table"><tbody>${timelineRows}</tbody></table>
     </div>`
         : ""
