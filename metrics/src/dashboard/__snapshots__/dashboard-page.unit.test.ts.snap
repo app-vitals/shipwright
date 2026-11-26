@@ -229,64 +229,6 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         </div>
       </section>
 
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started<span class="info-icon" data-tooltip="Tasks that moved from pending to in_progress in the period" tabindex="0" aria-label="Tasks that moved from pending to in_progress in the period">i</span></span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved<span class="info-icon" data-tooltip="PRs that received a SHIP IT review verdict" tabindex="0" aria-label="PRs that received a SHIP IT review verdict">i</span></span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged<span class="info-icon" data-tooltip="PRs merged to main in the selected period" tabindex="0" aria-label="PRs merged to main in the selected period">i</span></span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked<span class="info-icon" data-tooltip="Tasks stuck on a human-blocking issue" tabindex="0" aria-label="Tasks stuck on a human-blocking issue">i</span></span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time<span class="info-icon" data-tooltip="Mean wall-clock hours from task start to PR merge" tabindex="0" aria-label="Mean wall-clock hours from task start to PR merge">i</span></span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate<span class="info-icon" data-tooltip="% of started tasks that ended up in a blocked state" tabindex="0" aria-label="% of started tasks that ended up in a blocked state">i</span></span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task<span class="info-icon" data-tooltip="Mean number of review findings (bugs/suggestions) per task" tabindex="0" aria-label="Mean number of review findings (bugs/suggestions) per task">i</span></span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
       <!-- Merged PRs by repo -->
       <section class="section" aria-label="Merged PRs by repo">
         <div class="section-header">
@@ -812,64 +754,6 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
             <div class="kpi-value" id="kpi-review-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">SHIP IT / total reviews</div>
           </div>
-        </div>
-      </section>
-
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started<span class="info-icon" data-tooltip="Tasks that moved from pending to in_progress in the period" tabindex="0" aria-label="Tasks that moved from pending to in_progress in the period">i</span></span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved<span class="info-icon" data-tooltip="PRs that received a SHIP IT review verdict" tabindex="0" aria-label="PRs that received a SHIP IT review verdict">i</span></span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged<span class="info-icon" data-tooltip="PRs merged to main in the selected period" tabindex="0" aria-label="PRs merged to main in the selected period">i</span></span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked<span class="info-icon" data-tooltip="Tasks stuck on a human-blocking issue" tabindex="0" aria-label="Tasks stuck on a human-blocking issue">i</span></span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time<span class="info-icon" data-tooltip="Mean wall-clock hours from task start to PR merge" tabindex="0" aria-label="Mean wall-clock hours from task start to PR merge">i</span></span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate<span class="info-icon" data-tooltip="% of started tasks that ended up in a blocked state" tabindex="0" aria-label="% of started tasks that ended up in a blocked state">i</span></span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task<span class="info-icon" data-tooltip="Mean number of review findings (bugs/suggestions) per task" tabindex="0" aria-label="Mean number of review findings (bugs/suggestions) per task">i</span></span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
         </div>
       </section>
 
@@ -1401,64 +1285,6 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         </div>
       </section>
 
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started<span class="info-icon" data-tooltip="Tasks that moved from pending to in_progress in the period" tabindex="0" aria-label="Tasks that moved from pending to in_progress in the period">i</span></span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved<span class="info-icon" data-tooltip="PRs that received a SHIP IT review verdict" tabindex="0" aria-label="PRs that received a SHIP IT review verdict">i</span></span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged<span class="info-icon" data-tooltip="PRs merged to main in the selected period" tabindex="0" aria-label="PRs merged to main in the selected period">i</span></span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked<span class="info-icon" data-tooltip="Tasks stuck on a human-blocking issue" tabindex="0" aria-label="Tasks stuck on a human-blocking issue">i</span></span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time<span class="info-icon" data-tooltip="Mean wall-clock hours from task start to PR merge" tabindex="0" aria-label="Mean wall-clock hours from task start to PR merge">i</span></span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate<span class="info-icon" data-tooltip="% of started tasks that ended up in a blocked state" tabindex="0" aria-label="% of started tasks that ended up in a blocked state">i</span></span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task<span class="info-icon" data-tooltip="Mean number of review findings (bugs/suggestions) per task" tabindex="0" aria-label="Mean number of review findings (bugs/suggestions) per task">i</span></span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
       <!-- Merged PRs by repo -->
       <section class="section" aria-label="Merged PRs by repo">
         <div class="section-header">
@@ -1987,64 +1813,6 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         </div>
       </section>
 
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started<span class="info-icon" data-tooltip="Tasks that moved from pending to in_progress in the period" tabindex="0" aria-label="Tasks that moved from pending to in_progress in the period">i</span></span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved<span class="info-icon" data-tooltip="PRs that received a SHIP IT review verdict" tabindex="0" aria-label="PRs that received a SHIP IT review verdict">i</span></span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged<span class="info-icon" data-tooltip="PRs merged to main in the selected period" tabindex="0" aria-label="PRs merged to main in the selected period">i</span></span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked<span class="info-icon" data-tooltip="Tasks stuck on a human-blocking issue" tabindex="0" aria-label="Tasks stuck on a human-blocking issue">i</span></span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time<span class="info-icon" data-tooltip="Mean wall-clock hours from task start to PR merge" tabindex="0" aria-label="Mean wall-clock hours from task start to PR merge">i</span></span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate<span class="info-icon" data-tooltip="% of started tasks that ended up in a blocked state" tabindex="0" aria-label="% of started tasks that ended up in a blocked state">i</span></span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task<span class="info-icon" data-tooltip="Mean number of review findings (bugs/suggestions) per task" tabindex="0" aria-label="Mean number of review findings (bugs/suggestions) per task">i</span></span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
       <!-- Merged PRs by repo -->
       <section class="section" aria-label="Merged PRs by repo">
         <div class="section-header">
@@ -2559,64 +2327,6 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
             <div class="kpi-value" id="kpi-review-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">SHIP IT / total reviews</div>
           </div>
-        </div>
-      </section>
-
-      <!-- Pipeline Queue -->
-      <section class="section" aria-label="Pipeline queue">
-        <div class="section-header">
-          <h2 class="section-title">Pipeline Queue</h2>
-        </div>
-        <div class="queue-grid">
-
-          <!-- Throughput -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Throughput</h3>
-            <div class="stat-row" data-metric="tasks-started">
-              <span class="stat-label">Started<span class="info-icon" data-tooltip="Tasks that moved from pending to in_progress in the period" tabindex="0" aria-label="Tasks that moved from pending to in_progress in the period">i</span></span>
-              <span class="stat-value" id="queue-started">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Approved<span class="info-icon" data-tooltip="PRs that received a SHIP IT review verdict" tabindex="0" aria-label="PRs that received a SHIP IT review verdict">i</span></span>
-              <span class="stat-value" id="queue-approved">--</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Merged<span class="info-icon" data-tooltip="PRs merged to main in the selected period" tabindex="0" aria-label="PRs merged to main in the selected period">i</span></span>
-              <span class="stat-value" id="queue-merged">--</span>
-            </div>
-            <div class="stat-row" data-metric="tasks-blocked">
-              <span class="stat-label">Blocked<span class="info-icon" data-tooltip="Tasks stuck on a human-blocking issue" tabindex="0" aria-label="Tasks stuck on a human-blocking issue">i</span></span>
-              <span class="stat-value" id="queue-blocked">--</span>
-            </div>
-          </div>
-
-          <!-- Cycle Time -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Cycle Time</h3>
-            <div class="stat-row" data-metric="avg-cycle-time">
-              <span class="stat-label">Avg cycle time<span class="info-icon" data-tooltip="Mean wall-clock hours from task start to PR merge" tabindex="0" aria-label="Mean wall-clock hours from task start to PR merge">i</span></span>
-              <span class="stat-value" id="queue-cycle-time">--</span>
-            </div>
-          </div>
-
-          <!-- Block Rate -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Block Rate</h3>
-            <div class="stat-row" data-metric="block-rate">
-              <span class="stat-label">Rate<span class="info-icon" data-tooltip="% of started tasks that ended up in a blocked state" tabindex="0" aria-label="% of started tasks that ended up in a blocked state">i</span></span>
-              <span class="stat-value" id="queue-block-rate">--%</span>
-            </div>
-          </div>
-
-          <!-- Review Findings -->
-          <div class="quality-panel">
-            <h3 class="panel-title">Review Findings</h3>
-            <div class="stat-row" data-metric="avg-review-findings">
-              <span class="stat-label">Avg per task<span class="info-icon" data-tooltip="Mean number of review findings (bugs/suggestions) per task" tabindex="0" aria-label="Mean number of review findings (bugs/suggestions) per task">i</span></span>
-              <span class="stat-value" id="queue-review-findings">--</span>
-            </div>
-          </div>
-
         </div>
       </section>
 

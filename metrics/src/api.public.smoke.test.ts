@@ -84,7 +84,8 @@ describe("public dashboard — read-only render", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     // Pipeline panels remain.
-    expect(html).toContain("Pipeline Queue");
+    expect(html).toContain("Pipeline Quality");
+    expect(html).not.toContain("Pipeline Queue");
     expect(html).toContain("Tasks Completed");
     // Token-usage section is hidden in read-only mode.
     expect(html).not.toContain("Token Usage");
@@ -130,7 +131,7 @@ describe("public dashboard — read-only render", () => {
     const res = await app.request("/public/dashboard/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Pipeline Queue");
+    expect(html).toContain("Pipeline Quality");
     expect(html).toContain('window.__METRICS_BASE__ = "/public";');
   });
 });

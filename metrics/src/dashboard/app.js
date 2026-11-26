@@ -169,7 +169,7 @@
   async function fetchAll(range) {
     const API_BASE = getApiBase();
     const q = buildQuery(range);
-    const [summary, trends, featuresRes, queueRes, tokensRes, mergedPrsRes] =
+    const [summary, trends, featuresRes, tokensRes, mergedPrsRes] =
       await fetchSequential(
         [
           { url: `${API_BASE}/summary?${q}`, parse: (r) => r.json() },
@@ -182,14 +182,6 @@
             parse: (r) => r.json(),
             onError: (err) => {
               console.error("Features fetch failed:", err);
-              return null;
-            },
-          },
-          {
-            url: `${API_BASE}/queue?${q}`,
-            parse: (r) => r.json(),
-            onError: (err) => {
-              console.error("Queue fetch failed:", err);
               return null;
             },
           },
@@ -249,7 +241,6 @@
       summary,
       trends,
       featuresRes,
-      queueRes,
       tokensRes,
       mergedPrsRes,
       coverageRes,
@@ -406,23 +397,6 @@
         : "--";
     $("eff-retries").textContent = fmtNum(data.avgRetries);
     $("eff-files").textContent = fmtNum(data.avgFilesChanged);
-  }
-
-  // ─── Update Queue Panels ─────────────────────────────────────────────────
-
-  function updateQueue(data) {
-    const $ = (id) => document.getElementById(id);
-
-    $("queue-started").textContent = fmtInt(data.tasksStarted);
-    $("queue-approved").textContent = fmtInt(data.tasksApproved);
-    $("queue-merged").textContent = fmtInt(data.tasksMerged);
-    $("queue-blocked").textContent = fmtInt(data.tasksBlocked);
-    $("queue-cycle-time").textContent =
-      data.avgCycleTimeDays !== null && data.avgCycleTimeDays !== undefined
-        ? `${fmtNum(data.avgCycleTimeDays)} days`
-        : "--";
-    $("queue-block-rate").textContent = fmtPct(data.blockRate);
-    $("queue-review-findings").textContent = fmtNum(data.avgReviewFindings);
   }
 
   // ─── Update Feature Breakdown ────────────────────────────────────────────
@@ -1359,32 +1333,6 @@
       denominator: (r) => r.reviews,
       fmt: fmtPct,
     },
-    "tasks-started": {
-      label: "Tasks Started",
-      series: (r) => r.tasksStarted,
-      fmt: fmtInt,
-    },
-    "tasks-blocked": {
-      label: "Tasks Blocked",
-      series: (r) => r.tasksBlocked,
-      fmt: fmtInt,
-    },
-    "avg-cycle-time": {
-      label: "Avg Cycle Time (h)",
-      series: (r) => r.avgCycleTimeHours,
-      fmt: fmtHours,
-    },
-    "block-rate": {
-      label: "Block Rate",
-      numerator: (r) => r.tasksBlocked,
-      denominator: (r) => r.tasksStarted,
-      fmt: fmtPct,
-    },
-    "avg-review-findings": {
-      label: "Avg Review Findings",
-      series: (r) => r.avgReviewFindings,
-      fmt: fmtNum,
-    },
     "ci-gates": { label: "CI Gates", series: (r) => r.ciGates, fmt: fmtInt },
     "ci-first-pass-count": {
       label: "CI First-Pass Count",
@@ -1711,7 +1659,6 @@
         summary,
         trends,
         featuresRes,
-        queueRes,
         tokensRes,
         mergedPrsRes,
         coverageRes,
@@ -1736,11 +1683,6 @@
           console.error("Features error:", featuresRes.error);
         }
         updateFeatures([]);
-      }
-      if (queueRes && !queueRes.error) {
-        updateQueue(queueRes.data);
-      } else if (queueRes?.error) {
-        console.error("Queue error:", queueRes.error);
       }
       if (tokensRes && !tokensRes.error && tokensRes.data) {
         lastTokensTrends = tokensRes.data.trends ?? [];

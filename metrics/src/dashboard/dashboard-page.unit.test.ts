@@ -74,9 +74,22 @@ describe("renderDashboardPage — structural invariants", () => {
     expect(html).toContain("CI First-Pass Rate");
   });
 
-  test("includes pipeline queue section", () => {
+  test("omits the removed pipeline queue section", () => {
     const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain("Pipeline Queue");
+    expect(html).not.toContain("Pipeline Queue");
+    expect(html).not.toContain('aria-label="Pipeline queue"');
+    expect(html).not.toContain("queue-grid");
+    for (const id of [
+      "queue-started",
+      "queue-approved",
+      "queue-merged",
+      "queue-blocked",
+      "queue-cycle-time",
+      "queue-block-rate",
+      "queue-review-findings",
+    ]) {
+      expect(html).not.toContain(`id="${id}"`);
+    }
   });
 
   test("includes feature breakdown table", () => {
@@ -117,18 +130,9 @@ describe("renderDashboardPage — info icons: present in every section", () => {
     const html = renderDashboardPage(BASE_OPTS);
     const overviewSection = html.slice(
       html.indexOf('aria-label="Key performance indicators"'),
-      html.indexOf('aria-label="Pipeline queue"'),
+      html.indexOf('aria-label="Merged PRs by repo"'),
     );
     expect(overviewSection).toContain('class="info-icon"');
-  });
-
-  test("Pipeline Queue section has at least one info icon", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    const queueSection = html.slice(
-      html.indexOf('aria-label="Pipeline queue"'),
-      html.indexOf('aria-label="Pipeline quality"'),
-    );
-    expect(queueSection).toContain('class="info-icon"');
   });
 
   test("Pipeline Quality section has at least one info icon", () => {
@@ -160,16 +164,6 @@ describe("renderDashboardPage — info icons: present in every section", () => {
 });
 
 describe("renderDashboardPage — MG-1.2 clickable metrics: data-metric attributes", () => {
-  test("tasks-started stat-row has data-metric attribute", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('data-metric="tasks-started"');
-  });
-
-  test("tasks-blocked stat-row has data-metric attribute", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('data-metric="tasks-blocked"');
-  });
-
   test("ci-gates stat-row has data-metric attribute", () => {
     const html = renderDashboardPage(BASE_OPTS);
     expect(html).toContain('data-metric="ci-gates"');
@@ -183,21 +177,6 @@ describe("renderDashboardPage — MG-1.2 clickable metrics: data-metric attribut
   test("avg-actual-hours efficiency stat-block has data-metric attribute", () => {
     const html = renderDashboardPage(BASE_OPTS);
     expect(html).toContain('data-metric="avg-actual-hours"');
-  });
-
-  test("avg-cycle-time stat-row has data-metric attribute", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('data-metric="avg-cycle-time"');
-  });
-
-  test("block-rate stat-row has data-metric attribute", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('data-metric="block-rate"');
-  });
-
-  test("avg-review-findings stat-row has data-metric attribute", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain('data-metric="avg-review-findings"');
   });
 
   test("ci-first-pass-count stat-row has data-metric attribute", () => {
@@ -291,13 +270,6 @@ describe("renderDashboardPage — info icons: approved copy", () => {
     );
   });
 
-  test("Avg cycle time has the approved tooltip text", () => {
-    const html = renderDashboardPage(BASE_OPTS);
-    expect(html).toContain(
-      'data-tooltip="Mean wall-clock hours from task start to PR merge"',
-    );
-  });
-
   test("Total fixes has the approved tooltip text", () => {
     const html = renderDashboardPage(BASE_OPTS);
     expect(html).toContain(
@@ -361,13 +333,6 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
 
   test("stat-row values have data-metric attributes", () => {
     const html = renderDashboardPage(BASE_OPTS);
-    // Queue throughput (only graphable scalars get data-metric; approved/merged excluded)
-    expect(html).toContain('data-metric="tasks-started"');
-    expect(html).toContain('data-metric="tasks-blocked"');
-    // Queue pipeline
-    expect(html).toContain('data-metric="avg-cycle-time"');
-    expect(html).toContain('data-metric="block-rate"');
-    expect(html).toContain('data-metric="avg-review-findings"');
     // CI Gates
     expect(html).toContain('data-metric="ci-gates"');
     expect(html).toContain('data-metric="ci-first-pass-count"');
@@ -377,9 +342,16 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
     expect(html).toContain('data-metric="reviews-ship-it"');
     // Simplify
     expect(html).toContain('data-metric="simplify-total"');
-    // Excluded: queue-approved, queue-merged (no backend time-series)
-    expect(html).not.toContain('data-metric="queue-approved"');
-    expect(html).not.toContain('data-metric="queue-merged"');
+    // Removed with the Pipeline Queue section
+    for (const metric of [
+      "tasks-started",
+      "tasks-blocked",
+      "avg-cycle-time",
+      "block-rate",
+      "avg-review-findings",
+    ]) {
+      expect(html).not.toContain(`data-metric="${metric}"`);
+    }
   });
 
   test("efficiency stat-blocks have data-metric attributes", () => {
@@ -623,7 +595,7 @@ describe("renderDashboardPage — PPL-1.2 readOnly variant", () => {
   });
 
   test("keeps the pipeline metric panels", () => {
-    expect(html).toContain("Pipeline Queue");
+    expect(html).not.toContain("Pipeline Queue");
     expect(html).toContain("Pipeline Quality");
     expect(html).toContain("Feature Breakdown");
     expect(html).toContain("Trends");
