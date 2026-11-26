@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Shipwright Metrics Dashboard — Vitals OS Light Theme
+   Shipwright Metrics Dashboard — light and dark themes
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -13,6 +13,8 @@
   --text-muted: #9ca3af;
   --accent: #4f46e5;
   --accent-dim: #4338ca;
+  --accent-soft: #eef2ff;
+  --on-accent: #ffffff;
   --good: #15803d;
   --warn: #d97706;
   --critical: #b91c1c;
@@ -20,6 +22,33 @@
   --purple: #8b5cf6;
   --mono: "SF Mono", ui-monospace, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Dark theme. The inline script in the page <head> sets data-theme before
+   first paint: the saved choice if there is one, else the system preference. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1117;
+  --surface: #171a22;
+  --surface-raised: #1f2330;
+  --border: #2a2f3d;
+  --border-accent: #3a4052;
+  --text: #e6e8ef;
+  --text-dim: #a3a9b8;
+  --text-muted: #8891a3;
+  --accent: #818cf8;
+  --accent-dim: #a5b4fc;
+  --accent-soft: #23264a;
+  --on-accent: #0f1117;
+  --good: #4ade80;
+  --warn: #fbbf24;
+  --critical: #f87171;
+  --blue: #60a5fa;
+  --purple: #a78bfa;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 *,
@@ -65,10 +94,89 @@ body {
 
 .page-meta {
   display: flex;
+  align-items: center;
   gap: 1rem;
   font-family: var(--mono);
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+/* ─── Theme Toggle ──────────────────────────────────────────────────────── */
+
+.theme-toggle {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  min-height: 28px;
+  padding: 0.3rem 0.7rem;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.theme-toggle[hidden] {
+  display: none;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--surface-raised);
+  border-color: var(--border-accent);
+}
+
+.theme-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ─── Shared toolbar in dark ────────────────────────────────────────────────
+   The toolbar's base styles come from the agent platform with fixed light
+   colours, so the dark theme restates them here. */
+
+[data-theme="dark"] .vos-toolbar {
+  background: var(--surface);
+  border-bottom-color: var(--border);
+}
+
+[data-theme="dark"] .vos-wordmark,
+[data-theme="dark"] .vos-hamburger {
+  color: var(--text);
+}
+
+[data-theme="dark"] .vos-wordmark:hover,
+[data-theme="dark"] .vos-hamburger:hover {
+  color: var(--accent);
+}
+
+[data-theme="dark"] .vos-nav-link,
+[data-theme="dark"] .vos-username {
+  color: var(--text-dim);
+}
+
+[data-theme="dark"] .vos-nav-link:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+[data-theme="dark"] .vos-nav-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+[data-theme="dark"] .vos-signout-btn {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .vos-signout-btn:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--border-accent);
 }
 
 /* ─── Date Range Picker ─────────────────────────────────────────────────── */
@@ -106,7 +214,7 @@ body {
 
 .date-btn.active {
   color: var(--accent);
-  background: #eef2ff;
+  background: var(--accent-soft);
   font-weight: 600;
 }
 
@@ -136,10 +244,10 @@ body {
 .section-badge {
   font-size: 11px;
   color: var(--accent);
-  background: rgba(79, 70, 229, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   padding: 0.15rem 0.5rem;
   border-radius: 4px;
-  border: 1px solid rgba(79, 70, 229, 0.2);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* ─── KPI Cards ─────────────────────────────────────────────────────────── */
@@ -229,7 +337,7 @@ body {
   justify-content: space-between;
   align-items: baseline;
   padding: 0.3rem 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .stat-label {
@@ -414,7 +522,7 @@ body {
   left: 50%;
   transform: translateX(-50%) translateY(100%);
   background: var(--critical);
-  color: #fff;
+  color: var(--on-accent);
   font-family: var(--mono);
   font-size: 0.75rem;
   padding: 0.75rem 1.5rem;
@@ -532,7 +640,7 @@ body {
 
 .token-series-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -596,7 +704,12 @@ body {
 /* ─── Skeleton Loading ──────────────────────────────────────────────────── */
 
 .skeleton {
-  background: linear-gradient(90deg, #e8e8ee 25%, #f3f4f6 50%, #e8e8ee 75%);
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--surface-raised) 50%,
+    var(--border) 75%
+  );
   background-size: 200% 100%;
   animation: skeleton-sweep 1.5s infinite;
   border-radius: 4px;

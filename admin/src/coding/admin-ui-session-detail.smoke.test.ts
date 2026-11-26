@@ -136,7 +136,7 @@ describe("admin UI — session detail page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      `<a href="${from.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="${from.replace(/&/g, "&amp;")}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -158,7 +158,7 @@ describe("admin UI — session detail page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      `<a href="${from}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="${from}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -186,7 +186,7 @@ describe("admin UI — session detail page", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain(
-        `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+        `<a href="/admin/tasks" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
       );
       expect(html).not.toContain(maliciousFrom);
     },
@@ -917,7 +917,7 @@ describe("admin UI — session detail page", () => {
     expect(sessionRes.status).toBe(200);
     const sessionHtml = await sessionRes.text();
     expect(sessionHtml).toContain(
-      `<a href="/admin/tasks?status=in_progress&amp;owner=all" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks?status=in_progress&amp;owner=all" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -959,7 +959,7 @@ describe("admin UI — session detail page", () => {
     expect(sessionRes.status).toBe(200);
     const sessionHtml = await sessionRes.text();
     expect(sessionHtml).toContain(
-      `<a href="/admin/tasks/task-42" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="/admin/tasks/task-42" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 

@@ -196,7 +196,8 @@ function scopeSummary(c: SystemCronItem): string {
 }
 
 function repoListNote(listing: RepoListing | undefined): string {
-  const style = "font-size:12px;color:#6b7280;margin:4px 0";
+  const style =
+    "font-size:12px;color:var(--vos-text-muted, #6b7280);margin:4px 0";
   if (!listing || listing.state === "unconfigured") return "";
   if (listing.state === "failed")
     return `<p data-repo-list="failed" class="alert alert-warning" style="margin:4px 0">The last repository refresh failed, so the list is unavailable; only the current selection is shown.</p>`;
@@ -246,10 +247,10 @@ function renderScopeControl(
   const unusedNote =
     list || listing?.state === "failed"
       ? ""
-      : `<p data-repo-list="unavailable" style="font-size:12px;color:#6b7280;margin:4px 0">The repository list is unavailable until the GitHub lookup App is configured; only the current selection is shown.</p>`;
+      : `<p data-repo-list="unavailable" style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:4px 0">The repository list is unavailable until the GitHub lookup App is configured; only the current selection is shown.</p>`;
   return `<fieldset class="form-group" data-repo-scope="${cid}" style="border:0;padding:0;margin:0 0 12px">
     <legend class="form-label">Repositories</legend>
-    <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="all"${scope === "all" ? " checked" : ""} /> All repositories <span style="color:#6b7280">(current and future)</span></label>
+    <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="all"${scope === "all" ? " checked" : ""} /> All repositories <span style="color:var(--vos-text-muted, #6b7280)">(current and future)</span></label>
     <label style="display:block;font-size:13px"><input type="radio" name="repoScope" value="selected"${scope === "selected" ? " checked" : ""} /> Only select repositories</label>
     <div data-repo-checklist style="margin-top:8px">
       <input type="search" class="form-input" data-repo-search placeholder="Search repositories" aria-label="Search repositories" />
@@ -287,7 +288,7 @@ const SCOPE_SCRIPT = `<script>
 function renderRecentRuns(runs: RecentRuns | undefined): string {
   const heading = `<div class="form-label" style="margin-top:16px">Recent runs</div>`;
   if (!runs) {
-    return `<div data-recent-runs="error">${heading}<p style="font-size:12px;color:#6b7280;margin:4px 0 0">Recent runs are unavailable right now.</p></div>`;
+    return `<div data-recent-runs="error">${heading}<p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:4px 0 0">Recent runs are unavailable right now.</p></div>`;
   }
   if (runs.length === 0) {
     return `<div data-recent-runs="empty">${heading}<p class="empty-state" style="margin:4px 0 0">This cron has not fired yet.</p></div>`;
@@ -306,7 +307,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
   const toggleLabel = c.enabled ? "Disable" : "Enable";
   return `<div class="card" data-system-cron="${escapeHtml(c.id)}">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <span>${escapeHtml(c.name)} <code style="font-size:12px;color:#6b7280">${escapeHtml(c.id)}</code></span>
+      <span>${escapeHtml(c.name)} <code style="font-size:12px;color:var(--vos-text-muted, #6b7280)">${escapeHtml(c.id)}</code></span>
       <span style="display:flex;align-items:center;gap:8px">
         <span class="badge">${c.enabled ? "Enabled" : "Disabled"}</span>
         <form method="POST" action="${SYSTEM_CRONS_SETTINGS_PATH}/${id}/${c.enabled ? "disable" : "enable"}" style="margin:0">
@@ -314,7 +315,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
         </form>
       </span>
     </div>
-    <p style="font-size:12px;color:#6b7280;margin:0 0 12px">Schedule <code>${escapeHtml(c.schedule)}</code> (${escapeHtml(c.timezone)}) · Scope <span data-scope-summary>${escapeHtml(scopeSummary(c))}</span></p>
+    <p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:0 0 12px">Schedule <code>${escapeHtml(c.schedule)}</code> (${escapeHtml(c.timezone)}) · Scope <span data-scope-summary>${escapeHtml(scopeSummary(c))}</span></p>
     <form method="POST" action="${SYSTEM_CRONS_SETTINGS_PATH}/${id}">
       <div class="form-group">
         <label class="form-label" for="titleTemplate-${escapeHtml(c.id)}">Title template</label>
@@ -323,7 +324,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
       <div class="form-group">
         <label class="form-label" for="descriptionTemplate-${escapeHtml(c.id)}">Description template</label>
         <textarea id="descriptionTemplate-${escapeHtml(c.id)}" name="descriptionTemplate" class="form-input" rows="4">${escapeHtml(description)}</textarea>
-        <p style="font-size:12px;color:#6b7280;margin:4px 0 0"><code>{repo}</code> is replaced with the org/repo; nothing else is evaluated.</p>
+        <p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin:4px 0 0"><code>{repo}</code> is replaced with the org/repo; nothing else is evaluated.</p>
       </div>
       ${renderScopeControl(c, draft, opts.repoListings?.[accountKey(c)])}
       <button type="submit" class="btn btn-primary">Save</button>

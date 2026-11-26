@@ -1067,7 +1067,7 @@ describe("admin UI — tasks page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      `<a href="${from.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      `<a href="${from.replace(/&/g, "&amp;")}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
 
@@ -1099,7 +1099,7 @@ describe("admin UI — tasks page", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain(
-        `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+        `<a href="/admin/tasks" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Tasks</a>`,
       );
       expect(html).not.toContain(maliciousFrom);
     },

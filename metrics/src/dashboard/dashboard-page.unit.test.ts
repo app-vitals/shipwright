@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type DashboardPageOptions,
   renderDashboardPage,
+  THEME_STORAGE_KEY,
 } from "./dashboard-page.ts";
 
 const BASE_OPTS: DashboardPageOptions = {
@@ -713,5 +714,39 @@ describe("renderDashboardPage system crons tile (SCM-8.4)", () => {
     expect(renderDashboardPage({ userName: "T" })).toContain(
       'window.__ADMIN_BASE__ = "";',
     );
+  });
+});
+
+describe("renderDashboardPage — light and dark theme", () => {
+  test("sets data-theme in <head> before the stylesheet loads", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    const boot = html.indexOf('setAttribute("data-theme"');
+    expect(boot).toBeGreaterThan(-1);
+    expect(boot).toBeLessThan(html.indexOf('rel="stylesheet"'));
+    expect(boot).toBeLessThan(html.indexOf("</head>"));
+  });
+
+  test("boot script reads the saved choice, then the system preference", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain(`localStorage.getItem("${THEME_STORAGE_KEY}")`);
+    expect(html).toContain("(prefers-color-scheme: dark)");
+  });
+
+  test("renders a toggle button that exposes its state", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain(
+      '<button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>',
+    );
+  });
+
+  test("the public read-only page gets the toggle too", () => {
+    const html = renderDashboardPage({ ...BASE_OPTS, readOnly: true });
+    expect(html).toContain('id="theme-toggle"');
+    expect(html).toContain('setAttribute("data-theme"');
+  });
+
+  test("declares support for both colour schemes", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('<meta name="color-scheme" content="light dark" />');
   });
 });
