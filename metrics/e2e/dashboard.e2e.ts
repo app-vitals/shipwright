@@ -774,7 +774,7 @@ test.describe("Dashboard — theme toggle", () => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(page.locator("#theme-toggle")).toHaveAttribute(
+    await expect(page.locator("#vos-theme-toggle")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -793,7 +793,9 @@ test.describe("Dashboard — theme toggle", () => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
-    await page.locator("#theme-toggle").click();
+    // The shared toolbar owns the theme toggle; the dashboard hides its own.
+    await expect(page.locator("#theme-toggle")).toBeHidden();
+    await page.locator("#vos-theme-toggle").click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(page.locator(".vos-toolbar")).toHaveCSS(
       "background-color",
@@ -802,7 +804,7 @@ test.describe("Dashboard — theme toggle", () => {
 
     await page.reload({ waitUntil: "networkidle" });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(page.locator("#theme-toggle")).toHaveAttribute(
+    await expect(page.locator("#vos-theme-toggle")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
