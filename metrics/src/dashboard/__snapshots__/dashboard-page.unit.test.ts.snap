@@ -9,18 +9,21 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
   <title>Metrics — Vitals OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
+    :root[data-theme="dark"] { color-scheme: dark; --vos-bg: #0f1117; --vos-surface: #171a22; --vos-surface-muted: #1b1f29; --vos-surface-subtle: #1f2330; --vos-border: #2a2f3d; --vos-border-strong: #3a4052; --vos-text: #e6e8ef; --vos-text-body: #c9cdd8; --vos-text-muted: #a3a9b8; --vos-text-faint: #8891a3; --vos-brand: #818cf8; --vos-brand-strong: #a5b4fc; --vos-brand-bg: #23264a; --vos-brand-border: #3b3f7a; --vos-on-brand: #0f1117; --vos-primary: #e6e8ef; --vos-primary-hover: #ffffff; --vos-primary-text: #0f1117; --vos-success-bg: #0f2e1d; --vos-success-text: #86efac; --vos-success-border: #14532d; --vos-warning-bg: #3a2a0c; --vos-warning-text: #fcd34d; --vos-warning-border: #78350f; --vos-danger: #f87171; --vos-danger-text: #fca5a5; --vos-danger-bg: #3b1518; --vos-danger-border: #7f1d1d; --vos-info-bg: #16264a; --vos-info-text: #93c5fd; --vos-info-border: #1e3a8a; --vos-violet-bg: #2a1f4d; --vos-violet-text: #c4b5fd; --vos-teal-bg: #0f2f2c; --vos-teal-text: #5eead4; }
+    :root[data-theme="dark"] textarea, :root[data-theme="dark"] select, :root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { background-color: var(--vos-surface); color: var(--vos-text); }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f7f7fb;
-      color: #1a1a2e;
+      background: var(--vos-bg);
+      color: var(--vos-text);
       min-height: 100vh;
     }
 
     /* ─── Toolbar ───────────────────────────────────────── */
     .vos-toolbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e8ee;
+      background: var(--vos-surface);
+      border-bottom: 1px solid var(--vos-border);
       height: 52px;
       display: flex;
       align-items: center;
@@ -33,12 +36,12 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     .vos-wordmark {
       font-size: 15px;
       font-weight: 700;
-      color: #1a1a2e;
+      color: var(--vos-text);
       text-decoration: none;
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
+    .vos-wordmark:hover { color: var(--vos-brand); }
     .vos-nav {
       display: flex;
       align-items: center;
@@ -50,15 +53,15 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       text-decoration: none;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
     }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link:hover { background: var(--vos-surface-subtle); color: var(--vos-text); }
     .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
+      background: var(--vos-brand-bg);
+      color: var(--vos-brand);
       font-weight: 600;
     }
     .vos-user {
@@ -70,7 +73,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     }
     .vos-username {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -79,9 +82,9 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     .vos-signout-btn {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       background: none;
-      border: 1px solid #e8e8ee;
+      border: 1px solid var(--vos-border);
       border-radius: 6px;
       padding: 5px 12px;
       cursor: pointer;
@@ -89,9 +92,24 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
+    .vos-signout-btn:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
 
     /* ─── Page body ─────────────────────────────────────── */
+    .vos-theme-toggle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--vos-text-muted);
+      background: none;
+      border: 1px solid var(--vos-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .vos-theme-toggle:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
+    .vos-theme-toggle[aria-pressed="true"] { background: var(--vos-brand-bg); color: var(--vos-brand); border-color: var(--vos-brand-border); }
     .vos-page {
       max-width: 960px;
       margin: 0 auto;
@@ -107,12 +125,12 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #1a1a2e;
+      color: var(--vos-text);
       padding: 4px 8px;
       line-height: 1;
       font-family: inherit;
     }
-    .vos-hamburger:hover { color: #4f46e5; }
+    .vos-hamburger:hover { color: var(--vos-brand); }
 
     @media (max-width: 640px) {
       .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
@@ -140,8 +158,8 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         font-size: 14px;
       }
       .vos-nav-link.active {
-        background: #eef2ff;
-        color: #4f46e5;
+        background: var(--vos-brand-bg);
+        color: var(--vos-brand);
         font-weight: 600;
       }
       /* Show hamburger on mobile */
@@ -173,6 +191,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
+      <button type="button" id="vos-theme-toggle" class="vos-theme-toggle" aria-pressed="false">Dark mode</button>
       <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
@@ -180,6 +199,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
   <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
+  <script>(function(){var d=document,r=d.documentElement,k="shipwright-theme",q=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;function saved(){try{var s=localStorage.getItem(k);return s==="dark"||s==="light"?s:null}catch(e){return null}}function apply(t){r.setAttribute("data-theme",t);var b=d.getElementById("vos-theme-toggle");if(b)b.setAttribute("aria-pressed",t==="dark"?"true":"false");d.dispatchEvent(new CustomEvent("vos-theme-change",{detail:{theme:t}}))}apply(saved()||(q&&q.matches?"dark":"light"));var b=d.getElementById("vos-theme-toggle");if(b)b.addEventListener("click",function(){var t=r.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(k,t)}catch(e){}apply(t)});if(q&&q.addEventListener)q.addEventListener("change",function(e){if(!saved())apply(e.matches?"dark":"light")})})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -537,18 +557,21 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
   <title>Metrics — Vitals OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
+    :root[data-theme="dark"] { color-scheme: dark; --vos-bg: #0f1117; --vos-surface: #171a22; --vos-surface-muted: #1b1f29; --vos-surface-subtle: #1f2330; --vos-border: #2a2f3d; --vos-border-strong: #3a4052; --vos-text: #e6e8ef; --vos-text-body: #c9cdd8; --vos-text-muted: #a3a9b8; --vos-text-faint: #8891a3; --vos-brand: #818cf8; --vos-brand-strong: #a5b4fc; --vos-brand-bg: #23264a; --vos-brand-border: #3b3f7a; --vos-on-brand: #0f1117; --vos-primary: #e6e8ef; --vos-primary-hover: #ffffff; --vos-primary-text: #0f1117; --vos-success-bg: #0f2e1d; --vos-success-text: #86efac; --vos-success-border: #14532d; --vos-warning-bg: #3a2a0c; --vos-warning-text: #fcd34d; --vos-warning-border: #78350f; --vos-danger: #f87171; --vos-danger-text: #fca5a5; --vos-danger-bg: #3b1518; --vos-danger-border: #7f1d1d; --vos-info-bg: #16264a; --vos-info-text: #93c5fd; --vos-info-border: #1e3a8a; --vos-violet-bg: #2a1f4d; --vos-violet-text: #c4b5fd; --vos-teal-bg: #0f2f2c; --vos-teal-text: #5eead4; }
+    :root[data-theme="dark"] textarea, :root[data-theme="dark"] select, :root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { background-color: var(--vos-surface); color: var(--vos-text); }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f7f7fb;
-      color: #1a1a2e;
+      background: var(--vos-bg);
+      color: var(--vos-text);
       min-height: 100vh;
     }
 
     /* ─── Toolbar ───────────────────────────────────────── */
     .vos-toolbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e8ee;
+      background: var(--vos-surface);
+      border-bottom: 1px solid var(--vos-border);
       height: 52px;
       display: flex;
       align-items: center;
@@ -561,12 +584,12 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     .vos-wordmark {
       font-size: 15px;
       font-weight: 700;
-      color: #1a1a2e;
+      color: var(--vos-text);
       text-decoration: none;
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
+    .vos-wordmark:hover { color: var(--vos-brand); }
     .vos-nav {
       display: flex;
       align-items: center;
@@ -578,15 +601,15 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       text-decoration: none;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
     }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link:hover { background: var(--vos-surface-subtle); color: var(--vos-text); }
     .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
+      background: var(--vos-brand-bg);
+      color: var(--vos-brand);
       font-weight: 600;
     }
     .vos-user {
@@ -598,7 +621,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     }
     .vos-username {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -607,9 +630,9 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     .vos-signout-btn {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       background: none;
-      border: 1px solid #e8e8ee;
+      border: 1px solid var(--vos-border);
       border-radius: 6px;
       padding: 5px 12px;
       cursor: pointer;
@@ -617,9 +640,24 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
+    .vos-signout-btn:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
 
     /* ─── Page body ─────────────────────────────────────── */
+    .vos-theme-toggle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--vos-text-muted);
+      background: none;
+      border: 1px solid var(--vos-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .vos-theme-toggle:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
+    .vos-theme-toggle[aria-pressed="true"] { background: var(--vos-brand-bg); color: var(--vos-brand); border-color: var(--vos-brand-border); }
     .vos-page {
       max-width: 960px;
       margin: 0 auto;
@@ -635,12 +673,12 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #1a1a2e;
+      color: var(--vos-text);
       padding: 4px 8px;
       line-height: 1;
       font-family: inherit;
     }
-    .vos-hamburger:hover { color: #4f46e5; }
+    .vos-hamburger:hover { color: var(--vos-brand); }
 
     @media (max-width: 640px) {
       .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
@@ -668,8 +706,8 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
         font-size: 14px;
       }
       .vos-nav-link.active {
-        background: #eef2ff;
-        color: #4f46e5;
+        background: var(--vos-brand-bg);
+        color: var(--vos-brand);
         font-weight: 600;
       }
       /* Show hamburger on mobile */
@@ -701,6 +739,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
+      <button type="button" id="vos-theme-toggle" class="vos-theme-toggle" aria-pressed="false">Dark mode</button>
       <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
@@ -708,6 +747,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
   <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
+  <script>(function(){var d=document,r=d.documentElement,k="shipwright-theme",q=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;function saved(){try{var s=localStorage.getItem(k);return s==="dark"||s==="light"?s:null}catch(e){return null}}function apply(t){r.setAttribute("data-theme",t);var b=d.getElementById("vos-theme-toggle");if(b)b.setAttribute("aria-pressed",t==="dark"?"true":"false");d.dispatchEvent(new CustomEvent("vos-theme-change",{detail:{theme:t}}))}apply(saved()||(q&&q.matches?"dark":"light"));var b=d.getElementById("vos-theme-toggle");if(b)b.addEventListener("click",function(){var t=r.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(k,t)}catch(e){}apply(t)});if(q&&q.addEventListener)q.addEventListener("change",function(e){if(!saved())apply(e.matches?"dark":"light")})})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -1065,18 +1105,21 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
   <title>Metrics — Vitals OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
+    :root[data-theme="dark"] { color-scheme: dark; --vos-bg: #0f1117; --vos-surface: #171a22; --vos-surface-muted: #1b1f29; --vos-surface-subtle: #1f2330; --vos-border: #2a2f3d; --vos-border-strong: #3a4052; --vos-text: #e6e8ef; --vos-text-body: #c9cdd8; --vos-text-muted: #a3a9b8; --vos-text-faint: #8891a3; --vos-brand: #818cf8; --vos-brand-strong: #a5b4fc; --vos-brand-bg: #23264a; --vos-brand-border: #3b3f7a; --vos-on-brand: #0f1117; --vos-primary: #e6e8ef; --vos-primary-hover: #ffffff; --vos-primary-text: #0f1117; --vos-success-bg: #0f2e1d; --vos-success-text: #86efac; --vos-success-border: #14532d; --vos-warning-bg: #3a2a0c; --vos-warning-text: #fcd34d; --vos-warning-border: #78350f; --vos-danger: #f87171; --vos-danger-text: #fca5a5; --vos-danger-bg: #3b1518; --vos-danger-border: #7f1d1d; --vos-info-bg: #16264a; --vos-info-text: #93c5fd; --vos-info-border: #1e3a8a; --vos-violet-bg: #2a1f4d; --vos-violet-text: #c4b5fd; --vos-teal-bg: #0f2f2c; --vos-teal-text: #5eead4; }
+    :root[data-theme="dark"] textarea, :root[data-theme="dark"] select, :root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { background-color: var(--vos-surface); color: var(--vos-text); }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f7f7fb;
-      color: #1a1a2e;
+      background: var(--vos-bg);
+      color: var(--vos-text);
       min-height: 100vh;
     }
 
     /* ─── Toolbar ───────────────────────────────────────── */
     .vos-toolbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e8ee;
+      background: var(--vos-surface);
+      border-bottom: 1px solid var(--vos-border);
       height: 52px;
       display: flex;
       align-items: center;
@@ -1089,12 +1132,12 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     .vos-wordmark {
       font-size: 15px;
       font-weight: 700;
-      color: #1a1a2e;
+      color: var(--vos-text);
       text-decoration: none;
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
+    .vos-wordmark:hover { color: var(--vos-brand); }
     .vos-nav {
       display: flex;
       align-items: center;
@@ -1106,15 +1149,15 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       text-decoration: none;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
     }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link:hover { background: var(--vos-surface-subtle); color: var(--vos-text); }
     .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
+      background: var(--vos-brand-bg);
+      color: var(--vos-brand);
       font-weight: 600;
     }
     .vos-user {
@@ -1126,7 +1169,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     }
     .vos-username {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1135,9 +1178,9 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     .vos-signout-btn {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       background: none;
-      border: 1px solid #e8e8ee;
+      border: 1px solid var(--vos-border);
       border-radius: 6px;
       padding: 5px 12px;
       cursor: pointer;
@@ -1145,9 +1188,24 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
+    .vos-signout-btn:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
 
     /* ─── Page body ─────────────────────────────────────── */
+    .vos-theme-toggle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--vos-text-muted);
+      background: none;
+      border: 1px solid var(--vos-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .vos-theme-toggle:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
+    .vos-theme-toggle[aria-pressed="true"] { background: var(--vos-brand-bg); color: var(--vos-brand); border-color: var(--vos-brand-border); }
     .vos-page {
       max-width: 960px;
       margin: 0 auto;
@@ -1163,12 +1221,12 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #1a1a2e;
+      color: var(--vos-text);
       padding: 4px 8px;
       line-height: 1;
       font-family: inherit;
     }
-    .vos-hamburger:hover { color: #4f46e5; }
+    .vos-hamburger:hover { color: var(--vos-brand); }
 
     @media (max-width: 640px) {
       .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
@@ -1196,8 +1254,8 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         font-size: 14px;
       }
       .vos-nav-link.active {
-        background: #eef2ff;
-        color: #4f46e5;
+        background: var(--vos-brand-bg);
+        color: var(--vos-brand);
         font-weight: 600;
       }
       /* Show hamburger on mobile */
@@ -1229,6 +1287,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
+      <button type="button" id="vos-theme-toggle" class="vos-theme-toggle" aria-pressed="false">Dark mode</button>
       <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
@@ -1236,6 +1295,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
   <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
+  <script>(function(){var d=document,r=d.documentElement,k="shipwright-theme",q=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;function saved(){try{var s=localStorage.getItem(k);return s==="dark"||s==="light"?s:null}catch(e){return null}}function apply(t){r.setAttribute("data-theme",t);var b=d.getElementById("vos-theme-toggle");if(b)b.setAttribute("aria-pressed",t==="dark"?"true":"false");d.dispatchEvent(new CustomEvent("vos-theme-change",{detail:{theme:t}}))}apply(saved()||(q&&q.matches?"dark":"light"));var b=d.getElementById("vos-theme-toggle");if(b)b.addEventListener("click",function(){var t=r.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(k,t)}catch(e){}apply(t)});if(q&&q.addEventListener)q.addEventListener("change",function(e){if(!saved())apply(e.matches?"dark":"light")})})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -1593,18 +1653,21 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
   <title>Metrics — Vitals OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
+    :root[data-theme="dark"] { color-scheme: dark; --vos-bg: #0f1117; --vos-surface: #171a22; --vos-surface-muted: #1b1f29; --vos-surface-subtle: #1f2330; --vos-border: #2a2f3d; --vos-border-strong: #3a4052; --vos-text: #e6e8ef; --vos-text-body: #c9cdd8; --vos-text-muted: #a3a9b8; --vos-text-faint: #8891a3; --vos-brand: #818cf8; --vos-brand-strong: #a5b4fc; --vos-brand-bg: #23264a; --vos-brand-border: #3b3f7a; --vos-on-brand: #0f1117; --vos-primary: #e6e8ef; --vos-primary-hover: #ffffff; --vos-primary-text: #0f1117; --vos-success-bg: #0f2e1d; --vos-success-text: #86efac; --vos-success-border: #14532d; --vos-warning-bg: #3a2a0c; --vos-warning-text: #fcd34d; --vos-warning-border: #78350f; --vos-danger: #f87171; --vos-danger-text: #fca5a5; --vos-danger-bg: #3b1518; --vos-danger-border: #7f1d1d; --vos-info-bg: #16264a; --vos-info-text: #93c5fd; --vos-info-border: #1e3a8a; --vos-violet-bg: #2a1f4d; --vos-violet-text: #c4b5fd; --vos-teal-bg: #0f2f2c; --vos-teal-text: #5eead4; }
+    :root[data-theme="dark"] textarea, :root[data-theme="dark"] select, :root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { background-color: var(--vos-surface); color: var(--vos-text); }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f7f7fb;
-      color: #1a1a2e;
+      background: var(--vos-bg);
+      color: var(--vos-text);
       min-height: 100vh;
     }
 
     /* ─── Toolbar ───────────────────────────────────────── */
     .vos-toolbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e8ee;
+      background: var(--vos-surface);
+      border-bottom: 1px solid var(--vos-border);
       height: 52px;
       display: flex;
       align-items: center;
@@ -1617,12 +1680,12 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     .vos-wordmark {
       font-size: 15px;
       font-weight: 700;
-      color: #1a1a2e;
+      color: var(--vos-text);
       text-decoration: none;
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
+    .vos-wordmark:hover { color: var(--vos-brand); }
     .vos-nav {
       display: flex;
       align-items: center;
@@ -1634,15 +1697,15 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       text-decoration: none;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
     }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link:hover { background: var(--vos-surface-subtle); color: var(--vos-text); }
     .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
+      background: var(--vos-brand-bg);
+      color: var(--vos-brand);
       font-weight: 600;
     }
     .vos-user {
@@ -1654,7 +1717,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     }
     .vos-username {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1663,9 +1726,9 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     .vos-signout-btn {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       background: none;
-      border: 1px solid #e8e8ee;
+      border: 1px solid var(--vos-border);
       border-radius: 6px;
       padding: 5px 12px;
       cursor: pointer;
@@ -1673,9 +1736,24 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
+    .vos-signout-btn:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
 
     /* ─── Page body ─────────────────────────────────────── */
+    .vos-theme-toggle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--vos-text-muted);
+      background: none;
+      border: 1px solid var(--vos-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .vos-theme-toggle:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
+    .vos-theme-toggle[aria-pressed="true"] { background: var(--vos-brand-bg); color: var(--vos-brand); border-color: var(--vos-brand-border); }
     .vos-page {
       max-width: 960px;
       margin: 0 auto;
@@ -1691,12 +1769,12 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #1a1a2e;
+      color: var(--vos-text);
       padding: 4px 8px;
       line-height: 1;
       font-family: inherit;
     }
-    .vos-hamburger:hover { color: #4f46e5; }
+    .vos-hamburger:hover { color: var(--vos-brand); }
 
     @media (max-width: 640px) {
       .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
@@ -1724,8 +1802,8 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         font-size: 14px;
       }
       .vos-nav-link.active {
-        background: #eef2ff;
-        color: #4f46e5;
+        background: var(--vos-brand-bg);
+        color: var(--vos-brand);
         font-weight: 600;
       }
       /* Show hamburger on mobile */
@@ -1757,6 +1835,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     </div>
     <div class="vos-user">
       <span class="vos-username">Alice</span>
+      <button type="button" id="vos-theme-toggle" class="vos-theme-toggle" aria-pressed="false">Dark mode</button>
       <form method="POST" action="/admin/logout" style="margin:0">
         <button type="submit" class="vos-signout-btn">Sign out</button>
       </form>
@@ -1764,6 +1843,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
   <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
+  <script>(function(){var d=document,r=d.documentElement,k="shipwright-theme",q=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;function saved(){try{var s=localStorage.getItem(k);return s==="dark"||s==="light"?s:null}catch(e){return null}}function apply(t){r.setAttribute("data-theme",t);var b=d.getElementById("vos-theme-toggle");if(b)b.setAttribute("aria-pressed",t==="dark"?"true":"false");d.dispatchEvent(new CustomEvent("vos-theme-change",{detail:{theme:t}}))}apply(saved()||(q&&q.matches?"dark":"light"));var b=d.getElementById("vos-theme-toggle");if(b)b.addEventListener("click",function(){var t=r.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(k,t)}catch(e){}apply(t)});if(q&&q.addEventListener)q.addEventListener("change",function(e){if(!saved())apply(e.matches?"dark":"light")})})();</script>
   <div class="app">
 
     <!-- Page Controls -->
@@ -2121,18 +2201,21 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
   <title>Metrics — Vitals OS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { color-scheme: light; --vos-bg: #f7f7fb; --vos-surface: #ffffff; --vos-surface-muted: #f9fafb; --vos-surface-subtle: #f3f4f6; --vos-border: #e8e8ee; --vos-border-strong: #d1d5db; --vos-text: #1a1a2e; --vos-text-body: #374151; --vos-text-muted: #6b7280; --vos-text-faint: #9ca3af; --vos-brand: #4f46e5; --vos-brand-strong: #4338ca; --vos-brand-bg: #eef2ff; --vos-brand-border: #c7d2fe; --vos-on-brand: #ffffff; --vos-primary: #1a1a2e; --vos-primary-hover: #2d2d4e; --vos-primary-text: #ffffff; --vos-success-bg: #d1fae5; --vos-success-text: #065f46; --vos-success-border: #a7f3d0; --vos-warning-bg: #fef3c7; --vos-warning-text: #92400e; --vos-warning-border: #fde68a; --vos-danger: #dc2626; --vos-danger-text: #b91c1c; --vos-danger-bg: #fee2e2; --vos-danger-border: #fecaca; --vos-info-bg: #dbeafe; --vos-info-text: #1e40af; --vos-info-border: #93c5fd; --vos-violet-bg: #ede9fe; --vos-violet-text: #5b21b6; --vos-teal-bg: #ccfbf1; --vos-teal-text: #0f766e; }
+    :root[data-theme="dark"] { color-scheme: dark; --vos-bg: #0f1117; --vos-surface: #171a22; --vos-surface-muted: #1b1f29; --vos-surface-subtle: #1f2330; --vos-border: #2a2f3d; --vos-border-strong: #3a4052; --vos-text: #e6e8ef; --vos-text-body: #c9cdd8; --vos-text-muted: #a3a9b8; --vos-text-faint: #8891a3; --vos-brand: #818cf8; --vos-brand-strong: #a5b4fc; --vos-brand-bg: #23264a; --vos-brand-border: #3b3f7a; --vos-on-brand: #0f1117; --vos-primary: #e6e8ef; --vos-primary-hover: #ffffff; --vos-primary-text: #0f1117; --vos-success-bg: #0f2e1d; --vos-success-text: #86efac; --vos-success-border: #14532d; --vos-warning-bg: #3a2a0c; --vos-warning-text: #fcd34d; --vos-warning-border: #78350f; --vos-danger: #f87171; --vos-danger-text: #fca5a5; --vos-danger-bg: #3b1518; --vos-danger-border: #7f1d1d; --vos-info-bg: #16264a; --vos-info-text: #93c5fd; --vos-info-border: #1e3a8a; --vos-violet-bg: #2a1f4d; --vos-violet-text: #c4b5fd; --vos-teal-bg: #0f2f2c; --vos-teal-text: #5eead4; }
+    :root[data-theme="dark"] textarea, :root[data-theme="dark"] select, :root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { background-color: var(--vos-surface); color: var(--vos-text); }
     html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f7f7fb;
-      color: #1a1a2e;
+      background: var(--vos-bg);
+      color: var(--vos-text);
       min-height: 100vh;
     }
 
     /* ─── Toolbar ───────────────────────────────────────── */
     .vos-toolbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e8ee;
+      background: var(--vos-surface);
+      border-bottom: 1px solid var(--vos-border);
       height: 52px;
       display: flex;
       align-items: center;
@@ -2145,12 +2228,12 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
     .vos-wordmark {
       font-size: 15px;
       font-weight: 700;
-      color: #1a1a2e;
+      color: var(--vos-text);
       text-decoration: none;
       letter-spacing: -0.3px;
       flex-shrink: 0;
     }
-    .vos-wordmark:hover { color: #4f46e5; }
+    .vos-wordmark:hover { color: var(--vos-brand); }
     .vos-nav {
       display: flex;
       align-items: center;
@@ -2162,15 +2245,15 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       text-decoration: none;
       transition: background 0.1s, color 0.1s;
       white-space: nowrap;
     }
-    .vos-nav-link:hover { background: #f3f4f6; color: #1a1a2e; }
+    .vos-nav-link:hover { background: var(--vos-surface-subtle); color: var(--vos-text); }
     .vos-nav-link.active {
-      background: #eef2ff;
-      color: #4f46e5;
+      background: var(--vos-brand-bg);
+      color: var(--vos-brand);
       font-weight: 600;
     }
     .vos-user {
@@ -2182,7 +2265,7 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
     }
     .vos-username {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2191,9 +2274,9 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
     .vos-signout-btn {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--vos-text-muted);
       background: none;
-      border: 1px solid #e8e8ee;
+      border: 1px solid var(--vos-border);
       border-radius: 6px;
       padding: 5px 12px;
       cursor: pointer;
@@ -2201,9 +2284,24 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
       transition: background 0.1s, color 0.1s, border-color 0.1s;
       white-space: nowrap;
     }
-    .vos-signout-btn:hover { background: #f7f7fb; color: #1a1a2e; border-color: #d1d5db; }
+    .vos-signout-btn:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
 
     /* ─── Page body ─────────────────────────────────────── */
+    .vos-theme-toggle {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--vos-text-muted);
+      background: none;
+      border: 1px solid var(--vos-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      min-height: 28px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .vos-theme-toggle:hover { background: var(--vos-bg); color: var(--vos-text); border-color: var(--vos-border-strong); }
+    .vos-theme-toggle[aria-pressed="true"] { background: var(--vos-brand-bg); color: var(--vos-brand); border-color: var(--vos-brand-border); }
     .vos-page {
       max-width: 960px;
       margin: 0 auto;
@@ -2219,12 +2317,12 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
       border: none;
       font-size: 20px;
       cursor: pointer;
-      color: #1a1a2e;
+      color: var(--vos-text);
       padding: 4px 8px;
       line-height: 1;
       font-family: inherit;
     }
-    .vos-hamburger:hover { color: #4f46e5; }
+    .vos-hamburger:hover { color: var(--vos-brand); }
 
     @media (max-width: 640px) {
       .vos-toolbar { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; min-height: 52px; align-items: center; }
@@ -2252,8 +2350,8 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
         font-size: 14px;
       }
       .vos-nav-link.active {
-        background: #eef2ff;
-        color: #4f46e5;
+        background: var(--vos-brand-bg);
+        color: var(--vos-brand);
         font-weight: 600;
       }
       /* Show hamburger on mobile */
@@ -2278,9 +2376,13 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
       <a href="/tasks" class="vos-nav-link">Tasks</a>
     </div>
+    <div class="vos-user">
+      <button type="button" id="vos-theme-toggle" class="vos-theme-toggle" aria-pressed="false">Dark mode</button>
+    </div>
     <label for="vos-nav-toggle" class="vos-hamburger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="vos-nav-content">☰</label>
   </nav>
   <script>(function(){var t=document.getElementById('vos-nav-toggle');if(t)t.addEventListener('change',function(){var l=document.querySelector('label[for="vos-nav-toggle"]');if(l)l.setAttribute('aria-expanded',t.checked?'true':'false');});})();</script>
+  <script>(function(){var d=document,r=d.documentElement,k="shipwright-theme",q=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;function saved(){try{var s=localStorage.getItem(k);return s==="dark"||s==="light"?s:null}catch(e){return null}}function apply(t){r.setAttribute("data-theme",t);var b=d.getElementById("vos-theme-toggle");if(b)b.setAttribute("aria-pressed",t==="dark"?"true":"false");d.dispatchEvent(new CustomEvent("vos-theme-change",{detail:{theme:t}}))}apply(saved()||(q&&q.matches?"dark":"light"));var b=d.getElementById("vos-theme-toggle");if(b)b.addEventListener("click",function(){var t=r.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(k,t)}catch(e){}apply(t)});if(q&&q.addEventListener)q.addEventListener("change",function(e){if(!saved())apply(e.matches?"dark":"light")})})();</script>
   <div class="app">
 
     <!-- Page Controls -->
