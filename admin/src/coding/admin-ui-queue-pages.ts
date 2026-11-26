@@ -42,7 +42,7 @@ function workItemLink(type: "task" | "pr", id: string): string {
   const match = id.match(/^(.+)#(\d+)$/);
   if (!match) return escapeHtml(id);
   const [, repo, prNumber] = match;
-  return `<a href="https://github.com/${escapeHtml(repo)}/pull/${escapeHtml(prNumber)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">${escapeHtml(id)}</a>`;
+  return `<a href="https://github.com/${escapeHtml(repo)}/pull/${escapeHtml(prNumber)}" target="_blank" rel="noopener" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(id)}</a>`;
 }
 
 export interface CronRunItem {
@@ -112,16 +112,18 @@ function fmtDuration(ms: number): string {
 // Inline CSS for per-model cost badges on the cron runs page. A single run can
 // span multiple models, so each gets its own neutral badge — no outcome-style
 // color coding needed here.
-const MODEL_BADGE_STYLE = "background:#eef2ff;color:#4338ca";
+const MODEL_BADGE_STYLE =
+  "background:var(--vos-brand-bg, #eef2ff);color:var(--vos-brand-strong, #4338ca)";
 
 // Inline CSS for the cron-run "Item" column badge, keyed by the raw
 // itemType ("task" | "pr") — distinct colors so a reader can tell a Task row
 // from a PR row at a glance, not just by reading the label text.
 const ITEM_TYPE_BADGE_STYLE: Record<string, string> = {
-  task: "background:#eef2ff;color:#4338ca",
-  pr: "background:#dcfce7;color:#166534",
+  task: "background:var(--vos-brand-bg, #eef2ff);color:var(--vos-brand-strong, #4338ca)",
+  pr: "background:var(--vos-success-bg, #dcfce7);color:var(--vos-success-text, #166534)",
 };
-const ITEM_TYPE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+const ITEM_TYPE_BADGE_STYLE_DEFAULT =
+  "background:var(--vos-surface-subtle, #f3f4f6);color:var(--vos-text-muted, #6b7280)";
 
 // Human-readable capitalized labels for the raw lowercase itemType values.
 const ITEM_TYPE_LABEL: Record<string, string> = {
@@ -168,13 +170,18 @@ export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
 // distinct from the outcome-style badges elsewhere on the queue & activity
 // page, since phase here is informational, not a pass/fail signal.
 const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
-  "dev-task": "background:#eef2ff;color:#4338ca",
-  plan: "background:#e0f2fe;color:#075985",
-  review: "background:#fef3c7;color:#92400e",
-  patch: "background:#fee2e2;color:#991b1b",
-  merge: "background:#ede9fe;color:#5b21b6",
+  "dev-task":
+    "background:var(--vos-brand-bg, #eef2ff);color:var(--vos-brand-strong, #4338ca)",
+  plan: "background:var(--vos-info-bg, #e0f2fe);color:var(--vos-info-text, #075985)",
+  review:
+    "background:var(--vos-warning-bg, #fef3c7);color:var(--vos-warning-text, #92400e)",
+  patch:
+    "background:var(--vos-danger-bg, #fee2e2);color:var(--vos-danger-text, #991b1b)",
+  merge:
+    "background:var(--vos-violet-bg, #ede9fe);color:var(--vos-violet-text, #5b21b6)",
 };
-const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT =
+  "background:var(--vos-surface-subtle, #f3f4f6);color:var(--vos-text-muted, #6b7280)";
 
 // Shared header cells for the Past-section cron-run table — reused by the
 // primary (shipwright-loop) table, each collapsed non-loop cron's <details>
@@ -284,7 +291,7 @@ function renderPaginationBar(opts: {
     return escapeHtml(`${basePath}${qs ? `?${qs}` : ""}`);
   };
 
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:var(--vos-text-muted, #6b7280)">
       <span>${from}–${to} of ${total}</span>
       <div style="display:flex;gap:4px">
         ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
@@ -364,7 +371,7 @@ function renderCronRunRow(
 
   const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
   const cronCell = r.cron
-    ? `<a href="/admin/agents/${escapeHtml(cronLinkAgentId)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+    ? `<a href="/admin/agents/${escapeHtml(cronLinkAgentId)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(cronLabel)}</a>`
     : escapeHtml(cronLabel);
 
   const startedIso = new Date(r.startedAt).toISOString();
@@ -541,7 +548,7 @@ export function renderQueueActivityPage(opts: {
       ? `<div class="card">
       <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
     </div>`
-      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
+      : `<div style="margin-bottom:12px;font-size:12px;color:var(--vos-text-muted, #6b7280)">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
     <div class="card">
       <div class="data-table-wrapper">
         <table class="data-table">
@@ -672,7 +679,7 @@ export function renderQueueActivityPage(opts: {
   const paginationHtml =
     pagination.total === 0
       ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:var(--vos-text-muted, #6b7280)">
       <span>${from}–${to} of ${pagination.total}</span>
       <div style="display:flex;gap:4px">
         ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
@@ -685,7 +692,7 @@ export function renderQueueActivityPage(opts: {
     body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page vos-page-wide">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
+      <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
       ${agentSelectorHtml}
     </div>
@@ -944,7 +951,7 @@ export function renderMergedQueueActivityPage(opts: {
     body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page vos-page-wide">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="/admin/agents" style="color:#6b7280;font-size:13px;text-decoration:none">← Agents</a>
+      <a href="/admin/agents" style="color:var(--vos-text-muted, #6b7280);font-size:13px;text-decoration:none">← Agents</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — All Agents</h1>
       ${agentSelectorHtml}
     </div>

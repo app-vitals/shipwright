@@ -333,7 +333,9 @@ describe("admin UI — PRs page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).not.toContain('<a href="/admin/tasks/task-abc"');
-    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+    expect(html).toContain(
+      '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>',
+    );
   });
 
   it("GET /admin/prs degrades linked tasks to empty when fetchTaskStoreTasks throws", async () => {
@@ -354,7 +356,9 @@ describe("admin UI — PRs page", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+    expect(html).toContain(
+      '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>',
+    );
   });
 
   it("GET /admin/prs renders empty-state dash for linked tasks when fetchTaskStoreTasks is absent", async () => {
@@ -373,7 +377,9 @@ describe("admin UI — PRs page", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+    expect(html).toContain(
+      '<span style="color:var(--vos-text-faint, #9ca3af)">—</span>',
+    );
   });
 
   it("GET /admin/prs?taskId= resolves the task's repo+pr live instead of forwarding taskId to /prs", async () => {

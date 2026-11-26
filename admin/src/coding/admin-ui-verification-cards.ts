@@ -73,12 +73,17 @@ export interface VerificationActivitySummary {
 // VerificationCheckStatus value. Shared by the task/PR detail "Verification
 // Checks" card and the agent detail "Recent Verification Activity" rollup.
 const VERIFICATION_STATUS_STYLE: Record<string, string> = {
-  ran_passed: "background:#d1fae5;color:#065f46",
-  ran_failed: "background:#fee2e2;color:#991b1b",
-  skipped: "background:#f3f4f6;color:#6b7280",
-  timed_out: "background:#fde68a;color:#92400e",
+  ran_passed:
+    "background:var(--vos-success-bg, #d1fae5);color:var(--vos-success-text, #065f46)",
+  ran_failed:
+    "background:var(--vos-danger-bg, #fee2e2);color:var(--vos-danger-text, #991b1b)",
+  skipped:
+    "background:var(--vos-surface-subtle, #f3f4f6);color:var(--vos-text-muted, #6b7280)",
+  timed_out:
+    "background:var(--vos-warning-border, #fde68a);color:var(--vos-warning-text, #92400e)",
 };
-const VERIFICATION_STATUS_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+const VERIFICATION_STATUS_STYLE_DEFAULT =
+  "background:var(--vos-surface-subtle, #f3f4f6);color:var(--vos-text-muted, #6b7280)";
 const VERIFICATION_STATUS_LABEL: Record<string, string> = {
   ran_passed: "passed",
   ran_failed: "failed",
@@ -124,7 +129,8 @@ const VERIFICATION_REASON_CATEGORY_ORDER = [
   "resource_limit",
   "learned_skip",
 ];
-const VERIFICATION_REASON_CATEGORY_STYLE = "background:#fde68a;color:#92400e";
+const VERIFICATION_REASON_CATEGORY_STYLE =
+  "background:var(--vos-warning-border, #fde68a);color:var(--vos-warning-text, #92400e)";
 
 /** Human label for a reasonCategory value, falling back to the raw value for an unrecognized one. */
 function verificationReasonCategoryLabel(reasonCategory: string): string {
@@ -199,17 +205,17 @@ export function renderVerificationChecksCard(
             timeZone: timezone,
           });
       const reasonHtml = check.reasonCategory
-        ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px">${escapeHtml(check.reasonCategory)}</div>`
+        ? `<div style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:2px">${escapeHtml(check.reasonCategory)}</div>`
         : "";
       return `<tr>
-      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap;font-family:monospace">${escapeHtml(check.checkName)}</td>
+      <td style="width:170px;padding:8px 12px;color:var(--vos-text-muted, #6b7280);font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap;font-family:monospace">${escapeHtml(check.checkName)}</td>
       <td style="padding:8px 12px;font-size:13px">${verificationStatusBadge(check.status)}${reasonHtml}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6b7280" title="${escapeHtml(check.at)}">${escapeHtml(fmt)}</td>
+      <td style="padding:8px 12px;font-size:13px;color:var(--vos-text-muted, #6b7280)" title="${escapeHtml(check.at)}">${escapeHtml(fmt)}</td>
     </tr>`;
     })
     .join("");
   return `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Verification Checks</div>
+      <div style="font-size:12px;font-weight:600;color:var(--vos-text-body, #374151);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Verification Checks</div>
       <table class="detail-table"><tbody>
         ${rows}
       </tbody></table>
@@ -241,7 +247,7 @@ export function renderVerificationActivityCard(
   if (summary.totalChecks === 0) {
     return `<div class="card">
       <div class="card-title">Recent Verification Activity</div>
-      <div style="font-size:13px;color:#6b7280">No recent verification checks recorded</div>
+      <div style="font-size:13px;color:var(--vos-text-muted, #6b7280)">No recent verification checks recorded</div>
     </div>`;
   }
   const badges = renderStatusCountBadges(summary.counts);
@@ -251,7 +257,7 @@ export function renderVerificationActivityCard(
     .map((checkName) => {
       const checkBadges = renderStatusCountBadges(byCheckName[checkName]);
       return `<div style="margin-bottom:6px">
-        <span style="display:inline-block;min-width:100px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(checkName)}</span>
+        <span style="display:inline-block;min-width:100px;font-size:12px;font-family:monospace;color:var(--vos-text-muted, #6b7280)">${escapeHtml(checkName)}</span>
         ${checkBadges}
       </div>`;
     })
@@ -264,13 +270,13 @@ export function renderVerificationActivityCard(
   const repoKeys = Object.keys(byRepo);
   const repoSection =
     repoKeys.length > 1
-      ? `<div style="font-size:11px;font-weight:600;color:#374151;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">By repo</div>
+      ? `<div style="font-size:11px;font-weight:600;color:var(--vos-text-body, #374151);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">By repo</div>
       <div>${repoKeys
         .sort()
         .map((repo) => {
           const repoBadges = renderStatusCountBadges(byRepo[repo]);
           return `<div style="margin-bottom:6px">
-        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(repo)}</span>
+        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:var(--vos-text-muted, #6b7280)">${escapeHtml(repo)}</span>
         ${repoBadges}
       </div>`;
         })
@@ -295,18 +301,18 @@ export function renderVerificationActivityCard(
               environmentalByRepo[repo],
             );
             return `<div style="margin-bottom:6px">
-        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(repo)}</span>
+        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:var(--vos-text-muted, #6b7280)">${escapeHtml(repo)}</span>
         ${reasonBadges}
       </div>`;
           })
           .join("")
-      : `<div style="font-size:13px;color:#6b7280">No environmental issues in recent runs</div>`;
-  const environmentalSection = `<div style="font-size:11px;font-weight:600;color:#374151;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Environmental issues</div>
+      : `<div style="font-size:13px;color:var(--vos-text-muted, #6b7280)">No environmental issues in recent runs</div>`;
+  const environmentalSection = `<div style="font-size:11px;font-weight:600;color:var(--vos-text-body, #374151);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Environmental issues</div>
       <div>${environmentalRows}</div>`;
 
   return `<div class="card">
       <div class="card-title">Recent Verification Activity</div>
-      <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${summary.totalChecks} check${summary.totalChecks === 1 ? "" : "s"} across ${summary.itemCount} recent item${summary.itemCount === 1 ? "" : "s"}</div>
+      <div style="font-size:13px;color:var(--vos-text-muted, #6b7280);margin-bottom:10px">${summary.totalChecks} check${summary.totalChecks === 1 ? "" : "s"} across ${summary.itemCount} recent item${summary.itemCount === 1 ? "" : "s"}</div>
       <div style="margin-bottom:10px">${badges}</div>
       <div>${checkNameRows}</div>
       ${repoSection}

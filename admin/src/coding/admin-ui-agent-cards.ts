@@ -79,13 +79,13 @@ export function renderGitHubInstallationsCard(
     : "";
   const rows =
     snapshot.installations.length === 0
-      ? `<tr><td colspan="3" style="padding:8px 12px;color:#9ca3af;font-size:13px">No installations reported.</td></tr>`
+      ? `<tr><td colspan="3" style="padding:8px 12px;color:var(--vos-text-faint, #9ca3af);font-size:13px">No installations reported.</td></tr>`
       : snapshot.installations
           .map(
             (i) => `<tr>
       <td style="padding:8px 12px;font-size:13px;font-family:monospace">${escapeHtml(i.owner)}</td>
       <td style="padding:8px 12px;font-size:13px">${githubInstallationStateBadge(i.state)}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6b7280">${i.lastError ? escapeHtml(i.lastError) : ""}</td>
+      <td style="padding:8px 12px;font-size:13px;color:var(--vos-text-muted, #6b7280)">${i.lastError ? escapeHtml(i.lastError) : ""}</td>
     </tr>`,
           )
           .join("");
@@ -95,7 +95,7 @@ export function renderGitHubInstallationsCard(
       <table class="detail-table"><thead><tr><th>Owner</th><th>State</th><th>Last error</th></tr></thead><tbody>
         ${rows}
       </tbody></table>
-      <div style="font-size:11px;color:#9ca3af;margin-top:8px" title="${escapeHtml(String(snapshot.reportedAt instanceof Date ? snapshot.reportedAt.toISOString() : snapshot.reportedAt))}">Reported ${escapeHtml(fmt)}</div>
+      <div style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:8px" title="${escapeHtml(String(snapshot.reportedAt instanceof Date ? snapshot.reportedAt.toISOString() : snapshot.reportedAt))}">Reported ${escapeHtml(fmt)}</div>
     </div>`;
 }
 
@@ -127,7 +127,7 @@ export function renderPhaseMethodologyCard(
     const subagentType = phaseMethodologyByPhase.get(phase) ?? null;
     return `<tr>
       <td class="mono">${escapeHtml(phase)}</td>
-      <td>${subagentType ? escapeHtml(subagentType) : '<span style="color:#9ca3af">default</span>'}</td>
+      <td>${subagentType ? escapeHtml(subagentType) : '<span style="color:var(--vos-text-faint, #9ca3af)">default</span>'}</td>
       <td style="white-space:nowrap">
         <form method="POST" action="/admin/agents/${escapeHtml(agentId)}/phase-methodology/${escapeHtml(phase)}" style="display:flex;gap:4px">
           <input name="subagentType" type="text" class="form-input" style="font-size:11px;padding:3px 6px" placeholder="default" value="${subagentType ? escapeHtml(subagentType) : ""}" />
@@ -139,7 +139,7 @@ export function renderPhaseMethodologyCard(
 
   return `<div class="card">
       <div class="card-title">Phase Methodology</div>
-      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--vos-text-muted, #6b7280);margin-bottom:12px">
         Override which subagent type handles each pipeline phase. The review phase also accepts a comma-separated list (up to 5, duplicates dropped); other phases take a single value. Clear the field and Save to fall back to the default.
       </p>
       <div class="data-table-wrapper">
