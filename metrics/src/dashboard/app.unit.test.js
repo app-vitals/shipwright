@@ -16,6 +16,8 @@ let buildCoverageTrend;
 let fmtCoverageDelta;
 let buildAdminTasksHref;
 let fmtAsOfMeta;
+let resolveTheme;
+let nextTheme;
 
 beforeAll(async () => {
   await import("./app.js");
@@ -26,6 +28,8 @@ beforeAll(async () => {
     fmtCoverageDelta,
     buildAdminTasksHref,
     fmtAsOfMeta,
+    resolveTheme,
+    nextTheme,
   } = globalThis.__dashboardAppTestExports);
 });
 
@@ -508,5 +512,34 @@ describe("fmtAsOfMeta (SCM-8.4)", () => {
     expect(fmtAsOfMeta({ repoCount: 3 })).toBe("3 repos");
     expect(fmtAsOfMeta({ repoCount: 1 })).toBe("1 repo");
     expect(fmtAsOfMeta(undefined)).toBe("0 repos");
+  });
+});
+
+describe("resolveTheme", () => {
+  test("a saved choice wins over the system preference", () => {
+    expect(resolveTheme("light", true)).toBe("light");
+    expect(resolveTheme("dark", false)).toBe("dark");
+  });
+
+  test("with no saved choice it follows the system preference", () => {
+    expect(resolveTheme(null, true)).toBe("dark");
+    expect(resolveTheme(null, false)).toBe("light");
+  });
+
+  test("an unrecognised saved value is ignored", () => {
+    expect(resolveTheme("sepia", true)).toBe("dark");
+    expect(resolveTheme("", false)).toBe("light");
+    expect(resolveTheme(undefined, false)).toBe("light");
+  });
+});
+
+describe("nextTheme", () => {
+  test("flips between the two themes", () => {
+    expect(nextTheme("dark")).toBe("light");
+    expect(nextTheme("light")).toBe("dark");
+  });
+
+  test("treats a missing theme as light", () => {
+    expect(nextTheme(null)).toBe("dark");
   });
 });
