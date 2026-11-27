@@ -1,7 +1,7 @@
 /**
  * Canonical booking destination for the discovery call.
  *
- * Single source of truth — imported by pages, layouts, and the Playwright specs
+ * Single source of truth: imported by pages, layouts, and the Playwright specs
  * so a URL swap is one line here and the tests cannot drift from the source.
  */
 export const BOOKING_URL = "https://vitals-os.com/cal/book/discovery";
@@ -10,8 +10,8 @@ export const BOOKING_URL = "https://vitals-os.com/cal/book/discovery";
  * Crew application form (Kit-hosted landing page), linked out rather than
  * embedded: MESSAGING.md §4 forbids email capture on marketing surfaces.
  *
- * Single source of truth — imported by /crew and its Playwright spec.
- * PLACEHOLDER until the hosted Kit form exists (HUMAN STEP, SAUL-CREW-1.1).
+ * Single source of truth: imported by /crew and its Playwright spec.
+ * TODO(CRW-2.1): PLACEHOLDER until the hosted Kit form exists (HUMAN STEP).
  */
 export const CREW_APPLY_URL =
   "https://shipwrightharness.kit.com/crew-apply?utm_source=shipwrightharness&utm_content=crew_page";
