@@ -522,10 +522,17 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     await prisma.$disconnect();
   });
 
-  it("seeds docs-freshness and test-readiness disabled in the default account", async () => {
+  it("seeds all six definitions disabled in the default account", async () => {
     await service.seedDefaults();
     const defs = await service.list({ accountId: null });
-    expect(defs.map((d) => d.id)).toEqual(["docs-freshness", "test-readiness"]);
+    expect(defs.map((d) => d.id).sort()).toEqual([
+      "consolidation-patrol",
+      "docs-freshness",
+      "entropy-patrol",
+      "error-patrol",
+      "security-patrol",
+      "test-readiness",
+    ]);
     for (const d of defs) {
       expect(d.enabled).toBe(false);
       expect(d.enabledAt).toBeNull();
@@ -539,6 +546,46 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     expect(byId["test-readiness"].descriptionTemplate).toBe(
       "/shipwright:test-readiness --repo {repo} --full --publish",
     );
+    const schedules = Object.fromEntries(defs.map((d) => [d.id, d.schedule]));
+    expect(schedules["entropy-patrol"]).toBe("0 4 * * 1");
+    expect(schedules["error-patrol"]).toBe("0 4 * * *");
+    expect(schedules["security-patrol"]).toBe("0 6 * * 1");
+    expect(schedules["consolidation-patrol"]).toBe("0 5 * * 1");
+    for (const d of defs) expect(d.repoScope).toBe("all");
+  });
+
+  it("firing security-patrol for 2 repos puts --repo on every command", async () => {
+    await service.seedDefaults();
+    await service.setEnabled("security-patrol", true, null);
+    const result = await service.fire("security-patrol", {
+      scheduledFor: "2026-11-23T06:00:00Z",
+      repos: ["acme/widgets", "acme/gadgets"],
+    });
+    expect(result.taskIds).toHaveLength(2);
+    for (const id of result.taskIds) expect(id).toMatch(/^SC-security-patrol-/);
+    for (const repo of ["acme/widgets", "acme/gadgets"]) {
+      const task = await prisma.task.findFirst({
+        where: { repo, id: { startsWith: "SC-security-patrol-" } },
+      });
+      const commands = (task?.description ?? "").split("\n");
+      expect(commands).toEqual([
+        `/shipwright:security-scan --repo ${repo}`,
+        `/shipwright:security-fix --repo ${repo}`,
+      ]);
+    }
+  });
+
+  it("error-patrol chains scan, fix and resolve in one session", async () => {
+    await service.seedDefaults();
+    const def = (await service.list({ accountId: null })).find(
+      (d) => d.id === "error-patrol",
+    );
+    const t = def?.descriptionTemplate ?? "";
+    for (const c of ["error-scan", "error-fix", "error-resolve"]) {
+      expect(t).toContain(`/shipwright:${c} --repo {repo}`);
+    }
+    expect(t).toContain("invoke each one immediately");
+    expect(t).toContain("Continue automatically");
   });
 
   it("is idempotent and never overwrites an operator's edits or enable state", async () => {
@@ -556,7 +603,17 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     );
     expect(def?.descriptionTemplate).toBe("custom {repo}");
     expect(def?.enabled).toBe(true);
-    expect(await service.list({ accountId: null })).toHaveLength(2);
+    expect(await service.list({ accountId: null })).toHaveLength(6);
+  });
+
+  it("leaves an edited patrol definition intact on re-seed", async () => {
+    await service.seedDefaults();
+    await service.update("entropy-patrol", { schedule: "0 9 * * 2" }, null);
+    await service.seedDefaults();
+    const def = (await service.list({ accountId: null })).find(
+      (d) => d.id === "entropy-patrol",
+    );
+    expect(def?.schedule).toBe("0 9 * * 2");
   });
 });
 
