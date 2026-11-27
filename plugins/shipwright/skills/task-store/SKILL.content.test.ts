@@ -159,3 +159,27 @@ describe("SKILL.md — plan write endpoint (PWE-3.2)", () => {
     expect(skillContent).toContain("error-fix");
   });
 });
+
+describe("SKILL.md — finding routing contract (PCR-2.3)", () => {
+  it("documents the auto, review and plan routes", () => {
+    expect(skillContent).toContain("Finding routing (auto / review / plan)");
+    expect(skillContent).toMatch(/\*\*auto\*\*/);
+    expect(skillContent).toMatch(/\*\*review\*\*/);
+    expect(skillContent).toMatch(/\*\*plan\*\*/);
+    expect(skillContent).toContain('kind: "prd"');
+  });
+
+  it("documents the needs-review: prefix and the unblock call", () => {
+    expect(skillContent).toContain("needs-review:");
+    expect(skillContent).toContain("POST /tasks/{id}/unblock");
+  });
+
+  it("keeps the credential exception and the cron origin stamp", () => {
+    expect(skillContent).toMatch(/credential rotation\/revocation/i);
+    expect(skillContent).toContain('originKind: "cron"');
+  });
+
+  it("links to the single system-cron contract in docs/task-store.md", () => {
+    expect(skillContent).toContain("System-cron contract");
+  });
+});

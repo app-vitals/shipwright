@@ -212,6 +212,18 @@ scheduler passes nothing. `research-docs --auto` stamps `originRef: "docs-freshn
 to `test-fix`, which then stamps `originRef: "test-readiness"`. Standalone `test-fix` keeps
 `originKind: "skill"` / `originRef: "test-fix"`.
 
+### Finding routing (auto / review / plan)
+
+Fix skills create follow-on tasks one of three ways. Full contract: [docs/task-store.md](../../../../docs/task-store.md) ("Finding routing" and "System-cron contract").
+
+| Route | How to create it |
+|---|---|
+| **auto** | `kind: "dev"`, `status: "pending"`, `hitl: false`. Agents execute it. |
+| **review** | `kind: "dev"`, `status: "blocked"`, `blockedReason: "needs-review: <the specific question>"`, never `hitl: true`. A human unblocks it with `POST /tasks/{id}/unblock`, then agents execute it. |
+| **plan** | `kind: "prd"`, `hitl: true`, description = draft problem statement plus the findings. A human runs it through `/shipwright:prd` or `/shipwright:plan-session`. |
+
+Credential rotation/revocation is the human-only exception and keeps `hitl: true` (run via `/shipwright:hitl`). Every routed task carries `originKind: "cron"`, `originRef` = the system-cron id, and `repo`; the run's metrics count auto/review/plan separately.
+
 ---
 
 ## `?ready=true` semantics
