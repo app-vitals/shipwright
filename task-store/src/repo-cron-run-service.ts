@@ -12,7 +12,6 @@
  * resolves `accountId` and passes it in alongside the caller's scope.
  */
 
-import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ForbiddenError } from "./errors.ts";
 import type { PrismaClient, RepoCronRun } from "./index.ts";
 import { cursorWhere, decodeCursor, encodeCursor } from "./lib/cursor.ts";
@@ -118,11 +117,7 @@ function validateMetrics(metrics: unknown): Record<string, number> {
 }
 
 export class RepoCronRunService implements RepoCronRunServiceLike {
-  // The clock is kept for symmetry with sibling services / future defaults.
-  constructor(
-    private prisma: PrismaClient,
-    _clock: Clock = SystemClock(),
-  ) {}
+  constructor(private prisma: PrismaClient) {}
 
   async record(
     data: RecordRepoCronRunInput,
