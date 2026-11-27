@@ -3872,6 +3872,221 @@
         }
       }
     },
+    "/cron-runs": {
+      "post": {
+        "tags": [
+          "Cron Runs"
+        ],
+        "summary": "Append a per-repo cron run record",
+        "description": "Appends one record of a system-cron run for a repo. Append-only: every POST creates a new row (`201`), even for the same `cronId` + `repo`. `400` when `repo` is not `owner/repo`, `outcome` is not `ok | no_op | failed`, a timestamp is not valid ISO, `cronId`/`commitSha` is empty, `metrics` is not an object of finite numbers, or the `auto`/`review`/`plan` routing counts in `metrics` are not non-negative integers. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRepoCronRunBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created run record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCronRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields or metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Cron Runs"
+        ],
+        "summary": "List cron runs, newest first",
+        "description": "Returns `{ runs, total, limit, nextCursor }` ordered by `finishedAt` descending (default `limit=50`). Optional `?cronId=` and `?repo=` filters. `machineState` is omitted from each run unless `?includeDetail=true`. Agent tokens only see their own account's rows (and only in-scope repos); admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=`; it is `null` on the last page. A malformed cursor is a 400.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "error-patrol"
+            },
+            "required": false,
+            "name": "cronId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "true",
+              "description": "`true` to include `machineState` on each run."
+            },
+            "required": false,
+            "description": "`true` to include `machineState` on each run.",
+            "name": "includeDetail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50",
+              "description": "Max records to return"
+            },
+            "required": false,
+            "description": "Max records to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of runs. A malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of runs. A malformed cursor is a 400.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cron run history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCronRunListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cron-runs/latest": {
+      "get": {
+        "tags": [
+          "Cron Runs"
+        ],
+        "summary": "Latest successful run for a cron + repo",
+        "description": "Returns the newest run (by `finishedAt`) for `?cronId=` + `?repo=` whose `outcome` is `ok` or `no_op`, including `machineState`. `failed` runs are skipped. `404` when there is no such run (or the repo is outside the caller's scope). Any in-scope token may read it, not only the one that wrote the run.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "error-patrol"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo"
+            },
+            "required": true,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest ok/no_op run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCronRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — `cronId` or `repo` missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No ok/no_op run for this cron + repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system-crons": {
       "get": {
         "tags": [
@@ -7628,6 +7843,221 @@
         },
         "required": [
           "snapshots"
+        ]
+      },
+      "RepoCronRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxrcr1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "cronId": {
+            "type": "string",
+            "example": "error-patrol"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "SC-2026-11-27-1"
+          },
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-11-27T06:00:00.000Z"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-27T06:00:05.000Z"
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-27T06:04:00.000Z"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "no_op",
+              "failed"
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "example": {
+              "scanned": 12,
+              "auto": 2,
+              "review": 1,
+              "plan": 0
+            },
+            "description": "Object of finite numbers. `auto` / `review` / `plan` routing counts, when present, are non-negative integers."
+          },
+          "machineState": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {},
+            "description": "Small non-finding state (e.g. a Sentry project-to-repo mapping or page anchors). Omitted from list responses unless `includeDetail=true`; always present on `/latest`."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-27T06:04:01.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "cronId",
+          "repo",
+          "taskId",
+          "scheduledFor",
+          "startedAt",
+          "finishedAt",
+          "commitSha",
+          "outcome",
+          "metrics",
+          "createdAt"
+        ]
+      },
+      "CreateRepoCronRunBody": {
+        "type": "object",
+        "properties": {
+          "cronId": {
+            "type": "string",
+            "example": "error-patrol"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Repository in `owner/repo` form — anything else is 400."
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "SC-2026-11-27-1",
+            "description": "The SC task that ran the cron."
+          },
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-11-27T06:00:00.000Z",
+            "description": "ISO timestamp of the trigger slot."
+          },
+          "startedAt": {
+            "type": "string",
+            "example": "2026-11-27T06:00:05.000Z"
+          },
+          "finishedAt": {
+            "type": "string",
+            "example": "2026-11-27T06:04:00.000Z"
+          },
+          "commitSha": {
+            "type": "string",
+            "example": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+            "description": "Commit of the repo the run observed."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "no_op",
+              "failed"
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {},
+            "example": {
+              "scanned": 12,
+              "auto": 2,
+              "review": 1,
+              "plan": 0
+            },
+            "description": "Object of finite numbers (else 400). `auto` / `review` / `plan`, when present, must be non-negative integers."
+          },
+          "machineState": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "Admin tokens only: the account to stamp the run with (defaults to `default`). Ignored for agent tokens."
+          }
+        },
+        "required": [
+          "cronId",
+          "repo",
+          "startedAt",
+          "finishedAt",
+          "commitSha",
+          "outcome",
+          "metrics"
+        ]
+      },
+      "RepoCronRunListResponse": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoCronRun"
+            },
+            "description": "Runs ordered by `finishedAt` descending (newest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
+          }
+        },
+        "required": [
+          "runs",
+          "total",
+          "limit",
+          "nextCursor"
         ]
       },
       "SystemCronListResponse": {

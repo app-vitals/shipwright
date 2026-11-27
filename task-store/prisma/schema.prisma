@@ -1,6 +1,6 @@
 // Shipwright — Task Store Service Schema
 // Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck, CoverageSnapshot,
-// SystemCronDefinition, SystemCronTrigger.
+// RepoCronRun, SystemCronDefinition, SystemCronTrigger.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -633,6 +633,35 @@ model CoverageSnapshot {
 
   @@unique([accountId, repo, commitSha])
   @@index([repo, measuredAt])
+}
+
+// ─── RepoCronRun ──────────────────────────────────────────────────────────────
+// PCR-1.1: append-only record of every per-repo system-cron run (one row per
+// run, never updated). Named RepoCronRun so it cannot collide with the
+// platform's AgentCronRun. `taskId` is the SC task that ran it and
+// `scheduledFor` the trigger slot (both nullable). `metrics` is a JSON object
+// of finite numbers; `machineState` is small non-finding state only (e.g. a
+// Sentry project-to-repo mapping or page anchors) and is omitted from list
+// responses unless includeDetail=true. outcome: ok | no_op | failed.
+
+model RepoCronRun {
+  id        String @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope
+
+  cronId       String
+  repo         String
+  taskId       String?
+  scheduledFor DateTime?
+  startedAt    DateTime
+  finishedAt   DateTime
+  commitSha    String
+  outcome      String
+  metrics      Json
+  machineState Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, cronId, repo, finishedAt])
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────

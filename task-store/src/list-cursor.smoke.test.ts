@@ -13,6 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { SystemCronServiceLike } from "./system-cron-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
@@ -170,6 +171,20 @@ const SETUPS: Record<string, Setup> = {
           async list(opts: unknown) {
             calls.push(opts);
             return { snapshots: [], total: 0, nextCursor };
+          },
+        }),
+      }),
+    readCursor: (calls) => (calls[0] as { cursor?: string }).cursor,
+  },
+  "GET /cron-runs": {
+    path: "/cron-runs",
+    key: "runs",
+    build: (calls, nextCursor) =>
+      app({
+        repoCronRunService: stub<RepoCronRunServiceLike>({
+          async list(opts: unknown) {
+            calls.push(opts);
+            return { runs: [], total: 0, nextCursor };
           },
         }),
       }),
