@@ -13,6 +13,7 @@ import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
 import { BadRequestError } from "./errors.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { RepoCronRunService } from "./repo-cron-run-service.ts";
 import { SessionService } from "./session-service.ts";
 import { SystemCronService } from "./system-cron-service.ts";
 import { TaskService } from "./task-service.ts";
@@ -68,6 +69,7 @@ describeOrSkip("cursor walks on list services (integration)", () => {
     await prisma.prFinding.deleteMany();
     await prisma.pullRequest.deleteMany();
     await prisma.coverageSnapshot.deleteMany();
+    await prisma.repoCronRun.deleteMany();
     await prisma.systemCronTrigger.deleteMany();
     await prisma.systemCronDefinition.deleteMany();
     await prisma.task.deleteMany();
@@ -244,6 +246,37 @@ describeOrSkip("cursor walks on list services (integration)", () => {
           orderBy: [{ at: "desc" }, { id: "desc" }],
         })
       ).map((c) => c.id),
+    );
+  });
+
+  it("GET /cron-runs — newest first by (finishedAt, id)", async () => {
+    for (let i = 0; i < N; i++) {
+      await prisma.repoCronRun.create({
+        data: {
+          id: `cr-${pad(i)}`,
+          cronId: "walk",
+          repo: REPO,
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          finishedAt: new Date(`2026-01-0${(i % 3) + 1}T00:00:00.000Z`),
+          commitSha: `sha-${pad(i)}`,
+          outcome: "ok",
+          metrics: {},
+        },
+      });
+    }
+    const service = new RepoCronRunService(prisma);
+    const rows = await walk(async (cursor) => {
+      const r = await service.list({ limit: LIMIT, cursor, repo: REPO });
+      expect(r.total).toBe(N);
+      return { items: r.runs, nextCursor: r.nextCursor };
+    });
+    expectEachOnce(
+      rows.map((s) => s.id),
+      (
+        await prisma.repoCronRun.findMany({
+          orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+        })
+      ).map((s) => s.id),
     );
   });
 

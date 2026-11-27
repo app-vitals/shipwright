@@ -1950,6 +1950,138 @@ export const CoverageSnapshotLatestResponseSchema = z
   })
   .openapi("CoverageSnapshotLatestResponse");
 
+// ─── Repo Cron Run (PCR-1.1) ──────────────────────────────────────────────────
+
+const REPO_CRON_RUN_OUTCOME = z.enum(["ok", "no_op", "failed"]);
+
+export const RepoCronRunSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxrcr1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    cronId: z.string().openapi({ example: "error-patrol" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    taskId: z.string().nullable().openapi({ example: "SC-2026-11-27-1" }),
+    scheduledFor: z
+      .string()
+      .datetime()
+      .nullable()
+      .openapi({ example: "2026-11-27T06:00:00.000Z" }),
+    startedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-27T06:00:05.000Z" }),
+    finishedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-27T06:04:00.000Z" }),
+    commitSha: z
+      .string()
+      .openapi({ example: "9fceb02d0ae598e95dc970b74767f19372d61af8" }),
+    outcome: REPO_CRON_RUN_OUTCOME,
+    metrics: z.record(z.string(), z.number()).openapi({
+      example: { scanned: 12, auto: 2, review: 1, plan: 0 },
+      description:
+        "Object of finite numbers. `auto` / `review` / `plan` routing counts, when present, are non-negative integers.",
+    }),
+    machineState: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "Small non-finding state (e.g. a Sentry project-to-repo mapping or page anchors). Omitted from list responses unless `includeDetail=true`; always present on `/latest`.",
+      }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-27T06:04:01.000Z" }),
+  })
+  .openapi("RepoCronRun");
+
+export type RepoCronRun = z.infer<typeof RepoCronRunSchema>;
+
+/** Request body for POST /cron-runs. */
+export const CreateRepoCronRunBodySchema = z
+  .object({
+    cronId: z.string().openapi({ example: "error-patrol" }),
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in `owner/repo` form — anything else is 400.",
+    }),
+    taskId: z.string().optional().nullable().openapi({
+      example: "SC-2026-11-27-1",
+      description: "The SC task that ran the cron.",
+    }),
+    scheduledFor: z.string().optional().nullable().openapi({
+      example: "2026-11-27T06:00:00.000Z",
+      description: "ISO timestamp of the trigger slot.",
+    }),
+    startedAt: z.string().openapi({ example: "2026-11-27T06:00:05.000Z" }),
+    finishedAt: z.string().openapi({ example: "2026-11-27T06:04:00.000Z" }),
+    commitSha: z.string().openapi({
+      example: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+      description: "Commit of the repo the run observed.",
+    }),
+    outcome: REPO_CRON_RUN_OUTCOME,
+    metrics: z.record(z.string(), z.unknown()).openapi({
+      example: { scanned: 12, auto: 2, review: 1, plan: 0 },
+      description:
+        "Object of finite numbers (else 400). `auto` / `review` / `plan`, when present, must be non-negative integers.",
+    }),
+    machineState: z.record(z.string(), z.unknown()).optional().nullable(),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account to stamp the run with (defaults to `default`). Ignored for agent tokens.",
+    }),
+  })
+  .openapi("CreateRepoCronRunBody");
+
+/** Query params for GET /cron-runs */
+export const RepoCronRunListQuerySchema = z
+  .object({
+    cronId: z.string().optional().openapi({ example: "error-patrol" }),
+    repo: z.string().optional().openapi({ example: "org/repo" }),
+    includeDetail: z.string().optional().openapi({
+      example: "true",
+      description: "`true` to include `machineState` on each run.",
+    }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+    cursor: cursorQueryParam("runs"),
+  })
+  .openapi("RepoCronRunListQuery");
+
+/** Query params for GET /cron-runs/latest */
+export const RepoCronRunLatestQuerySchema = z
+  .object({
+    cronId: z.string().openapi({ example: "error-patrol" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+  })
+  .openapi("RepoCronRunLatestQuery");
+
+/** Response for GET /cron-runs */
+export const RepoCronRunListResponseSchema = z
+  .object({
+    runs: z.array(RepoCronRunSchema).openapi({
+      description: "Runs ordered by `finishedAt` descending (newest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    nextCursor: nextCursorField,
+  })
+  .openapi("RepoCronRunListResponse");
+
 // ─── System Cron (SCR-1.1) ────────────────────────────────────────────────────
 
 export const SystemCronDefinitionSchema = z

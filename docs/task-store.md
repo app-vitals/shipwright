@@ -188,7 +188,7 @@ The manual two-request alternative is `GET /tasks?pr=<n>&repo=<org/repo>` to fin
 
 ### Cursor paging on the other list endpoints
 
-Every other list route that takes `?limit` also accepts `?cursor=` and returns `nextCursor` beside its unchanged array key: `GET /prs` (`prs`), `GET /prs/:id/events` and `GET /tasks/:id/events` (`events`), `GET /sessions` (`sessions`), `GET /verification-checks` (`checks`), `GET /coverage-snapshots` (`snapshots`) and `GET /system-crons/:id/triggers` (`triggers`). `nextCursor` is opaque and `null` on the last page; follow it until `null`. A malformed cursor is a `400`. `?offset` has been removed from every list route; see the migration note. Keyset orders: PRs `(createdAt, id)`; events and verification checks `(at, id)` (verification-checks `desc` for the repo+checkName mode); coverage snapshots `(measuredAt desc, id desc)`; triggers `(scheduledFor desc, id desc)`. Lists whose order is derived in memory — `/sessions` and `GET /prs?blocked=true` — wrap an internal offset in the cursor. A guard test (`task-store/src/list-cursor-guard.unit.test.ts`) fails if any GET route taking `limit` omits `cursor` or `nextCursor`.
+Every other list route that takes `?limit` also accepts `?cursor=` and returns `nextCursor` beside its unchanged array key: `GET /prs` (`prs`), `GET /prs/:id/events` and `GET /tasks/:id/events` (`events`), `GET /sessions` (`sessions`), `GET /verification-checks` (`checks`), `GET /coverage-snapshots` (`snapshots`), `GET /cron-runs` (`runs`) and `GET /system-crons/:id/triggers` (`triggers`). `nextCursor` is opaque and `null` on the last page; follow it until `null`. A malformed cursor is a `400`. `?offset` has been removed from every list route; see the migration note. Keyset orders: PRs `(createdAt, id)`; events and verification checks `(at, id)` (verification-checks `desc` for the repo+checkName mode); coverage snapshots `(measuredAt desc, id desc)`; cron runs `(finishedAt desc, id desc)`; triggers `(scheduledFor desc, id desc)`. Lists whose order is derived in memory — `/sessions` and `GET /prs?blocked=true` — wrap an internal offset in the cursor. A guard test (`task-store/src/list-cursor-guard.unit.test.ts`) fails if any GET route taking `limit` omits `cursor` or `nextCursor`.
 
 ### Agent repo scoping on `GET /tasks`
 
@@ -220,6 +220,16 @@ To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (adm
 - `GET /coverage-snapshots?repo=&since=&limit=&cursor=` returns `{ snapshots, total, limit, nextCursor }`, newest `measuredAt` first (default `limit=50`); cursor paging follows the rules in "Cursor paging on the other list endpoints" above. `since` is an ISO timestamp (`400` if unparseable).
 - `GET /coverage-snapshots/latest` returns `{ snapshots }` with exactly one row per repo, the newest by `measuredAt`.
 - Scope: agent tokens may write only repos in their scope (`403` otherwise), always write to and read from their own account (a client-supplied `accountId` is ignored); admin tokens are unrestricted and may pass `accountId` (body on POST, query on GET; default `default` on POST).
+
+### Repo cron runs
+
+`RepoCronRun` (PCR-1.1) is an append-only record of every per-repo system-cron run — one row per run, never updated (named to stay distinct from the platform's `AgentCronRun`). Fields: `id`, `accountId`, `cronId`, `repo`, optional `taskId` (the SC task that ran it) and `scheduledFor` (trigger slot), `startedAt`, `finishedAt`, `commitSha`, `outcome` (`ok` | `no_op` | `failed`), `metrics` (JSON object of numbers), optional `machineState` (JSON; small non-finding state only, e.g. a Sentry project-to-repo mapping or page anchors), `createdAt`. Indexed on `(accountId, cronId, repo, finishedAt)`. Like coverage snapshots, a run has no parent task or PR, so its account comes from the caller.
+
+- `POST /cron-runs` appends a run and returns `201`; two POSTs for the same `(cronId, repo)` create two rows.
+- `400` when `metrics` is not an object of finite numbers, the `auto` / `review` / `plan` routing counts inside `metrics` are present but not non-negative integers, `repo` is not `owner/repo`, `outcome` is not one of the three values, a timestamp is not valid ISO, or `cronId` / `commitSha` is empty.
+- `GET /cron-runs?cronId=&repo=&includeDetail=&limit=&cursor=` returns `{ runs, total, limit, nextCursor }`, newest `finishedAt` first (default `limit=50`). `machineState` is omitted from each run unless `includeDetail=true`.
+- `GET /cron-runs/latest?cronId=&repo=` returns the newest `ok` / `no_op` run (failed runs are skipped) including `machineState`, or `404` when there is none. Any in-scope token may read it, not only the one that wrote the run.
+- Scope: agent tokens may write only repos in their scope (`403` otherwise) and only ever read their own account's runs; admin tokens are unrestricted and may pass `accountId` (body on POST, query on GET; default `default` on POST).
 
 ### Planning documents (schema)
 

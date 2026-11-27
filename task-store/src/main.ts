@@ -30,6 +30,7 @@ import {
   enablePoolObservability,
 } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { RepoCronRunService } from "./repo-cron-run-service.ts";
 import { SessionPlanService } from "./session-plan-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
@@ -232,6 +233,7 @@ async function startServer(): Promise<void> {
     documentService,
   );
   const coverageSnapshotService = new CoverageSnapshotService(prisma);
+  const repoCronRunService = new RepoCronRunService(prisma);
   const systemCronService = new SystemCronService(
     prisma,
     undefined,
@@ -279,6 +281,7 @@ async function startServer(): Promise<void> {
     verificationCheckService,
     documentService,
     coverageSnapshotService,
+    repoCronRunService,
     systemCronService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,

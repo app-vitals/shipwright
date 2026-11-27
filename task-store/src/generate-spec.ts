@@ -17,6 +17,8 @@ import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts
 import type { DocumentServiceLike } from "./document-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
+import { createCronRunsRoutes } from "./routes/cron-runs.ts";
+import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
@@ -222,6 +224,18 @@ const stubCoverageSnapshotService: CoverageSnapshotServiceLike = {
   },
 };
 
+const stubRepoCronRunService: RepoCronRunServiceLike = {
+  async record() {
+    return {} as never;
+  },
+  async list() {
+    return { runs: [], total: 0 };
+  },
+  async latest() {
+    return null;
+  },
+};
+
 const stubSystemCronService: SystemCronServiceLike = {
   async list() {
     return [];
@@ -276,6 +290,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const coverageSnapshotsApp = createCoverageSnapshotsRoutes(
     stubCoverageSnapshotService,
   );
+  const cronRunsApp = createCronRunsRoutes(stubRepoCronRunService);
   const systemCronsApp = createSystemCronsRoutes(stubSystemCronService);
 
   const innerDocInfo = {
@@ -292,6 +307,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     verificationChecksApp.getOpenAPI31Document(innerDocInfo);
   const coverageSnapshotsSpec =
     coverageSnapshotsApp.getOpenAPI31Document(innerDocInfo);
+  const cronRunsSpec = cronRunsApp.getOpenAPI31Document(innerDocInfo);
   const systemCronsSpec = systemCronsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
@@ -330,6 +346,10 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       "/coverage-snapshots",
     ),
     ...prefixPaths(
+      (cronRunsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
+      "/cron-runs",
+    ),
+    ...prefixPaths(
       (systemCronsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/system-crons",
     ),
@@ -354,6 +374,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(documentsSpec.components?.schemas ?? {}),
         ...(verificationChecksSpec.components?.schemas ?? {}),
         ...(coverageSnapshotsSpec.components?.schemas ?? {}),
+        ...(cronRunsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),
       },
     },

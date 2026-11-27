@@ -12,6 +12,7 @@ export type {
   PrFinding,
   PullRequest,
   PullRequestEvent,
+  RepoCronRun,
   Session,
   SystemCronDefinition,
   SystemCronTrigger,
