@@ -26,11 +26,18 @@ test("crew page renders the three levels in order", async ({ page }) => {
   expect(levels).toEqual(["Deckhand", "First Mate", "Master Builder"]);
 });
 
-test("Apply CTA links out to CREW_APPLY_URL with the crew_page UTM", async ({
+test("Apply CTA links out with the crew_page UTM, or shows coming soon", async ({
   page,
 }) => {
   await page.goto("/crew/");
   const cta = page.locator("main a", { hasText: "Apply to the Crew" });
+  if (CREW_APPLY_URL === null) {
+    await expect(cta).toHaveCount(0);
+    await expect(page.getByTestId("crew-apply-soon")).toHaveText(
+      "Applications open soon.",
+    );
+    return;
+  }
   const href = await cta.getAttribute("href");
   expect(href?.startsWith(CREW_APPLY_URL.split("?")[0])).toBe(true);
   expect(href).toContain("utm_content=crew_page");

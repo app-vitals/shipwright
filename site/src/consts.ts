@@ -11,10 +11,11 @@ export const BOOKING_URL = "https://vitals-os.com/cal/book/discovery";
  * embedded: MESSAGING.md §4 forbids email capture on marketing surfaces.
  *
  * Single source of truth: imported by /crew and its Playwright spec.
- * TODO(CRW-2.1): PLACEHOLDER until the hosted Kit form exists (HUMAN STEP).
+ * TODO(CRW-2.1): null until the hosted Kit form exists (HUMAN STEP). While
+ * null, /crew/ shows "Applications open soon" instead of the Apply button.
+ * Set to the Kit URL with `utm_source=shipwrightharness&utm_content=crew_page`.
  */
-export const CREW_APPLY_URL =
-  "https://shipwrightharness.kit.com/crew-apply?utm_source=shipwrightharness&utm_content=crew_page";
+export const CREW_APPLY_URL: string | null = null;
 
 /**
  * Canonical GitHub repo URL.

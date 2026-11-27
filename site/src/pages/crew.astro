@@ -104,9 +104,19 @@ const members: { name: string; build: string }[] = [];
     <ol class="mt-4 flex max-w-2xl list-decimal flex-col gap-2 pl-5">
       {steps.map((step) => <li>{step}</li>)}
     </ol>
-    <p class="mt-8">
-      <a href={CREW_APPLY_URL} class="sw-btn">Apply to the Crew →</a>
-    </p>
+    {
+      CREW_APPLY_URL ? (
+        <p class="mt-8">
+          <a href={CREW_APPLY_URL} class="sw-btn">
+            Apply to the Crew →
+          </a>
+        </p>
+      ) : (
+        <p class="mt-8" data-testid="crew-apply-soon">
+          Applications open soon.
+        </p>
+      )
+    }
   </section>
 
   <section
