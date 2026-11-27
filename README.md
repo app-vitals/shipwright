@@ -222,6 +222,7 @@ Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plu
 
 - **Compare it** — how Shipwright's plan → queue → loop model differs from the commercial agent tier and from other Claude Code orchestrators: see the [comparison pages](https://shipwrightharness.com/compare).
 - **Have us run it on your pipeline** — the [design-partner program](https://app-vitals.com/shipwright/design-partners/): the people who built Shipwright, hands-on on your codebase.
+- **Join the crew**: built something real with Shipwright? [Show us](https://shipwrightharness.com/crew/). Three levels, a monthly crew call, and your build featured in our tutorials.
 - **Read the full story** — [shipwrightharness.com](https://shipwrightharness.com).
 
 ## Test system

@@ -7,6 +7,16 @@
 export const BOOKING_URL = "https://vitals-os.com/cal/book/discovery";
 
 /**
+ * Crew application form (Kit-hosted landing page), linked out rather than
+ * embedded: MESSAGING.md §4 forbids email capture on marketing surfaces.
+ *
+ * Single source of truth — imported by /crew and its Playwright spec.
+ * PLACEHOLDER until the hosted Kit form exists (HUMAN STEP, SAUL-CREW-1.1).
+ */
+export const CREW_APPLY_URL =
+  "https://shipwrightharness.kit.com/crew-apply?utm_source=shipwrightharness&utm_content=crew_page";
+
+/**
  * Canonical GitHub repo URL.
  *
  * Single source of truth — was redeclared as a local const across multiple
