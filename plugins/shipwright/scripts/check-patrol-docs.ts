@@ -41,9 +41,13 @@ const HISTORY_HEADING =
   /^#{1,6}\s*(run[\s-]*history|history|previous runs?|past runs?|run log)\b/i;
 const RESOLVED_HEADING = /^#{1,6}\s*(resolved|fixed|closed|completed)\b/i;
 const TABLE_SEP = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+// Standalone metadata lines only (`Last updated: …`, `**Generated:** …`,
+// `> As of …`). The lookahead rejects list items, so an open item titled
+// "Generated files…" or "Updated deps…" still counts as content.
 const TIMESTAMP_LINE =
-  /^\s*(?:[>*_\s-]*)(last[\s-]*(updated|run|scanned|refreshed)|updated|generated|as of|scan(ned)? (at|on)|run (at|on))\b.*$/i;
-const ISO_DATE = /\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?/g;
+  /^(?!\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s)\s*(?:[>*_\s]*)(last[\s-]*(updated|run|scanned|refreshed)|updated|generated|as of|scan(ned)? (at|on)|run (at|on))\b.*$/i;
+const ISO_DATE =
+  /\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?/g;
 
 function cells(row: string): string[] {
   return row
@@ -54,18 +58,24 @@ function cells(row: string): string[] {
     .map((c) => c.trim());
 }
 
-/** A table is a count table when any data cell (or a header) is a bare number. */
+/**
+ * A table is a count table when a header cell names a count-like column
+ * (count/total/number of/#). Numeric data cells alone are not enough: a
+ * `| File | Line |` table of open items legitimately holds bare numbers.
+ */
 function findCountTable(lines: string[]): boolean {
   for (let i = 1; i < lines.length; i++) {
     if (!TABLE_SEP.test(lines[i]) || !lines[i].includes("-")) continue;
     if (!lines[i - 1].includes("|")) continue;
-    const header = cells(lines[i - 1]).join(" ").toLowerCase();
-    if (/\b(count|total|number of|#)\b/.test(header)) return true;
-    for (let j = i + 1; j < lines.length && lines[j].includes("|"); j++) {
-      if (cells(lines[j]).some((c) => /^\**\d+(\.\d+)?%?\**$/.test(c))) {
-        return true;
-      }
-    }
+    const headers = cells(lines[i - 1]).map((c) =>
+      c.replace(/[*_`]/g, "").trim().toLowerCase(),
+    );
+    if (
+      headers.some(
+        (h) => h === "#" || /\b(counts?|totals?|number of)\b/.test(h),
+      )
+    )
+      return true;
   }
   return false;
 }
@@ -82,13 +92,15 @@ export function validatePatrolDoc(candidate: string): Violation[] {
   if (findCountTable(lines)) {
     violations.push({
       rule: "count-table",
-      message: "count-table: summary/count-number tables belong in the task store run record",
+      message:
+        "count-table: summary/count-number tables belong in the task store run record",
     });
   }
   if (lines.some((l) => HISTORY_HEADING.test(l))) {
     violations.push({
       rule: "run-history",
-      message: "run-history: run history belongs in the task store, not the repo doc",
+      message:
+        "run-history: run history belongs in the task store, not the repo doc",
     });
   }
   if (lines.some((l) => RESOLVED_HEADING.test(l))) {
@@ -110,14 +122,20 @@ function contentLines(doc: string): string[] {
     .sort();
 }
 
-export function isMaterialChange(current: string | null, candidate: string): boolean {
+export function isMaterialChange(
+  current: string | null,
+  candidate: string,
+): boolean {
   if (current === null) return true;
   const a = contentLines(current);
   const b = contentLines(candidate);
   return a.length !== b.length || a.some((l, i) => l !== b[i]);
 }
 
-export function checkPatrolDoc(candidate: string, current: string | null): CheckResult {
+export function checkPatrolDoc(
+  candidate: string,
+  current: string | null,
+): CheckResult {
   return {
     violations: validatePatrolDoc(candidate),
     materiallyChanged: isMaterialChange(current, candidate),
@@ -143,7 +161,12 @@ export function renderPatrolDoc(opts: {
   const sorted = [...opts.items].sort((a, b) => a.priority - b.priority);
   const render = (it: PatrolItem) =>
     `- **${it.title}** — ${it.why} (${it.paths.map((p) => `\`${p}\``).join(", ")})`;
-  const header = [`# ${opts.title}`, "", "Open items, highest priority first.", ""];
+  const header = [
+    `# ${opts.title}`,
+    "",
+    "Open items, highest priority first.",
+    "",
+  ];
   // Reserve 2 lines (blank + pointer) in case of overflow.
   const fitsAll = header.length + sorted.length <= cap;
   const room = fitsAll ? sorted.length : Math.max(0, cap - header.length - 2);
@@ -168,7 +191,9 @@ if (import.meta.main) {
   }
   const candidate = readFileSync(candidatePath, "utf8");
   const current =
-    currentPath && existsSync(currentPath) ? readFileSync(currentPath, "utf8") : null;
+    currentPath && existsSync(currentPath)
+      ? readFileSync(currentPath, "utf8")
+      : null;
   const result = checkPatrolDoc(candidate, current);
   console.log(JSON.stringify(result));
   process.exit(result.violations.length > 0 ? 1 : 0);
