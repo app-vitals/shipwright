@@ -1143,7 +1143,8 @@ export class TaskService implements TaskServiceLike {
    * session (null/undefined/whitespace-only) is a no-op for the Session
    * table, so this is functionally unchanged for callers not using session.
    */
-  async create(data: Prisma.TaskCreateInput): Promise<Task> {
+  async create(input: Prisma.TaskCreateInput): Promise<Task> {
+    const data = this.withBlockedAtOnCreate(input);
     const created = await this.prisma.$transaction(async (tx) => {
       let task: Task;
       try {
@@ -1168,6 +1169,18 @@ export class TaskService implements TaskServiceLike {
     }, WEBHOOK_TX_OPTIONS);
     await this.warnOnPrCollision(created);
     return created;
+  }
+
+  /**
+   * PCR-1.3: a task created with status 'blocked' gets blockedAt stamped
+   * server-side unless the caller supplied one (a supplied value wins), so
+   * waiting/alert views keyed off blockedAt see it like block()/fail() rows.
+   */
+  private withBlockedAtOnCreate(
+    data: Prisma.TaskCreateInput,
+  ): Prisma.TaskCreateInput {
+    if (data.status !== "blocked" || data.blockedAt) return data;
+    return { ...data, blockedAt: this.clock.now().toISOString() };
   }
 
   /**
@@ -1277,7 +1290,9 @@ export class TaskService implements TaskServiceLike {
     for (const task of tasks) {
       let created: Task;
       try {
-        created = await tx.task.create({ data: task });
+        created = await tx.task.create({
+          data: this.withBlockedAtOnCreate(task),
+        });
       } catch (err: unknown) {
         // P2002 = unique constraint violation (id already exists) —
         // translate to ConflictError so it propagates uncaught and rolls
