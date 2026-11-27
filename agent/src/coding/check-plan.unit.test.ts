@@ -36,6 +36,15 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
+/**
+ * A `kind: "prd"` task as the task-store returns it. `kind` is not modelled on
+ * the agent's `Task` type (the query filters on it server-side), so it rides
+ * along as an extra property to mirror the real wire shape.
+ */
+function makePrdTask(overrides: Partial<Task> = {}): Task {
+  return { ...makeTask(overrides), kind: "prd" } as Task;
+}
+
 interface MakeDepsOptions {
   planTasks?: Task[];
   clock?: CheckPlanDeps["clock"];
@@ -169,6 +178,39 @@ describe("getPlanCandidates", () => {
       }),
     );
     expect(result.map((t) => t.id)).toEqual(["PDR-1", "PDR-2"]);
+  });
+
+  // PCR-1.5: pin the gate for the exact shape the plan-route (Feature 7)
+  // emits — `kind: "prd"` tasks — so the autonomous plan phase can never claim
+  // a human-escalated one.
+  test('drops a kind:"prd", hitl:true pending task — never claimed by the autonomous plan phase', async () => {
+    const result = await getPlanCandidates(
+      makeDeps({
+        planTasks: [
+          makePrdTask({ id: "PRD-1", hitl: true }),
+          makePrdTask({ id: "PRD-2", hitl: false }),
+        ],
+      }),
+    );
+    expect(result.map((t) => t.id)).toEqual(["PRD-2"]);
+  });
+
+  test('returns a kind:"prd", hitl:false/null pending task that has repo and session', async () => {
+    const result = await getPlanCandidates(
+      makeDeps({
+        planTasks: [
+          makePrdTask({ id: "PRD-1", hitl: false }),
+          makePrdTask({
+            id: "PRD-2",
+            hitl: null as unknown as undefined,
+          }),
+        ],
+      }),
+    );
+    expect(result.map((t) => t.id)).toEqual(["PRD-1", "PRD-2"]);
+    expect(result.every((c) => c.phase === "plan")).toBe(true);
+    expect(result[0]?.repo).toBe("acme/example-repo");
+    expect(result[0]?.session).toBe("autonomous-dispatch");
   });
 
   test('drops a status:"blocked" task (defense in depth — the query already filters to pending)', async () => {
