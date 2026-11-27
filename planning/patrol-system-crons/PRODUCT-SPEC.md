@@ -49,7 +49,7 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 - `POST /cron-runs` records a run.
 - `GET /cron-runs?cronId=&repo=&limit=&cursor=` lists newest-first, with cursor paging per the existing list conventions.
 - `GET /cron-runs/latest?cronId=&repo=` returns the newest successful run, or `404`.
-- `GET /cron-runs/latest` returns `machineState` to any in-scope agent token and to admin tokens, because any agent that claims a repo's next patrol task must read the prior run's state. `GET /cron-runs` list responses omit `machineState` by default and include it only with `?includeDetail=true`, which an in-scope agent token or an admin token may pass.
+- `machineState` is returned only to the writing cron's own reads and to admin tokens. List responses omit it unless `?includeDetail=true` is passed by an admin token or an in-scope agent token.
 - Scope: agent tokens read and write only repos in their scope (`403` otherwise) and always their own account. Admin tokens are unrestricted, matching `CoverageSnapshot`.
 - OpenAPI updated, and the MCP tool docs regenerated.
 
@@ -57,7 +57,7 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 - [ ] Migration adds the model and index. Two POSTs for the same `(cronId, repo)` create two rows, and `/latest` returns the newer `ok` one (integration test).
 - [ ] `/latest` skips `failed` runs and returns `404` when there is no `ok`/`no_op` run (smoke test).
 - [ ] An agent token POST for an out-of-scope repo returns `403` (smoke test).
-- [ ] `GET /cron-runs` omits `machineState` by default and includes it only with `includeDetail=true`, and `GET /cron-runs/latest` returns it to an in-scope agent token that did not write the run (smoke test).
+- [ ] `GET /cron-runs` omits `machineState` by default and includes it only with `includeDetail=true` (smoke test).
 
 **Technical Considerations**: Append-only removes the concurrent-writer problem entirely: two runs simply produce two rows, and readers take the latest. Mirror `coverage-snapshot-service.ts` and `routes/coverage-snapshots.ts` for scope and account rules. The model name must not collide with the admin's existing `AgentCronRun`.
 
@@ -95,6 +95,7 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 - **One file per patrol, kept clear and concise:** `docs/patrols/<patrol>.md` is overwritten each run with the current state only: open items, each with a one-line why and the file paths. It has no run history (that's in the task store), no resolved items, no counts, and a hard cap of 150 lines. When open items exceed the cap, it lists the highest-priority ones and says the rest are tracked in the fix tasks.
 - Repo docs are committed through a docs PR, the way test-readiness publishes its phase artifacts. A PR is opened only when the content changed materially, never for a timestamp or reordering alone. Repo docs hold detail only, with no count or summary-number tables.
 - **One-time import:** when `/latest` returns `404` and the legacy agent-local file holds entries for this repo, import them as the first run's prior state. Security and error entries go to `machineState`. Consolidation entries seed `machineState`. Do this once and log it. The local file is never read again.
+- **Entropy quality log:** `entropy-scan` stops appending to `.entropy-patrol/quality-log.jsonl` in the repo. Each run's per-category counts go into the run's `metrics`, and `--trend` reads them from `GET /cron-runs?cronId=entropy-patrol&repo=`. Any existing `.entropy-patrol/` directory is imported once into run history and then deleted in the first docs PR.
 - **Error-patrol per repo:** `error-scan --repo` keeps only the Sentry issues whose project-to-repo mapping resolves to this repo. Issues that map to no repo are counted in `metrics` and get no task.
 - `--dry-run` keeps today's meaning: a full scan with no run recorded and no PR.
 - Fix skills route every finding through the three-way split in Feature 7.
@@ -103,6 +104,7 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 **Acceptance Criteria**:
 - [ ] Each of the 4 scan skills and their fix/resolve skills prints a usage error when `--repo` is missing (content test per skill).
 - [ ] No patrol skill reads or writes `state/*-patrol-*.json` or `state/consolidation-ledger.json` except in the one-time import step (content test).
+- [ ] `entropy-scan` no longer writes `.entropy-patrol/quality-log.jsonl`, and `--trend` is computed from run history (content test, plus a unit test of the trend calculation over a fixture of runs).
 - [ ] The security-scan and error-scan skill bodies never write findings to any repo path (content test asserts there is no repo write path for them).
 - [ ] The import helper turns a legacy multi-repo ledger fixture into the single-repo prior state for the named repo and ignores other repos (unit test).
 - [ ] The run recorder posts exactly one run per invocation with `outcome` set, including `failed` on error, using an injected fake store (unit test).
@@ -113,7 +115,7 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 **Technical Considerations**: Add one shared run-recorder and history client in `plugins/shipwright/scripts/`, following `check-helpers.ts` conventions (env auth, injected fetch and clock). Ledger keys in the security and consolidation skills are already namespaced per repo, so the import is a filter. Reuse test-readiness's docs-PR publishing path rather than inventing one.
 
 **Source Map**:
-- `app-vitals/shipwright`: `plugins/shipwright/skills/entropy-scan/SKILL.md`, `skills/entropy-fix/SKILL.md`
+- `app-vitals/shipwright`: `plugins/shipwright/skills/entropy-scan/SKILL.md`, `skills/entropy-fix/SKILL.md`, `skills/entropy-scan/references/quality-log-schema.md`, `commands/entropy-scan.md`
 - `app-vitals/shipwright`: `plugins/shipwright/skills/security-scan/SKILL.md`, `skills/security-fix/SKILL.md`
 - `app-vitals/shipwright`: `plugins/shipwright/skills/consolidation-scan/SKILL.md`, `skills/consolidation-fix/SKILL.md`
 - `app-vitals/shipwright`: `plugins/shipwright/skills/error-scan/SKILL.md`, `skills/error-fix/SKILL.md`, `skills/error-resolve/SKILL.md`
@@ -246,12 +248,12 @@ The four maintenance patrols run as agent-level crons that scan every repo an ag
 - [ ] The autonomous plan phase's candidate provider (`check-plan.ts`) skips a `kind: prd`, `hitl: true` task (unit test).
 - [ ] A run that routes 2 auto, 1 review and 1 plan finding records `metrics` with those three counts (unit test on the recorder).
 
-**Technical Considerations**: If `POST /tasks` cannot create directly into `blocked` with a reason, add that (preferred) rather than create-then-block, so a task is never briefly ready. `check-plan.ts` already skips `hitl: true` tasks via `isTaskBlockedForDispatch`, so no filter needs adding; the unit test below just pins that behavior for `kind: prd` tasks.
+**Technical Considerations**: If `POST /tasks` cannot create directly into `blocked` with a reason, add that (preferred) rather than create-then-block, so a task is never briefly ready. Check whether `check-plan.ts` already filters `hitl`. If not, add the filter, because without it an enabled autonomous plan phase would plan these unattended.
 
 **Source Map**:
 - `app-vitals/shipwright`: `plugins/shipwright/skills/entropy-fix/SKILL.md`, `security-fix/SKILL.md`, `consolidation-fix/SKILL.md`, `error-fix/SKILL.md`
 - `app-vitals/shipwright`: `task-store/src/routes/tasks.ts`: create-as-blocked support if missing
-- `app-vitals/shipwright`: `agent/src/coding/check-plan.ts`: already skips `hitl` tasks (verify only, test coverage)
+- `app-vitals/shipwright`: `agent/src/coding/check-plan.ts`: skip `hitl` prd tasks
 - `app-vitals/shipwright`: `plugins/shipwright/skills/task-store/SKILL.md`: document the three routes
 - `app-vitals/shipwright`: `docs/task-store.md`
 
