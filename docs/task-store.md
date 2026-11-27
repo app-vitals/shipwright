@@ -123,6 +123,8 @@ Terminal statuses (closed): `merged`, `done`, `deployed`, `released`, `cancelled
 release cadence rather than a direct deploy.
 Paused status: `blocked` (returned to `pending` on retry).
 
+**Create-as-blocked.** `POST /tasks` and `POST /tasks/bulk` accept `status: blocked` with a `blockedReason`, so a task can land blocked in a single call and is never briefly ready (it is absent from `?ready=true`). The server stamps `blockedAt` on create when none is supplied; a supplied `blockedAt` wins. `POST /tasks/:id/unblock` returns it to `pending`, clears `blockedReason`/`blockedAt`, and it then appears in `?ready=true`.
+
 ### Task kind
 
 `Task.kind` is a `TaskKind` enum — `dev` (the default), `prd`, `initiative`, or `idea` — recording what a task *is*, as

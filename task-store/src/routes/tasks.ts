@@ -491,7 +491,7 @@ const createTaskRoute = createRoute({
   tags: ["tasks"],
   summary: "Create a task",
   description:
-    "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.",
+    'Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. A task may be created blocked (`status: "blocked"` plus `blockedReason`) in one call so it is never briefly ready: the server stamps `blockedAt` when none is supplied (a supplied value wins), and `POST /tasks/{id}/unblock` clears both. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller\'s account or another.',
   request: {
     body: {
       content: { "application/json": { schema: CreateTaskBodySchema } },
@@ -528,7 +528,7 @@ const bulkRoute = createRoute({
   path: "/bulk",
   tags: ["tasks"],
   summary: "Bulk insert tasks",
-  description: `Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most ${MAX_BULK_TASKS} tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's \`accountId\` is stamped from the caller exactly as for \`POST /tasks\`; an agent token's id collision returns the generic \`task id unavailable\` 409 body.`,
+  description: `Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most ${MAX_BULK_TASKS} tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's \`accountId\` is stamped from the caller exactly as for \`POST /tasks\`; an agent token's id collision returns the generic \`task id unavailable\` 409 body. Tasks created with \`status: "blocked"\` get \`blockedAt\` stamped by the server when none is supplied (a supplied value wins), same as \`POST /tasks\`.`,
   request: {
     body: {
       content: { "application/json": { schema: BulkInsertBodySchema } },
