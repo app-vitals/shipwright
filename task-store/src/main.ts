@@ -24,6 +24,7 @@ import {
   createGitHubPlanClient,
   githubTokenFromEnv,
 } from "./github-plan-client.ts";
+import { PatrolFindingService } from "./patrol-finding-service.ts";
 import { PlanDocumentReconciler } from "./plan-document-reconciler.ts";
 import {
   createPrismaClientWithPool,
@@ -234,6 +235,7 @@ async function startServer(): Promise<void> {
   );
   const coverageSnapshotService = new CoverageSnapshotService(prisma);
   const repoCronRunService = new RepoCronRunService(prisma);
+  const patrolFindingService = new PatrolFindingService(prisma);
   const systemCronService = new SystemCronService(
     prisma,
     undefined,
@@ -282,6 +284,7 @@ async function startServer(): Promise<void> {
     documentService,
     coverageSnapshotService,
     repoCronRunService,
+    patrolFindingService,
     systemCronService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,

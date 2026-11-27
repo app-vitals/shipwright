@@ -122,6 +122,7 @@ describe("SKILL.md — cursor paging contract (TPG-1.2)", () => {
       "/verification-checks",
       "/coverage-snapshots",
       "/cron-runs",
+      "/patrol-findings",
       "/system-crons/:id/triggers",
     ]) {
       expect(skillContent).toContain(`\`${route}\``);

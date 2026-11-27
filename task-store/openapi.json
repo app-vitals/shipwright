@@ -4087,6 +4087,159 @@
         }
       }
     },
+    "/patrol-findings/batch": {
+      "post": {
+        "tags": [
+          "Patrol Findings"
+        ],
+        "summary": "Batch-upsert patrol findings for one cron + repo",
+        "description": "Upserts findings keyed by `(account, cronId, repo, fingerprint)`. New fingerprints are created (`occurrenceCount` 1, `firstSeen = lastSeen = observedAt`). Continued ones get `occurrenceCount + 1`, `lastSeen = observedAt`, the new `status`, and a new `history` entry appended — earlier history entries are never rewritten. A finding whose `lastSeen` is already >= `observedAt` is a replay and is returned unchanged, so retrying an identical request does not corrupt history. `detail` / `taskId`, when omitted, keep their existing values. `400` when `repo` is not `owner/repo`, `cronId`/`fingerprint` is empty, `status` is not one of `tracking | ready_to_propose | open | resolved | suppressed`, `observedAt` is not ISO, fingerprints repeat, or more than 500 findings are sent. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertPatrolFindingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The upserted findings, in request order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpsertPatrolFindingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patrol-findings": {
+      "get": {
+        "tags": [
+          "Patrol Findings"
+        ],
+        "summary": "List patrol findings, most recently seen first",
+        "description": "Returns `{ findings, total, limit, nextCursor }` ordered by `lastSeen` descending (default `limit=50`). Optional `?cronId=`, `?repo=` and `?status=` filters. Agent tokens see their own account's findings regardless of which agent wrote them, only for in-scope repos; a `?repo=` outside the token's scope is `403`. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=`; it is `null` on the last page. A malformed cursor is a 400.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "consolidation-patrol"
+            },
+            "required": false,
+            "name": "cronId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "tracking"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50",
+              "description": "Max records to return"
+            },
+            "required": false,
+            "description": "Max records to return",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of findings. A malformed cursor is a 400."
+            },
+            "required": false,
+            "description": "Opaque cursor from a previous response's `nextCursor`. Returns the next page of findings. A malformed cursor is a 400.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patrol findings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatrolFindingListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — `repo` is not in the agent token's scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/system-crons": {
       "get": {
         "tags": [
@@ -8055,6 +8208,248 @@
         },
         "required": [
           "runs",
+          "total",
+          "limit",
+          "nextCursor"
+        ]
+      },
+      "UpsertPatrolFindingsResponse": {
+        "type": "object",
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatrolFinding"
+            }
+          }
+        },
+        "required": [
+          "findings"
+        ]
+      },
+      "PatrolFinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxpf1234567890"
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default"
+          },
+          "cronId": {
+            "type": "string",
+            "example": "consolidation-patrol"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "fingerprint": {
+            "type": "string",
+            "example": "dup-3f9a1c"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "tracking",
+              "ready_to_propose",
+              "open",
+              "resolved",
+              "suppressed"
+            ]
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-20T06:00:00.000Z"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-27T06:00:00.000Z"
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "example": 3
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatrolFindingHistoryEntry"
+            },
+            "description": "Append-only status history, oldest first; one entry per distinct observation."
+          },
+          "detail": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {},
+            "description": "Patrol-specific fields (free-form JSON object)."
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "T-123",
+            "description": "Fix task, once filed."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "cronId",
+          "repo",
+          "fingerprint",
+          "status",
+          "firstSeen",
+          "lastSeen",
+          "occurrenceCount",
+          "history",
+          "detail",
+          "taskId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PatrolFindingHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-27T06:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "tracking",
+              "ready_to_propose",
+              "open",
+              "resolved",
+              "suppressed"
+            ]
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "example": 2
+          }
+        },
+        "required": [
+          "at",
+          "status",
+          "occurrenceCount"
+        ]
+      },
+      "UpsertPatrolFindingsBody": {
+        "type": "object",
+        "properties": {
+          "cronId": {
+            "type": "string",
+            "example": "consolidation-patrol"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo",
+            "description": "Repository in `owner/repo` form — anything else is 400."
+          },
+          "observedAt": {
+            "type": "string",
+            "example": "2026-11-27T06:00:00.000Z",
+            "description": "ISO timestamp of the scan (default: now). A finding whose `lastSeen` is already >= this is treated as a replay and left unchanged, which makes retries idempotent."
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fingerprint": {
+                  "type": "string",
+                  "example": "dup-3f9a1c"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "tracking",
+                    "ready_to_propose",
+                    "open",
+                    "resolved",
+                    "suppressed"
+                  ]
+                },
+                "detail": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": {}
+                },
+                "taskId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "fingerprint",
+                "status"
+              ]
+            },
+            "description": "At most 500 findings; fingerprints unique."
+          },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "Admin tokens only: the account to stamp the rows with (defaults to `default`). Ignored for agent tokens."
+          }
+        },
+        "required": [
+          "cronId",
+          "repo",
+          "findings"
+        ]
+      },
+      "PatrolFindingListResponse": {
+        "type": "object",
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatrolFinding"
+            },
+            "description": "Findings ordered by `lastSeen` descending (newest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null,
+            "description": "Opaque cursor for the next page (pass as `?cursor=`); null on the last page."
+          }
+        },
+        "required": [
+          "findings",
           "total",
           "limit",
           "nextCursor"

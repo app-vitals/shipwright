@@ -15,11 +15,13 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
 import type { DocumentServiceLike } from "./document-service.ts";
+import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createCronRunsRoutes } from "./routes/cron-runs.ts";
-import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createDocumentsRoutes } from "./routes/documents.ts";
+import { createPatrolFindingsRoutes } from "./routes/patrol-findings.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -236,6 +238,15 @@ const stubRepoCronRunService: RepoCronRunServiceLike = {
   },
 };
 
+const stubPatrolFindingService: PatrolFindingServiceLike = {
+  async upsertBatch() {
+    return [];
+  },
+  async list() {
+    return { findings: [], total: 0 };
+  },
+};
+
 const stubSystemCronService: SystemCronServiceLike = {
   async list() {
     return [];
@@ -291,6 +302,9 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     stubCoverageSnapshotService,
   );
   const cronRunsApp = createCronRunsRoutes(stubRepoCronRunService);
+  const patrolFindingsApp = createPatrolFindingsRoutes(
+    stubPatrolFindingService,
+  );
   const systemCronsApp = createSystemCronsRoutes(stubSystemCronService);
 
   const innerDocInfo = {
@@ -308,6 +322,8 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const coverageSnapshotsSpec =
     coverageSnapshotsApp.getOpenAPI31Document(innerDocInfo);
   const cronRunsSpec = cronRunsApp.getOpenAPI31Document(innerDocInfo);
+  const patrolFindingsSpec =
+    patrolFindingsApp.getOpenAPI31Document(innerDocInfo);
   const systemCronsSpec = systemCronsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
@@ -350,6 +366,13 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       "/cron-runs",
     ),
     ...prefixPaths(
+      (patrolFindingsSpec.paths ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >,
+      "/patrol-findings",
+    ),
+    ...prefixPaths(
       (systemCronsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/system-crons",
     ),
@@ -375,6 +398,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(verificationChecksSpec.components?.schemas ?? {}),
         ...(coverageSnapshotsSpec.components?.schemas ?? {}),
         ...(cronRunsSpec.components?.schemas ?? {}),
+        ...(patrolFindingsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),
       },
     },

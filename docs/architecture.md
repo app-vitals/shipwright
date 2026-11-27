@@ -56,7 +56,7 @@ A thin autonomous runner with a Prisma-backed store (PostgreSQL) and four HTTP s
 
 ## D — Task store service
 
-Postgres-backed task queue, PR tracking, coverage snapshots, repo cron runs, planning documents, system-cron definitions, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and `/health/ready` are unauthenticated (liveness and readiness probes, respectively), everything else requires a bearer token.
+Postgres-backed task queue, PR tracking, coverage snapshots, repo cron runs, patrol findings, planning documents, system-cron definitions, and scoped tokens (`@shipwright/task-store`). The Hono app is composed from injected services by `createTaskStoreApp` (`task-store/src/app.ts`); `/health` and `/health/ready` are unauthenticated (liveness and readiness probes, respectively), everything else requires a bearer token.
 
 ## MCP Server
 
