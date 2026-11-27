@@ -87,6 +87,46 @@ export const DEFAULT_SYSTEM_CRONS: readonly CreateSystemCronInput[] = [
     descriptionTemplate:
       "/shipwright:test-readiness --repo {repo} --full --publish",
   },
+  {
+    id: "entropy-patrol",
+    name: "Entropy patrol",
+    schedule: "0 4 * * 1",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Entropy patrol: {repo}",
+    descriptionTemplate:
+      "/shipwright:entropy-scan --repo {repo}\n/shipwright:entropy-fix --repo {repo}",
+  },
+  {
+    id: "security-patrol",
+    name: "Security patrol",
+    schedule: "0 6 * * 1",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Security patrol: {repo}",
+    descriptionTemplate:
+      "/shipwright:security-scan --repo {repo}\n/shipwright:security-fix --repo {repo}",
+  },
+  {
+    id: "consolidation-patrol",
+    name: "Consolidation patrol",
+    schedule: "0 5 * * 1",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Consolidation patrol: {repo}",
+    descriptionTemplate:
+      "/shipwright:consolidation-scan --repo {repo}\n/shipwright:consolidation-fix --repo {repo}",
+  },
+  {
+    id: "error-patrol",
+    name: "Error patrol",
+    schedule: "0 4 * * *",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Error patrol: {repo}",
+    descriptionTemplate:
+      "/shipwright:error-scan --repo {repo}\n/shipwright:error-fix --repo {repo}\n/shipwright:error-resolve --repo {repo}\nThese three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained session. Continue automatically through all three commands before doing anything else.",
+  },
 ];
 
 export interface CreateSystemCronInput {
