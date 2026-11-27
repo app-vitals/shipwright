@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { CoverageSnapshotService } from "./coverage-snapshot-service.ts";
 import { BadRequestError } from "./errors.ts";
+import { PatrolFindingService } from "./patrol-finding-service.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { RepoCronRunService } from "./repo-cron-run-service.ts";
@@ -70,6 +71,7 @@ describeOrSkip("cursor walks on list services (integration)", () => {
     await prisma.pullRequest.deleteMany();
     await prisma.coverageSnapshot.deleteMany();
     await prisma.repoCronRun.deleteMany();
+    await prisma.patrolFinding.deleteMany();
     await prisma.systemCronTrigger.deleteMany();
     await prisma.systemCronDefinition.deleteMany();
     await prisma.task.deleteMany();
@@ -275,6 +277,37 @@ describeOrSkip("cursor walks on list services (integration)", () => {
       (
         await prisma.repoCronRun.findMany({
           orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+        })
+      ).map((s) => s.id),
+    );
+  });
+
+  it("GET /patrol-findings — newest first by (lastSeen, id)", async () => {
+    for (let i = 0; i < N; i++) {
+      await prisma.patrolFinding.create({
+        data: {
+          id: `pf-${pad(i)}`,
+          cronId: "walk",
+          repo: REPO,
+          fingerprint: `fp-${pad(i)}`,
+          status: "tracking",
+          firstSeen: new Date("2026-01-01T00:00:00.000Z"),
+          lastSeen: new Date(`2026-01-0${(i % 3) + 1}T00:00:00.000Z`),
+          history: [],
+        },
+      });
+    }
+    const service = new PatrolFindingService(prisma);
+    const rows = await walk(async (cursor) => {
+      const r = await service.list({ limit: LIMIT, cursor, repo: REPO });
+      expect(r.total).toBe(N);
+      return { items: r.findings, nextCursor: r.nextCursor };
+    });
+    expectEachOnce(
+      rows.map((s) => s.id),
+      (
+        await prisma.patrolFinding.findMany({
+          orderBy: [{ lastSeen: "desc" }, { id: "desc" }],
         })
       ).map((s) => s.id),
     );

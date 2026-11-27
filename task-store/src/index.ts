@@ -8,6 +8,7 @@
 
 export type {
   CoverageSnapshot,
+  PatrolFinding,
   PlanDocument,
   PrFinding,
   PullRequest,

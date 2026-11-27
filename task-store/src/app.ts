@@ -17,6 +17,7 @@
  *   * /verification-checks/* — record/list structured per-check verification outcomes
  *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
  *   * /cron-runs/* — append/list per-repo system-cron run records
+ *   * /patrol-findings/* — batch-upsert/list cross-run patrol findings
  *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
@@ -44,13 +45,15 @@ import {
   type TaskStoreAuthEnv,
 } from "./auth.ts";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
-import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import type { DocumentServiceLike } from "./document-service.ts";
 import { ApiError, ConflictError } from "./errors.ts";
+import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createCronRunsRoutes } from "./routes/cron-runs.ts";
 import { createDocumentsRoutes } from "./routes/documents.ts";
+import { createPatrolFindingsRoutes } from "./routes/patrol-findings.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
@@ -164,6 +167,16 @@ const noopRepoCronRunService: RepoCronRunServiceLike = {
   },
 };
 
+/** No-op PatrolFindingService used when the feature is not wired up in a test context. */
+const noopPatrolFindingService: PatrolFindingServiceLike = {
+  async upsertBatch() {
+    return [];
+  },
+  async list() {
+    return { findings: [], total: 0 };
+  },
+};
+
 /** No-op CoverageSnapshotService used when the feature is not wired up in a test context. */
 const noopCoverageSnapshotService: CoverageSnapshotServiceLike = {
   async record(_data) {
@@ -213,6 +226,7 @@ export interface TaskStoreDeps {
   documentService?: DocumentServiceLike;
   coverageSnapshotService?: CoverageSnapshotServiceLike;
   repoCronRunService?: RepoCronRunServiceLike;
+  patrolFindingService?: PatrolFindingServiceLike;
   systemCronService?: SystemCronServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: ScopeResolver;
@@ -359,6 +373,12 @@ export function createTaskStoreApp(
   app.route(
     "/cron-runs",
     createCronRunsRoutes(deps.repoCronRunService ?? noopRepoCronRunService),
+  );
+  app.route(
+    "/patrol-findings",
+    createPatrolFindingsRoutes(
+      deps.patrolFindingService ?? noopPatrolFindingService,
+    ),
   );
   app.route(
     "/system-crons",

@@ -2082,6 +2082,125 @@ export const RepoCronRunListResponseSchema = z
   })
   .openapi("RepoCronRunListResponse");
 
+// ─── Patrol Finding (PCR-1.2) ─────────────────────────────────────────────────
+
+const PATROL_FINDING_STATUS = z.enum([
+  "tracking",
+  "ready_to_propose",
+  "open",
+  "resolved",
+  "suppressed",
+]);
+
+export const PatrolFindingHistoryEntrySchema = z
+  .object({
+    at: z.string().datetime().openapi({ example: "2026-11-27T06:00:00.000Z" }),
+    status: PATROL_FINDING_STATUS,
+    occurrenceCount: z.number().int().openapi({ example: 2 }),
+  })
+  .openapi("PatrolFindingHistoryEntry");
+
+export const PatrolFindingSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxpf1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    cronId: z.string().openapi({ example: "consolidation-patrol" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    fingerprint: z.string().openapi({ example: "dup-3f9a1c" }),
+    status: PATROL_FINDING_STATUS,
+    firstSeen: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-20T06:00:00.000Z" }),
+    lastSeen: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-27T06:00:00.000Z" }),
+    occurrenceCount: z.number().int().openapi({ example: 3 }),
+    history: z.array(PatrolFindingHistoryEntrySchema).openapi({
+      description:
+        "Append-only status history, oldest first; one entry per distinct observation.",
+    }),
+    detail: z.record(z.string(), z.unknown()).nullable().openapi({
+      description: "Patrol-specific fields (free-form JSON object).",
+    }),
+    taskId: z
+      .string()
+      .nullable()
+      .openapi({ example: "T-123", description: "Fix task, once filed." }),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("PatrolFinding");
+
+export type PatrolFinding = z.infer<typeof PatrolFindingSchema>;
+
+/** Request body for POST /patrol-findings/batch. */
+export const UpsertPatrolFindingsBodySchema = z
+  .object({
+    cronId: z.string().openapi({ example: "consolidation-patrol" }),
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in `owner/repo` form — anything else is 400.",
+    }),
+    observedAt: z.string().optional().openapi({
+      example: "2026-11-27T06:00:00.000Z",
+      description:
+        "ISO timestamp of the scan (default: now). A finding whose `lastSeen` is already >= this is treated as a replay and left unchanged, which makes retries idempotent.",
+    }),
+    findings: z
+      .array(
+        z.object({
+          fingerprint: z.string().openapi({ example: "dup-3f9a1c" }),
+          status: PATROL_FINDING_STATUS,
+          detail: z.record(z.string(), z.unknown()).optional().nullable(),
+          taskId: z.string().optional().nullable(),
+        }),
+      )
+      .openapi({ description: "At most 500 findings; fingerprints unique." }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account to stamp the rows with (defaults to `default`). Ignored for agent tokens.",
+    }),
+  })
+  .openapi("UpsertPatrolFindingsBody");
+
+/** Response for POST /patrol-findings/batch */
+export const UpsertPatrolFindingsResponseSchema = z
+  .object({ findings: z.array(PatrolFindingSchema) })
+  .openapi("UpsertPatrolFindingsResponse");
+
+/** Query params for GET /patrol-findings */
+export const PatrolFindingListQuerySchema = z
+  .object({
+    cronId: z.string().optional().openapi({ example: "consolidation-patrol" }),
+    repo: z.string().optional().openapi({ example: "org/repo" }),
+    status: z.string().optional().openapi({ example: "tracking" }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+    cursor: cursorQueryParam("findings"),
+  })
+  .openapi("PatrolFindingListQuery");
+
+/** Response for GET /patrol-findings */
+export const PatrolFindingListResponseSchema = z
+  .object({
+    findings: z.array(PatrolFindingSchema).openapi({
+      description: "Findings ordered by `lastSeen` descending (newest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    nextCursor: nextCursorField,
+  })
+  .openapi("PatrolFindingListResponse");
+
 // ─── System Cron (SCR-1.1) ────────────────────────────────────────────────────
 
 export const SystemCronDefinitionSchema = z

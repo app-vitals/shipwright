@@ -12,6 +12,7 @@
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { CoverageSnapshotServiceLike } from "./coverage-snapshot-service.ts";
+import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import type { SessionServiceLike } from "./session-service.ts";
@@ -185,6 +186,20 @@ const SETUPS: Record<string, Setup> = {
           async list(opts: unknown) {
             calls.push(opts);
             return { runs: [], total: 0, nextCursor };
+          },
+        }),
+      }),
+    readCursor: (calls) => (calls[0] as { cursor?: string }).cursor,
+  },
+  "GET /patrol-findings": {
+    path: "/patrol-findings",
+    key: "findings",
+    build: (calls, nextCursor) =>
+      app({
+        patrolFindingService: stub<PatrolFindingServiceLike>({
+          async list(opts: unknown) {
+            calls.push(opts);
+            return { findings: [], total: 0, nextCursor };
           },
         }),
       }),

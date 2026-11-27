@@ -60,6 +60,7 @@ describe("list routes taking ?limit also support cursor/nextCursor", () => {
       "GET /verification-checks",
       "GET /coverage-snapshots",
       "GET /cron-runs",
+      "GET /patrol-findings",
       "GET /system-crons/{id}/triggers",
     ]) {
       expect(keys).toContain(expected);
