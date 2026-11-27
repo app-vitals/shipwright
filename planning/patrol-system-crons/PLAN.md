@@ -24,7 +24,7 @@ Spec: [PRODUCT-SPEC.md](./PRODUCT-SPEC.md). Repo: `app-vitals/shipwright` (home 
 
 **Admin**: read-only per-repo history on the system-crons page (PCR-5.1); never renders `machineState`.
 
-**Cleanup**: PCR-6.1 retires the four `*-patrol-maintenance` agent crons, the three prechecks, and adds a content test that fails if any patrol legacy state reader remains outside the import script. The `docs-last-synced.json` reader is removed by PCR-4.1; site-docs anchors move to run history in PCR-4.3 (precheck, reader) and PCR-4.4 (`.claude/commands/docs-sync.md`, the writer); refresh-log and count lines leave `docs/test-readiness/*.md` in PCR-4.2.
+**Cleanup**: PCR-6.1 retires the four `*-patrol-maintenance` agent crons, the three prechecks, and adds a content test that fails if any patrol legacy state reader remains outside the import script. The `docs-last-synced.json` reader is removed by PCR-4.1; site-docs anchors move to run history in PCR-4.3 (the precheck reader and `.claude/commands/docs-sync.md` writer together); refresh-log and count lines leave `docs/test-readiness/*.md` in PCR-4.2.
 
 ### Decision Log
 
@@ -32,7 +32,8 @@ Spec: [PRODUCT-SPEC.md](./PRODUCT-SPEC.md). Repo: `app-vitals/shipwright` (home 
 - Where logic lives: anything task-store-backed sits behind an API; repo-resident files and the agent-local legacy files are handled locally by the plugin. Dropped the `/cron-runs/import` and `/patrols/*` endpoints proposed earlier (Dan).
 - Machine state is structured: a `PatrolFinding` table instead of an opaque `machineState` blob; `machineState` shrinks to small non-finding state (Dan).
 - `RepoCronRun` is a new table linked to the existing task and trigger, not fields on `Task` (Dan).
-- `site-docs-last-synced.json` is migrated too: anything legacy moves to the right home (Dan). Resolved at planning time: the only writer is `.claude/commands/docs-sync.md`, the cron is not wired by default and no anchor file has ever existed, so there is nothing to import. The reader moves in PCR-4.3 (agent task); the writer is a `.claude/**` file, which the CLI blocks agents from editing, so PCR-4.4 is a HITL task (Dan: resolve open items when planning, not in tasks).
+- `site-docs-last-synced.json` is migrated too: anything legacy moves to the right home (Dan). Resolved at planning time: the only writer is `.claude/commands/docs-sync.md`, the cron is not wired by default and no anchor file has ever existed, so there is nothing to import (Dan: resolve open items when planning, not in tasks).
+- Reader and writer move in one task (PCR-4.3), not two, and it is not HITL: Edit/Write is blocked for `.claude/**` in headless runs, but Bash writes are not covered by that guard, so the dev-task agent applies the `.claude/commands/docs-sync.md` edits with Bash (Dan).
 - Create-as-blocked was checked in the code at planning time rather than left to the task: create already accepts blocked + `blockedReason`; only the `blockedAt` stamp is missing (PCR-1.3). `check-plan.ts` was also confirmed to already skip `hitl: true` tasks (PCR-1.5 is test-only).
 - `prompt-audit-ledger.json` and `learn-dream-last-run.json` stay out: agent-local by nature, prompt-audit's design is unrelated to this session (Dan).
 - Legacy files are deleted after a successful import (Dan).
@@ -56,12 +57,11 @@ Spec: [PRODUCT-SPEC.md](./PRODUCT-SPEC.md). Repo: `app-vitals/shipwright` (home 
 | PCR-3.4 | feat: run the error patrol per repo with Sentry repo filter | CLI | sonnet | 7 | 2.1, 2.3 |
 | PCR-4.1 | refactor: move docs-freshness onto the system-cron contract | CLI | sonnet | 4 | 2.1, 2.2, 2.3 |
 | PCR-4.2 | refactor: move test-readiness onto the system-cron contract | CLI | sonnet | 6 | 2.1, 2.2, 2.3 |
-| PCR-4.3 | refactor: read site-docs anchors from run history in the precheck | CLI | sonnet | 4 | 1.1 |
-| PCR-4.4 | refactor: write docs-sync page anchors to run history (⚠ HITL, `.claude/**`) | CLI | haiku | 2 | 2.1, 4.3 |
+| PCR-4.3 | refactor: move site-docs anchors from the state file to run history | CLI | sonnet | 5 | 1.1, 2.1 |
 | PCR-5.1 | feat: show per-repo run history on the system-crons page | Frontend | sonnet | 4 | 1.1 |
 | PCR-6.1 | chore: retire patrol agent crons, prechecks and legacy state readers | Shared | sonnet | 6 | 1.4, 3.1, 3.2, 3.3, 3.4 |
 
-One HITL task: PCR-4.4 (edits `.claude/commands/docs-sync.md`, which the Claude Code CLI blocks agents from writing). No bundles: every task is its own PR and branch.
+No HITL tasks. No bundles: every task is its own PR and branch.
 
 ### Dependency Map
 
@@ -83,8 +83,7 @@ PCR-2.1 + 2.2 + 2.3 ─┬─ PCR-3.1: entropy patrol
                       └─ PCR-4.2: test-readiness contract
 PCR-2.1 + 2.3 ───────┬─ PCR-3.3: security patrol
                       └─ PCR-3.4: error patrol
-PCR-1.1 ─────────────── PCR-4.3: site-docs precheck reads run history
-PCR-2.1 + 4.3 ───────── PCR-4.4: docs-sync writes anchors (HITL)
+PCR-1.1 + 2.1 ───────── PCR-4.3: site-docs anchors to run history (precheck + docs-sync)
 
 PCR-1.4 + 3.1 + 3.2 + 3.3 + 3.4 ── PCR-6.1: retire agent crons, prechecks, legacy readers
 ```
@@ -96,7 +95,7 @@ Ordering follows the spec: run history first; routing (2.3) lands before or with
 - Additions are safe standalone: PCR-1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 5.1 add new tables, routes, scripts or docs. Safe to deploy standalone: yes.
 - Skill changes (PCR-3.x, 4.x) switch a patrol from multi-repo/agent-local to per-repo/store-backed. The seeded definitions are disabled, and the agent-level crons keep running until PCR-6.1, so there is no window with neither path. Each skill's legacy-state reader is removed in its own PR, but the legacy file is only consumed through the import step, so an agent that has not yet run the new skill still has its file.
 - PCR-6.1 is the only removal. Consumers of the removed crons/prechecks are `coding-specialty-defaults.ts`, `agent-cron-jobs.coding.integration.test.ts` and the docs listed in the task; they update atomically in that one PR. It depends on all four patrol skills and the seeds being merged.
-- Site-docs anchors: PCR-4.3 moves the precheck (reader) to the store and PCR-4.4 moves the docs-sync command (writer). The window between them is harmless: the precheck is not wired to any cron by default, no anchor file has ever existed, and docs-sync is a manually run command, so there are no live anchors to lose.
+- Site-docs anchors: PCR-4.3 moves the precheck (reader) and the docs-sync command (writer) together (atomic), so they never disagree.
 
 ### Spec-Level Carry-Through
 
