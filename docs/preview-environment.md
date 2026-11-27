@@ -73,7 +73,7 @@ To end one early, remove the label or close the PR. To preview new commits, remo
 
 **"PREVIEW_PASSWORD is not configured for the 'preview' environment"** — the secret is missing or empty, or it was added as a repository secret instead of an environment secret. Add it to the `preview` environment (setup step 5).
 
-**"The tunnel did not produce a hostname within 60 seconds"** — the `cloudflared` quick tunnel did not start. The step prints the tail of its log. Re-run the job; quick tunnels are a free service without a guarantee.
+**"The tunnel did not produce a hostname after 5 attempts"** — the `cloudflared` quick tunnel did not start. Quick tunnels are rate-limited per source address, so the step waits up to 60 seconds per attempt and retries up to 5 times with a growing pause (20 seconds, then 40, and so on) before giving up. It prints the tail of the log for each failed attempt. If all five fail, re-run the job; quick tunnels are a free service without a guarantee.
 
 **The stack did not become Ready** — the bring-up waits for every workload and fails when one does not. Look at the job log for the pod that stayed unready; the automatic test job uploads pod status, events and logs (never Secret objects) as an artifact on failure. Reproduce locally with a kind cluster: `task preview:up -- --context <ctx> --chart charts/shipwright --env-out state/preview.env`, then `task preview:canary ENV_FILE=state/preview.env`.
 
