@@ -329,7 +329,15 @@ export function planBaselineTasks(
   for (const f of findings) {
     const id = `entropy-${f.ruleId}-${slug}-${week}`;
     const prefix = `entropy-${f.ruleId}-${slug}-`;
-    if (activeTaskIds.some((a) => a === id || a.startsWith(prefix))) continue;
+    if (
+      activeTaskIds.some(
+        (a) =>
+          a === id ||
+          (a.startsWith(prefix) &&
+            /^\d{4}-W\d{2}$/.test(a.slice(prefix.length))),
+      )
+    )
+      continue;
     const base = {
       id,
       title: `Entropy fix: ${f.description}`,

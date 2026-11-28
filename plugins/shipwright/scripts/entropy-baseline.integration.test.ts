@@ -119,6 +119,19 @@ describe("entropy baseline — idempotent re-run", () => {
       planBaselineTasks(first, "acme/widgets", "2026-W50", tasks.map((t) => t.id)),
     ).toEqual([]);
   });
+
+  it("does not dedup across repos whose slugs share a prefix", () => {
+    const findings = scanBaseline(fixture(bare));
+    const apiTasks = planBaselineTasks(findings, "acme/widgets-api", week, []);
+    const tasks = planBaselineTasks(
+      findings,
+      "acme/widgets",
+      week,
+      apiTasks.map((t) => t.id),
+    );
+    expect(tasks.length).toBe(findings.length);
+    expect(tasks.every((t) => t.id.includes("-widgets-2026-W"))).toBe(true);
+  });
 });
 
 describe("entropy baseline — other toolchains", () => {
