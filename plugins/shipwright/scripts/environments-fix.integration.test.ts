@@ -12,10 +12,10 @@ import {
   dirIO,
   planTasks,
   runEnvironmentsScan,
-} from "../../plugins/shipwright/scripts/environments-scan.ts";
-import { FixedClock } from "./clock.ts";
-import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
-import { TaskService } from "./task-service.ts";
+} from "./environments-scan.ts";
+import { FixedClock } from "../../../task-store/src/clock.ts";
+import { createPrismaClient, type PrismaClient } from "../../../task-store/src/prisma-client.ts";
+import { TaskService } from "../../../task-store/src/task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
