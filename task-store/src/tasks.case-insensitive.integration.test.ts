@@ -97,6 +97,13 @@ describeOrSkip("task id case-insensitivity (integration)", () => {
     expect(hb.status).toBe(200);
   });
 
+  it("lifecycle endpoints write to the stored row on mixed-case ids", async () => {
+    await send("/tasks/swi-10/claim", "POST", { claimedBy: "agent-1" });
+    const rel = await send("/tasks/sWi-10/release", "POST");
+    expect(rel.status).toBe(200);
+    expect((await rel.json()).id).toBe("SWI-10");
+  });
+
   it("unknown ids are still 404", async () => {
     expect((await send("/tasks/nope-1", "GET")).status).toBe(404);
   });
