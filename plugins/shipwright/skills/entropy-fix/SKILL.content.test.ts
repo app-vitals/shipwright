@@ -90,15 +90,104 @@ describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () =
   });
 });
 
-describe("PLU-4.4 origin provenance", () => {
-  it("files tasks with originKind skill and its own name as originRef", () => {
-    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
-    expect(text).toContain('"originKind": "skill"');
-    expect(text).toContain('"originRef": "entropy-fix"');
+describe("PCR-3.1 origin provenance", () => {
+  it("stamps follow-on tasks originKind cron, originRef entropy-patrol and repo", () => {
+    const text = readSkill();
+    expect(text).toContain('"originKind": "cron"');
+    expect(text).toContain('"originRef": "entropy-patrol"');
+    expect(text).not.toContain('"originKind": "skill"');
+    expect(text).toMatch(/"repo": "<repo/);
   });
 
   it("still writes source unchanged", () => {
-    const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
-    expect(text).toContain('"source": "entropy-fix"');
+    expect(readSkill()).toContain('"source": "entropy-fix"');
+  });
+});
+
+describe("PCR-3.1 — required --repo", () => {
+  it("prints a usage error when --repo is missing, in Setup", () => {
+    const text = readSkill();
+    const setup = text.indexOf("## Setup: Parse Arguments");
+    const usage = text.indexOf(
+      "Usage: /shipwright:entropy-fix --repo org/repo",
+    );
+    expect(setup).toBeGreaterThan(-1);
+    expect(usage).toBeGreaterThan(setup);
+    expect(usage).toBeLessThan(text.indexOf("## Step 1:"));
+    expect(text).toContain("stop without");
+  });
+
+  it("does not detect the repo from git remotes or read entropy-report.md", () => {
+    const text = readSkill();
+    expect(text).not.toContain("git remote get-url origin");
+    expect(text).not.toContain("entropy-report.md");
+  });
+});
+
+describe("PCR-3.1 — no legacy state file outside the one-time import", () => {
+  it("names the legacy ledger only inside the record/import step", () => {
+    const text = readSkill();
+    const start = text.indexOf("## Step 7: Record the run");
+    expect(start).toBeGreaterThan(-1);
+    const end = text.indexOf("\n---", start);
+    const outside = text.slice(0, start) + text.slice(end);
+    expect(outside).not.toContain("entropy-patrol-last-run");
+    const inside = text.slice(start, end);
+    expect(inside).toContain("state/entropy-patrol-last-run.json");
+    expect(inside).toContain("--legacy-shape entropy-patrol-last-run");
+    expect(inside).toContain("cron-run-recorder.ts");
+  });
+});
+
+describe("PCR-3.1 — three-way routing (auto / review / plan)", () => {
+  it("documents the three routes with their task shapes", () => {
+    const text = readSkill();
+    expect(text).toContain("### 6.1 Route each finding group");
+    for (const route of ["**auto**", "**review**", "**plan**"]) {
+      expect(text).toContain(route);
+    }
+    expect(text).toContain("needs-review:");
+    expect(text).toContain('"kind": "prd"');
+    expect(text).toContain("docs/task-store.md");
+    expect(text).toContain("Finding routing");
+  });
+
+  it("maps per-finding HITL criteria to review and multi-PR/architectural to plan", () => {
+    const text = readSkill();
+    expect(text).toMatch(/per-finding.{0,400}review/s);
+    expect(text).toMatch(/multi-PR|more than one PR/);
+    expect(text).toMatch(/architectural/);
+  });
+
+  it("never creates a dev task with hitl: true; only the plan route uses it", () => {
+    const text = readSkill();
+    for (const m of text.matchAll(/"hitl":\s*true/g)) {
+      const block = text.slice(text.lastIndexOf("```json", m.index), m.index);
+      expect(block).toContain('"kind": "prd"');
+    }
+    for (const m of text.matchAll(/hitl:\s*true/g)) {
+      const around = text.slice(Math.max(0, m.index - 300), m.index + 300);
+      expect(around).toContain("plan");
+    }
+    expect(text.toLowerCase()).toContain("never `hitl: true` on a dev task");
+  });
+
+  it("dedups against blocked review tasks too", () => {
+    expect(readSkill()).toContain("status=blocked");
+  });
+
+  it("records separate auto, review and plan metrics", () => {
+    const text = readSkill();
+    expect(text).toMatch(/"auto":/);
+    expect(text).toMatch(/"review":/);
+    expect(text).toMatch(/"plan":/);
+    expect(text).toContain("cron-run-recorder.ts");
+  });
+
+  it("--dry-run records no run and writes no tasks", () => {
+    const dry =
+      readSkill().match(/`--dry-run`[^\n]*(\n {2}[^\n]*)*/)?.[0] ?? "";
+    expect(dry).toMatch(/no run/i);
+    expect(dry).toMatch(/task store/i);
   });
 });

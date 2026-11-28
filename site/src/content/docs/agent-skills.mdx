@@ -154,19 +154,22 @@ the `rebuild` bucket.
 
 Scheduled or on-demand scans that find and fix code entropy, production errors, and code
 duplication. Each pair follows the same shape: a `-scan` skill that reports
-only, and a `-fix` skill that reads the scan's report and queues task-store tasks.
+only, and a `-fix` skill that reads the scan's output and queues task-store tasks.
 
 ### entropy-scan
 
-Scan codebase for principle deviations. Report only — no code changes.
+Scan one repo (`--repo org/repo`, required) for principle deviations and write the open items to
+`docs/patrols/entropy.md`, opening a docs PR only on material change. Report only — no code changes.
 
 *Invocation:* Backs the `/shipwright:entropy-scan` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).
 
 ### entropy-fix
 
-Read `entropy-report.md` and queue PR-worthy violations as task-store tasks, one task per rule,
-with per-finding HITL classification. Requires entropy-scan to have run first.
+Read the entropy-scan handoff for one repo (`--repo org/repo`, required) and route PR-worthy
+violations as task-store tasks, one per rule: auto (pending dev task), review (blocked dev task
+with a `needs-review:` question) or plan (`kind: prd`, human-planned). Records one run with
+separate auto/review/plan counts. Requires entropy-scan to have run first.
 
 *Invocation:* Backs the `/shipwright:entropy-fix` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).

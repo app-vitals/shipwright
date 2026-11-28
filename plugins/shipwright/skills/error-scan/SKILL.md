@@ -345,8 +345,7 @@ correct.
    `"status": "resolved"` over dropping, since dropping loses the "this used to be
    unresolved" signal for no benefit.
 3. Overwrite `state/error-patrol-ledger.json` with this new content (this is a full
-   replace, not an append — unlike `entropy-scan`'s quality log, which is append-only, this
-   ledger is a current-state snapshot).
+   replace, not an append — this ledger is a current-state snapshot).
 4. Print: `Ledger updated: state/error-patrol-ledger.json`
 
 **Important:** `serviceRepoMap` in the ledger is written **every run** from this run's fresh
@@ -400,8 +399,7 @@ Projects: {N} · Services mapped: {N} / {N}
   in as an input to a future run's Step 3.
 - **One scan, one report.** Each run fully overwrites `error-report.md`. Previous results are
   not preserved (the ledger, not old reports, is the historical record).
-- **Ledger is a snapshot, not a log.** Unlike `entropy-scan`'s append-only quality log,
-  `state/error-patrol-ledger.json` is fully overwritten each run with current state.
+- **Ledger is a snapshot, not a log.** `state/error-patrol-ledger.json` is fully overwritten each run with current state.
 - **`--dry-run` mutates nothing.** No report write, no ledger write — everything that would
   be written is printed to stdout instead.
 - **`--summary` skips only the report file**, not the ledger update — the ledger must stay

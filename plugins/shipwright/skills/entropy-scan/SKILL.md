@@ -1,93 +1,124 @@
 ---
 name: entropy-scan
-description: Scan codebase for principle deviations. Report only — no code changes.
+description: "Scan one repo for principle deviations and write docs/patrols/entropy.md. Requires --repo org/repo. Report only — no code changes."
+argument-hint: "--repo org/repo [--init] [--summary] [--trend] [--dry-run]"
 ---
 
 # Entropy Scan
 
-Scan the codebase for principle violations and write a structured report. This skill makes **no code changes** — it reads and reports only. Use `/entropy-fix` to act on the findings.
+Scan **one repo** for principle violations, write the open items to
+`docs/patrols/entropy.md`, and hand the structured findings to `/entropy-fix`. This skill
+makes **no code changes** to the scanned code — it reads and reports only. Use `/entropy-fix`
+to act on the findings.
 
----
-
-## Repo Scope: Resolving Which Repo(s) to Scan
-
-This skill has no multi-repo handling of its own — it operates on the current working
-directory each time it runs Steps 0-6. Before Step 1, determine which repo(s) to scan, in
-this priority order:
-
-1. **Precheck-driven (preferred).** The `entropy-patrol-maintenance` cron's `preCheck`
-   (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and
-   its stdout — which became this prompt (per the specialty manifest's cron `preCheck`
-   contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to
-   Claude") — lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its
-   local clone directory per section. Parse the repo names and directories out of the
-   invoking prompt and use that as the repo list.
-2. **Fallback (manual invocation, or no repo list available in the prompt).** Detect the
-   current repo from git directly (today's single-repo behavior, unchanged): run
-   `git remote get-url origin` and scan just the current working directory.
-
-For each repo in the resolved list, `cd` into its local clone directory and run Steps 1-6
-below scoped to that repo — each repo gets its own `entropy-report.md` and
-`.entropy-patrol/quality-log.jsonl` at its own root, independent of every other repo in the
-list. After the last repo in the resolved list completes Steps 1-6, Step 5's summary is
-printed once per repo processed (a single-repo fallback run prints exactly one summary block,
-as today).
+Run by the admin's `entropy-patrol` system cron, one task per repo, as
+`/shipwright:entropy-scan --repo {repo}` then `/shipwright:entropy-fix --repo {repo}`
+(the system-cron contract: [docs/task-store.md](../../../../docs/task-store.md), "System-cron contract").
 
 ---
 
 ## Setup: Parse Arguments
 
-Before starting, check if any flags were passed:
+`--repo org/repo` is **required**. If it is missing, print the following and stop without
+scanning `repos/`, resolving a repo from the current directory, or doing any other work:
 
-- `--init` — copy the default principles file to the project and exit (no scan)
-- `--summary` — print category counts to stdout; skip writing `entropy-report.md` or `quality-log.jsonl`
-- `--trend` — read `.entropy-patrol/quality-log.jsonl` and print a trend summary; skip the scan entirely
+```
+Usage: /shipwright:entropy-scan --repo org/repo [--init] [--summary] [--trend] [--dry-run]
+```
+
+Other flags:
+
+- `--init` — copy the default principles file to the repo and exit (no scan)
+- `--summary` — print category counts to stdout; skip writing `docs/patrols/entropy.md` and the handoff file
+- `--trend` — print a trend summary from this repo's recorded `entropy-patrol` runs (`GET /cron-runs`); skip the scan entirely
+- `--dry-run` — run the full scan and print the summary, but write no docs PR, no commit and no run record: no run is recorded and no PR is opened (the handoff file for `/entropy-fix --dry-run` is still written, locally only)
 
 ---
 
-## Step 0: Handle `--trend` Flag
+## Step 0: Resolve the repo and worktree
 
-If the `--trend` flag was passed:
+Find the repo's clone by matching each `repos/*/`'s `origin` remote URL against
+`org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`).
+The local directory is `repos/{dirname}`, which need not equal the `org/repo` string. The skill
+never scans `repos/` as a list and never falls back to another repo or to the current directory.
 
-1. Look for `.entropy-patrol/quality-log.jsonl` in the project root.
-2. If it does not exist, print:
+Run everything below in a worktree, never in `repos/{dirname}` itself, so nothing is written to
+the clone root. Follow the same docs-PR flow as `/shipwright:test-readiness` (its Step 1 and
+Step 3.5), with the branch prefix `docs/entropy-patrol-`:
+
+**Open-PR supersession check (first).** An earlier day's entropy docs PR may still be open;
+a second PR on the same file would conflict with it once one merges.
+
+```bash
+gh pr list --repo {org}/{repo} --state open --json number,headRefName,createdAt
+```
+
+Filter client-side to `headRefName` starting with `docs/entropy-patrol-`.
+
+- **None open:** fresh-branch flow:
+  ```bash
+  git -C repos/{dirname} pull
+  git -C {absolute-path-to}/repos/{dirname} worktree add \
+    $SHIPWRIGHT_WORKTREE_DIR/{dirname}-docs-entropy-patrol-{YYYYMMDD} \
+    origin/main -b docs/entropy-patrol-{YYYYMMDD}
+  ```
+  If that worktree or branch already exists (same-day rerun), reuse it.
+- **One earlier-day PR open:** check out its branch into a worktree (or reuse the existing one),
+  `git merge origin/main`, and continue there so this run's update lands on that PR. On a merge
+  conflict, `git merge --abort`, skip the scan, and report "skipped — reuse-merge conflict,
+  needs manual resolution" in the summary.
+
+All paths below are relative to that worktree. Note the HEAD commit: `git rev-parse HEAD`.
+
+---
+
+## Step 0.5: Handle `--trend` Flag
+
+If the `--trend` flag was passed, read the history from the task store, not from any local
+file. Every `/entropy-fix` run records one `entropy-patrol` run for the repo (Step 7 there),
+so the run records are the durable, per-repo trend record; a fresh worktree each run means
+nothing local survives between runs. No worktree is needed for this step.
+
+1. Fetch the most recent `--window N` runs (default: 30):
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/cron-runs?cronId=entropy-patrol&repo={url-encoded-repo}&limit={N}" | jq .runs
    ```
-   No scan history found. Run /entropy-scan a few times to build trend data.
+   If the call fails, print the error and stop.
+2. Keep only runs with `outcome` `ok` or `no_op` (failed runs carry no scan numbers). The
+   list is newest first; reverse it so the trend reads oldest → newest.
+3. If no runs remain, print:
+   ```
+   No scan history found. Run the entropy patrol (/entropy-scan then /entropy-fix) a few times to build trend data.
    ```
    Then stop.
-3. Read the file. Parse each line as JSON; skip malformed lines silently.
-4. If fewer than 2 valid entries, print:
+4. If fewer than 2 runs remain, print:
    ```
    Not enough scan history for trends (need at least 2 runs).
-   Current entry count: {N}. Run /entropy-scan again to build history.
+   Current run count: {N}. Run the entropy patrol again to build history.
    ```
    Then stop.
-5. Load the most recent `--window N` entries (default: 30). If `--window` is not specified, use 30.
-6. Print a trend summary:
+5. Read each run's `metrics` (`findings`, `high`, `medium`, `low`, `suppressed`; a missing
+   key counts as 0) and `finishedAt`, and print a trend summary:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ENTROPY TREND ({first_date} → {last_date}, {N} scans)
+ENTROPY TREND — {org/repo} ({first_date} → {last_date}, {N} runs)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 OVERALL
-  {first_scan_total} violations → {last_scan_total} violations  ({delta, e.g. "▼ 10" or "▲ 3" or "— no change"})
+  {first findings} findings → {last findings} findings  ({delta, e.g. "▼ 10" or "▲ 3" or "— no change"})
 
 BY SEVERITY
   High    {first} → {last}  ({direction})
   Medium  {first} → {last}  ({direction})
   Low     {first} → {last}  ({direction})
 
-BY RULE (most changed first)
-  {rule_id}       {first} → {last}  ({direction})  {most improved label if applicable}
-  ...
-
-MOST IMPROVED:   {rule_id} (▼ {N} violations)
-MOST WORSENING:  {rule_id} (▲ {N} violations)   {or "none — all rules stable or improving"}
+SUPPRESSED  {first} → {last}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-7. Stop — do not run a scan.
+6. Stop — do not run a scan.
 
 ---
 
@@ -95,13 +126,37 @@ MOST WORSENING:  {rule_id} (▲ {N} violations)   {or "none — all rules stable
 
 If the `--init` flag was passed:
 
-1. Check if `.claude/shipwright/principles.md` already exists in the project root.
+1. Check if `.claude/shipwright/principles.md` already exists in the repo worktree.
    - If it exists, print: "Config already exists at `.claude/shipwright/principles.md`. Edit it to customize principles for this project." and stop.
 2. If it does not exist, create the directory and copy the default principles file:
    - Source: `references/principles.md` (relative to the plugin root — the plugin's own shared principles file)
-   - Destination: `.claude/shipwright/principles.md` in the project root
+   - Destination: `.claude/shipwright/principles.md` in the repo worktree
 3. Print: "Created `.claude/shipwright/principles.md`. Edit it to customize principles for this project. Re-run `/entropy-scan` to start scanning."
 4. Stop — do not run the scan.
+
+---
+
+## Step 1.5: Read the prior run (and one-time legacy import)
+
+The prior run lives in the task store (`GET /cron-runs/latest`), never in a local file. Read it
+through the recorder:
+
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" prior \
+  --cron entropy-patrol --repo {org}/{repo} \
+  --legacy-shape entropy-patrol-last-run
+```
+
+It prints `{latest, findings, imported}`. `latest` is the newest `ok`/`no_op` run
+(`commitSha`, `metrics`, `machineState`) or `null` on a first run; use it only to word the
+summary ("changed since last run", prior totals), never to skip the scan.
+
+**One-time import.** Only when `/cron-runs/latest` is 404 and the agent-local
+`state/entropy-patrol-last-run.json` holds an entry for this repo does `imported` come back
+non-null; the recorder then carries that entry into the first run it records and deletes the
+legacy file after a successful post. This is the only place this skill touches that file, and
+only through the recorder's `--legacy-shape` flag — never read, write or delete it directly.
+If the recorder errors, log it and continue with no prior state.
 
 ---
 
@@ -140,7 +195,7 @@ Within each category, process high-severity rules before medium before low.
 
 ## Step 3.5: Apply Suppressions
 
-Runs once per repo, after Step 3 has produced its raw findings and before Step 4. Suppressions
+Runs once, after Step 3 has produced its raw findings and before Step 4. Suppressions
 are human-reviewed entries in `.shipwright/suppressions.yml` in the **scanned repo** (schema:
 `references/suppressions-schema.md`; per-principle match keys: `references/suppressions.md`).
 
@@ -157,141 +212,133 @@ are human-reviewed entries in `.shipwright/suppressions.yml` in the **scanned re
    suppressed). A non-zero exit means the file is invalid — print the error, treat it as "no
    suppressions applied", and note it in the summary; never abort the scan.
 3. **Drop suppressed findings here.** Every finding in `suppressed` is removed before Step 4:
-   it never appears in `entropy-report.md` and is not counted in the summary or the quality
-   log's `totalViolations`, `bySeverity` or `byRule`.
-4. **Track the counts** for Steps 4-6: `suppressed_count` = `suppressed.length`, and the
+   it never appears in `docs/patrols/entropy.md` or the handoff file and is not counted in the summary or the run
+   record's `findings`, `high`, `medium` or `low` metrics.
+4. **Track the counts** for Steps 4-5: `suppressed_count` = `suppressed.length`, and the
    `expired` entries (rule, match key, `expires`) — keep only those with `rule == "entropy"`;
    the file is shared with osv/grype/posture, whose expired entries are not this scan's to report. Expired entries stop suppressing, so their
    findings stay in `kept` and surface normally.
 
 ---
 
-## Step 4: Write the Report
+## Step 4: Write docs/patrols/entropy.md and the handoff
 
 If `--summary` flag was passed, skip to Step 5.
 
-Write `entropy-report.md` to the project root (overwrite if it exists). Format:
+**4.1 Handoff file.** Write the structured findings (after Step 3.5) to
+`.entropy-patrol/findings.json` in the worktree. It is local scratch for `/entropy-fix` and is
+never committed:
 
-```markdown
-# Entropy Report
-
-**Generated:** {YYYY-MM-DD HH:MM} {timezone}
-**Config:** {project override path | "plugin default"}
-**Rules scanned:** {count scannable entries} / {count total entries}
-**Suppressed:** {suppressed_count} (.shipwright/suppressions.yml)
-
-## Summary
-
-| Category | High | Medium | Low | Total |
-|----------|------|--------|-----|-------|
-| security | N | N | N | N |
-| dead_code | N | N | N | N |
-| todo_debt | N | N | N | N |
-| inconsistent_patterns | N | N | N | N |
-| documentation_gaps | N | N | N | N |
-| **Total** | **N** | **N** | **N** | **N** |
-
----
-
-## Findings
-
-### {category name}
-
-#### {rule.id} — {rule.description} `{severity}`
-
-{If no findings: "No violations found."}
-
-{If findings exist, list as checkboxes:}
-- [ ] `{file_path}:{line_number}` — {one-line description of the specific issue} _{estimated_fix_effort}_
-
-{Repeat for each finding in this rule}
-
----
-
-{Repeat section for each category that has findings}
-
-{If any expired entries:}
-## Expired Suppressions
-
-Expired entries no longer suppress — their findings are reported again above.
-- `{file}` · `{symbol}` — expired {expires}
-
-## No Violations
-
-{List any categories or rules with zero findings here, as a quick confirmation they were checked.}
-
----
-_Run `/entropy-fix` to queue task-store tasks for `PR-worthy: true` violations._
-_Run `/entropy-scan --init` to create a project-level config for rule customization._
+```json
+{
+  "repo": "org/repo",
+  "commitSha": "<git rev-parse HEAD>",
+  "generatedAt": "<UTC ISO-8601>",
+  "suppressed": 0,
+  "expired": [{"file": "...", "symbol": "...", "expires": "YYYY-MM-DD"}],
+  "findings": [
+    {"ruleId": "dead_exports", "severity": "high|medium|low", "category": "dead_code",
+     "file": "src/x.ts", "line": 12, "symbol": "foo",
+     "description": "one line", "effort": "trivial|small|medium"}
+  ]
+}
 ```
 
-Rules:
-- Findings are sorted high → medium → low within each category section
-- Each finding is a checkbox (`- [ ]`) so `/entropy-fix` can track which ones have been addressed
-- Include line numbers when available: `- [ ] \`{file_path}:{line_number}\` — {description} _{effort}_`
-- For file-level findings (no line number): `- [ ] \`{file_path}\` — {description} _{effort}_`
-- The "No Violations" section at the bottom lists all scannable entries where nothing was found — this confirms the entry ran and passed. Entries omitted from a project's `.claude/shipwright/principles.md` override do not appear anywhere in the report.
+**4.2 The docs file.** The run writes **exactly one file under `docs/patrols/`**:
+`docs/patrols/entropy.md`. It is readable detail for anyone working in the repo: current open
+items only, highest priority (severity, then PR-worthy) first, one bullet per item with a short
+why and the affected paths. Never write a `*-report.md` file to the clone
+root. Format:
+
+```markdown
+# Entropy patrol
+
+Open items, highest priority first.
+
+- **{rule.id}: {rule.description}** — {why it matters, one line} (`{path}`, `{path}`)
+```
+
+Group a rule's findings into one bullet listing up to 5 paths. Hard rules, enforced by the
+checker: at most 150 lines; no count or summary-number tables; no run-history section; no
+resolved-items section; no timestamp or "generated" lines. All numbers go in the run record,
+not here. If more items exist than fit, finish with one line saying the remaining open items
+are tracked in the fix tasks. With no open items, write the header and `No open items.`
+
+**4.3 Validate and decide.** Write the candidate to a temp file and run the checker against the
+current repo file:
+
+```bash
+bun "${CLAUDE_PLUGIN_ROOT}/scripts/check-patrol-docs.ts" /tmp/entropy-candidate.md docs/patrols/entropy.md
+```
+
+It prints `{violations, materiallyChanged}` and exits 1 when there are violations. Fix the
+candidate and re-run until `violations` is empty. A timestamp-only change or a pure reorder
+is not `materiallyChanged`.
+
+- **Not `materiallyChanged`:** leave `docs/patrols/entropy.md` untouched, commit nothing, open
+  no PR.
+- **`materiallyChanged`, and not `--dry-run`:** copy the candidate over `docs/patrols/entropy.md`
+  and open (or update) the docs PR, exactly as `/shipwright:test-readiness` Step 3.5 does:
+  ```bash
+  git add docs/patrols/entropy.md
+  git commit -m "docs: entropy patrol ({YYYYMMDD})"
+  git push --set-upstream origin {branch-name}
+  gh pr list --repo {org}/{repo} --head {branch-name} --state open --json number
+  ```
+  If an open PR already exists the push updated it; stop there. Otherwise:
+  ```bash
+  gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force
+  gh pr create --title "docs: entropy patrol ({YYYYMMDD})" \
+    --body "Automated entropy patrol update: docs/patrols/entropy.md" --label shipwright
+  ```
+- **`--dry-run`:** print whether a PR would be opened; write nothing to the repo.
+
+If scanning or this step fails, record the failure (see Step 6.5) before stopping.
 
 ---
 
 ## Step 5: Print Summary
 
-Whether or not `--summary` was passed, always print a summary after the scan (or instead of
-writing the report, if `--summary` was passed). Cron runs post this to a channel where nobody
-can reply in the moment, so **cap the final response at 3-5 lines**: a status line, the
-counts, and a link. The full detail (findings, top issues, expired suppressions) stays in
-`entropy-report.md` — never repeat it in the response.
+Whether or not `--summary` was passed, always print a summary after the scan. Cron runs post
+this to a channel where nobody can reply in the moment, so **cap the final response at
+3-5 lines**: a status line, the counts, and a link. The full detail (findings, expired
+suppressions) stays in `docs/patrols/entropy.md` and the handoff file — never repeat it here.
 
 ```
-ENTROPY SCAN COMPLETE — {N} findings across {N} rules (suppressed: {N})
+ENTROPY SCAN COMPLETE — {org/repo}: {N} findings across {N} rules (suppressed: {N})
 HIGH {N} · MEDIUM {N} · LOW {N}
-{If high-severity findings: "Next: /entropy-fix to queue tasks."}  {If zero: "✓ No violations."}
-{If expired suppressions: "Expired suppressions: {N} — see report."}
-{If --summary: "Summary only — no report written."}  {Otherwise: "Report: entropy-report.md"}
+{If high-severity findings: "Next: /entropy-fix --repo {org/repo} to queue tasks."}  {If zero: "✓ No violations."}
+{If expired suppressions: "Expired suppressions: {N} — see handoff."}
+{--summary: "Summary only — nothing written."} {--dry-run: "Dry run — no PR, no run recorded."} {else: "Docs: docs/patrols/entropy.md ({PR url | unchanged})"}
 ```
 
 ---
 
-## Step 6: Append to Quality Log
+## Step 6.5: Run recording
 
-If `--summary` flag was NOT passed (i.e., a full scan with report write):
+`/entropy-fix` records the single run for the whole `entropy-patrol` task, with the scan
+numbers (read from the handoff) plus its auto/review/plan counts, so this skill records the
+success run nowhere. It records only a **failed** run, when the scan or the docs step errors
+(never under `--dry-run`):
 
-1. Build the log entry:
-   ```json
-   {
-     "timestamp": "<current UTC ISO-8601>",
-     "commitSha": "<short git sha from `git rev-parse --short HEAD`; omit field if git unavailable>",
-     "totalViolations": <total findings count>,
-     "bySeverity": {
-       "high": <count>,
-       "medium": <count>,
-       "low": <count>
-     },
-     "byRule": {
-       "<rule_id>": <count>
-       // Only include rules with at least 1 finding
-     },
-     "suppressed": <suppressed_count>,   // optional; omit when 0 or no suppressions file
-     "reportPath": "entropy-report.md"
-   }
-   ```
-2. Create `.entropy-patrol/` directory in the project root if it doesn't exist.
-3. Append the JSON entry (as a single line) to `.entropy-patrol/quality-log.jsonl`.
-   - Append only — never overwrite or truncate existing entries.
-4. Print: `Quality log updated: .entropy-patrol/quality-log.jsonl`
-
-Schema reference: `skills/entropy-scan/references/quality-log-schema.md`
+```bash
+echo '{"outcome": "failed", "metrics": {"error": 1}}' > /tmp/entropy-result.json
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" record --cron entropy-patrol --repo {org}/{repo} \
+  --commit {sha} --result /tmp/entropy-result.json
+```
 
 ---
 
 ## Constraints (Do Not Violate)
 
-- **No code changes.** This skill reads and reports only. The only files written are `entropy-report.md` and `.entropy-patrol/quality-log.jsonl`.
-- **No git operations.** Do not commit, branch, or stage anything.
-- **No PR creation.** `entropy-scan` never creates PRs or tasks — queueing PR-worthy findings as task-store tasks belongs to `/entropy-fix`.
-- **No network calls.** All detection is local file inspection.
+- **`--repo` is required.** Missing it is a usage error. Never scan `repos/` as a list, never infer the repo from the current directory, never read a precheck prompt.
+- **No code changes** to the scanned code. The only repo file this skill writes is `docs/patrols/entropy.md`, in a worktree, and only the docs PR commits it. Local scratch under `.entropy-patrol/` (the handoff) is never committed.
+- **Exactly one file under `docs/patrols/`** (`entropy.md`), validated by `check-patrol-docs.ts`. No report file at the clone root or anywhere else.
+- **PR only on material change.** No change, or only a timestamp/reorder change, means no commit and no PR. `--dry-run` opens no PR and records no run.
+- **No local state.** Prior state comes from `/cron-runs/latest`; the legacy `state/` ledger is touched only by the Step 1.5 one-time import, through the recorder.
+- **No task creation.** `entropy-scan` never creates tasks — routing findings into task-store tasks belongs to `/entropy-fix`.
+- **No network calls for detection.** All detection is local file inspection (the recorder and `gh` calls above are bookkeeping only).
 - **Respect the project override.** If a project's `.claude/shipwright/principles.md` omits an entry present in the plugin default, treat it as not scanned — not even "just to check."
-- **Never report a finding suppressed in `.shipwright/suppressions.yml`.** Step 3.5 drops matching findings before the report, summary and quality log — they must not appear in `entropy-report.md` or the log counts. Expired entries are not suppressions: list them in the summary and report, and let their findings through.
-- **One scan, one report.** Each run fully overwrites `entropy-report.md`. Previous results are not preserved.
-- **Quality log is append-only.** Never overwrite or truncate `.entropy-patrol/quality-log.jsonl`. Appends only.
-- **`--summary` skips log.** When `--summary` is passed, no log entry is written (no report = no log entry).
+- **Never report a finding suppressed in `.shipwright/suppressions.yml`.** Step 3.5 drops matching findings before the docs file, handoff and summary — they must not appear in `docs/patrols/entropy.md` or the run record's counts (`findings`, `high`, `medium`, `low`). Expired entries are not suppressions: list them in the handoff and let their findings through.
+- **One scan, one picture.** Each run fully rewrites the docs file's content; resolved items drop out and previous results are not preserved in the repo (run history is in the task store).
+- **Trend comes from the run records.** `--trend` reads `GET /cron-runs` for this repo; there is no local quality log, under `.entropy-patrol/` or `state/`.

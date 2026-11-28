@@ -90,7 +90,6 @@ describe("entropy-scan support files", () => {
 
   const requiredRefs = [
     "customization.md",
-    "quality-log-schema.md",
     "schema.md",
   ];
 
