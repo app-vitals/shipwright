@@ -2097,6 +2097,88 @@ export const ReadinessSnapshotLatestResponseSchema = z
   })
   .openapi("ReadinessSnapshotLatestResponse");
 
+// ─── Readiness Summary (RDY-4.1) ───────────────────────────────────────────────
+
+export const ReadinessSummaryQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+  })
+  .openapi("ReadinessSummaryQuery");
+
+export const ReadinessSummaryFailingCheckSchema = z
+  .object({
+    id: z.string().openapi({ example: "linter-configured" }),
+    level: z.number().int().min(1).max(5).openapi({ example: 1 }),
+    owner: z.string().openapi({ example: "entropy-patrol" }),
+    ownerRunning: z.boolean().openapi({
+      description:
+        "False when the owning system cron is disabled, does not exist, or is not scoped to this repo. The `operator` owner is always true.",
+    }),
+  })
+  .openapi("ReadinessSummaryFailingCheck");
+
+export const ReadinessSummaryRepoSchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    level: z.number().int().min(0).max(5).openapi({ example: 3 }),
+    failingChecks: z.array(ReadinessSummaryFailingCheckSchema),
+    scoredAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-28T06:00:00.000Z" }),
+    stale: z.boolean().openapi({
+      description:
+        "True when the latest snapshot is more than 7 days old; stale repos are excluded from the percentage, `repoCount` and `levelDistribution`.",
+    }),
+  })
+  .openapi("ReadinessSummaryRepo");
+
+export const ReadinessSummaryTrendPointSchema = z
+  .object({
+    weekStart: z.string().datetime().openapi({
+      example: "2026-11-21T12:00:00.000Z",
+      description: "Inclusive start of the 7-day bucket.",
+    }),
+    weekEnd: z.string().datetime().openapi({
+      example: "2026-11-28T12:00:00.000Z",
+      description: "Exclusive end of the 7-day bucket.",
+    }),
+    percentAtOrAboveFloor: z.number().nullable().openapi({
+      example: 66.7,
+      description:
+        "Share of repos at Level 3+ using each repo's latest snapshot in the week; null when no repo was scored that week.",
+    }),
+    repoCount: z.number().int().openapi({ example: 3 }),
+  })
+  .openapi("ReadinessSummaryTrendPoint");
+
+export const ReadinessSummaryResponseSchema = z
+  .object({
+    percentAtOrAboveFloor: z.number().nullable().openapi({
+      example: 75,
+      description:
+        "Percent (0-100, 1 decimal) of non-stale repos at Level 3+; null when there are none.",
+    }),
+    repoCount: z.number().int().openapi({
+      example: 4,
+      description: "Non-stale repos counted in the percentage.",
+    }),
+    staleCount: z.number().int().openapi({ example: 0 }),
+    levelDistribution: z.record(z.string(), z.number().int()).openapi({
+      example: { "0": 0, "1": 1, "2": 0, "3": 2, "4": 1, "5": 0 },
+      description:
+        'Non-stale repo count per level, keys "0" to "5" always present.',
+    }),
+    repos: z.array(ReadinessSummaryRepoSchema),
+    trend: z.array(ReadinessSummaryTrendPointSchema).openapi({
+      description: "12 weekly points, oldest first.",
+    }),
+  })
+  .openapi("ReadinessSummaryResponse");
+
 // ─── Repo Cron Run (PCR-1.1) ──────────────────────────────────────────────────
 
 const REPO_CRON_RUN_OUTCOME = z.enum(["ok", "no_op", "failed"]);

@@ -4073,6 +4073,40 @@
         }
       }
     },
+    "/readiness/summary": {
+      "get": {
+        "tags": [
+          "Readiness"
+        ],
+        "summary": "Fleet agent-readiness summary",
+        "description": "Rolls up each repo's latest readiness snapshot: `percentAtOrAboveFloor` (Level 3+) and `repoCount`, `levelDistribution` (count per level 0-5), `repos` (latest level, failing checks with `owner` and server-computed `ownerRunning`, `scoredAt`, `stale`) and a 12-point weekly `trend` (oldest first; each week uses every repo's latest snapshot in that week). Repos whose latest snapshot is more than 7 days old are listed with `stale: true` and excluded from the percentage, `repoCount` and `levelDistribution`. `ownerRunning` is false when the owner system cron is disabled, missing, or not scoped to the repo; the `operator` owner is always true. Agent tokens see only repos in their scope and their own account; admin tokens see everything and may narrow with `?accountId=`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow to one account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow to one account.",
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessSummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cron-runs": {
       "post": {
         "tags": [
@@ -8411,6 +8445,165 @@
         },
         "required": [
           "snapshots"
+        ]
+      },
+      "ReadinessSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "percentAtOrAboveFloor": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 75,
+            "description": "Percent (0-100, 1 decimal) of non-stale repos at Level 3+; null when there are none."
+          },
+          "repoCount": {
+            "type": "integer",
+            "example": 4,
+            "description": "Non-stale repos counted in the percentage."
+          },
+          "staleCount": {
+            "type": "integer",
+            "example": 0
+          },
+          "levelDistribution": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "example": {
+              "0": 0,
+              "1": 1,
+              "2": 0,
+              "3": 2,
+              "4": 1,
+              "5": 0
+            },
+            "description": "Non-stale repo count per level, keys \"0\" to \"5\" always present."
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessSummaryRepo"
+            }
+          },
+          "trend": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessSummaryTrendPoint"
+            },
+            "description": "12 weekly points, oldest first."
+          }
+        },
+        "required": [
+          "percentAtOrAboveFloor",
+          "repoCount",
+          "staleCount",
+          "levelDistribution",
+          "repos",
+          "trend"
+        ]
+      },
+      "ReadinessSummaryRepo": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "example": 3
+          },
+          "failingChecks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessSummaryFailingCheck"
+            }
+          },
+          "scoredAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-28T06:00:00.000Z"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "True when the latest snapshot is more than 7 days old; stale repos are excluded from the percentage, `repoCount` and `levelDistribution`."
+          }
+        },
+        "required": [
+          "repo",
+          "level",
+          "failingChecks",
+          "scoredAt",
+          "stale"
+        ]
+      },
+      "ReadinessSummaryFailingCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "linter-configured"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "example": 1
+          },
+          "owner": {
+            "type": "string",
+            "example": "entropy-patrol"
+          },
+          "ownerRunning": {
+            "type": "boolean",
+            "description": "False when the owning system cron is disabled, does not exist, or is not scoped to this repo. The `operator` owner is always true."
+          }
+        },
+        "required": [
+          "id",
+          "level",
+          "owner",
+          "ownerRunning"
+        ]
+      },
+      "ReadinessSummaryTrendPoint": {
+        "type": "object",
+        "properties": {
+          "weekStart": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-21T12:00:00.000Z",
+            "description": "Inclusive start of the 7-day bucket."
+          },
+          "weekEnd": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-28T12:00:00.000Z",
+            "description": "Exclusive end of the 7-day bucket."
+          },
+          "percentAtOrAboveFloor": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 66.7,
+            "description": "Share of repos at Level 3+ using each repo's latest snapshot in the week; null when no repo was scored that week."
+          },
+          "repoCount": {
+            "type": "integer",
+            "example": 3
+          }
+        },
+        "required": [
+          "weekStart",
+          "weekEnd",
+          "percentAtOrAboveFloor",
+          "repoCount"
         ]
       },
       "RepoCronRun": {
