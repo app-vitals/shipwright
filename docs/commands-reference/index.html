@@ -141,6 +141,14 @@ duplication. Each pair follows the same shape: a <code>-scan</code> command that
 <td>Read the repo’s open error PatrolFindings (required <code>--repo</code>), fetch each issue’s Sentry detail and stack trace, route each auto / review / plan, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires <code>/error-scan</code> first. Wraps the <a href="/docs/agent-skills#error-fix"><code>error-fix</code> skill</a>.</td>
 </tr>
 <tr>
+<td><code>/shipwright:environments-scan</code></td>
+<td>Scan one repo (<code>--repo org/repo</code>, required) for environment readiness gaps and write <code>docs/patrols/environments.md</code>, opening a docs PR only on material change. Report only — no code changes. Wraps the <a href="/docs/agent-skills#environments-scan"><code>environments-scan</code> skill</a>.</td>
+</tr>
+<tr>
+<td><code>/shipwright:environments-fix</code></td>
+<td>Route a repo’s environment findings (<code>--repo org/repo</code>, required) as task-store tasks, each auto, review or plan, and record the patrol run. Requires <code>/environments-scan</code> first. Wraps the <a href="/docs/agent-skills#environments-fix"><code>environments-fix</code> skill</a>.</td>
+</tr>
+<tr>
 <td><code>/shipwright:error-resolve</code></td>
 <td>Read the error-patrol ledger, check each linked task’s current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached <code>deployed</code>/<code>done</code>. Wraps the <a href="/docs/agent-skills#error-resolve"><code>error-resolve</code> skill</a>.</td>
 </tr>
