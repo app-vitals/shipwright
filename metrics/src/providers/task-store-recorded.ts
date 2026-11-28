@@ -23,11 +23,21 @@ import {
   matchesRepo,
   type PrRecord,
   prAnchor,
+  type ReadinessSummaryRecord,
   type SystemCronRecord,
   type TaskRecord,
   type TaskStoreClient,
   taskAnchor,
 } from "../lib/task-store-client.ts";
+
+const EMPTY_READINESS: ReadinessSummaryRecord = {
+  percentAtOrAboveFloor: null,
+  repoCount: 0,
+  staleCount: 0,
+  levelDistribution: { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
+  repos: [],
+  trend: [],
+};
 
 // ─── Task store double ────────────────────────────────────────────────────────
 //
@@ -47,7 +57,13 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
      * from `tasks` so they don't perturb the task-window metrics.
      */
     private readonly cronTasks: TaskRecord[] = [],
+    /** Canned GET /readiness/summary body (RDY-5.1). */
+    private readonly readiness: ReadinessSummaryRecord = EMPTY_READINESS,
   ) {}
+
+  async getReadinessSummary(): Promise<ReadinessSummaryRecord> {
+    return this.readiness;
+  }
 
   async listSystemCrons(): Promise<SystemCronRecord[]> {
     return this.systemCrons;

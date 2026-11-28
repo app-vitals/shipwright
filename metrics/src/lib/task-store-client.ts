@@ -128,6 +128,42 @@ export interface CoverageSnapshotRecord {
 }
 
 /**
+ * Fleet readiness roll-up (RDY-5.1) — the response of the task store's
+ * GET /readiness/summary (RDY-4.1), passed through unchanged. `ownerRunning`
+ * is computed server-side; `percentAtOrAboveFloor` is null with no fresh repo.
+ */
+export interface ReadinessFailingCheck {
+  id: string;
+  level: number;
+  owner: string;
+  ownerRunning: boolean;
+}
+
+export interface ReadinessRepoRecord {
+  repo: string;
+  level: number;
+  failingChecks: ReadinessFailingCheck[];
+  scoredAt: string;
+  stale: boolean;
+}
+
+export interface ReadinessTrendPoint {
+  weekStart: string;
+  weekEnd: string;
+  percentAtOrAboveFloor: number | null;
+  repoCount: number;
+}
+
+export interface ReadinessSummaryRecord {
+  percentAtOrAboveFloor: number | null;
+  repoCount: number;
+  staleCount: number;
+  levelDistribution: Record<string, number>;
+  repos: ReadinessRepoRecord[];
+  trend: ReadinessTrendPoint[];
+}
+
+/**
  * Slim system-cron definition (GET /system-crons, admin-only) — the registry
  * the system-cron metrics list one row per.
  */
@@ -208,6 +244,8 @@ export interface TaskStoreClient {
     since?: string;
     limit?: number;
   }): Promise<CoverageSnapshotRecord[]>;
+  /** Fleet readiness roll-up (GET /readiness/summary). */
+  getReadinessSummary(): Promise<ReadinessSummaryRecord>;
 }
 
 // ─── Window filtering ─────────────────────────────────────────────────────────
@@ -465,5 +503,9 @@ export class HttpTaskStoreClient implements TaskStoreClient {
       "snapshots",
       baseParams,
     );
+  }
+
+  async getReadinessSummary(): Promise<ReadinessSummaryRecord> {
+    return this.fetch<ReadinessSummaryRecord>("/readiness/summary");
   }
 }

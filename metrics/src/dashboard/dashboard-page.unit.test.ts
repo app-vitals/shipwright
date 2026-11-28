@@ -692,6 +692,37 @@ describe("renderDashboardPage — CVT-3.2 Coverage by repo section", () => {
   });
 });
 
+describe("renderDashboardPage — RDY-5.1 Readiness by repo section", () => {
+  test("renders headline, trend canvas, table and empty state on the authenticated page", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain('aria-label="Readiness by repo"');
+    expect(html).toContain("Readiness by repo");
+    expect(html).toContain('id="readiness-headline"');
+    expect(html).toContain('id="readiness-trend-chart"');
+    expect(html).toContain('id="readiness-tbody"');
+    expect(html).toContain('id="readiness-empty"');
+  });
+
+  test("sits right after Coverage by repo", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html.indexOf("Coverage by repo")).toBeLessThan(
+      html.indexOf("Readiness by repo"),
+    );
+  });
+
+  test("empty state explains a repo starts reporting once agent-readiness runs", () => {
+    const html = renderDashboardPage(BASE_OPTS);
+    expect(html).toContain("agent-readiness");
+  });
+
+  test("omits the section from the read-only public variant", () => {
+    const html = renderDashboardPage({ userName: "Public", readOnly: true });
+    expect(html).not.toContain("Readiness by repo");
+    expect(html).not.toContain('id="readiness-section"');
+    expect(html).not.toContain('id="readiness-trend-chart"');
+  });
+});
+
 describe("renderDashboardPage system crons tile (SCM-8.4)", () => {
   test("renders the section with table, meta and empty state for authenticated viewers", () => {
     const html = renderDashboardPage({ userName: "T" });

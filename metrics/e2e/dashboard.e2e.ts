@@ -1252,3 +1252,82 @@ test.describe("Dashboard — Coverage by repo section", () => {
     await expect(page.locator("#coverage-delta")).toBeVisible();
   });
 });
+
+// ─── Dashboard — RDY-5.1 Readiness by repo section ───────────────────────────
+//
+// Like the coverage tests, these do NOT mock /metrics/readiness — requests fall
+// through to the test server's fixture provider: org/alpha (L4), org/beta (L2,
+// one failing check owned by a running cron and one with no owner running) and
+// a stale org/gamma; headline 50% of 2 repos.
+
+test.describe("Dashboard — Readiness by repo section", () => {
+  test("renders the headline, a level per repo and failing checks with owners", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.locator('[aria-label="Readiness by repo"] .section-title'),
+    ).toHaveText("Readiness by repo");
+    await expect(page.locator("#readiness-headline")).toHaveText(
+      "50% of repos at Level 3+",
+    );
+    await expect(page.locator("#readiness-count")).toHaveText("2 repos");
+    await expect(page.locator("#readiness-tbody tr")).toHaveCount(3);
+
+    const beta = page.locator('#readiness-tbody tr[data-repo="org/beta"]');
+    await expect(beta).toContainText("L2");
+    await expect(beta.locator('[data-check="lockfile"]')).toContainText(
+      "test-readiness",
+    );
+    await expect(beta.locator('[data-check="preview-env"]')).toContainText(
+      "no owner running",
+    );
+    await expect(
+      page.locator(
+        '#readiness-tbody tr[data-repo="org/gamma"] .coverage-stale-badge',
+      ),
+    ).toBeVisible();
+  });
+
+  test("shows the empty state when no repo has been scored", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await page.route("**/metrics/readiness**", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            percentAtOrAboveFloor: null,
+            repoCount: 0,
+            staleCount: 0,
+            levelDistribution: {},
+            repos: [],
+            trend: [],
+          },
+          meta: { generatedAt: new Date().toISOString(), queryTimeMs: 1 },
+        }),
+      });
+    });
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(page.locator("#readiness-empty")).toBeVisible();
+    await expect(page.locator("#readiness-empty")).toContainText(
+      "agent-readiness",
+    );
+    await expect(page.locator("#readiness-tbody tr")).toHaveCount(0);
+  });
+
+  test("public dashboard omits the section", async ({ page }) => {
+    await mockMetricsAPIs(page);
+    await page.goto(`${BASE_URL}/public/dashboard`, {
+      waitUntil: "networkidle",
+    });
+    await expect(page.locator("#readiness-section")).toHaveCount(0);
+  });
+});

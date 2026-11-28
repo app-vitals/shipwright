@@ -30,6 +30,7 @@ import type { Clock } from "../lib/clock.ts";
 import type {
   CoverageSnapshotRecord,
   PrRecord,
+  ReadinessSummaryRecord,
   SystemCronRecord,
   TaskRecord,
 } from "../lib/task-store-client.ts";
@@ -299,8 +300,79 @@ export function createFixtureTaskStoreProvider(repo?: string): MetricsProvider {
     cronTask("f", "merged", { source: "plan", id: "FO-2", repo: "org/beta" }),
   ];
 
+  // ─── Readiness cassette (RDY-5.1) ───────────────────────────────────────────
+  // Two fresh repos (one Level 4, one Level 2 with a running and a
+  // not-running owner) and one stale repo; a 12-week trend rising 0 → 50%.
+
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const READINESS: ReadinessSummaryRecord = {
+    percentAtOrAboveFloor: 50,
+    repoCount: 2,
+    staleCount: 1,
+    levelDistribution: { "0": 0, "1": 0, "2": 1, "3": 0, "4": 1, "5": 0 },
+    repos: [
+      {
+        repo: "org/alpha",
+        level: 4,
+        failingChecks: [],
+        scoredAt: d(1),
+        stale: false,
+      },
+      {
+        repo: "org/beta",
+        level: 2,
+        failingChecks: [
+          {
+            id: "preview-env",
+            level: 3,
+            owner: "environments-scan",
+            ownerRunning: false,
+          },
+          {
+            id: "lockfile",
+            level: 2,
+            owner: "test-readiness",
+            ownerRunning: true,
+          },
+        ],
+        scoredAt: d(2),
+        stale: false,
+      },
+      {
+        repo: "org/gamma",
+        level: 1,
+        failingChecks: [
+          {
+            id: "ci-required",
+            level: 2,
+            owner: "operator",
+            ownerRunning: true,
+          },
+        ],
+        scoredAt: d(30),
+        stale: true,
+      },
+    ],
+    trend: Array.from({ length: 12 }, (_, i) => {
+      const weekEnd = now.getTime() - (11 - i) * WEEK_MS;
+      return {
+        weekStart: new Date(weekEnd - WEEK_MS).toISOString(),
+        weekEnd: new Date(weekEnd).toISOString(),
+        percentAtOrAboveFloor: i < 4 ? null : i < 8 ? 0 : 50,
+        repoCount: i < 4 ? 0 : 2,
+      };
+    }),
+  };
+
   return new TaskStoreProvider(
-    new RecordedTaskStoreClient(TASKS, PRS, COVERAGE, SYSTEM_CRONS, CRON_TASKS),
+    new RecordedTaskStoreClient(
+      TASKS,
+      PRS,
+      COVERAGE,
+      SYSTEM_CRONS,
+      CRON_TASKS,
+      READINESS,
+    ),
     new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS),
     clock,
     repo,

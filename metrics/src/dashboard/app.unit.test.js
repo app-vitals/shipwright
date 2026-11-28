@@ -18,6 +18,11 @@ let buildAdminTasksHref;
 let fmtAsOfMeta;
 let resolveTheme;
 let nextTheme;
+let fmtReadinessHeadline;
+let sortFailingChecks;
+let fmtFailingCheck;
+let buildReadinessRows;
+let buildReadinessTrend;
 
 beforeAll(async () => {
   await import("./app.js");
@@ -30,6 +35,11 @@ beforeAll(async () => {
     fmtAsOfMeta,
     resolveTheme,
     nextTheme,
+    fmtReadinessHeadline,
+    sortFailingChecks,
+    fmtFailingCheck,
+    buildReadinessRows,
+    buildReadinessTrend,
   } = globalThis.__dashboardAppTestExports);
 });
 
@@ -541,5 +551,120 @@ describe("nextTheme", () => {
 
   test("treats a missing theme as light", () => {
     expect(nextTheme(null)).toBe("dark");
+  });
+});
+
+describe("readiness formatters (RDY-5.1)", () => {
+  test("fmtReadinessHeadline renders the percentage and repo count", () => {
+    expect(
+      fmtReadinessHeadline({ percentAtOrAboveFloor: 50, repoCount: 2 }),
+    ).toEqual({
+      headline: "50% of repos at Level 3+",
+      count: "2 repos",
+    });
+    expect(
+      fmtReadinessHeadline({ percentAtOrAboveFloor: 33.3, repoCount: 1 }),
+    ).toEqual({
+      headline: "33.3% of repos at Level 3+",
+      count: "1 repo",
+    });
+  });
+
+  test("fmtReadinessHeadline handles no fresh repos", () => {
+    expect(
+      fmtReadinessHeadline({ percentAtOrAboveFloor: null, repoCount: 0 }),
+    ).toEqual({
+      headline: "No up-to-date repos scored",
+      count: "0 repos",
+    });
+  });
+
+  test("sortFailingChecks orders lowest level first, then by id, without mutating", () => {
+    const checks = [
+      { id: "b", level: 3, owner: "x", ownerRunning: true },
+      { id: "z", level: 2, owner: "x", ownerRunning: true },
+      { id: "a", level: 3, owner: "x", ownerRunning: true },
+    ];
+    expect(sortFailingChecks(checks).map((c) => c.id)).toEqual(["z", "a", "b"]);
+    expect(checks.map((c) => c.id)).toEqual(["b", "z", "a"]);
+  });
+
+  test("fmtFailingCheck names the owner cron, or 'no owner running'", () => {
+    expect(
+      fmtFailingCheck({
+        id: "lockfile",
+        level: 2,
+        owner: "test-readiness",
+        ownerRunning: true,
+      }),
+    ).toEqual({
+      id: "lockfile",
+      level: 2,
+      ownerText: "test-readiness",
+      noOwner: false,
+    });
+    expect(
+      fmtFailingCheck({
+        id: "preview-env",
+        level: 3,
+        owner: "environments-scan",
+        ownerRunning: false,
+      }),
+    ).toEqual({
+      id: "preview-env",
+      level: 3,
+      ownerText: "no owner running",
+      noOwner: true,
+    });
+  });
+
+  test("buildReadinessRows maps repos to level plus sorted failing checks and stale flag", () => {
+    const rows = buildReadinessRows([
+      {
+        repo: "org/beta",
+        level: 2,
+        stale: true,
+        failingChecks: [
+          {
+            id: "preview-env",
+            level: 3,
+            owner: "environments-scan",
+            ownerRunning: false,
+          },
+          {
+            id: "lockfile",
+            level: 2,
+            owner: "test-readiness",
+            ownerRunning: true,
+          },
+        ],
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].repo).toBe("org/beta");
+    expect(rows[0].level).toBe(2);
+    expect(rows[0].stale).toBe(true);
+    expect(rows[0].checks.map((c) => c.id)).toEqual([
+      "lockfile",
+      "preview-env",
+    ]);
+    expect(rows[0].checks[1].ownerText).toBe("no owner running");
+  });
+
+  test("buildReadinessTrend labels weeks and keeps null gaps", () => {
+    const t = buildReadinessTrend([
+      {
+        weekStart: "2026-06-01T00:00:00.000Z",
+        percentAtOrAboveFloor: null,
+        repoCount: 0,
+      },
+      {
+        weekStart: "2026-06-08T00:00:00.000Z",
+        percentAtOrAboveFloor: 50,
+        repoCount: 2,
+      },
+    ]);
+    expect(t.labels).toEqual(["2026-06-01", "2026-06-08"]);
+    expect(t.data).toEqual([null, 50]);
   });
 });

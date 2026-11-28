@@ -54,6 +54,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
 | GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
 | GET | `/metrics/coverage` | Latest test coverage per repo plus a line-coverage trend over the selected date range (CVT-3.1). Accepts `preset` / `from` / `to` like the other endpoints (defaults to `today`); the per-repo latest rows do not depend on the range. See the response shape below. |
+| GET | `/metrics/readiness` | Fleet agent-readiness roll-up (RDY-5.1): the task store's `GET /readiness/summary` passed through. Not date-range scoped. Authenticated only — no `/public/metrics/readiness` (404). See the response shape below. |
 | GET | `/metrics/pr-outcomes` | Read-only PR outcomes per context fingerprint (PAU-1.8): `reviewState` mix, avg `reviewCycles`/`patchCycles`, median time-to-merge over the window between the fingerprint's first and last seen. Response carries `attribution: "window-correlation"` — a time-window correlation, not per-PR attribution. |
 | GET | `/metrics/system-crons` | System-cron work (SCM-8.3), one row per registered cron (0 when nothing was created in range). Honors `preset`/`from`/`to`. Per cron: `fires` (distinct slots), `tasksCreated` (SC- tasks), `buckets` derived from task status + linked PR state only (`shipped` = PR merged or task merged/deployed/released; `inFlight` = PR open <24h; `stuck` = PR open >=24h or task blocked; `failed` = task cancelled; `noOp` = task done with no PR; `pending` = the rest), and `followOn.created`/`shipped` (originKind=cron, same originRef, source != system-cron). Each count is `{ count, filter }` where `filter` holds the task-store `GET /tasks` drill-down params. `meta` has `generatedAt`, `repoCount`, `accountId`. Read with the service's own account-wide `METRICS_TASK_STORE_TOKEN` (agent tokens see only a slice). |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
@@ -105,6 +106,38 @@ Authenticated only — there is deliberately no `/public/metrics/coverage` (it r
 
 `repos` holds the newest snapshot per repo, ordered by repo. `trend` holds every snapshot whose `measuredAt` falls inside the requested date range (`preset` or `from`/`to`, defaulting to `today`), oldest first. Staleness is judged against the service clock.
 
+### `/metrics/readiness` response shape
+
+Authenticated only — there is deliberately no `/public/metrics/readiness` (it returns `404`). The data is the task store's `GET /readiness/summary` (RDY-4.1), read with the service's own bearer token and returned unchanged inside the standard envelope; offline/fixtures mode serves a canned summary. A provider without readiness support answers `501`.
+
+```jsonc
+{
+  "data": {
+    "percentAtOrAboveFloor": 50,   // % of non-stale repos at Level 3+; null when none
+    "repoCount": 2,                // non-stale repos behind the percentage
+    "staleCount": 1,               // repos whose latest snapshot is over 7 days old
+    "levelDistribution": { "0": 0, "1": 0, "2": 1, "3": 0, "4": 1, "5": 0 },
+    "repos": [
+      {
+        "repo": "org/repo",
+        "level": 2,
+        "failingChecks": [
+          { "id": "preview-env", "level": 3, "owner": "environments-scan", "ownerRunning": false }
+        ],
+        "scoredAt": "2026-06-18T12:00:00.000Z",
+        "stale": false
+      }
+    ],
+    "trend": [
+      { "weekStart": "2026-06-13T12:00:00.000Z", "weekEnd": "2026-06-20T12:00:00.000Z", "percentAtOrAboveFloor": 50, "repoCount": 2 }
+    ]                              // 12 weekly points, oldest first
+  },
+  "meta": { /* standard envelope */ }
+}
+```
+
+`ownerRunning` is computed by the task store: false when the owner system cron is disabled, missing or not scoped to the repo (the `operator` owner is always true).
+
 ### `/metrics/merged-prs` and `/public/metrics/merged-prs` response shape
 
 Both routes return the same envelope shape (`data` scoped to all repos on the authenticated route, to the configured public repo on the public route):
@@ -153,6 +186,8 @@ The dashboard renders commit data in two panels:
 - **"Merged PRs by repo"** — breakdown of merged PRs by repo and origin (shipwright, ci, dependency_bot, human, unknown) as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
 - **"Coverage by repo"** (CVT-3.2) — reads `/metrics/coverage`. A table with one row per repo (lines %, change vs. the previous snapshot in percentage points, last measured date; rows flagged `stale` are dimmed and badged), plus a line trend chart with one point per snapshot within the selected date range and a repo picker (all repos, or one) that restricts the chart to that repo's series. When no snapshots exist, the section shows an empty state explaining that a repo starts reporting when its CI posts a coverage report to the task store (`POST /coverage-snapshots`). The section is authenticated-only and is omitted entirely from the public read-only dashboard (the page does not fetch `/metrics/coverage` there). The existing per-task "Coverage" panel in Pipeline Quality (reports count and avg delta from `/metrics/summary`) is unchanged.
+
+- **"Readiness by repo"** (RDY-5.1) — reads `/metrics/readiness`, next to "Coverage by repo". The headline reads "N% of repos at Level 3+" with the repo count, above a 12-week trend line of that percentage and a per-repo table: the repo's level (stale repos are dimmed and badged) and its failing checks, lowest level first, each with the system cron that owns the fix. A failing check whose owner is not running shows "no owner running" instead of the cron name. When no repo has a snapshot, the section shows an empty state explaining that a repo starts reporting once the agent-readiness cron has scored it. The section is not date-range scoped, is authenticated-only and is omitted from the public read-only dashboard (the page does not fetch `/metrics/readiness` there). This replaces a separate admin readiness page.
 
 - **"System crons"** (SCM-8.4) — reads `/metrics/system-crons`. One row per registered system cron with the bucket counts from that endpoint: Shipped, Stuck, Failed, Follow-ons (created / shipped), and Other (no-op, in flight, pending). Each count links to the admin Tasks table filtered by that count's `filter` params (`owner=all`, `view=table`), made absolute with `METRICS_ADMIN_APP_URL` when set. The header badge shows the repo count and the `generatedAt` "as of" time. When no crons are registered, the section shows an empty state. The section is authenticated-only and is omitted from the public read-only dashboard (the page does not fetch `/metrics/system-crons` there).
 
@@ -257,7 +292,7 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `metrics/src/metrics-provider.ts` | `MetricsProvider` interface + `MetricQuery` / `MetricTable` types — the backend-agnostic read seam. |
 | `metrics/src/select-provider.ts` | Pure env-to-mode selector (`selectProviderMode()`) — maps env vars to `"fixtures" \| "taskstore"` based on `METRICS_OFFLINE` and task-store URL configuration. |
 | `metrics/src/providers/task-store-provider.ts` | `TaskStoreProvider` — implements `MetricsProvider` over a `TaskStoreClient` (tasks + PRs + coverage snapshots) and an `AdminMetricsClient` (token stats); the live read backend for taskstore mode. When a window has completed tasks but zero PRs (typically a task-store token scoped so `GET /prs` returns nothing, which renders the SHIP IT KPI as `--%`), `summary()` logs a structured `summary_zero_prs_with_tasks` warning with counts and the window only (STB-1.1). Includes graceful degradation: when admin stats endpoints fail, returns zero aggregates for that stream instead of erroring, allowing partial metrics to remain available. |
-| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks, PRs, and coverage snapshots from the task-store HTTP API. |
+| `metrics/src/lib/task-store-client.ts` | `TaskStoreClient` interface + `HttpTaskStoreClient` impl (and `TaskStoreClientError`) — reads tasks, PRs, coverage snapshots, and the readiness summary from the task-store HTTP API. |
 | `metrics/src/lib/admin-metrics-client.ts` | `AdminMetricsClient` interface + `HttpAdminMetricsClient` impl (and `AdminMetricsClientError`) — reads token-aggregation stats from the admin service. |
 | `metrics/src/providers/task-store-recorded.ts` | `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` — replay cassette data offline; back the fixtures provider and integration tests. Also includes faulting doubles (`FaultingCronAdminMetricsClient`, `FaultingChatAdminMetricsClient`, `FaultingBothAdminMetricsClient`) for testing graceful degradation when admin stats endpoints fail. |
 | `metrics/src/fixtures/task-store-fixtures.ts` | `createFixtureTaskStoreProvider()` — offline `TaskStoreProvider` over recorded cassettes with a fixed clock; used in offline mode and integration tests. |

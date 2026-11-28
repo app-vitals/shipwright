@@ -239,6 +239,61 @@ export const CoverageResultSchema = z
   })
   .openapi("CoverageResult");
 
+// ─── Readiness schemas (RDY-5.1) ─────────────────────────────────────────────
+
+const ReadinessFailingCheckSchema = z
+  .object({
+    id: z.string().openapi({ example: "ci-required" }),
+    level: z.number().int().openapi({ example: 3 }),
+    owner: z.string().openapi({
+      example: "environments-scan",
+      description: "System cron that owns the fix, or `operator`.",
+    }),
+    ownerRunning: z.boolean().openapi({
+      description:
+        "False when the owner cron is disabled, missing, or not scoped to the repo.",
+    }),
+  })
+  .openapi("ReadinessFailingCheck");
+
+const ReadinessRepoSchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    level: z.number().int().openapi({ example: 2 }),
+    failingChecks: z.array(ReadinessFailingCheckSchema),
+    scoredAt: z.string().openapi({ example: "2026-06-19T00:00:00.000Z" }),
+    stale: z.boolean().openapi({
+      description: "True when the latest snapshot is more than 7 days old.",
+    }),
+  })
+  .openapi("ReadinessRepo");
+
+const ReadinessTrendPointSchema = z
+  .object({
+    weekStart: z.string().openapi({ example: "2026-06-13T12:00:00.000Z" }),
+    weekEnd: z.string().openapi({ example: "2026-06-20T12:00:00.000Z" }),
+    percentAtOrAboveFloor: z.number().nullable().openapi({ example: 50 }),
+    repoCount: z.number().int().openapi({ example: 2 }),
+  })
+  .openapi("ReadinessTrendPoint");
+
+export const ReadinessResultSchema = z
+  .object({
+    percentAtOrAboveFloor: z.number().nullable().openapi({
+      example: 50,
+      description:
+        "Percent (0-100) of non-stale repos at Level 3+; null when there are none.",
+    }),
+    repoCount: z.number().int().openapi({ example: 2 }),
+    staleCount: z.number().int().openapi({ example: 0 }),
+    levelDistribution: z.record(z.string(), z.number().int()),
+    repos: z.array(ReadinessRepoSchema),
+    trend: z.array(ReadinessTrendPointSchema).openapi({
+      description: "12 weekly points, oldest first.",
+    }),
+  })
+  .openapi("ReadinessResult");
+
 // ─── PR outcomes schemas (PAU-1.8) ───────────────────────────────────────────
 
 const PrOutcomesSeriesSchema = z

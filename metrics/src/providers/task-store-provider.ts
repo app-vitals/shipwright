@@ -42,6 +42,7 @@ import {
   inWindow,
   type PrRecord,
   prAnchor,
+  type ReadinessSummaryRecord,
   type TaskRecord,
   type TaskStoreClient,
 } from "../lib/task-store-client.ts";
@@ -295,6 +296,12 @@ export class TaskStoreProvider implements MetricsProvider {
    * assignee=agent OR repo IN agent repos), never the repo-scoped public
    * provider — so `this.repo` is deliberately not applied.
    */
+  async readiness(): Promise<ReadinessSummaryRecord> {
+    // Fleet-wide, read with the service's own account-wide token — like
+    // systemCrons(), the repo scope of a public provider is not applied.
+    return this.taskStore.getReadinessSummary();
+  }
+
   async systemCrons(range: QueryDateRange): Promise<SystemCronMetrics> {
     const win = resolveQueryRange(range, this.clock);
     const now = this.clock.now();

@@ -364,3 +364,48 @@ describe("HttpTaskStoreClient system-cron reads (SCM-8.3)", () => {
     );
   });
 });
+
+describe("HttpTaskStoreClient readiness summary (RDY-5.1)", () => {
+  test("getReadinessSummary reads GET /readiness/summary with the bearer token", async () => {
+    const calls: { url: string; auth?: string }[] = [];
+    const body = {
+      percentAtOrAboveFloor: 50,
+      repoCount: 2,
+      staleCount: 0,
+      levelDistribution: { "0": 0, "1": 1, "2": 0, "3": 1, "4": 0, "5": 0 },
+      repos: [],
+      trend: [],
+    };
+    const client = new HttpTaskStoreClient(
+      "http://store/",
+      "tok",
+      async (input, init) => {
+        calls.push({
+          url: input,
+          auth: (init?.headers as Record<string, string> | undefined)
+            ?.Authorization,
+        });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => "",
+          json: async () => body,
+        };
+      },
+    );
+    const got = await client.getReadinessSummary();
+    expect(calls[0]?.url).toBe("http://store/readiness/summary");
+    expect(calls[0]?.auth).toBe("Bearer tok");
+    expect(got).toEqual(body);
+  });
+
+  test("a non-2xx response throws TaskStoreClientError", async () => {
+    const client = new HttpTaskStoreClient("http://store", "tok", async () => ({
+      ok: false,
+      status: 503,
+      text: async () => "down",
+      json: async () => ({}),
+    }));
+    await expect(client.getReadinessSummary()).rejects.toThrow();
+  });
+});

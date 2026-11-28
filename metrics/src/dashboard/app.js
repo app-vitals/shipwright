@@ -21,6 +21,7 @@
   let lastMergedPrsTrend = [];
   let coverageTrendChart = null;
   let lastCoverageTrend = [];
+  let readinessTrendChart = null;
 
   // ─── Theme ───────────────────────────────────────────────────────────────
 
@@ -322,6 +323,17 @@
             return null;
           })
       : null;
+    // Readiness by repo (RDY-5.1) is authenticated-only like coverage; it is
+    // not date-range scoped (fixed 12-week trend) but refetched with the rest.
+    const readinessEl = document.getElementById("readiness-section");
+    const readinessRes = readinessEl
+      ? await fetch(`${API_BASE}/readiness`)
+          .then((r) => r.json())
+          .catch((err) => {
+            console.error("Readiness fetch failed:", err);
+            return null;
+          })
+      : null;
     // System-cron work (SCM-8.4) is authenticated-only like coverage; refetched
     // with the selected range on every refresh / range toggle.
     const systemCronsEl = document.getElementById("system-crons-section");
@@ -340,6 +352,7 @@
       tokensRes,
       mergedPrsRes,
       coverageRes,
+      readinessRes,
       systemCronsRes,
       costEffRes,
     };
@@ -1221,6 +1234,179 @@
     });
   }
 
+  // ─── Readiness by Repo (RDY-5.1) ─────────────────────────────────────────
+
+  // "N% of repos at Level 3+" plus the count of repos behind it.
+  function fmtReadinessHeadline(summary) {
+    const n = summary.repoCount ?? 0;
+    const count = `${n} ${n === 1 ? "repo" : "repos"}`;
+    const pct = summary.percentAtOrAboveFloor;
+    if (pct === null || pct === undefined) {
+      return { headline: "No up-to-date repos scored", count };
+    }
+    return { headline: `${pct}% of repos at Level 3+`, count };
+  }
+
+  // Lowest level first, ties by id. Returns a copy.
+  function sortFailingChecks(checks) {
+    return [...(checks || [])].sort(
+      (a, b) => a.level - b.level || String(a.id).localeCompare(String(b.id)),
+    );
+  }
+
+  function fmtFailingCheck(check) {
+    const noOwner = check.ownerRunning === false;
+    return {
+      id: check.id,
+      level: check.level,
+      ownerText: noOwner ? "no owner running" : check.owner,
+      noOwner,
+    };
+  }
+
+  function buildReadinessRows(repos) {
+    return (repos || []).map((r) => ({
+      repo: r.repo,
+      level: r.level,
+      stale: r.stale === true,
+      checks: sortFailingChecks(r.failingChecks).map(fmtFailingCheck),
+    }));
+  }
+
+  // Weekly points, oldest first; weeks with no scored repo stay null (gap).
+  function buildReadinessTrend(trend) {
+    const points = trend || [];
+    return {
+      labels: points.map((p) => String(p.weekStart).slice(0, 10)),
+      data: points.map((p) => p.percentAtOrAboveFloor ?? null),
+    };
+  }
+
+  function destroyReadinessChart() {
+    if (readinessTrendChart) {
+      readinessTrendChart.destroy();
+      readinessTrendChart = window.readinessTrendChart = null;
+    }
+  }
+
+  function renderReadinessTable(repos) {
+    const tbody = document.getElementById("readiness-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    for (const row of buildReadinessRows(repos)) {
+      const tr = document.createElement("tr");
+      tr.dataset.repo = row.repo;
+      if (row.stale) tr.classList.add("coverage-row-stale");
+      const repoTd = document.createElement("td");
+      repoTd.textContent = row.repo;
+      tr.appendChild(repoTd);
+      const levelTd = document.createElement("td");
+      levelTd.textContent = `L${row.level}`;
+      if (row.stale) {
+        const badge = document.createElement("span");
+        badge.className = "coverage-stale-badge";
+        badge.textContent = "stale";
+        badge.title = "Last scored more than 7 days ago";
+        levelTd.appendChild(badge);
+      }
+      tr.appendChild(levelTd);
+      const checksTd = document.createElement("td");
+      if (row.checks.length === 0) {
+        checksTd.textContent = "—";
+      }
+      for (const c of row.checks) {
+        const line = document.createElement("span");
+        line.className = "readiness-check";
+        line.dataset.check = c.id;
+        line.append(`${c.id} (L${c.level}) · `);
+        const owner = document.createElement("span");
+        owner.className = c.noOwner ? "readiness-no-owner" : "readiness-owner";
+        owner.textContent = c.ownerText;
+        line.appendChild(owner);
+        checksTd.appendChild(line);
+      }
+      tr.appendChild(checksTd);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function drawReadinessTrendChart(trend) {
+    const canvas = document.getElementById("readiness-trend-chart");
+    if (!canvas) return;
+    destroyReadinessChart();
+    const { labels, data } = buildReadinessTrend(trend);
+    const hasData = data.some((v) => v !== null);
+    if (canvas.parentElement) {
+      canvas.parentElement.style.display = hasData ? "" : "none";
+    }
+    if (!hasData) return;
+    const tickStyle = {
+      color: themeColor("--text-dim"),
+      font: { family: "'JetBrains Mono', monospace", size: 10 },
+    };
+    try {
+      readinessTrendChart = window.readinessTrendChart = new Chart(
+        canvas.getContext("2d"),
+        {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                ...makeDataset(
+                  "% of repos at Level 3+",
+                  data,
+                  COVERAGE_COLORS[0],
+                ),
+                spanGaps: true,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: {
+                ticks: { ...tickStyle, maxRotation: 45 },
+                grid: { color: themeColor("--surface-raised") },
+              },
+              y: {
+                min: 0,
+                max: 100,
+                ticks: tickStyle,
+                grid: { color: themeColor("--surface-raised") },
+              },
+            },
+          },
+        },
+      );
+    } catch (_err) {
+      showError("Failed to render readiness trend chart");
+    }
+  }
+
+  function updateReadiness(res) {
+    const contentEl = document.getElementById("readiness-content");
+    const emptyEl = document.getElementById("readiness-empty");
+    if (!contentEl) return;
+    const data = res && !res.error ? res.data : null;
+    const repos = data?.repos ?? [];
+    if (!data || repos.length === 0) {
+      contentEl.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "";
+      destroyReadinessChart();
+      return;
+    }
+    contentEl.style.display = "";
+    if (emptyEl) emptyEl.style.display = "none";
+    const { headline, count } = fmtReadinessHeadline(data);
+    document.getElementById("readiness-headline").textContent = headline;
+    document.getElementById("readiness-count").textContent = count;
+    renderReadinessTable(repos);
+    drawReadinessTrendChart(data.trend);
+  }
+
   function drawChart(rows) {
     const canvas = document.getElementById("trends-chart");
     if (!canvas) return;
@@ -1761,6 +1947,7 @@
         tokensRes,
         mergedPrsRes,
         coverageRes,
+        readinessRes,
         systemCronsRes,
         costEffRes,
       } = await fetchAll(currentRange);
@@ -1798,6 +1985,7 @@
         updatePRCommits(null);
       }
       updateCoverage(coverageRes);
+      updateReadiness(readinessRes);
       updateSystemCrons(systemCronsRes);
       updateCostEfficiency(costEffRes);
     } catch (err) {
@@ -1923,6 +2111,11 @@
       computeFleetWeightedAvgCommits,
       buildCoverageTrend,
       fmtCoverageDelta,
+      fmtReadinessHeadline,
+      sortFailingChecks,
+      fmtFailingCheck,
+      buildReadinessRows,
+      buildReadinessTrend,
       buildAdminTasksHref,
       fmtAsOfMeta,
       resolveTheme,
