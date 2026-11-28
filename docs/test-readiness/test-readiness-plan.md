@@ -119,7 +119,7 @@ echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.m
 
 Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-24). 
 
-**2026-10-21 re-sourcing (previous; superseded above the carried-forward figures below).** Latest green `lint / typecheck / test` run on main: [run 39700470653](https://github.com/app-vitals/shipwright/actions/runs/39700470653) @ `45fc9d061`, `Lines: 93.63% (51582/55093) — threshold: 90%`. Computed via:
+**2026-10-21 re-sourcing (previous; superseded above).** Latest green `lint / typecheck / test` run on main: [run 39700470653](https://github.com/app-vitals/shipwright/actions/runs/39700470653) @ `45fc9d061`, `Lines: 93.63% (51582/55093) — threshold: 90%`. Computed via:
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.63, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/39700470653 @ 45fc9d061"}' \
@@ -136,36 +136,7 @@ echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.m
 | Line coverage | 93.63% (target 90%) |
 | **Verdict** | **READY** |
 
-Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-21). The earlier-cycle block below is retained for history.
-
-Note (2026-10-03): the exact line-coverage percentage is carried forward from the 2026-10-02 pull below; the newer CI run on `b14ea6eb3` (run 37030376034) logged `Coverage gate passed` (>=90%) but its percentage was not extracted, and the one-file delta cannot move it materially. Original sourcing: `linePct`/`lineSource` from the prior cycle's live CI pull
-([run 36969562510](https://github.com/app-vitals/shipwright/actions/runs/36969562510) @
-`ea1412b66`, the prior cycle's base, fetched via `gh run list`/`gh run view --log` per
-`test-migration.md`'s Speed measurement section); `featurePct`/`featureSource` from
-`test-inventory.md`'s `feature_coverage_pct` (100%, 26/26 features; the 2026-10-09 refresh added the Admin - self-serve accounts feature). Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 92.54, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/36969562510 @ ea1412b66"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-Actually run (not hand-computed):
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":92.54,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/36969562510 @ ea1412b66","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-| Field | Value |
-|---|---|
-| Feature coverage | 100% (target 90%) — source: docs/test-readiness/test-inventory.md |
-| Line coverage | 92.54% (target 90%) — source: CI run https://github.com/app-vitals/shipwright/actions/runs/36969562510 @ ea1412b66 |
-| **Verdict** | **READY** |
-
-**Stage-3 coverage-check promotion — `done`, unchanged this cycle.** `line_coverage_pct`
-(92.54%, −0.03pp vs. the 2026-09-30 pass while both numerator and denominator grew — within
-noise) remains above the 90% threshold the 3-stage lifecycle gates on. Per Process step 9,
-re-queried the task-store result set (below) and confirmed **`test-t-083-shipwright`**
-("Promote coverage required check from never-decrease to hard ≥90% gate") remains at status
-**`done`** — no duplicate emission.
+Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-21).
 
 ## 1. Where we are now
 
@@ -174,18 +145,16 @@ re-queried the task-store result set (below) and confirmed **`test-t-083-shipwri
 | Layer | Existing tests | Inventory items | Coverage gap |
 |---|---|---|---|
 | Unit | 206 `.unit.test.ts` | Dominant category-1 surface ( decision/classification logic, mutable-box refs, crypto helpers, parsing/validation, coverage-gate tooling, finding suppressions, extraction-script pure helpers, admin spec builder) | One optional net-new (`T-088`) |
-| Integration | 66 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item; this cycle extended `stale-claim-reaper` / `skip-tracking` (task-store) in place | None |
+| Integration | 66 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item; including `stale-claim-reaper` / `skip-tracking` (task-store) | None |
 | Smoke | 59 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None |
 | E2E | 27 `site/tests/*.spec.ts` + 7 `{admin,metrics}/e2e/*.e2e.ts` (unchanged) | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None |
 | Content | 75 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references,test}/*` plus root-level content tests | None |
 | Shell (unofficial 6th layer) | 4 `test-*.sh` bash assertion suites (`test-chart-release.sh`, `test-library-pin.sh`, `test-check-chart-drift.sh`, `test-helm-repos.sh`) | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh`, `chart-release.sh`, `library-pin.sh` | None — only a documentation-completeness question open (see Open risks) |
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step; only a taxonomy question open (see Open risks) |
 
-**Total (recount via `git ls-files`, excluding `site/`): 406 `bun test`-scanned files** (206 unit + 66 integration + 59 smoke + 75 content; plus 5 opt-in `preview/canary/*.canary.test.ts` suites outside the default scan; CI reports 407 files including `app.unit.test.js`). Prior recount, preserved: **Total (2026-11-13 recount via `git ls-files`, excluding `site/`): 362 `bun test`-scanned files** (176 unit + 59 integration + 55 smoke + 72 content; 349 on 2026-11-10 and 350 on 2026-11-12, +12 this cycle from the system-crons, task-kinds, claim-heartbeat, risk-signals and local-store work; 351 on 2026-11-08, -1 unit, +1 integration, -2 content from the deploy-phase removal; the drop from 538 on 2026-10-26 is the extracted platform code and its tests, not lost coverage) **+ 27 site E2E + 7 admin/metrics E2E = 383 test files** (E2E counts unchanged). See `test-migration.md`'s 2026-11-10 top-up for the delta reconciliation.
+**Total (recount via `git ls-files`, excluding `site/`): 406 `bun test`-scanned files** (206 unit + 66 integration + 59 smoke + 75 content; plus 5 opt-in `preview/canary/*.canary.test.ts` suites outside the default scan; CI reports 407 files including `app.unit.test.js`). **+ 27 site E2E + 7 admin/metrics E2E = 440 test files.**
 
-**`## Features` section in `test-inventory.md`: 24 features, 100% covered** (21 -> 24 this cycle: Task store planning documents, Coverage tracking, Preview environment).
-
-<!-- prior-cycle totals (2026-10-02, preserved): -->
+**`## Features` section in `test-inventory.md`: 24 features, 100% covered** (including Task store planning documents, Coverage tracking, Preview environment).
 
 ### Local-runnable status
 
@@ -201,8 +170,7 @@ service; this is a convention violation, not a network dependency. `T-086` close
 ### Canary status
 
 **Not applicable.** Root `CLAUDE.md` declares `## Deploy model: direct` — no
-staging/production GitHub Environments, no deploy→canary→promote pipeline. Unchanged finding
-across every cycle to date. See Milestone 3.
+staging/production GitHub Environments, no deploy→canary→promote pipeline. See Milestone 3.
 
 ### Speed status (Tier 1 aggregate vs. budget; Tier 2 not triggered)
 
@@ -244,7 +212,7 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
   promptly** — Rebuild and Delete are empty; no Promote/deepen items remain open (`T-086`
   is deployed).
 - **Every critical- and high-tier inventory item covered at its prescribed layer** — no open
-  critical/high *coverage* gap found this cycle; the former open item (`T-086`, now deployed) was a convention fix
+  critical/high *coverage* gap; the former open item (`T-086`, now deployed) was a convention fix
   inside an already-covered critical-tier file, not missing coverage.
 
 ## 3. The gap
@@ -293,7 +261,7 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
 **Tier 2 — per-layer ratio (conditional on Tier 2 having triggered):**
 
 **Tier 2 triggered:** no. Per-layer numbers are not fabricated here — Tier 1's aggregate is
-the complete, sufficient measurement this cycle. Growth trajectory (546 files, 10,149 →
+the complete, sufficient measurement. Growth trajectory (546 files, 10,149 →
 12,587 tests since the 2026-09-30 baseline, re-measured 2026-10-24) is proportionate to the window, and the aggregate
 ratio held flat at ~11-12%, consistent with the job's wall-clock being dominated by fixed
 overhead rather than scaling with test count at this suite size.
@@ -303,7 +271,7 @@ overhead rather than scaling with test count at this suite size.
 ### Milestone 1 — Infrastructure baseline
 **DOD:** Runners, local substitutes, CI pipeline shape in place. No new tests yet — just the rails.
 
-**Already satisfied — zero tasks this cycle.** T-083 (auto-emitted stage-3 coverage-check
+**Already satisfied — zero tasks.** T-083 (auto-emitted stage-3 coverage-check
 promotion) remains `done`. Naming convention + runner-exclusion config
 (`docs/test-readiness/naming.md`, `bunfig.toml`'s `pathIgnorePatterns`) re-verified
 unchanged. CI pipeline shape matches `test-system.md`'s documented target exactly
@@ -313,12 +281,12 @@ confirmed in place; this window's one Prisma migration
 (`20260930000000_add_task_last_skip_reason`) exercised the same infra with zero setup changes.
 `recorded_fixture_automation` is undeclared in root `CLAUDE.md` (defaults to `planned`), but
 the recorded-fixture-refresh loop remains explicitly deferred per `test-system.md`'s Repo
-configuration section — no task emitted for it, consistent with every prior cycle.
+configuration section — no task emitted for it.
 
 ### Milestone 2 — Critical-path coverage
 **DOD:** 100% of `critical` tier inventory items have passing tests at the prescribed layer.
 
-**Zero open tasks this cycle** (historical: `T-086` was the Promote item, now deployed). The file it touches
+**Zero open tasks** (`T-086`, the former Promote item, is deployed). The file it touches
 (`plugins/shipwright/scripts/check-helpers.ts`) is `critical` tier per
 `test-inventory.md` — the cron prechecks that decide what the autonomous loop does next
 depend on it — and the task is a convention fix on an already-adequately-covered file, not a
@@ -330,26 +298,26 @@ changes, confirmed in the live CI run.
 ### Milestone 3 — Canary suite live
 **DOD:** canary not applicable -- deploy_model=direct
 
-Zero tasks, same as every prior cycle. See `test-system.md`'s Canary execution contract
+Zero tasks. See `test-system.md`'s Canary execution contract
 section for what would need to change before this applies.
 
 ### Milestone 4 — High-tier coverage
 **DOD:** 100% of `high` tier inventory items covered.
 
-**Already satisfied — zero tasks this cycle.** Every `high`-tier addition in this window
+**Already satisfied — zero tasks.** Every `high`-tier addition in this window
 (`sync-config-clone.ts`, `filter-bot-comments.ts`, `check-patrol-scope.ts`, the three
 `agent/src/*-ref.ts` config refs) has direct, same-window test coverage at its prescribed
 layer — no gap found.
 
 `admin/src/clock.ts` remains the sole Net-new item from Phase 3 — `low` criticality, carried
-forward, unchanged, explicitly a non-gap. No task minted for it, same as every prior cycle
+forward, unchanged, explicitly a non-gap. No task minted for it
 (it does not qualify for this milestone's `high`-tier walk).
 
 ### Milestone 5 — Cleanup
 **DOD:** Zero tests in `rebuild` or `delete (redundant)` buckets. CI passes.
 
 **Already satisfied — zero tasks.** Phase 3 found zero `rebuild` and zero `delete
-(redundant)` items this cycle, the same steady state as every prior pass.
+(redundant)` items.
 
 ## 5. Task list
 
@@ -358,12 +326,12 @@ Flat, ordered, agent-executable. Format: `T-NNN | M# | files | layer | bucket | 
 | ID | Milestone | Files to touch | Layer | Bucket origin | Expected outcome | Verification command | Depends on |
 |---|---|---|---|---|---|---|---|
 
-**No open rows this cycle (2026-11-18: no new Net-new items; 2026-11-17: the one new Net-new item, `coverage-snapshot-service.integration.test.ts`, is medium tier and sits outside the M2/M4 walk; see Open risks).** `T-086` (check-helpers fetch seam) and `T-088` (anthropic-credential-guard unit test) were both completed and are `deployed` in the task store; they were dropped from the table to avoid filing redundant tasks.
+**No open rows.** The one Net-new item, `coverage-snapshot-service.integration.test.ts`, is medium tier and sits outside the M2/M4 walk (see Open risks). `T-086` (check-helpers fetch seam) and `T-088` (anthropic-credential-guard unit test) were both completed and are `deployed` in the task store; they were dropped from the table to avoid filing redundant tasks.
 
-**Resolved (re-verified via direct task-store query this cycle):** all 10 previously-tracked
+**Resolved (re-verified via direct task-store query):** all 10 previously-tracked
 IDs (`test-t-076-shipwright` through `test-t-085-shipwright`) remain at a terminal status
 (`deployed`/`done`) — see the Status section above. None require any action. `starting_offset`
-for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
+for the next minted task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
 
 ## 6. Open risks
 
@@ -376,7 +344,7 @@ for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all
 - **Non-conventional test suffix:** `plugins/shipwright/commands/jq-arg-newline-fix.behavior.test.ts` (JNL-1.1) is scanned by `bun test` but its `*.behavior.test.ts` suffix is not in the documented convention; rename to `*.unit.test.ts` or extend `naming.md`. Too small to mint a task; fold into the next touching PR.
 - **`scripts/audit-extraction.ts` likely vestigial** after the extraction cleanup (its CLI tests need `gitleaks`); needs a human keep/delete call.
 - **Resolved (second pass 2026-10-09) -- Phase 1 inventory lag.** `test-inventory.md` was re-run at `54018b659` and now covers the account and prompt-audit families. Remaining human call: whether the cron should gate Phase 1 on commits-since-refresh as well as age (the 24h gate let it lag by 211 commits).
-- **New this cycle — the isolation sweep's regex had a spelling blind spot, now closed.** The
+- **The isolation sweep's regex had a spelling blind spot, now closed.** The
   prior sweeps grepped `global.fetch =` / `global.console =` and so missed
   `globalThis.fetch =` for ~3 months (the one hit, `check-helpers.unit.test.ts`, dates from
   2026-06-24). `test-migration.md` now sweeps with `global(This)?\.(fetch|console)\s*=`;
@@ -386,11 +354,11 @@ for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all
   a Phase 3 re-run noticing. A human call; not minted as a task.
 - **The isolation-contract audit's singleton-mutation pattern set still has a documented blind
   spot.** The one known instance of this leak class (T-084, `agent-slack-membership-ref.unit.test.ts`)
-  was fixed back in the 2026-08-23 cycle via a manual diff read, not an automated sweep — the
+  was fixed (2026-08-23) via a manual diff read, not an automated sweep — the
   pattern set still can't catch a recurrence of this leak class on its own. This window added
   three more singleton-ref-shaped exports (`allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
   `cleanup-merged-worktrees-ref.ts`); each was checked by hand and found safe (every test builds
-  a fresh ref via its `createXRef()` factory). Recommend a future cycle add a signal scanning
+  a fresh ref via its `createXRef()` factory). Recommend a future Phase 3 run add a signal scanning
   for direct `.set(`/`.reset(`/mutation calls on this repo's known singleton-ref exports
   (`agentReposRef`, `reviewAuthorAllowlistRef`, `agentSlackMembershipRef`, `loopJobsRef`,
   `patchAuthorAllowlistRef`, `agentTrialExpiryRef`, `allowSelfReviewRef`,
@@ -401,23 +369,23 @@ for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all
   still needs a taxonomy decision.** Not a coverage gap — confirmed wired into CI and
   passing — but it doesn't fit any of the five CLAUDE.md-declared suffixes or the unofficial
   sixth "shell" layer. `test-system.md` deliberately declines to formalize a seventh layer on
-  a single instance; revisit if a second such file appears. `admin/src/prisma-tx.ts` (new
-  this cycle, type-only, zero runtime code) was evaluated against this same open question and
+  a single instance; revisit if a second such file appears. `admin/src/prisma-tx.ts`
+  (type-only, zero runtime code) was evaluated against this same open question and
   classified as a *different* case (excluded for having no runtime behavior at all, not a
   compile-time assertion pattern) — see `test-inventory.md`'s Ambiguous items for the
   reasoning; not merged into this open risk.
 - **The bash "shell" layer still needs a formal documentation decision.**
   `.github/workflows/lib/chart-tag-utils.sh` / `chart-drift-check.sh` and their `test-*.sh`
   siblings are genuinely tested code units that fall entirely outside the `bun test` runner
-  and the five-suffix convention declared in root `CLAUDE.md`. Carried forward unchanged
-  across several cycles (first flagged 2026-07-31). Not urgent; not
+  and the five-suffix convention declared in root `CLAUDE.md`. First flagged
+  2026-07-31. Not urgent; not
   blocking anything above.
 - **Recorded-fixture coverage breadth** (remaining `Http*Client` modules that could extend
   the `Recorded*Client` pattern) remains a Phase 2 design-level backlog item, not a
-  migration-bucket verdict on any existing file. No task emitted this cycle since Phase 3
+  migration-bucket verdict on any existing file. No task emitted since Phase 3
   found no test currently missing coverage because of it.
 - **`agent/src/runtime/piper-voice.ts` reclassification watch item** (unit today, integration once
-  Piper synthesis lands) — still not landed as of this cycle; flagged so a future Phase 3
+  Piper synthesis lands) — not yet landed; flagged so a future Phase 3
   doesn't silently miss the transition.
 - **`admin/src/coding/session-scope.ts`'s visibility predicate remains not yet wired into most
   Session routes.** Documented, intentional interim state per
@@ -426,7 +394,7 @@ for the next cycle that mints a task is **T-089** (`T-086`, `T-087`, `T-088` all
   doesn't mint tasks for application logic, only test coverage) — carried forward so a human
   continues tracking the wiring-completion timeline.
 - **Recorded-fixture maintenance loop remains deferred** (`repo-config/SKILL.md` §5) —
-  correctly not scheduled this cycle; sequence after fixture-authoring work matures.
+  correctly not scheduled; sequence after fixture-authoring work matures.
 
 ---
 
@@ -436,6 +404,6 @@ This document is intended for execution by:
 - An engineer working through the task list manually, OR
 - `shipwright /dev-task` consuming the task list as a queue, OR
 - `/shipwright:test-fix` (Phase 5), which queues every row in the Task list section above as
-  a task-store task — this cycle, that means **zero tasks to queue** (task list empty). This refresh
+  a task-store task — with the task list empty, that means **zero tasks to queue**. This refresh
   run was invoked without `--publish`, so Phase 5 is a `--dry-run` preview — nothing is
   written to the task store until a `--publish` run (or a manual `/shipwright:test-fix`).

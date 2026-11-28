@@ -358,7 +358,7 @@ a guideline.
   `admin/e2e/*.e2e.ts` so every admin E2E spec doesn't re-implement login.
 - **Content-layer assertion helper** — a shared markdown-frontmatter/section-presence assertion
   utility for `*.content.test.ts`, given ~85+ command/skill/agent markdown files to check.
-- **Process-tree spawn/assert harness** (new this cycle, backing `agent/src/runtime/process-tree-kill.ts`) —
+- **Process-tree spawn/assert harness** (backing `agent/src/runtime/process-tree-kill.ts`) —
   a reusable "spawn a small tree of real child/grandchild processes, then assert none are still
   alive after `killTree()`" helper (poll `process.kill(pid, 0)` for ESRCH rather than a fixed
   sleep), plus a `resetCgroupSupportCache()`-aware setup/teardown pair so cgroup-path tests don't

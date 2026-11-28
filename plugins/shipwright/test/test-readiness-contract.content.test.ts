@@ -171,8 +171,31 @@ describe("docs/test-readiness artifacts — no refresh logs or count lines", () 
       expect(text).not.toMatch(/preserved for continuity/);
       expect(text).not.toMatch(/^> \*\*\w+ pass \(/m);
       expect(text).not.toMatch(/\d+ rows? added, \d+ removed/);
-      expect(text).not.toMatch(/\*\*This cycle \(20\d\d-/);
-      expect(text).not.toMatch(/This cycle's /);
+    });
+  }
+});
+
+describe("docs/test-readiness artifacts — no cycle-relative narrative", () => {
+  // Matched case-insensitively and anywhere in a line, not just in bold
+  // headers. Bare "cycle" stays legal (e.g. "the shipwright-loop dispatch
+  // cycle"); only run-relative framing ("this cycle", "prior-cycle",
+  // "2026-10-02 cycle", "every prior cycle") is banned, since the next
+  // /test-readiness run would otherwise treat it as content to preserve.
+  const files = [
+    "test-inventory.md",
+    "test-system.md",
+    "test-migration.md",
+    "test-readiness-plan.md",
+    "naming.md",
+  ];
+  for (const f of files) {
+    it(`${f} carries no "this/prior/new this cycle" narrative`, () => {
+      const text = doc(f);
+      expect(text).not.toMatch(
+        /\b(this|prior|previous|last|earlier|next|future|every|several|single)[- ]cycles?\b/i,
+      );
+      expect(text).not.toMatch(/\bnew this cycle\b/i);
+      expect(text).not.toMatch(/\b20\d\d-\d\d-\d\d cycle\b/i);
     });
   }
 });
