@@ -1374,7 +1374,7 @@ export function createTasksRoutes(
       body.assignee = agentId;
     }
     const updated = await taskService.update(
-      c.req.param("id"),
+      task.id,
       body as Prisma.TaskUpdateInput,
     );
     return c.json(updated, 200);
@@ -1385,14 +1385,14 @@ export function createTasksRoutes(
   app.openapi(deleteRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const task = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    await taskService.remove(c.req.param("id"));
+    await taskService.remove(task.id);
     return c.body(null, 204);
   });
 
@@ -1401,7 +1401,7 @@ export function createTasksRoutes(
   app.openapi(claimRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1420,7 +1420,7 @@ export function createTasksRoutes(
       }
       claimedBy = body.claimedBy;
     }
-    const task = await taskService.claim(c.req.param("id"), claimedBy);
+    const task = await taskService.claim(owned.id, claimedBy);
     return c.json(task, 200);
   });
 
@@ -1429,14 +1429,14 @@ export function createTasksRoutes(
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.heartbeat(c.req.param("id"));
+    const task = await taskService.heartbeat(owned.id);
     return c.json(task, 200);
   });
 
@@ -1445,14 +1445,14 @@ export function createTasksRoutes(
   app.openapi(completeRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.complete(c.req.param("id"));
+    const task = await taskService.complete(owned.id);
     return c.json(task, 200);
   });
 
@@ -1461,7 +1461,7 @@ export function createTasksRoutes(
   app.openapi(failRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1470,7 +1470,7 @@ export function createTasksRoutes(
     );
     const body = await readJson(c);
     const reason = typeof body.reason === "string" ? body.reason : undefined;
-    const task = await taskService.fail(c.req.param("id"), reason);
+    const task = await taskService.fail(owned.id, reason);
     return c.json(task, 200);
   });
 
@@ -1479,14 +1479,14 @@ export function createTasksRoutes(
   app.openapi(releaseRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.release(c.req.param("id"));
+    const task = await taskService.release(owned.id);
     return c.json(task, 200);
   });
 
@@ -1495,7 +1495,7 @@ export function createTasksRoutes(
   app.openapi(skipRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1507,7 +1507,7 @@ export function createTasksRoutes(
     // concrete string, never undefined.
     const reason =
       typeof body.reason === "string" ? body.reason : "unspecified";
-    const task = await taskService.recordSkip(c.req.param("id"), reason);
+    const task = await taskService.recordSkip(owned.id, reason);
     return c.json(task, 200);
   });
 
@@ -1516,14 +1516,14 @@ export function createTasksRoutes(
   app.openapi(skipResetRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.resetSkip(c.req.param("id"));
+    const task = await taskService.resetSkip(owned.id);
     return c.json(task, 200);
   });
 
@@ -1532,7 +1532,7 @@ export function createTasksRoutes(
   app.openapi(unblockRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1559,7 +1559,7 @@ export function createTasksRoutes(
       }
       to = result.data.to;
     }
-    const task = await taskService.unblock(c.req.param("id"), { to });
+    const task = await taskService.unblock(owned.id, { to });
     return c.json(task, 200);
   });
 
@@ -1568,7 +1568,7 @@ export function createTasksRoutes(
   app.openapi(eventsRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1583,7 +1583,7 @@ export function createTasksRoutes(
         ? Number.parseInt(limitRaw, 10) || undefined
         : undefined;
 
-    const result = await taskService.getEvents(c.req.param("id"), {
+    const result = await taskService.getEvents(owned.id, {
       limit,
       cursor,
     });

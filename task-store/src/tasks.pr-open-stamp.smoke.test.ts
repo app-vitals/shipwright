@@ -118,6 +118,14 @@ function makeInMemoryPrisma() {
       async findUnique({ where }: { where: { id: string } }) {
         return tasks.get(where.id) ?? null;
       },
+      // STI-1.3: TaskService.get() resolves ids case-insensitively via findFirst.
+      async findFirst({ where }: { where: { id: { equals: string } } }) {
+        const wanted = where.id.equals.toLowerCase();
+        for (const [id, row] of tasks) {
+          if (id.toLowerCase() === wanted) return row;
+        }
+        return null;
+      },
       async update({
         where,
         data,

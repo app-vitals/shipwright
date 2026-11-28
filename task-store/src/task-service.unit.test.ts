@@ -483,6 +483,7 @@ describe("TaskService.bulk (unit)", () => {
     const created: string[] = [];
     const fakePrisma = {
       task: {
+        findFirst: async () => null,
         create: async ({
           data,
         }: {
@@ -538,6 +539,7 @@ describe("TaskService.bulk (unit)", () => {
     const optionsSeen: unknown[] = [];
     const prisma = {
       task: {
+        findFirst: async () => null,
         create: async ({ data }: { data: Record<string, unknown> }) => ({
           ...data,
           session: null,
@@ -636,6 +638,7 @@ describe("TaskService.bulk (unit)", () => {
     const txCreated: string[] = [];
     const tx = {
       task: {
+        findFirst: async () => null,
         create: async ({ data }: { data: Record<string, unknown> }) => {
           txCreated.push(data.id as string);
           return { ...data, session: null };
@@ -667,6 +670,7 @@ describe("TaskService.bulk (unit)", () => {
     const { prisma } = makeBulkTimeoutRecordingDouble();
     const tx = {
       task: {
+        findFirst: async () => null,
         create: async () => {
           throw { code: "P2002" };
         },
@@ -691,7 +695,9 @@ describe("TaskService.bulk (unit)", () => {
           title: "t",
           status: "pending",
         })) as never,
-        { task: { create: async () => ({}) } } as never,
+        {
+          task: { findFirst: async () => null, create: async () => ({}) },
+        } as never,
       ),
     ).rejects.toBeInstanceOf(BadRequestError);
   });
