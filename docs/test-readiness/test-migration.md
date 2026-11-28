@@ -27,7 +27,7 @@ suite (`whisper/test_ci_run.py`) outside the Bun runner.
 **Headline finding:** the suite is healthy and correctly layered. Rebuild and Delete are empty.
 The one test-level finding is a new `globalThis.fetch` wrapper in an admin smoke test (save and
 restore scoped, so it does not leak), which breaks the repo's "no `global.*` overrides" rule and
-is a small Promote item. The `createTaskStoreClient` fetch-seam item from the previous cycle is
+is a small Promote item. The previously reported `createTaskStoreClient` fetch-seam item is
 resolved: `plugins/shipwright/scripts/check-helpers.ts` now takes an injected `fetchFn`.
 
 ## Isolation contract audit
