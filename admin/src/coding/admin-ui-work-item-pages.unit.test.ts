@@ -6873,3 +6873,94 @@ describe("renderTasksPage board per-column pages (TPG-2.1)", () => {
     expect(col).toContain("Load more");
   });
 });
+
+// ─── STI-2.2: long task ids truncate with tooltip ────────────────────────────
+
+describe("long task ids (STI-2.2)", () => {
+  const LONG_ID = `session-slug-${"x".repeat(57)}`; // 70 chars
+  const longTask: TaskItem = { ...TASK_ITEM, id: LONG_ID };
+  const pagination = { count: 0, total: 1, limit: 50, state: { prev: [] } };
+
+  function expectTruncated(html: string) {
+    const m = html.match(
+      new RegExp(`<(a|span)[^>]*title="${LONG_ID}"[^>]*>${LONG_ID}</\\1>`),
+    );
+    expect(m).not.toBeNull();
+    expect(m?.[0]).toContain("text-overflow:ellipsis");
+    expect(m?.[0]).toContain("overflow:hidden");
+    expect(m?.[0]).toContain("white-space:nowrap");
+    expect(m?.[0]).toContain("max-width:min(24ch,45vw)");
+  }
+
+  test("task list id cell truncates with full id in tooltip", () => {
+    expect(LONG_ID).toHaveLength(70);
+    const html = renderTasksPage(
+      [longTask],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+    );
+    expectTruncated(html);
+  });
+
+  test("task list id cell truncates when readOnly", () => {
+    const html = renderTasksPage(
+      [longTask],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      { readOnly: true } as Parameters<typeof renderTasksPage>[6],
+      undefined,
+    );
+    expectTruncated(html);
+  });
+
+  test("board card id truncates with full id in tooltip", () => {
+    const html = renderTasksPage(
+      [longTask],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    expectTruncated(html);
+  });
+
+  test("PR list task column truncates linked long ids", () => {
+    const pr: PrListItem = {
+      id: "pr-long",
+      repo: "org/repo",
+      prNumber: 9,
+      staged: false,
+      state: "open",
+      reviewState: "pending",
+      patchCycles: 0,
+      reviewCycles: 0,
+    };
+    const html = renderPrsPage(
+      [pr],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      "America/Los_Angeles",
+      undefined,
+      { "pr-long": [longTask] },
+    );
+    expectTruncated(html);
+  });
+});

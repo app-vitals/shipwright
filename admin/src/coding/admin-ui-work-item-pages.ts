@@ -38,9 +38,17 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links. */
+/**
+ * Inline style that keeps a (possibly ~70 char) task id on one line, ellipsised
+ * past ~24ch. Pair with `title="{full id}"` so hover shows the full id; the
+ * full text stays in the DOM so selection/copy still yields the whole id.
+ */
+export const ID_TRUNCATE_STYLE =
+  "display:inline-block;max-width:min(24ch,45vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom";
+
+/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links; the id is truncated with a tooltip. */
 export function taskLink(taskId: string): string {
-  return `<a href="/admin/tasks/${escapeHtml(taskId)}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(taskId)}</a>`;
+  return `<a href="/admin/tasks/${escapeHtml(taskId)}" class="id-trunc" title="${escapeHtml(taskId)}" style="color:var(--vos-brand, #6366f1);text-decoration:none;${ID_TRUNCATE_STYLE}">${escapeHtml(taskId)}</a>`;
 }
 
 /**
@@ -555,7 +563,7 @@ export function renderTasksPage(
               ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
               : "";
             return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
-    <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:var(--vos-brand, #6366f1);text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
+    <td class="mono" style="font-size:11px">${readOnly ? `<span class="id-trunc" title="${escapeHtml(t.id)}" style="${ID_TRUNCATE_STYLE}">${escapeHtml(t.id)}</span>` : `<a href="${detailHref}" class="id-trunc" style="color:var(--vos-brand, #6366f1);text-decoration:none;${ID_TRUNCATE_STYLE}" title="${escapeHtml(t.id)}">${escapeHtml(t.id)}</a>`}</td>
     <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}${kindBadge}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
@@ -960,7 +968,7 @@ function renderTasksBoard(args: {
           <div style="font-size:13px;font-weight:600">${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}</div>
           <span class="badge ${statusBadgeClass(t.status)}" style="font-size:10px;white-space:nowrap">${escapeHtml(t.status)}</span>
         </div>
-        <div class="mono" style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:2px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:var(--vos-brand, #6366f1);text-decoration:none">${escapeHtml(t.id)}</a>`}</div>
+        <div class="mono" style="font-size:11px;color:var(--vos-text-faint, #9ca3af);margin-top:2px">${readOnly ? `<span class="id-trunc" title="${escapeHtml(t.id)}" style="${ID_TRUNCATE_STYLE}">${escapeHtml(t.id)}</span>` : `<a href="${detailHref}" class="id-trunc" style="color:var(--vos-brand, #6366f1);text-decoration:none;${ID_TRUNCATE_STYLE}" title="${escapeHtml(t.id)}">${escapeHtml(t.id)}</a>`}</div>
         <div style="font-size:11px;color:var(--vos-text-muted, #6b7280);margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           ${t.repo ? `<span class="mono">${escapeHtml(t.repo)}</span>` : ""}
           ${agentCell}
