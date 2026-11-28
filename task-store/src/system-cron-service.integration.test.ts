@@ -522,13 +522,14 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     await prisma.$disconnect();
   });
 
-  it("seeds all six definitions disabled in the default account", async () => {
+  it("seeds all seven definitions disabled in the default account", async () => {
     await service.seedDefaults();
     const defs = await service.list({ accountId: null });
     expect(defs.map((d) => d.id).sort()).toEqual([
       "consolidation-patrol",
       "docs-freshness",
       "entropy-patrol",
+      "environments",
       "error-patrol",
       "security-patrol",
       "test-readiness",
@@ -552,6 +553,11 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     expect(schedules["security-patrol"]).toBe("0 6 * * 1");
     expect(schedules["consolidation-patrol"]).toBe("0 5 * * 1");
     for (const d of defs) expect(d.repoScope).toBe("all");
+    expect(schedules.environments).toBe("0 3 * * 1");
+    expect(byId.environments.enabled).toBe(false);
+    expect(byId.environments.descriptionTemplate).toBe(
+      "/shipwright:environments-scan --repo {repo}\n/shipwright:environments-fix --repo {repo}",
+    );
   });
 
   it("firing security-patrol for 2 repos puts --repo on every command", async () => {

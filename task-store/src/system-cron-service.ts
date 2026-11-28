@@ -98,6 +98,16 @@ export const DEFAULT_SYSTEM_CRONS: readonly CreateSystemCronInput[] = [
       "/shipwright:entropy-scan --repo {repo}\n/shipwright:entropy-fix --repo {repo}",
   },
   {
+    id: "environments",
+    name: "Environments patrol",
+    schedule: "0 3 * * 1",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Environments patrol: {repo}",
+    descriptionTemplate:
+      "/shipwright:environments-scan --repo {repo}\n/shipwright:environments-fix --repo {repo}",
+  },
+  {
     id: "security-patrol",
     name: "Security patrol",
     schedule: "0 6 * * 1",
