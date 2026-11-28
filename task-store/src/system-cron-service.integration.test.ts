@@ -609,7 +609,7 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     );
     expect(def?.descriptionTemplate).toBe("custom {repo}");
     expect(def?.enabled).toBe(true);
-    expect(await service.list({ accountId: null })).toHaveLength(6);
+    expect(await service.list({ accountId: null })).toHaveLength(7);
   });
 
   it("leaves an edited patrol definition intact on re-seed", async () => {
