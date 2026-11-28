@@ -75,10 +75,33 @@ describe("consolidation.md — ledger format", () => {
     });
   }
 
-  it("mentions state/consolidation-ledger.json", () => {
-    expect(readConsolidationDoc()).toContain(
-      "state/consolidation-ledger.json",
-    );
+  it("states the ledger lives in the task store as PatrolFinding rows", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).toContain("PatrolFinding");
+    expect(doc).toContain("task store");
+  });
+
+  it("no longer describes the agent-local ledger", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).not.toContain("agent workspace state");
+    expect(doc).not.toContain("git-ignored");
+  });
+
+  it("documents docs/patrols/consolidation.md as the readable file", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).toContain("docs/patrols/consolidation.md");
+    expect(doc).toContain("check-patrol-docs.ts");
+    expect(doc).toContain("150");
+  });
+
+  it("documents the one-time legacy import via the cron-run recorder", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).toContain("cron-run-recorder.ts");
+    expect(doc).toContain("--legacy-shape consolidation-ledger");
+  });
+
+  it("documents the required --repo flag", () => {
+    expect(readConsolidationDoc()).toContain("--repo");
   });
 
   it("explains the Rule of Three promotion criteria", () => {
@@ -124,20 +147,28 @@ describe("consolidation.md — decisions registry", () => {
 // ── Cron documented ──────────────────────────────────────────────────────────
 
 describe("consolidation.md — cron", () => {
-  it("mentions consolidation-patrol-maintenance cron", () => {
-    expect(readConsolidationDoc()).toContain("consolidation-patrol-maintenance");
+  it("documents the consolidation-patrol system cron, one task per repo", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).toContain("`consolidation-patrol`");
+    expect(doc.toLowerCase()).toContain("system cron");
+    expect(doc.toLowerCase()).toContain("one task per repo");
   });
 
   it("documents the cron schedule: 0 5 * * 1", () => {
     expect(readConsolidationDoc()).toContain("0 5 * * 1");
   });
 
-  it("notes the cron is disabled by default", () => {
-    expect(readConsolidationDoc().toLowerCase()).toContain("disabled");
+  it("notes the cron is seeded disabled and how to enable it", () => {
+    const lower = readConsolidationDoc().toLowerCase();
+    expect(lower).toContain("disabled");
+    expect(lower).toMatch(/(enable|toggle|opt-in)/);
   });
 
-  it("explains how to enable the cron", () => {
-    expect(readConsolidationDoc().toLowerCase()).toMatch(/(enable|toggle|opt-in)/);
+  it("no longer describes the agent-level cron or its preCheck", () => {
+    const doc = readConsolidationDoc();
+    expect(doc).not.toContain("consolidation-patrol-maintenance");
+    expect(doc).not.toContain("check-consolidation-patrol");
+    expect(doc).not.toContain("/admin/agents/{id}/crons");
   });
 });
 
@@ -177,5 +208,134 @@ describe("root CLAUDE.md", () => {
 
     expect(consolidationLine).toBeDefined();
     expect(consolidationLine).toContain("—");
+  });
+});
+
+// ── Skills: per-repo, store-backed ledger (PCR-3.2) ──────────────────────────
+
+const skillsDir = join(repoRoot, "plugins", "shipwright", "skills");
+const scanSkill = (): string =>
+  readFileSync(join(skillsDir, "consolidation-scan", "SKILL.md"), "utf8");
+const fixSkill = (): string =>
+  readFileSync(join(skillsDir, "consolidation-fix", "SKILL.md"), "utf8");
+const scanCommand = (): string =>
+  readFileSync(
+    join(repoRoot, "plugins", "shipwright", "commands", "consolidation-scan.md"),
+    "utf8",
+  );
+const fixCommand = (): string =>
+  readFileSync(
+    join(repoRoot, "plugins", "shipwright", "commands", "consolidation-fix.md"),
+    "utf8",
+  );
+const LEGACY = "state/consolidation-ledger.json";
+
+describe("consolidation-scan — per-repo, store-backed (PCR-3.2)", () => {
+  it("requires --repo and prints a usage error when it is missing", () => {
+    const s = scanSkill();
+    expect(s).toContain("--repo org/repo");
+    expect(s).toMatch(/Usage: \/shipwright:consolidation-scan --repo org\/repo/);
+    expect(s.toLowerCase()).toContain("--repo is required");
+    expect(scanCommand()).toContain("--repo");
+  });
+
+  it("reads prior findings from the store and upserts after the scan", () => {
+    const s = scanSkill();
+    expect(s).toContain("PatrolFinding");
+    expect(s).toContain("cron-run-recorder.ts");
+    expect(s).toContain("prior");
+    expect(s).toContain("record");
+    expect(s).toContain("consolidation-patrol");
+  });
+
+  it("only mentions the legacy ledger path in the one-time import step", () => {
+    const s = scanSkill();
+    expect(s).toContain("--legacy-shape consolidation-ledger");
+    // every mention of the legacy path sits inside the import step section
+    const importStart = s.indexOf("## Step 2");
+    const importEnd = s.indexOf("## Step 3");
+    expect(importStart).toBeGreaterThan(-1);
+    let idx = s.indexOf(LEGACY);
+    while (idx !== -1) {
+      expect(idx).toBeGreaterThan(importStart);
+      expect(idx).toBeLessThan(importEnd);
+      idx = s.indexOf(LEGACY, idx + 1);
+    }
+  });
+
+  it("keeps the stabilization threshold unchanged", () => {
+    const s = scanSkill();
+    expect(s).toContain("occurrence_count >= 3");
+    expect(s).toContain("consecutive_stable_runs >= 2");
+  });
+
+  it("writes docs/patrols/consolidation.md, validated, PR only on material change", () => {
+    const s = scanSkill();
+    expect(s).toContain("docs/patrols/consolidation.md");
+    expect(s).toContain("check-patrol-docs.ts");
+    expect(s).toContain("materiallyChanged");
+    expect(s).toContain("150");
+    expect(s.toLowerCase()).toContain("open patterns");
+    expect(s).not.toContain("consolidation-report.md");
+  });
+
+  it("records exactly one run with metrics", () => {
+    const s = scanSkill();
+    expect(s.toLowerCase()).toContain("exactly one run");
+    expect(s).toContain("metrics");
+  });
+});
+
+describe("consolidation-fix — per-repo, three-way routing (PCR-3.2)", () => {
+  it("requires --repo and prints a usage error when it is missing", () => {
+    const s = fixSkill();
+    expect(s).toContain("--repo org/repo");
+    expect(s).toMatch(/Usage: \/shipwright:consolidation-fix --repo org\/repo/);
+    expect(s.toLowerCase()).toContain("--repo is required");
+    expect(fixCommand()).toContain("--repo");
+  });
+
+  it("reads ready_to_propose patterns from PatrolFinding, not the legacy ledger or a report file", () => {
+    const s = fixSkill();
+    expect(s).toContain("PatrolFinding");
+    expect(s).toContain("/patrol-findings");
+    expect(s).toContain("ready_to_propose");
+    expect(s).not.toContain(LEGACY);
+    expect(s).not.toContain("consolidation-report.md");
+  });
+
+  it("documents the three routes: auto, review, plan", () => {
+    const s = fixSkill();
+    expect(s).toContain("**auto**");
+    expect(s).toContain("**review**");
+    expect(s).toContain("**plan**");
+    expect(s).toContain("needs-review:");
+    expect(s).toContain('"kind": "prd"');
+    expect(s).toContain("docs/task-store.md");
+  });
+
+  it("maps multi-PR strangler-fig plans to the plan route and single-PR fixes to auto or review", () => {
+    const lower = fixSkill().toLowerCase();
+    expect(lower).toMatch(/several prs|multi-pr|multiple prs/);
+    expect(lower).toMatch(/single[- ]pr/);
+  });
+
+  it("emits hitl: true only on the plan route", () => {
+    const s = fixSkill();
+    const trues = s.match(/"hitl": true/g) ?? [];
+    expect(trues.length).toBe(1);
+    expect(s).toContain('"hitl": false');
+    expect(s).not.toMatch(/"hitl": <true \| false/);
+    // the sole hitl: true sits in the same task body as kind prd
+    const at = s.indexOf('"hitl": true');
+    expect(s.slice(Math.max(0, at - 400), at + 100)).toContain('"kind": "prd"');
+  });
+
+  it("counts auto, review and plan separately in run metrics and records one run", () => {
+    const s = fixSkill();
+    expect(s).toContain("cron-run-recorder.ts");
+    expect(s).toMatch(/auto.*review.*plan/s);
+    expect(s).toContain("originKind");
+    expect(s).toContain('"cron"');
   });
 });

@@ -1,81 +1,33 @@
 # Consolidation Ledger Schema
 
-`consolidation-scan` persists candidate patterns to `state/consolidation-ledger.json`
-between runs — agent workspace state, git-ignored, the same tier as
-`state/entropy-patrol-last-run.json` and `state/error-patrol-ledger.json`. Unlike
-`entropy-scan`'s append-only `.entropy-patrol/quality-log.jsonl`, this ledger is a
-**current-state snapshot**: fully overwritten each run (same convention as
-`state/error-patrol-ledger.json`), except each entry's own `history` array, which is
-append-only within that entry.
+`consolidation-scan` persists candidate patterns in the task store as `PatrolFinding`
+rows keyed by `(cronId = consolidation-patrol, repo, fingerprint)`. The store owns
+`status`, `firstSeen`, `lastSeen`, `occurrenceCount` and the append-only `history`
+(one entry per upsert); the scan owns the `detail` object described below. There is
+no agent-local ledger file: the retired legacy ledger is only read once, through
+`cron-run-recorder.ts ... --legacy-shape consolidation-ledger`, to seed a repo's
+first run (its candidates are filtered to that repo).
 
----
-
-## Top-level shape
-
-```json
-{
-  "lastRun": "2026-07-18T09:00:00.000Z",
-  "candidates": {
-    "<fingerprint>": { }
-  }
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `lastRun` | ISO-8601 string \| `null` | UTC timestamp of the most recent run. `null` if the ledger has never been written (fresh/empty). |
-| `candidates` | object | Map of fingerprint → candidate entry (see below). One entry per distinct duplication pattern ever observed, across all runs. |
-
----
-
-## Candidate entry shape
+## Finding `detail`
 
 ```json
 {
   "description": "Retry a flaky network call with exponential backoff",
-  "files": [
-    "src/services/payments/retry.ts",
-    "src/services/notifications/sendWithRetry.ts",
-    "src/lib/http/fetchWithBackoff.ts"
-  ],
+  "files": ["src/services/payments/retry.ts", "src/lib/http/fetchWithBackoff.ts"],
+  "notes": "Both compute the same exponential-with-jitter delay before retrying a failed call",
   "occurrence_count": 3,
   "consecutive_stable_runs": 2,
-  "status": "ready_to_propose",
-  "firstSeen": "2026-06-27T09:00:00.000Z",
-  "lastSeen": "2026-07-18T09:00:00.000Z",
-  "history": [
-    {
-      "run": "2026-06-27T09:00:00.000Z",
-      "description": "Retry a flaky network call with exponential backoff",
-      "notes": "Both implement a shared exponential-backoff-with-jitter delay helper before retrying",
-      "files": ["src/services/payments/retry.ts", "src/lib/http/fetchWithBackoff.ts"]
-    },
-    {
-      "run": "2026-07-04T09:00:00.000Z",
-      "description": "Retry a flaky network call with exponential backoff",
-      "notes": "All three compute the same exponential-with-jitter delay before retrying a failed call",
-      "files": ["src/services/payments/retry.ts", "src/services/notifications/sendWithRetry.ts", "src/lib/http/fetchWithBackoff.ts"]
-    },
-    {
-      "run": "2026-07-18T09:00:00.000Z",
-      "description": "Retry a flaky network call with exponential backoff",
-      "notes": "All three compute the same exponential-with-jitter delay before retrying a failed call",
-      "files": ["src/services/payments/retry.ts", "src/services/notifications/sendWithRetry.ts", "src/lib/http/fetchWithBackoff.ts"]
-    }
-  ]
+  "proposed_shape": "One shared retryWithBackoff(fn, opts) in src/lib/http"
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `description` | string | Most recently recorded pattern description (human-readable, generic enough to describe the responsibility even as new occurrences appear). |
-| `files` | string[] | Most recently observed involved files/line ranges. `history` retains prior observations; this field is the current snapshot used for report display. |
-| `occurrence_count` | number | Total number of runs in which this fingerprint was observed (matched or newly created). Incremented on every fingerprint match — never decremented. |
-| `consecutive_stable_runs` | number | Number of consecutive runs (most recent streak) in which the observed shape was judged consistent with the prior recorded shape. Reset to `0` on any judged divergence. |
-| `status` | `"tracking"` \| `"ready_to_propose"` | `"tracking"` until promotion criteria are met (see below); `"ready_to_propose"` once promoted. Can move back to `"tracking"` if a suppression is added after promotion. |
-| `firstSeen` | ISO-8601 string | Timestamp of the run that first created this entry. |
-| `lastSeen` | ISO-8601 string | Timestamp of the most recent run that observed this fingerprint. |
-| `history` | array | Append-only trail of every observation of this fingerprint: `{ run, description, notes, files }` per run. Never truncated or rewritten — this is the evidence trail for stability judgments in future runs. |
+`occurrence_count` is the effective count (an imported legacy entry carries its count
+here); the store's own `occurrenceCount` starts at 1 for an imported row, so use
+`max(occurrenceCount, detail.occurrence_count)` as the prior count.
+
+## Legacy shape (read by the one-time import only)
+
+The retired local file was `{ "lastRun": ISO, "candidates": { "<fingerprint>": { description, files, occurrence_count, consecutive_stable_runs, status, firstSeen, lastSeen, history[] } } }`. The import maps each candidate to a finding with the entry as its `detail`.
 
 ---
 
@@ -120,8 +72,8 @@ decisions-registry state.
 
 ## Resilience
 
-- A missing ledger file is a normal first run — treat as `{"lastRun": null, "candidates": {}}`.
-- Entries not observed in a given run's survey are preserved unchanged — a single
-  miss is not evidence of resolution.
-- `--dry-run` never writes this file. `--summary` still updates it (only the report
-  file is skipped under `--summary`).
+- No prior findings and no prior run is a normal first run.
+- Findings not observed in a given run's survey are left unchanged in the store — a
+  single miss is not evidence of resolution.
+- `--dry-run` writes nothing. `--summary` still upserts findings and records the run
+  (only the docs file is skipped).

@@ -1,16 +1,17 @@
 ---
 name: consolidation-fix
-description: Read consolidation-report.md and queue ready_to_propose duplication patterns as task-store tasks, one task per pattern, each carrying a strangler-fig (build -> coexist -> eliminate) execution plan and a per-finding HITL classification. Requires consolidation-scan to have run first.
+description: Read a repo's ready_to_propose consolidation patterns from the task store (PatrolFinding) and queue them as routed task-store tasks (auto, review or plan), one task per pattern, each carrying a strangler-fig (build -> coexist -> eliminate) execution plan. Requires --repo org/repo and consolidation-scan to have run first.
 ---
 
 # Consolidation Fix
 
-Read the latest `consolidation-report.md` and queue focused, human-reviewable tasks
-for patterns that `consolidation-scan` promoted to `ready_to_propose`. Each task
-proposes a canonical shape for one stabilized duplication pattern plus a
-strangler-fig execution plan broken into small, separate PR-sized steps — never a
+Read one repo's `ready_to_propose` patterns from the task store's `PatrolFinding`
+ledger (written by `consolidation-scan`) and queue focused, human-reviewable tasks for
+them. Each task proposes a canonical shape for one stabilized duplication pattern plus
+a strangler-fig execution plan broken into small, separate PR-sized steps — never a
 single sweeping diff. Findings are never turned into direct PRs; they always become
-task-store tasks that `dev-task` (or a human, for HITL tasks) picks up later.
+task-store tasks. Each is routed one of three ways (auto, review or plan — Step 7),
+following the routing contract in `docs/task-store.md` ("Finding routing").
 
 This is the `consolidation-scan` counterpart that mirrors `entropy-fix`'s
 relationship to `entropy-scan` — same dedup mechanism, same task-store fields, same
@@ -19,7 +20,8 @@ decoupled: this skill never promotes a consolidation finding into an entropy-sca
 rule, and it never asks entropy-fix to do anything. That graduation/promotion
 mechanism is explicitly out of scope.
 
-**Prerequisites:** Run `/consolidation-scan` first to produce `consolidation-report.md`.
+**Prerequisites:** Run `/consolidation-scan --repo org/repo` first so the repo has
+`ready_to_propose` findings in the store.
 
 > **Task store setup:** This skill pushes findings to the Shipwright task store. If
 > `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke
@@ -29,10 +31,21 @@ mechanism is explicitly out of scope.
 
 ## Setup: Parse Arguments
 
-Before starting, check for flags:
+`--repo org/repo` is **required**. If it is missing or not in `org/repo` form, print
+this usage error and stop without reading or writing anything:
+
+```
+--repo is required.
+Usage: /shipwright:consolidation-fix --repo org/repo [--dry-run] [--pattern fingerprint]
+```
+
+Derive `repo-slug` from it: the last path segment, lowercased — e.g.
+`app-vitals/shipwright` → `shipwright`. It is used in task ids (Step 8).
+
+Flags:
 
 - `--dry-run` — print what tasks would be queued without querying the task store for
-  dedup or writing any tasks
+  dedup or writing any tasks (the run is not recorded either)
 - `--pattern {fingerprint}` — queue only the candidate whose fingerprint matches
   (full or unambiguous prefix)
 
@@ -42,32 +55,34 @@ Before starting, check for flags:
 
 ---
 
-## Step 1: Verify consolidation-report.md Exists
+## Step 1: Load ready_to_propose Findings From the Store
 
-1. Look for `consolidation-report.md` in the project root.
-2. If it does not exist, print:
+1. Fetch the repo's promoted patterns from the `PatrolFinding` ledger. Follow
+   `nextCursor` until it is `null` — never proceed with a partial page:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/patrol-findings?cronId=consolidation-patrol&repo={url-encoded-repo}&status=ready_to_propose&limit=200" | jq .
    ```
-   No consolidation-report.md found. Run /consolidation-scan first to generate a report.
+2. If there are none, print:
    ```
-   Then stop.
-3. Read the report.
+   No ready_to_propose consolidation patterns for {repo}. Nothing to queue.
+   Run /consolidation-scan --repo {repo} again in future weeks to let more candidates stabilize.
+   ```
+   Record the run (Step 10) with `outcome: no_op` and stop.
 
 ---
 
 ## Step 2: Filter to `ready_to_propose` Entries Only
 
-1. Parse the report's `## Ready to Propose` section. Each entry there is, by
-   construction, already `status: ready_to_propose` — `consolidation-scan` never
-   writes a `tracking` entry to this file (see its Step 9/Constraints). Do not
-   re-derive or re-check `occurrence_count`/`consecutive_stable_runs` thresholds
-   here; the report's presence of an entry already means the gate was met.
-2. If `--pattern` was passed, filter to only the entry whose `**Fingerprint:**`
-   matches. If no entry matches, print: "No ready_to_propose entry with fingerprint
+1. Every finding returned by Step 1 is, by construction, already
+   `status: ready_to_propose` — `consolidation-scan` only sets that status once the
+   promotion gate is met, and `tracking` findings are never fetched. Do not
+   re-derive or re-check `occurrence_count`/`consecutive_stable_runs` thresholds here.
+2. If `--pattern` was passed, filter to only the finding whose `fingerprint`
+   matches. If none matches, print: "No ready_to_propose entry with fingerprint
    `{pattern}`. Nothing to queue." and stop. If the prefix matches more than one
-   entry — fingerprints are truncated hashes (per `consolidation-scan`'s Step 5.3),
-   so prefix collisions across two different entries in the same report are
-   possible — print all matching fingerprints and stop, asking the caller to
-   disambiguate:
+   finding — fingerprints are truncated hashes, so prefix collisions are possible —
+   print all matching fingerprints and stop, asking the caller to disambiguate:
    ```
    Ambiguous --pattern `{pattern}` matches {N} entries:
      {fingerprint-1} — {pattern description}
@@ -75,16 +90,9 @@ Before starting, check for flags:
      ...
    Re-run with a longer prefix to disambiguate.
    ```
-3. For each remaining entry, extract: fingerprint, pattern description, occurrence
-   list (`file:line — note`), proposed canonical shape, first/last seen, and
-   stability history.
-4. If the report has no entries under `## Ready to Propose` (i.e. it prints "No
-   candidates have stabilized enough to propose yet..."), print:
-   ```
-   No ready_to_propose candidates in consolidation-report.md. Nothing to queue.
-   Run /consolidation-scan again in future weeks to let more candidates stabilize.
-   ```
-   Then stop.
+3. For each remaining finding, extract from `detail` and the row: fingerprint,
+   `description`, `files` (occurrence list, `file:line — note`), `proposed_shape`,
+   `firstSeen`/`lastSeen`, and `history`.
 
 ---
 
@@ -92,9 +100,9 @@ Before starting, check for flags:
 
 Even though `consolidation-scan` already checks the decisions registry before
 promoting a candidate to `ready_to_propose` (its Step 7), the registry can change
-between when the report was generated and when this skill runs — a human may have
+between when the finding was promoted and when this skill runs — a human may have
 reviewed a prior `consolidation-fix` PR and added a new accepted-debt entry since.
-Never trust the report's promotion decision as still current; re-check live.
+Never trust the stored promotion decision as still current; re-check live.
 
 See `references/decisions-registry.md` for the shared decisions-registry pattern this
 mirrors.
@@ -127,7 +135,7 @@ mirrors.
    `references/pre-filing-verification.md` (relative to the plugin root) — before it
    proceeds any further. The registry check above only re-verifies suppression
    status; it says nothing about whether the occurrence list itself is still
-   accurate, since the report is a snapshot that may already be stale by the time
+   accurate, since the finding is a snapshot that may already be stale by the time
    this skill runs. Treat `references/pre-filing-verification.md` as canonical for
    how to apply the checklist. Per its four checks:
    - For each occurrence (`file:line`) in the candidate's occurrence list, verify
@@ -140,8 +148,8 @@ mirrors.
      Step 6 execution plan and Step 8 task JSON are built from the surviving
      occurrences only).
    - Route candidates whose occurrences can't be confirmed by a literal check to
-     HITL rather than assuming they're safe to drop (Checklist Item 3) — this feeds
-     into the `hitl` computation in Step 7.
+     review rather than assuming they're safe to drop (Checklist Item 3) — this feeds
+     into the route choice in Step 7 (review).
    - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's
      own Step 5 dedup check; no separate action is needed here beyond noting the
      overlap.
@@ -168,7 +176,7 @@ Would queue {N} tasks:
      Occurrences: {count} sites across {list of unique file paths}
      Canonical shape: {one-line summary of proposed canonical shape}
      Strangler-fig steps: {count} PR-sized steps (build -> coexist -> eliminate)
-     HITL: {true|false} (classification per Step 7)
+     Route: {auto|review|plan} (per Step 7)
 
   2. ...
 
@@ -186,17 +194,11 @@ Stop after printing.
 This mirrors `entropy-fix`'s dedup mechanism (its Step 6q.1) exactly — same
 queries, same filters, no new task-store schema or fields.
 
-First, detect the current repo from git: run `git remote get-url origin` and strip
-the `https://github.com/` (or `git@github.com:`, stripping the `.git` suffix) prefix
-to get the `org/repo` value — e.g. `app-vitals/shipwright`. This is the `repo` value
-used both to scope the dedup queries below and, unchanged, as the task JSON's `repo`
-field in Step 6 — compute it once here and reuse it there.
+The `repo` value is the `--repo` argument (e.g. `app-vitals/shipwright`), used both
+to scope the dedup queries below and, unchanged, as the task JSON's `repo` field in
+Step 8. `repo-slug` was derived in Setup.
 
-Derive `repo-slug` from it too: the last path segment, lowercased — e.g.
-`app-vitals/shipwright` → `shipwright`. This slug is used in task IDs throughout
-this skill (Step 6, Step 8) to keep IDs unique per repo.
-
-Run (URL-encode the detected repo, e.g. `app-vitals%2Fshipwright`). `GET /tasks`
+Run (URL-encode the repo, e.g. `app-vitals%2Fshipwright`). `GET /tasks`
 defaults to `limit=50` and truncates silently unless the caller raises it — pass an
 explicit high `limit=1000` on both queries:
 ```bash
@@ -233,7 +235,7 @@ For each `ready_to_propose` candidate: if its fingerprint (or slug) is in the
 
 No new task-store schema is introduced anywhere in this skill — every field used in
 Step 6's task JSON is a field the task store already supports for any other task
-(`id`, `title`, `source`, `repo`, `branch`, `layer`, `status`, `hitl`, `description`).
+(`id`, `title`, `source`, `repo`, `branch`, `layer`, `kind`, `status`, `hitl`, `description`).
 
 ---
 
@@ -242,8 +244,8 @@ Step 6's task JSON is a field the task store already supports for any other task
 For each candidate that survives Steps 3 and 5, draft the canonical-shape proposal
 and its execution plan before building the task JSON in Step 8.
 
-1. **Canonical-shape proposal.** Start from the report's "Proposed canonical shape"
-   paragraph for this entry (written by `consolidation-scan`) and firm it up into a
+1. **Canonical-shape proposal.** Start from the finding's `detail.proposed_shape`
+   (written by `consolidation-scan`) and firm it up into a
    concrete interface/implementation sketch: what the single shared implementation
    looks like, where it should live (an existing shared module/service if one
    already fits, or a clearly-named new one), and its call signature.
@@ -265,86 +267,108 @@ and its execution plan before building the task JSON in Step 8.
    - **Eliminate.** Once every occurrence has been migrated and validated, remove
      the old implementation(s) in a final small PR (a pure deletion — low risk since
      by that point nothing else references the old code). This step is covered by
-     the task's single `hitl` classification (Step 7) like every other step; it does
-     not get its own separate `hitl` value.
+     the task's single route (Step 7) like every other step; it does not get its own
+     separate route.
    - Cap each step's estimated diff size in the task description so the executor
      (human or `dev-task`) doesn't bundle multiple call-site migrations into one PR.
      A one-line rule of thumb: **one call site (or a small batch of near-identical
      ones) per PR**, not "migrate everything in one branch."
-3. Keep the full occurrence list from the report attached to the plan — each step
+3. Keep the full occurrence list from the finding attached to the plan — each step
    in the coexist phase should reference which specific occurrence(s) it covers, so
    a human reading the task later can tell which sites are done and which remain.
 
 ---
 
-## Step 7: Classify the `hitl` Field (Per-Finding Judgment)
+## Step 7: Route Each Finding (auto / review / plan)
 
-There is no numeric backstop beyond the heuristic below — no rigid file-count or
-line-count threshold alone forces a task to HITL, beyond the "~5 call sites"
-guidance stated explicitly here. This mirrors `entropy-fix`'s `per-finding`
-classification style for `duplicated_utility`/`architecture_layering` (its Step
-6q.4) — judge each candidate on its own facts, at runtime, using the same reading
-comparison approach `consolidation-scan` uses to compare shapes.
+Every finding is routed one of three ways, per the finding-routing contract in
+`docs/task-store.md` ("Finding routing"). There is no numeric backstop beyond the
+heuristic below — no rigid file-count or line-count threshold alone forces a route,
+beyond the "~5 call sites" guidance stated explicitly here. Judge each candidate on
+its own facts, at runtime, using the same reading-comparison approach
+`consolidation-scan` uses to compare shapes.
 
-Evaluate each candidate independently:
+The deciding question is size: **a single-PR fix routes to auto or review; a
+strangler-fig plan spanning several PRs routes to plan.**
 
-- **`hitl: false`** (autonomous) when there is a **single, clear canonical shape**
-  with **existing precedent elsewhere in the codebase** — i.e. the proposed
-  canonical implementation isn't a novel design, it mirrors a pattern the codebase
-  already uses successfully somewhere else, there's no real ambiguity about which
-  shape is "the" canonical one, and the occurrence count is small enough that the
-  strangler-fig plan stays a handful of straightforward PRs.
-- **`hitl: true`** (needs a human) when **any** of the following hold:
-  - **Multiple plausible canonical shapes** exist and reasonable engineers could
-    disagree about which one to converge on (e.g. two different call sites already
-    imply two different but equally valid interfaces).
-  - The migration **crosses service or repo boundaries** — e.g. the duplicated
-    logic lives in both `plugins/shipwright/` and `agent/`, or spans two
-    repositories entirely, where a shared abstraction requires coordinating a
-    dependency or publishing surface that doesn't exist yet.
-  - There are **more than roughly five call sites** — beyond that scale, the risk
-    of a coexist-phase regression slipping through, and the coordination cost of
-    reviewing that many small PRs, is high enough to warrant a human sequencing the
-    rollout rather than an autonomous executor working through the list unattended.
-- No default lean either way — judge each candidate on its own facts. This is a
-  judgment call made at runtime, never a count-based heuristic beyond the "~5 call
-  sites" guidance above, which is itself a heuristic for human judgment to weigh,
-  not a hard automatic cutoff (e.g. 4 call sites spanning two services can still be
-  `hitl: true`, and 6 call sites of a trivially mechanical single-shape rename can
-  still reasonably be judged `hitl: false` if every other factor points that way).
+- **auto** — a single, clear canonical shape with **existing precedent elsewhere in
+  the codebase** (it mirrors a pattern the codebase already uses successfully), no
+  real ambiguity about which shape is "the" canonical one, and a small enough
+  occurrence count that the whole migration is one PR-sized fix. Task:
+  `kind: dev`, `status: pending`, `hitl: false`.
+- **review** — the fix is still one PR but needs a human answer first: **multiple plausible
+  canonical shapes** where reasonable engineers could disagree, occurrences
+  that could not be confirmed by a literal check (pre-filing verification, Checklist
+  Item 3), or a call-site list the executor should not touch without a go-ahead.
+  Task: `kind: dev`, created `status: blocked` with `blockedReason` starting
+  `needs-review:` and holding the specific question for the human. Never
+  `hitl: true`; a human unblocks it via `POST /tasks/{id}/unblock` and agents then
+  execute it.
+- **plan** — the migration is bigger than one task: the strangler-fig plan spans
+  several PRs (the usual case beyond roughly five call sites), crosses service or
+  repo boundaries (e.g. `plugins/shipwright/` and `agent/`, where a shared
+  abstraction needs a dependency or publishing surface that does not exist yet), or
+  otherwise needs architectural sequencing. Task: `kind: prd`, `hitl: true`,
+  description = a draft problem statement plus the finding and its strangler-fig
+  plan. A human runs it through `/shipwright:prd` or `/shipwright:plan-session`,
+  which produces the agent-executable PR tasks; the autonomous plan phase skips it
+  because it is `hitl: true`.
+- "~5 call sites" is a heuristic for judgment to weigh, not a hard cutoff (4 call
+  sites spanning two services can still be **plan**, and 6 call sites of a trivially
+  mechanical single-shape rename can still be one **auto** PR if every other factor
+  points that way). No default lean either way.
+
+The plan route is the only one that sets `hitl: true`; this skill has no credential
+route.
 
 ---
 
 ## Step 8: Build Task JSON
 
-For each remaining candidate, build a task object. Reuse the `repo` and
-`repo-slug` values detected in Step 5 — do not re-derive them:
+For each remaining candidate, build a task object. Reuse the `repo` and `repo-slug`
+values from Setup and Step 5. Common fields:
 
 ```json
 {
   "id": "consolidation-{fingerprint-or-slug}-{repo-slug}-{YYYY-Www}",
   "title": "Consolidation: {pattern description}",
   "source": "consolidation-fix",
-  "originKind": "skill",
-  "originRef": "consolidation-fix",
-  "repo": "<repo, as detected in Step 5>",
+  "originKind": "cron",
+  "originRef": "consolidation-patrol",
+  "repo": "<the --repo value>",
   "branch": "feat/consolidation-{fingerprint-or-slug}-{short-description}",
   "layer": "Shared",
-  "status": "pending",
-  "hitl": <true | false — computed per Step 7>,
   "description": "<occurrence list + canonical-shape proposal + strangler-fig step plan — see below>"
 }
 ```
 
-The `description` field must give `dev-task` (or the HITL executor) enough context
-to execute the whole migration without re-reading `consolidation-report.md`:
+Plus the fields of the chosen route (Step 7):
+
+```json
+{ "kind": "dev", "status": "pending", "hitl": false }
+```
+(auto)
+
+```json
+{ "kind": "dev", "status": "blocked", "hitl": false,
+  "blockedReason": "needs-review: <the specific question for the human>" }
+```
+(review)
+
+```json
+{ "kind": "prd", "status": "pending", "hitl": true }
+```
+(plan — the sole `hitl: true` shape)
+
+The `description` field must give the executor enough context
+to execute the whole migration without re-reading the finding:
 
 ```
 Consolidation patrol finding: {fingerprint} — {pattern description}
 
 Occurrences ({count} total):
 - {file_path}:{line_range} — {brief note on this instance}
-{Include the full occurrence list from the report. If there are more than 20, include the first 20 and append: "(+N more — re-run /consolidation-scan to see all)"}
+{Include the full occurrence list from the finding. If there are more than 20, include the first 20 and append: "(+N more — re-run /consolidation-scan to see all)"}
 
 Proposed canonical shape:
 {the firmed-up canonical-shape proposal from Step 6.1}
@@ -355,11 +379,11 @@ Strangler-fig execution plan (separate PRs, do not bundle):
    ...
 N. Eliminate — {final PR removing the old implementation(s), once every occurrence is migrated}
 
-Fingerprint: {fingerprint} | First seen: {firstSeen} | Last seen: {lastSeen} | HITL: {hitl}
+Fingerprint: {fingerprint} | First seen: {firstSeen} | Last seen: {lastSeen} | Route: {auto|review|plan}
 ```
 
 The `{repo-slug}` segment is the last path segment of the detected `repo` value
-(from Step 5), lowercased — e.g. `app-vitals/shipwright` → `shipwright`. It
+(from Setup), lowercased — e.g. `app-vitals/shipwright` → `shipwright`. It
 namespaces the task ID per repo so the same pattern scanned in two different repos
 in the same week never collides.
 
@@ -370,7 +394,7 @@ The `{YYYY-Www}` suffix in the task ID uses ISO week format, same convention as
 - Week number: 2-digit zero-padded ISO week number (01–53)
 - Example: `consolidation-a1b2c3d4-shipwright-2026-W29`
 
-`fingerprint-or-slug`: prefer a short prefix of the report's fingerprint hash (e.g.
+`fingerprint-or-slug`: prefer a short prefix of the finding's fingerprint hash (e.g.
 first 8 hex chars) for uniqueness; `short-description`: lowercase, hyphens, max 5
 words from the pattern description.
 
@@ -392,19 +416,31 @@ words from the pattern description.
 
 ---
 
-## Step 10: Print Summary
+## Step 10: Record the Run and Print Summary
+
+Record exactly one run with the recorder (not under `--dry-run`). Write a result file
+`{ "outcome": "ok" | "no_op", "metrics": { "auto": N, "review": N, "plan": N, "skipped": N, "suppressed": N } }`
+(`no_op` when nothing was queued) and post it:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts record \
+  --cron consolidation-patrol --repo {org/repo} --commit {HEAD sha} \
+  --result /tmp/consolidation-fix-result-{ts}.json
+```
+
+The `auto`, `review` and `plan` metrics count the three routes separately. Then print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONSOLIDATION FIX — QUEUED
+CONSOLIDATION FIX — QUEUED — {org/repo}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  QUEUED     {N} tasks   ({A} autonomous, {H} HITL)
+  QUEUED     {N} tasks   ({A} auto, {R} review, {P} plan)
   SKIPPED    {N} candidates (already active)
   SUPPRESSED {N} candidates (accepted as debt per consolidation-decisions.md)
 
 Tasks queued:
-  consolidation-{fingerprint-or-slug}-{repo-slug}-{YYYY-Www} — {pattern description}  [hitl: {true|false}]
+  consolidation-{fingerprint-or-slug}-{repo-slug}-{YYYY-Www} — {pattern description}  [route: {auto|review|plan}]
   ...
 
 {If any skipped:}
@@ -415,8 +451,8 @@ Skipped (already active):
 Suppressed (accepted as debt):
   {fingerprint} — {consolidation-decisions.md entry name}
 
-Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
-/shipwright:hitl.
+Auto tasks run through the normal dev loop; review tasks wait for a human to unblock
+them; plan tasks wait for a human to run /shipwright:prd or /shipwright:plan-session.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -432,10 +468,10 @@ Stop after printing — this is the sole final output.
 - **Bulk append fails** (`/tasks/bulk` non-2xx): log the response body and stop. Do
   not retry blindly; re-running the skill is idempotent because the dedup check
   will skip already-queued patterns.
-- **No ready_to_propose candidates**: handled in Step 2 — print the "nothing to
-  queue" message and stop.
-- **consolidation-report.md missing**: handled in Step 1 — print the "run
-  /consolidation-scan first" message and stop.
+- **No ready_to_propose candidates**: handled in Step 1 — print the "nothing to
+  queue" message, record a `no_op` run and stop.
+- **Findings query fails** (Step 1): log the failure and stop; record the run with
+  `outcome: failed` if the recorder is reachable.
 
 ---
 
@@ -445,27 +481,29 @@ Stop after printing — this is the sole final output.
   entries into one task.
 - **Queue only, no PR creation** — this skill never opens PRs and never leaves the
   base branch. It only writes tasks to the task store; the actual fix lands later
-  via `dev-task` or `/shipwright:hitl`.
+  via the normal dev loop (auto/review) or a human-run `/shipwright:prd` (plan).
 - **No code changes made directly by this skill.** It drafts a proposal and a plan
   in the task description; it does not implement any part of the migration itself.
 - **No new task-store schema.** Every field in the task JSON (Step 8) is a field
   the task store already supports for any other task — `id`, `title`, `source`,
-  `repo`, `branch`, `layer`, `status`, `hitl`, `description`. This skill introduces
-  no new fields.
+  `repo`, `branch`, `layer`, `kind`, `status`, `blockedReason`, `hitl`,
+  `description`, `originKind`, `originRef`. This skill introduces no new fields.
 - **Cross-check consolidation-decisions.md live, every run** — never trust that a
-  `ready_to_propose` entry in the report is still un-suppressed; a human may have
-  added a new accepted-debt entry since the report was generated (Step 3).
-- **This skill does not re-run consolidation-scan.** It only reads the most
-  recently generated `consolidation-report.md`; if the report is stale, re-run
-  `/consolidation-scan` separately first — this skill never triggers that itself.
+  `ready_to_propose` finding is still un-suppressed; a human may have
+  added a new accepted-debt entry since the finding was promoted (Step 3).
+- **This skill does not re-run consolidation-scan.** It only reads the findings the
+  last scan stored; if they are stale, re-run `/consolidation-scan --repo ...`
+  separately first — this skill never triggers that itself.
 - **No graduation/promotion to entropy-scan.** Entropy patrol (`entropy-scan`/
   `entropy-fix`) and consolidation patrol (`consolidation-scan`/`consolidation-fix`)
   stay fully decoupled by explicit decision — this skill never writes an
   entropy-scan rule, principles.md entry, or any cross-system reference. If a
   consolidation pattern seems worth graduating into a named entropy rule someday,
   that requires a separate, deliberate decision outside this skill's scope.
-- **No cascade** — only queue what's in the current `consolidation-report.md`. Do
-  not re-scan during a run.
-- **`consolidation-report.md` is not checked off or rewritten here** — a queued
-  task only means a fix is scheduled. `consolidation-scan` fully overwrites the
-  report on its next run; this skill never edits it.
+- **No cascade** — only queue what is in the store's current `ready_to_propose`
+  findings. Do not re-scan during a run.
+- **`hitl: true` only on the plan route** — review tasks are created blocked with a
+  `needs-review:` reason, auto tasks are plain pending dev tasks.
+- **Findings are not edited here** — a queued task only means a fix is scheduled.
+  `consolidation-scan` owns finding status; this skill never rewrites it.
+- **`--repo org/repo` is required**; no agent-local state is read or written.
