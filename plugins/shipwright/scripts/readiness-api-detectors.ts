@@ -217,6 +217,12 @@ export function detectDocsFresh(
     const run = await deps.taskStore.latestRun("docs-freshness", repo);
     if (!run) return fail(id, "no docs-freshness run recorded for this repo");
     const age = daysBetween(run.finishedAt, deps.clock.now());
+    if (!Number.isFinite(age)) {
+      return fail(
+        id,
+        `last docs-freshness run has an unparseable finishedAt (${JSON.stringify(run.finishedAt)})`,
+      );
+    }
     if (age > FRESHNESS_DAYS) {
       return fail(
         id,
@@ -302,11 +308,12 @@ export function detectNoStaleConsolidationPattern(
       status: "ready_to_propose",
     });
     const now = deps.clock.now();
-    const stale = ready.filter(
-      (f) =>
-        f.status === "ready_to_propose" &&
-        daysBetween(readySince(f), now) > STALE_CONSOLIDATION_DAYS,
-    );
+    // A non-finite age (unparseable date) counts as stale so it fails closed.
+    const stale = ready.filter((f) => {
+      if (f.status !== "ready_to_propose") return false;
+      const age = daysBetween(readySince(f), now);
+      return !Number.isFinite(age) || age > STALE_CONSOLIDATION_DAYS;
+    });
     return stale.length > 0
       ? fail(
           id,

@@ -35,6 +35,11 @@ describe("daysBetween", () => {
     expect(daysBetween("2026-10-29T00:00:00.000Z", to)).toBe(30);
     expect(daysBetween("2026-10-28T23:59:59.999Z", to)).toBeGreaterThan(30);
   });
+  test("an empty or malformed date yields NaN", () => {
+    const to = new Date("2026-11-28T00:00:00.000Z");
+    expect(daysBetween("", to)).toBeNaN();
+    expect(daysBetween("not-a-date", to)).toBeNaN();
+  });
 });
 
 describe("readySince", () => {

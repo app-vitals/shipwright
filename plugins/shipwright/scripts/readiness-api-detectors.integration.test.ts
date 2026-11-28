@@ -133,6 +133,17 @@ describe("docs-fresh 30-day boundary", () => {
     expect(r.result).toBe("fail");
     expect(r.reason).toContain("no docs-freshness run");
   });
+  for (const finishedAt of ["", "not-a-date"]) {
+    test(`fails on an unparseable finishedAt (${JSON.stringify(finishedAt)})`, async () => {
+      const d = baseData();
+      for (const run of d.runs) {
+        if (run.cronId === "docs-freshness") run.finishedAt = finishedAt;
+      }
+      const r = await detectDocsFresh(REPO, depsFor(d));
+      expect(r.result).toBe("fail");
+      expect(r.reason).toContain("unparseable finishedAt");
+    });
+  }
 });
 
 describe("no-critical-security-findings", () => {
@@ -216,6 +227,22 @@ describe("no-stale-consolidation-pattern 30-day boundary", () => {
     );
     expect(r.result).toBe("fail");
   });
+  for (const bad of ["", "not-a-date"]) {
+    test(`counts an unparseable readySince (${JSON.stringify(bad)}) as stale`, async () => {
+      const d = baseData();
+      for (const f of d.findings) {
+        if (f.cronId !== "consolidation-patrol") continue;
+        f.firstSeen = bad;
+        f.history = f.history.map((h) => ({ ...h, at: bad }));
+      }
+      // At exactly 30 days the well-formed fixture passes; only the bad date fails it.
+      const r = await detectNoStaleConsolidationPattern(
+        REPO,
+        depsFor(d, at("2026-11-28T05:00:00.000Z")),
+      );
+      expect(r.result).toBe("fail");
+    });
+  }
 });
 
 describe("owner-crons-running", () => {
