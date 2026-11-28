@@ -1,0 +1,28 @@
+[
+  {
+    "id": "1001",
+    "shortId": "API-1A",
+    "title": "TypeError: Cannot read properties of undefined (reading 'id')",
+    "culprit": "src/routes/orders.ts in getOrder",
+    "permalink": "https://sentry.example.test/organizations/example-org/issues/1001/",
+    "status": "unresolved",
+    "count": "120",
+    "userCount": 14,
+    "firstSeen": "2026-11-20T10:00:00Z",
+    "lastSeen": "2026-11-27T09:00:00Z",
+    "project": { "id": "11", "slug": "api" }
+  },
+  {
+    "id": "1002",
+    "shortId": "WEB-2B",
+    "title": "ChunkLoadError: Loading chunk 7 failed",
+    "culprit": "app/main.js",
+    "permalink": "https://sentry.example.test/organizations/example-org/issues/1002/",
+    "status": "unresolved",
+    "count": "40",
+    "userCount": 9,
+    "firstSeen": "2026-11-21T10:00:00Z",
+    "lastSeen": "2026-11-27T08:00:00Z",
+    "project": { "id": "12", "slug": "web" }
+  }
+]

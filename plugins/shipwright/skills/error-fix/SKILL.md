@@ -1,514 +1,258 @@
 ---
 name: error-fix
-description: Read error-report.md, fetch each New/Regressed issue's Sentry detail and stack trace, classify hitl per issue, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires error-scan to have run first.
+description: Read open error PatrolFindings from the task store (required --repo), fetch each issue's Sentry detail and stack trace, and route each auto / review / plan as task-store tasks (plus companion observability tasks where instrumentation gaps hinder root-causing). Requires error-scan to have run first.
 ---
 
 # Error Fix
 
-Read the latest `error-report.md` and, for every unresolved New/Regressed issue that has a
-mapped repo, fetch its Sentry detail and latest-event stack trace, classify whether it can be
-fixed autonomously or needs a human, and queue it as a task-store task. Findings are never
-turned into direct PRs; they always become task-store tasks that `dev-task` (or a human, for
-HITL tasks) picks up later.
+Read the repo's open error `PatrolFinding`s from the task store and, for each New/Regressed
+issue, fetch its Sentry detail and latest-event stack trace, route it, and queue it as a
+task-store task. Findings are never turned into direct PRs, and the scan-to-fix hand-off is the
+store: this skill reads no report file and writes no finding to any repo path.
 
-Issues whose service tag is `UNMAPPED` in the report are never queued — they're surfaced for
-human triage instead, since guessing a repo could send a fix into the wrong codebase.
+Only issues already mapped to this repo exist as findings (`/error-scan` drops unmapped ones
+before recording), so there is no unmapped group here and no guessed repo.
 
 **Prerequisites:**
-- Run `/error-scan` first to produce `error-report.md`.
-- `SENTRY_ORG` and `SENTRY_AUTH_TOKEN` must be set in the environment — this skill calls the
-  Sentry API directly (issue detail + latest event) to gather enough context for HITL
-  classification and root-cause investigation, the same env vars `/error-scan` requires.
+- Run `/error-scan --repo org/repo` first so open PatrolFindings exist.
+- `SENTRY_ORG` and `SENTRY_AUTH_TOKEN` must be set (issue detail + latest event).
 
-> **Task store setup:** This skill pushes findings to the Shipwright task store. If
-> `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke
-> `/shipwright:task-store` for setup instructions.
+> **Task store setup:** If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is
+> missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
 
 ## Setup: Parse Arguments
 
-Before starting, check for flags:
+- `--repo org/repo` — **required**. If missing or not `org/repo`, print and stop:
+  ```
+  Usage: /error-fix --repo org/repo [--cron ID] [--dry-run]
+  Error: --repo is required.
+  ```
+- `--cron ID` — the system-cron id (default `error-patrol`); used as `CRON_ID` for reads,
+  `originRef` and the recorded run.
+- `--dry-run` — print what would be routed without writing tasks, findings or a run
 
-- `--dry-run` — print what would be queued (including hitl classification and companion
-  tasks) without querying the task store for dedup and without writing anything (no
-  task-store writes, no ledger writes)
-
-> **Note:** Queueing is the only mode. There is no PR mode and no `--queue` flag — every
-> run queues tasks. `--dry-run` shows a preview and stops without touching the task store or
-> the ledger.
-
----
-
-## Step 1: Verify error-report.md Exists
-
-1. Look for `error-report.md` in the project root.
-2. If it does not exist, print:
-   ```
-   No error-report.md found. Run /error-scan first to generate a report.
-   ```
-   Then stop.
-3. Read the report.
+Set `REPO` to the `--repo` value. Queueing is the only mode — no PR mode.
 
 ---
 
-## Step 2: Collect Candidate Issues
+## Step 1: Load Open Findings from the Store
 
-1. Parse the report's `## New Issues` and `## Regressed Issues` sections. Collect every
-   unchecked (`- [ ]`) issue entry from both sections.
-2. For each issue entry, read its recorded repo mapping status directly from the entry (the
-   report states this explicitly per Step 6 of `/error-scan`'s output format: `Repo: {repo
-   dir name}` or `Repo: **UNMAPPED** ({reason})`).
-3. Split into two groups:
-   - **Mapped** — entries with a concrete repo dir name. These proceed to Step 3.
-   - **Unmapped** — entries marked `**UNMAPPED**`. These are **never** queued. Set them
-     aside for the "surfaced for human triage" section of the final summary (Step 10).
-4. If neither group has any entries (report shows "No new issues..." and "No regressed
-   issues..." for both sections), print:
-   ```
-   No new or regressed issues to process. Run /error-scan to refresh the report.
-   ```
-   Then stop.
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/patrol-findings?cronId=$CRON_ID&repo={url-encoded-repo}&status=open&limit=200" | jq '.findings'
+```
+
+Page with `nextCursor` until exhausted. Skip findings whose `taskId` is already set. If none
+remain, print `No open error findings for {repo}. Run /error-scan --repo {repo} first.` and
+stop. Each finding's `fingerprint` is the Sentry issue id and its `detail` holds `shortId`,
+`title`, `culprit`, `permalink`, `project`, `count`, `userCount`, `firstSeen`, `lastSeen`.
+Order by `detail.count` descending.
 
 ---
 
-## Step 3: Fetch Sentry Detail Per Mapped Issue
+## Step 2: Fetch Sentry Detail Per Issue
 
-For each mapped issue (by its Sentry issue `id` — the report shows `shortId`; resolve the
-numeric/opaque `id` from the report entry or, if not present, look it up via
-`https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/?query=is:unresolved` matching on
-`shortId`), fetch:
+For each finding (issue id = `fingerprint`):
 
 ```bash
 curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
   "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/$ISSUE_ID/"
-```
-
-and the latest event for a stack trace:
-
-```bash
 curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
   "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/$ISSUE_ID/events/latest/"
 ```
 
-Use these two responses as the basis for Step 6 (hitl classification) and Step 7 (companion
-task detection). Never print or log `$SENTRY_AUTH_TOKEN` — reference it by name only, in
-this file and in any output.
+These are the basis for routing (Step 4) and companion detection (Step 5). Never print or log
+`$SENTRY_AUTH_TOKEN`. If either call fails (non-2xx), skip that issue this run and list it in
+the summary as a distinct "Sentry fetch failed" line; never queue a task on incomplete data.
 
-If either call fails for a given issue (non-2xx), note it and skip that issue for this run —
-do not queue a task built on incomplete information. Include skipped-on-fetch-failure issues
-in the final summary as a distinct line (not the same as "already active" or "unmapped").
-
-Run each mapped issue fetched above through the pre-filing verification checklist —
-`references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
-any further toward becoming a task. This re-verifies the finding against the current repo
-state (the Sentry issue and the report snapshot may already be stale by the time this skill
-runs) and catches task ID / branch collisions early. Treat
-`references/pre-filing-verification.md` as canonical for how to apply the checklist. Per its
-four checks:
-- Drop issues whose cited call site no longer exists or whose described gap is already fixed
-  (Checklist Items 1–2) — do not queue a primary or companion task for them. Log them the same
-  way as other skipped issues (Step 10 summary).
-- Route issues that can't be confirmed by a literal check to HITL rather than assuming they're
-  safe to drop (Checklist Item 3) — this feeds into the `hitl` computation in Step 6/Step 7.
-- Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 5 dedup
-  check; no separate action is needed here beyond noting the overlap.
-This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the real queue
-path (Step 5 onward) operate on the same already-verified issue set.
+Run each fetched issue through `references/pre-filing-verification.md` (relative to the plugin
+root) — the finding is a snapshot that may be stale. Drop issues whose cited call site no
+longer exists or whose gap is already fixed (Items 1–2); an issue that cannot be confirmed by a
+literal check routes `review`, never `auto` (Item 3); Item 4 (id/branch collisions) is covered
+by Step 3 dedup.
 
 ---
 
-## Step 4: Dry-Run Output (if --dry-run)
+## Step 3: Dedup Check
 
-If `--dry-run` was passed, skip the dedup check (Step 5) entirely — do not query the task
-store. For each mapped issue fetched in Step 3, run the classification (Step 6) and
-companion-task detection (Step 7) in-memory, then print a preview:
+Skip when `--dry-run`. Query active tasks for the repo, URL-encoded, with an explicit
+`limit=1000`, for each of `pending`, `in_progress` and `blocked` (a task awaiting review counts
+as active):
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&repo={url-encoded-repo}&limit=1000" | jq .
+```
+
+**Pagination guard — do not silently proceed with a partial result set.** After each call
+check `nextCursor`: if it is a string, re-run the same query with `&cursor=<nextCursor>`
+(opaque; never parse or build one) and merge the `.tasks` arrays until `nextCursor` is `null`.
+Never build the "already active" set from an incomplete page set.
+
+Collect tasks with `source == "error-fix"`. A Sentry issue is already active when a task id is
+`error-{sentry-issue-id}` or starts with `error-{sentry-issue-id}-`. Skip those issues and print
+`Skipping {shortId} — task already active`. Findings that already carry a `taskId` were skipped
+in Step 1.
+
+---
+
+## Step 4: Route Each Issue (auto / review / plan)
+
+Routing follows the three-way contract in `docs/task-store.md` ("Finding routing"). It is a
+judgment call made at runtime from the Sentry detail and stack trace; no event count, user count
+or severity threshold ever forces a route (counts only order the queue).
+
+| Route | When | Task shape |
+|---|---|---|
+| **auto** | A clear single root cause with an obvious fix: the trace points to one function/module and the fix is a straightforward change (null check, missing `await`, wrong type, off-by-one, one unhandled edge case), contained to one service | `kind: dev`, `status: pending`, `hitl: false` |
+| **review** | The cause is ambiguous, there is no clear reproduction path, several plausible fixes exist, a product decision is needed ("reject or normalize this input?"), or verification could not be confirmed by a literal check. State the specific question in `blockedReason` | `kind: dev`, `status: blocked`, `blockedReason: "needs-review: <question>"`, `hitl: false`; a human answers and calls `POST /tasks/{id}/unblock` |
+| **plan** | The fix is bigger than one task: the trace spans several services or repos, or it needs a design decision first | `kind: prd`, `status: blocked`, `blockedReason: "needs-plan: <why>"`, `hitl: false`, no branch; a human takes it through `/shipwright:prd` or `/shipwright:plan-session` and unblocks or cancels it |
+
+Default toward `review` (or `plan` if large) when unsure — never toward `auto`. This skill
+never marks a task as human-only: Sentry issues involve no credential rotation, and a plan task waits
+as `blocked` for a human rather than being autonomously planned.
+
+---
+
+## Step 5: Companion-Task Detection (Observability Gaps)
+
+While reading the trace, watch for an **instrumentation gap** at the call site: missing
+request/entity context on the event, inconsistent logging shape versus neighboring call
+sites, or **pure noise** (an exception captured that is not an actionable error, e.g. a
+benign condition or a client abort).
+
+If one applies, queue a **companion task** for the observability fix in addition to the
+primary. If the issue is a real bug, queue both; if it is pure noise, queue only the companion.
+Route the companion with Step 4: a single obvious call-site fix is `auto`; a gap recurring
+across call sites or services with no shared abstraction to slot into is `review` (or `plan`
+if large). Set `dependencies: ["{companion id}"]` on the primary only when it genuinely cannot
+land or be verified first.
+
+---
+
+## Step 6: Dry-Run Output (if --dry-run)
+
+Print, then stop without writing tasks, findings or a run:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ERROR FIX — DRY RUN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERROR FIX — DRY RUN ({repo})
+Would route {N} tasks:
+  1. error-{sentry-issue-id}  [auto | review | plan]  {issue title}
+  2. error-{sentry-issue-id}-obs  [auto | review | plan]  (companion) {call site}
+No tasks written. Re-run without --dry-run to queue.
+```
 
-Would queue {N} tasks:
+---
 
-  1. error-{sentry-issue-id}-{slug}
-     Issue: {issue title} _{service}_ [hitl: {true|false}]
-     Repo: {repo dir name}
-     Reasoning: {one-line rationale for the hitl call}
+## Step 7: Queue Tasks
 
-  2. error-{sentry-issue-id}-obs-{slug}   (companion)
-     Call site: {file/module description}
-     Reasoning: {one-line rationale — instrumentation gap found}
-     [hitl: {true|false}]
+Cap at 10 issues per run (highest `count` first); note the cap if more remain.
 
-  ...
+### 7.1 Build Task JSON
 
-{N} issues surfaced for human triage (unmapped):
-  {shortId} — {title}
+```json
+{
+  "id": "error-{sentry-issue-id}",
+  "title": "Error fix: {issue title}",
+  "source": "error-fix",
+  "originKind": "cron",
+  "originRef": "<CRON_ID>",
+  "repo": "<REPO>",
+  "kind": "dev | prd",
+  "branch": "fix/error-{sentry-issue-id}-{slug}",
+  "layer": "Background",
+  "status": "pending | blocked",
+  "blockedReason": "needs-review: <question>  (review route) | needs-plan: <why>  (plan route)",
+  "hitl": false,
+  "description": "<see 7.2>"
+}
+```
 
-No tasks written to task store. No ledger changes.
-Re-run without --dry-run to queue tasks.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The companion id is `error-{sentry-issue-id}-obs`, title `Error fix (observability): {call
+site}`, branch `fix/error-{sentry-issue-id}-obs-{slug}`. The primary id is the finding's
+fingerprint prefixed `error-`. `repo` is `--repo` verbatim (already `org/repo`). `slug`:
+lowercase, hyphens, max 5 words. Plan tasks omit `branch`; omit `blockedReason` unless the route
+is review or plan.
+
+### 7.2 Description
+
+Enough context for `dev-task` to fix without re-reading Sentry:
+
+```
+Sentry issue: {shortId} — {issue title}
+Link: {permalink}
+Culprit: {culprit}
+Project: {project} | Repo: {repo} | Route: {auto|review|plan}
+
+Stack trace summary: {condensed top frames — the function/file, not the raw trace}
+Root cause hypothesis: {best-effort read}
+Fix guidance: {concrete guidance, or the open question for review/plan}
+
+{If a companion was queued: "Related observability task: {id} — {reason}"}
+Issue: {sentry-issue-id}
+```
+
+The companion description names the gap, the call site, fix guidance and, when relevant,
+`Blocks: {primary id}`.
+
+### 7.3 Write, Append and Link Back
+
+1. Write the task array to a temp file outside the repo (`TASKS="$(mktemp -d)/error-tasks.json"`).
+2. `POST $SHIPWRIGHT_TASK_STORE_URL/tasks/bulk` with `--data-binary @"$TASKS"` (bearer auth,
+   `Content-Type: application/json`); delete the temp file afterwards.
+3. Link each routed finding to its **primary** task (or the companion for a noise-only issue)
+   in the store; status stays `open`:
+   ```bash
+   curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/patrol-findings/batch" \
+     --data '{"cronId":"'"$CRON_ID"'","repo":"'"$REPO"'","findings":[{"fingerprint":"<issue id>","status":"open","taskId":"<task id>"}]}'
+   ```
+   This finding-to-task link is what `/error-resolve` reads; there is no ledger file.
+4. Record one run with the routing counts:
+   ```bash
+   bun "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" record --cron "$CRON_ID" --repo "$REPO" \
+     --commit "$(git rev-parse HEAD)" --result "$RESULT"
+   ```
+   `$RESULT` (temp file outside the repo) =
+   `{"outcome":"ok","metrics":{"auto":N,"review":N,"plan":N,"skipped":N}}` (`"no_op"` when
+   nothing was routed). Pass no legacy-import flag; the import belongs to `/error-scan`.
+
+---
+
+## Step 8: Print Summary
+
+```
+ERROR FIX — {repo}: {A} auto, {R} review, {P} plan; {S} skipped
+{If any skipped: one line each — "Skipped (already active)" or "Skipped (Sentry fetch failed)": {shortId}}
+Auto tasks run via the loop; review tasks wait for a human unblock; plan tasks wait for /shipwright:prd | /shipwright:plan-session.
 ```
 
 Stop after printing.
 
 ---
 
-## Step 5: Dedup Check
-
-Skip this step entirely if `--dry-run` was passed (handled in Step 4 instead).
-
-Run. `GET /tasks` defaults to `limit=50` and truncates silently unless the caller raises it —
-pass an explicit high `limit=1000` on both queries:
-```bash
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&limit=1000" | jq .
-curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&limit=1000" | jq .
-```
-
-**Pagination guard — do not silently proceed with a partial result set.** `limit=1000`
-covers the common case, but the active-task count across all repos can still exceed 1000.
-After each call, check the response's `nextCursor`: if it is `null`, the page is complete. If it is a string,
-the first `limit=1000` page did not cover every active task — re-run the same query with
-`&cursor=<nextCursor>` (the opaque string from the previous response; never parse or build one)
-and merge the `.tasks` arrays, repeating until `nextCursor` is `null`. Only treat the dedup
-query as complete once every page has been fetched this way; never build the "already active"
-set (below) from a page that fails this check.
-
-Parse both `.tasks` arrays. From the combined results, collect tasks where:
-- `source == "shipwright"`, OR
-- `title` starts with `"Error fix:"`
-
-Extract the Sentry issue ID each already-active task covers, using either signal available:
-1. Parse the task `id` field (format: `error-{sentry-issue-id}-{shortId-or-slug}`) — the
-   segment immediately after `error-` up to the next `-` is the Sentry issue ID.
-2. Cross-reference `state/error-patrol-ledger.json`'s `taskLinks` map (written by this skill
-   in Step 9 — see below) — invert it (`taskId -> sentry-issue-id`) and match against the
-   fetched tasks' `id` fields for a second signal, in case a task ID was hand-edited.
-
-Build a set of "already active" Sentry issue IDs from the union of both signals.
-
-For each mapped issue from Step 2: if its Sentry issue ID is in the "already active" set,
-skip it entirely (no primary task, no companion-task investigation needed for queueing
-purposes — it's already covered). Print: `Skipping {shortId} — task already active`.
-
-Keep both `.tasks` arrays in memory if useful for description-building later, but this step's
-only output is the "already active" set and the skip list.
-
----
-
-## Step 6: Classify `hitl` Per Issue
-
-For each remaining mapped issue (not skipped in Step 5), classify the primary fix task's
-`hitl` field using the Sentry detail and stack trace fetched in Step 3. This is a **judgment
-call made at runtime by the Claude agent running this skill** — there is no numeric or
-severity threshold that ever forces the classification. `count`/`userCount` inform triage
-priority (already reflected in the report's sort order), never the hitl call.
-
-- **`hitl: false`** (autonomous) — a clear single root cause with an obvious fix: the stack
-  trace points to one function/module, the fix is a straightforward code change (null check,
-  missing `await`, wrong type, off-by-one, unhandled edge case in one code path, etc.), and
-  it's contained to one service.
-- **`hitl: true`** (needs a human) — the root cause is ambiguous, there's no clear
-  reproduction path from the available context, the stack trace spans multiple
-  services/repos, or a correct fix would require a product/design decision (e.g. "should
-  this input actually be rejected, or should we accept and normalize it?").
-
-Judge each issue on its own facts — no default lean either way, and never let event count or
-user count alone push the call to either side.
-
----
-
-## Step 7: Companion-Task Detection (Observability Gaps)
-
-While investigating an issue's stack trace/context in Step 3 to classify it, watch for signs
-that root-causing was **hindered by an instrumentation gap** at the relevant call site:
-
-- Missing request/entity context on the Sentry event (e.g. no request ID, no
-  user/account/entity identifier, no relevant params attached) that would otherwise have
-  made the root cause obvious.
-- Inconsistent logging shape at that call site compared to how similar call sites in the
-  same codebase report errors.
-- The issue looks like **pure noise** — an exception captured that isn't actually an
-  actionable error (e.g. expected/benign condition raised as an exception, third-party
-  library warning miscaptured, a client-abort or validation-rejection path that shouldn't be
-  treated as a service error at all).
-
-If one or more of these apply, queue a **second, companion task** for the observability fix
-at that specific call site, **in addition to** the primary fix task for the issue itself.
-
-- If the issue is a clear bug independent of the instrumentation gap, queue **both** the
-  primary fix task (Step 6 hitl classification) and the companion task.
-- If the issue is pure noise with nothing to "fix" beyond stopping the miscapture, queue
-  **only** the companion task — there is no primary fix task, since there's no actual defect
-  to correct beyond the instrumentation itself.
-
-Classify the companion task's `hitl` with the same judgment style used for entropy-fix's
-`per-finding` rows:
-
-- **`hitl: false`** — a single, obvious call-site fix: e.g. add one missing context field to
-  one `Sentry.captureException` call, or adjust one log statement's shape to match its
-  neighbors.
-- **`hitl: true`** — the gap **recurs across multiple call sites or services** with no
-  existing shared abstraction to slot the fix into (e.g. there's no shared request-context
-  concept yet to attach the missing field to, so introducing one is a design decision, not a
-  drop-in change). This matches entropy-fix's `architecture_layering` /
-  `duplicated_utility` per-finding judgment: ambiguous, multi-approach, or no service
-  boundary exists yet → HITL.
-
-If the primary fix genuinely depends on the companion task landing first (e.g. the fix can't
-be verified/reproduced without the missing context the companion task adds), set
-`dependencies: ["{companion task id}"]` on the primary task. Most of the time these are
-independent — only set the dependency when there's a real ordering requirement, and note the
-reasoning in the primary task's description either way.
-
----
-
-## Step 8: Build Task JSON and Queue
-
-Skip this entire step if `--dry-run` was passed (handled in Step 4).
-
-### 8.1 Build Task Objects
-
-For each issue with a primary fix task to queue:
-
-```json
-{
-  "id": "error-{sentry-issue-id}-{slug}",
-  "title": "Error fix: {issue title}",
-  "source": "error-fix",
-  "originKind": "skill",
-  "originRef": "error-fix",
-  "repo": "<org/repo derived from the matched repo dir name — see Repo Derivation below>",
-  "branch": "fix/error-{sentry-issue-id}-{slug}",
-  "layer": "Background",
-  "status": "pending",
-  "hitl": <true | false — computed per Step 6>,
-  "description": "<see below>"
-}
-```
-
-For each companion observability-fix task to queue:
-
-```json
-{
-  "id": "error-{sentry-issue-id}-obs-{slug}",
-  "title": "Error fix (observability): {call site description}",
-  "source": "error-fix",
-  "originKind": "skill",
-  "originRef": "error-fix",
-  "repo": "<same repo derivation as the primary task>",
-  "branch": "fix/error-{sentry-issue-id}-obs-{slug}",
-  "layer": "Background",
-  "status": "pending",
-  "hitl": <true | false — computed per Step 7>,
-  "dependencies": [],
-  "description": "<see below>"
-}
-```
-
-Repo derivation: first, read the repo **dir name** from `error-report.md`'s `## Service →
-Repo Mapping` table (matched by the issue's service tag) — this is the primary source since
-it reflects this run's data. Only fall back to re-deriving from
-`state/error-patrol-ledger.json`'s `serviceRepoMap` if the report's mapping for that service
-is missing/stale (e.g. the report predates the ledger's most recent scan). Never queue a task
-for a service that's `unmapped` in either source — that issue should already have been
-filtered out in Step 2.
-
-That dir name (e.g. `shipwright`) is a bare local directory name — `error-scan/SKILL.md`
-Step 3 derives it purely for local grep-based service-to-repo matching, with no org prefix.
-task-store's `validateRepo()` rejects a bare dir name posted as a task's `repo` field, so
-before building the task JSON, derive the `org/repo` value the same way
-`entropy-fix/SKILL.md`'s Step 6q.1 (and test-fix/consolidation-fix/security-fix) do: run
-`git -C "$SHIPWRIGHT_REPO_DIR/<dir-name>" remote get-url origin` and strip the
-`https://github.com/` (or `git@github.com:`, stripping the `.git` suffix) prefix to get
-`org/repo` — e.g. `app-vitals/shipwright`. Use that `org/repo` value for the task JSON's
-`repo` field on both the primary and companion task. Continue to use the bare dir name
-everywhere else (e.g. the `description` template's `Repo: {repo}` line below, matching
-`error-report.md`'s own format) — only the task JSON's `repo` field is affected.
-
-`slug`: lowercase, hyphens, max 5 words, derived from the issue title.
-
-The primary task's `description` must give `dev-task` (or the HITL executor) enough context
-to fix without re-reading Sentry:
-```
-Sentry issue: {shortId} — {issue title}
-Link: {permalink}
-Culprit: {culprit}
-Service: {service tag} | Repo: {repo}
-
-Stack trace summary:
-{condensed summary of the top frames from the latest-event stack trace fetched in Step 3 —
-enough to point at the function/file, not the full raw trace}
-
-Root cause hypothesis: {your best-effort read from Step 6's investigation}
-
-Fix guidance: {concrete guidance — e.g. "add a null check before accessing X in
-path/to/file.ts:42" or "this requires a product decision on Y; do not guess"}
-
-{If a companion task was also queued for this issue:}
-Related observability task: {companion task id} — {one-line reason}
-
-Issue: {sentry-issue-id} | HITL: {hitl}
-```
-
-The companion task's `description`:
-```
-Observability gap at: {file/module or call site description}
-Related Sentry issue: {shortId} — {issue title} ({permalink})
-
-Gap: {missing context field | inconsistent logging shape | noise miscaptured as exception —
-describe specifically what's missing or wrong}
-
-Fix guidance: {e.g. "add {field} to the Sentry.captureException call at path/to/file.ts:NN"
-or "reclassify this as a warning/log instead of captureException, since {reason it's not an
-actionable error}"}
-
-{If this call site's gap recurs across multiple services/call sites:}
-Recurs at: {list of other locations observed, if known}
-
-{If the primary fix depends on this landing first:}
-Blocks: error-{sentry-issue-id}-{slug} — {reason}
-
-Issue: {sentry-issue-id} | HITL: {hitl}
-```
-
-### 8.2 Write and Append
-
-1. Write all task objects (primary + companion) to
-   `/tmp/error-fix-tasks-{unix-timestamp}.json` as a JSON array.
-2. Run:
-   ```bash
-   curl -sf -X POST \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
-     --data-binary @/tmp/error-fix-tasks-{unix-timestamp}.json | jq .
-   ```
-3. Delete the temp file after appending.
-
----
-
-## Step 9: Update the Ledger
-
-Skip this step if `--dry-run` was passed.
-
-Update `state/error-patrol-ledger.json` — the same file `/error-scan` reads/writes, resolved
-the same way (sibling of the repo checkouts, one level up from `repos/<repo>`; see
-`/error-scan`'s Step 5 for the exact path convention). This is a **partial merge, not a full
-overwrite**: read the existing ledger, add/update only the top-level `taskLinks` key, and
-leave `lastRun`, `issues`, and `serviceRepoMap` untouched — those are owned by `/error-scan`.
-
-Schema for `taskLinks`:
-```json
-{
-  "taskLinks": {
-    "<sentry_issue_id>": {
-      "primary": "<primary task id, or null if this issue only got a companion task>",
-      "companion": "<companion task id, or omitted if none was queued>"
-    }
-  }
-}
-```
-
-For every issue that got only a primary task, record `{"primary": "<id>"}` (no `companion`
-key). For every issue that got only a companion task (pure-noise case), record
-`{"primary": null, "companion": "<id>"}`. For every issue that got both, record both keys.
-
-Merge these entries into the existing `taskLinks` map (add new keys, overwrite an existing
-issue's entry if this run re-queued something for it — this shouldn't normally happen given
-Step 5's dedup, but merge rather than replace wholesale regardless, since dedup is keyed on
-"already active" tasks, not on `taskLinks` presence alone).
-
-Print: `Ledger updated: state/error-patrol-ledger.json (taskLinks merged)`
-
----
-
-## Step 10: Print Summary
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ERROR FIX — QUEUED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  QUEUED     {N} tasks   ({A} autonomous, {H} HITL)
-  SKIPPED    {N} issues (already active)
-  UNMAPPED   {N} issues (surfaced for human triage, not queued)
-
-Tasks queued:
-  error-{sentry-issue-id}-{slug} — {issue title}  [hitl: {true|false}]
-  error-{sentry-issue-id}-obs-{slug} — {call site description}  [hitl: {true|false}] (companion)
-  ...
-
-{If any skipped:}
-Skipped (already active):
-  {shortId} — task already in queue or in progress
-
-{If any unmapped:}
-Surfaced for human triage (unmapped service — not queued):
-  {shortId} — {title} _{service tag}_ — {reason from error-report.md}
-
-{If any skipped due to Sentry fetch failure:}
-Skipped (Sentry fetch failed):
-  {shortId} — could not fetch issue detail/stack trace this run
-
-Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
-/shipwright:hitl. Unmapped issues need manual repo identification — see error-report.md's
-Service → Repo Mapping section.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Stop after printing — this is the sole final output.
-
----
-
 ## Error Handling
 
-- **`error-report.md` missing**: handled in Step 1 — print the message and stop.
-- **No New/Regressed issues**: handled in Step 2 — print the message and stop.
-- **Sentry fetch fails for an issue** (Step 3): skip that issue for this run (no task built
-  on incomplete information), note it in the summary, and continue with remaining issues —
-  do not abort the whole run over one failed fetch.
-- **Task-store dedup query fails** (Step 5): log the failure and stop. Do not queue tasks
-  without a dedup pass, or you risk duplicate tasks for the same Sentry issue.
-- **Bulk append fails** (`/tasks/bulk` non-2xx): log the response body and stop. Do not
-  retry blindly; re-running the skill is idempotent because the dedup check will skip
-  already-queued issues.
-- **Ledger write fails**: log the failure. Tasks are already queued at this point (Step 8
-  runs before Step 9) — do not roll back the task-store writes; a missed `taskLinks` update
-  degrades future dedup precision (Step 5's ledger cross-reference) but the `id`-parsing
-  signal in Step 5 still catches most repeats.
+- **Store read fails** (Step 1 or Step 3 dedup): log and stop. Never queue without a dedup pass.
+- **Sentry fetch fails for an issue**: skip it, note it, continue with the rest.
+- **Bulk append fails**: log the response body and stop; re-running is idempotent because dedup
+  skips already-queued issues and findings with a `taskId` are skipped.
+- **Link-back or run record fails** after tasks were created: print the error and the created
+  ids; do not re-create tasks.
 
 ---
 
 ## Constraints (Do Not Violate)
 
-- **Unmapped over guessed** — never queue a task for an issue whose service tag is
-  `UNMAPPED` in `error-report.md`. Surface it for human triage instead. A wrong repo guess
-  sends a future fix into the wrong codebase.
-- **No numeric/count backstop** — no event count, user count, or severity threshold ever
-  forces a `hitl` classification, for either the primary fix task (Step 6) or the companion
-  observability task (Step 7). Always a per-issue judgment call.
-- **Dedup before queueing** — never skip the Step 5 dedup check (outside `--dry-run`, which
-  explicitly skips it by design and queues nothing for real).
-- **Companion-task reasoning stays local to this file** — the Sentry-specific logic for
-  detecting instrumentation gaps and queueing companion observability tasks lives in this
-  SKILL.md, not in `plugins/shipwright/references/principles.md`. `principles.md` stays
-  vendor-agnostic; this mechanism only makes sense in the context of Sentry event/capture
-  semantics.
-- **Never log or persist `$SENTRY_AUTH_TOKEN`.** Not in tasks, not in the ledger, not in
-  stdout output.
-- **Queue only** — this skill never opens PRs and never leaves the base branch. It only
-  writes tasks to the task store; the actual fix lands later via `dev-task` or
-  `/shipwright:hitl`.
-- **Ledger update is a partial merge** — only `taskLinks` is added/updated in
-  `state/error-patrol-ledger.json`. `lastRun`, `issues`, and `serviceRepoMap` are owned by
-  `/error-scan`; this skill never touches or removes them.
-- **`error-report.md` findings are not checked off here** — a queued task only means a fix
-  is scheduled. Checking off the report's findings (or resolving the underlying Sentry issue)
-  happens via a separate mechanism (`error-resolve`, out of scope for this skill), not by
-  this skill.
-- **`--dry-run` mutates nothing** — no task-store dedup query, no bulk write, no ledger
-  write. Everything that would happen is printed to stdout instead.
+- **`--repo` is required** — no fallback to the current directory.
+- **Store only** — findings are read from, and linked back to, the task store; no finding detail
+  is written to any repo path, and no local state file is read or written.
+- **Three routes, no `hitl: true`** — every task is auto, review or plan per Step 4; `hitl` is always false.
+- **No numeric/count backstop** — counts never force a route.
+- **Dedup before queueing** — never skip Step 3 outside `--dry-run`.
+- **Companion-task reasoning stays local to this file**, not in `references/principles.md`.
+- **Never log or persist `$SENTRY_AUTH_TOKEN`.**
+- **Queue only** — never opens PRs and never leaves the base branch.
+- **`--dry-run` mutates nothing.**

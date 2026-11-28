@@ -1,19 +1,19 @@
 ---
 name: error-resolve
-description: "Read the error-patrol ledger, check each linked task's current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never resolves on merged, released or pr_open. Flags: --dry-run (check readiness and print what would resolve without calling Sentry or touching the ledger)."
+description: "Read error PatrolFindings and each linked task's current status from the task store (required --repo), and resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never resolves on merged, released or pr_open. Flags: --repo org/repo (required), --cron ID, --dry-run (print what would resolve without calling Sentry or writing the store)."
 ---
 
 # /error-resolve
 
-Read `state/error-patrol-ledger.json`'s `taskLinks` entries (written by `/error-fix`), query
-the task store for each linked task's current status, and call Sentry's issue-resolve
-endpoint for any issue whose gating task (the `primary` task, or the `companion` task when
-`primary` is null) has reached `deployed` or `done`. `merged`, `released` and `pr_open` never
-resolve (a published library does not change a running service until a consumer deploys). The ledger entry for a resolved issue is cleared only after the Sentry resolve
-call succeeds.
+Read the repo's error PatrolFindings that `/error-fix` linked to a task, query the task store
+for each linked task's current status, and call Sentry's issue-resolve endpoint for any issue
+whose gating task has reached `deployed` or `done`. `merged`, `released` and `pr_open` never
+resolve (a published library does not change a running service until a consumer deploys). The
+finding is marked resolved in the store only after the Sentry call succeeds.
 
 **Flags:**
-- `--dry-run` — run the full readiness check (task-store status lookups, gating decision per
-  issue) without calling Sentry or touching the ledger; prints what would have been resolved
+- `--repo org/repo` — required; prints a usage error without it
+- `--cron ID` — system-cron id (default `error-patrol`)
+- `--dry-run` — run the readiness check without calling Sentry or writing the store
 
 Invoke the error-resolve skill.
