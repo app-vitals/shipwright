@@ -130,7 +130,7 @@ describe("preview-test.yml", () => {
       (s.run ?? "").includes("task preview:canary ENV_FILE="),
     );
     const install = steps.findIndex((s) =>
-      (s.run ?? "").includes("playwright install --with-deps chromium"),
+      (s.uses ?? "") === "./.github/actions/install-playwright",
     );
     const e2e = steps.findIndex((s) =>
       (s.run ?? "").includes("task preview:e2e ENV_FILE="),
@@ -138,7 +138,7 @@ describe("preview-test.yml", () => {
     expect(canary).toBeGreaterThanOrEqual(0);
     expect(install).toBeGreaterThan(canary);
     expect(e2e).toBeGreaterThan(install);
-    expect(steps[install]["working-directory"]).toBe("trusted");
+    expect(steps[install].with?.["working-directory"]).toBe("trusted");
     expect(steps[e2e]["working-directory"]).toBe("trusted");
   });
 
