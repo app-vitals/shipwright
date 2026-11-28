@@ -1,6 +1,6 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out), routing each row auto / review / plan. Records every run through the shared cron-run recorder's metrics. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue.
 ---
 
 # Test Fix
@@ -9,8 +9,11 @@ Read the latest `docs/test-readiness/test-readiness-plan.md` and queue its flat 
 task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links) are written
 as task-store `dependencies` arrays, so task-store's own `ready:true` query computes readiness
 directly. Findings are never turned into direct PRs;
-they always become task-store tasks that `dev-task` (or a human, for HITL tasks) picks up
-later.
+they always become task-store tasks. Each row is routed **auto** (agents execute it),
+**review** (blocked until a human answers one question, then agents execute it) or **plan**
+(a human plans it first); see "Finding routing" and "System-cron contract" in
+[docs/task-store.md](../../../../docs/task-store.md). This skill never creates a `hitl: true`
+dev task.
 
 This is the **Phase 5** replacement for the former GitHub-issue publish skill.
 
@@ -29,12 +32,15 @@ Before starting, check for flags:
 - `--origin-cron <id>` — internal arg, passed by `/shipwright:test-readiness` phase 5 (e.g.
   `--origin-cron test-readiness`). When present, Step 5 stamps `originKind: "cron"` and
   `originRef: <id>` on every task instead of the standalone skill origin. Not for manual use.
-- `--dry-run` — print what would be queued (including hitl classification) without querying
+- `--dry-run` — print what would be queued (including each row's route) without querying
   the task store for dedup and without writing anything.
 
 > **Note:** Queueing is the only mode for the regular flow. There is no PR mode and no
 > `--queue` flag — every regular run queues tasks. `--dry-run` shows a preview and stops
 > without touching the task store.
+>
+> When run by `/shipwright:test-readiness`, that skill owns the single run record; this skill only
+> reports its counts as run metrics (see "Run metrics" below).
 
 ---
 
@@ -57,7 +63,7 @@ Before starting, check for flags:
 2. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
    also rendered per-task in `issue.md.tmpl`'s "Audit decisions" section) attached to tasks
    marked `[audit: N items]` in the expected-outcome column. Keep each table's rows verbatim —
-   they're needed for Step 5's description field and for the M5 HITL rule (rule c below).
+   they're needed for Step 5's description field and for the M5 review rule (rule c below).
 3. Parse `depends_on` / predecessor links: any explicit `depends_on:` annotation on a row, and
    the Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
    `repo-config/SKILL.md`'s pairing rule).
@@ -81,7 +87,7 @@ Before starting, check for flags:
      is no separate ledger section here beyond the dedup/summary output Step 4/Step 7 already
      produce).
    - **Route rows whose target-file or fixture existence can't be confirmed by a literal
-     check to HITL, rather than assuming they're safe to drop or safe to file clean**
+     check to review, rather than assuming they're safe to drop or safe to file clean**
      (Checklist Item 3). This is the exact failure mode that caused task T-130's false
      negative: a grep-based existence check missed a fixture that was referenced via
      `path.join()` construction rather than a literal import or string match, so the row was
@@ -89,9 +95,9 @@ Before starting, check for flags:
      determined that way. When a row's target file or fixture is referenced indirectly —
      constructed paths, dynamic dispatch, reflection-based lookups, or anything else a literal
      grep/import check can't definitively resolve — do not treat it as either a confirmed pass
-     (file exists, skip) or a confirmed absence (file missing, safe to file); route it to HITL
-     instead. This feeds directly into the `hitl` computation in Step 5.2 as an explicit path
-     to `hitl: true`.
+     (file exists, skip) or a confirmed absence (file missing, safe to file); route it to review
+     instead. This feeds directly into the routing in Step 5.2 as an explicit path
+     to the review route.
    - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 3 /
      Step 4 dedup check (repo-slug-scoped task IDs, dedup query); no separate action is needed
      here beyond noting the overlap.
@@ -233,7 +239,7 @@ never excluded from the Step 7.1 bulk POST — it still gets created. Fuzzy-matc
 positives are common (shared vocabulary, generic verbs like "fix"/"add"/"update"), and
 silently dropping genuinely new work because of a coincidental title overlap is a worse
 failure mode than one extra line a human has to glance at. This mirrors the same philosophy
-already applied to the `hitl` field (Step 5.2): no auto-decision on a fuzzy or judgment-based
+already applied to routing (Step 5.2): no auto-decision on a fuzzy or judgment-based
 signal where the cost of a wrong auto-decision is asymmetric — surface it for a human instead.
 
 For each flagged pair, print:
@@ -252,9 +258,9 @@ This mirrors `consolidation-fix/SKILL.md`'s Step 3 ("Cross-Check consolidation-d
 `references/decisions-registry.md` for the shared decisions-registry pattern this mirrors.
 
 This check runs against **every** row surviving Step 4 — not just rows headed toward a
-rule-(d)/HITL classification in Step 5.2. A registry decision can resolve a row that would
+rule-(d) review routing in Step 5.2. A registry decision can resolve a row that would
 otherwise be filed as a perfectly ordinary autonomous task just as easily as it can resolve an
-ambiguous one; the check is unconditional, upstream of the `hitl` computation.
+ambiguous one; the check is unconditional, upstream of the routing in Step 5.2.
 
 1. Check for `.claude/shipwright/test-readiness-decisions.md` in the project root.
 2. **If it does not exist**, treat this as "no decisions configured" — the same graceful no-op
@@ -313,8 +319,10 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
   "layer": "<test-layer from the row: unit | integration | smoke | e2e | infra>",
   "priority": "<critical | high | medium — see 5.1>",
   "type": "test-readiness",
-  "status": "pending",
-  "hitl": <true | false — computed per 5.2>,
+  "kind": "<dev | prd — per the route in 5.2>",
+  "status": "<pending | blocked — per the route in 5.2>",
+  "blockedReason": "<review route only: needs-review: the specific question — omit otherwise>",
+  "hitl": <false for auto and review; true only for the plan route — see 5.2>,
   "dependencies": ["test-{predecessor-t-nnn}-{repo-slug}", "..."],
   "acceptanceCriteria": ["...", "Verification command `{verify}` passes"],
   "description": "<see 5.3>"
@@ -362,92 +370,83 @@ than leaving the field ambiguous. Criticality tiers themselves come from
 `test-inventory/SKILL.md` Step 4 (`critical` / `high` / `medium`) — the same three-tier
 vocabulary, reused here for consistency with the rest of the pipeline.
 
-### 5.2 Compute the `hitl` Field
+### 5.2 Route the Row (auto / review / plan)
 
-The `hitl` boolean is a **per-task judgment call**, same philosophy as entropy-fix's Step
-6q.4 and error-fix's Step 6 — no numeric or count-based backstop ever forces the
-classification. Default `hitl: false`, except:
+Every row takes exactly one of three routes, judged per task on its own facts (no numeric or
+count-based backstop ever forces a route). The route sets `kind`, `status`, `blockedReason` and
+`hitl`; full contract in [docs/task-store.md](../../../../docs/task-store.md) ("Finding routing").
 
-- **(a) CI workflow secret scan** — if the task creates or modifies a CI workflow file (e.g.
-  a M1 "establish runner + CI pipeline shape" task touching `.github/workflows/*.yml`) and
-  doing so would need a new `${{ secrets.* }}` reference: extract every `${{ secrets.* }}`
-  reference the task's change would introduce, and check whether each secret name already
-  appears in another workflow file in the repo (`grep -r '\${{ *secrets\.' .github/workflows/`).
-  Any secret that is net-new — not referenced anywhere else in the repo — means a human must
-  provision it. Set `hitl: true` and list the new secret name(s) in the description (same
-  procedure as `plan-session.md`'s Step 5.5 "CI workflow secret scan" paragraph).
-- **(b) Branch protection changes** — if the task modifies branch protection settings (the
-  paired branch-protection tasks from `repo-config/SKILL.md`'s pairing rule, e.g. "Enable
-  branch protection on `main` requiring the new CI jobs"), set `hitl: true` — this is a
-  GitHub Settings action, not a code change an agent can make.
-- **(c) M5 "delete (redundant)" audit tasks with an untested canonical owner** — if this is a
-  M5 deletion task and its audit-decision-row table flags the canonical owner (the test that
-  supersedes the one being deleted) as itself untested or not yet landed, set `hitl: true`.
-  This mirrors `test-roadmap`'s own Open Risks guidance: don't delete a "redundant" test
-  before its replacement exists — that call needs a human to confirm the replacement is
-  actually in place and adequate.
-- **(d) Ambiguous fix approach** — a general "is the fix approach obvious" judgment call,
-  modeled on `consolidation-fix/SKILL.md`'s Step 7 per-finding `hitl` classification. The
-  question here isn't "which canonical shape to converge on" (consolidation-fix's framing) —
-  it's "is there an obvious, single way to write this test that mirrors existing precedent in
-  the codebase, or is the testing approach itself ambiguous":
-  - `hitl: false` continues to apply (no change to the existing default) when there's a clear
-    existing test file/pattern nearby to mirror — the row's `files` column names a target test
-    file adjacent to (or extending) an existing suite with the same layer/suffix convention,
-    the fixture/mocking strategy already has precedent elsewhere in the codebase, and there's
-    no real ambiguity about how the test should be structured.
-  - `hitl: true` (new rule d) applies when **any** of the following hold:
-    - **No existing precedent to mirror** — the row requires a genuinely novel test-fixture
-      strategy (e.g. the first integration test against a new external dependency, or a test
-      layer/suffix that doesn't yet exist anywhere in the repo for this component) and
-      reasonable engineers could disagree about how to structure it.
-    - **The row's scope crosses component/service boundaries** in a way that makes an
-      isolated, obvious test hard to write — e.g. the row's `files` column spans multiple
-      packages/services with no existing shared test-fixture convention between them.
-    - **The row is itself an audit/judgment row** whose own audit-decision-row table (parsed
-      in Step 2) reflects unresolved ambiguity about what "correct" behavior even is — distinct
-      from rule (c)'s narrower untested-canonical-owner case, this is about the row's own
-      decision criterion being unclear, not about a deletion target.
-  - Rule (d) is evaluated **in addition to** rules (a)–(c) — it does not replace them, and the
-    same "no default lean, judge each row on its own facts, no numeric backstop" philosophy
-    that governs (a)–(c) and this whole section applies to (d) too.
-  - **Carry-forward from Step 2's pre-filing check:** an unconfirmable indirect-reference row
-    from Step 2's pre-filing verification (Checklist Item 3 — the T-130 false-negative
-    pattern) is itself a path to `hitl: true` here. It is not a fifth numbered rule
-    the way (a)–(d) are — it's carried forward from Step 2's per-row verification — but the
-    `hitl` value it produces lands in this same field, so treat it as already-decided input
-    alongside (a)–(d) rather than re-litigating it.
+| Route | Task shape |
+|---|---|
+| **auto** (default) | `kind: "dev"`, `status: "pending"`, `hitl: false`. Agents execute it. |
+| **review** | `kind: "dev"`, `status: "blocked"`, `blockedReason: "needs-review: <the specific question>"`, `hitl: false` — never `hitl: true`. A human answers (optionally editing the description) and calls `POST /tasks/{id}/unblock`; the task then enters `?ready=true` and agents execute it. |
+| **plan** | `kind: "prd"`, `status: "pending"`, `hitl: true`, description = a draft problem statement plus the row's findings. A human runs it through `/shipwright:prd` or `/shipwright:plan-session`. |
 
-Judge (a)/(b)/(c)/(d) against the row's own files/outcome/audit table — there is no default
-lean either way beyond `false`; these four rules (plus the Step 2 pre-filing carry-forward) are
-the only paths to `true`.
+**Route to review** (the fix is a single task, but one question needs a human first) when any
+of these hold. Put the question in `blockedReason`:
+
+- **(a) CI workflow secret scan** — the task creates or modifies a CI workflow file and its
+  change would introduce a `${{ secrets.* }}` reference. Extract every reference and check
+  whether each name already appears in another workflow file
+  (`grep -r '\${{ *secrets\.' .github/workflows/`). A net-new secret needs a human to
+  provision it: question = "provision secret `{NAME}`, then unblock", and list the secret
+  name(s) in the description (same procedure as `plan-session.md`'s Step 5.5 "CI workflow
+  secret scan").
+- **(b) Branch protection changes** — the task modifies branch protection settings (the paired
+  branch-protection tasks from `repo-config/SKILL.md`'s pairing rule). It is a GitHub Settings
+  action: question = "confirm the required checks, then apply the branch protection change".
+- **(c) M5 "delete (redundant)" audit tasks with an untested canonical owner** — the audit
+  decision-row table flags the canonical owner (the test that supersedes the one being
+  deleted) as untested or not yet landed. Question = "is the replacement in place and
+  adequate?". This mirrors `test-roadmap`'s Open Risks guidance.
+- **(d) No precedent to mirror** — the row requires a genuinely novel test-fixture strategy
+  (the first integration test against a new external dependency, or a layer/suffix that does
+  not yet exist anywhere in the repo for this component) and reasonable engineers could
+  disagree on how to structure it. Question = "which fixture strategy should this use?".
+- **Carry-forward from Step 2's pre-filing check:** an unconfirmable indirect-reference row
+  (Checklist Item 3 — the T-130 false-negative pattern) routes to review with the question
+  "is `{file}` still referenced indirectly?". Treat it as already-decided input.
+
+**Route to plan** (bigger than one task, or the decision itself is unclear) when:
+
+- **The row's scope crosses component/service boundaries** with no shared test-fixture
+  convention between them (e.g. a `files` column spanning multiple packages), so no single
+  isolated task can be written.
+- **The row is itself an audit/judgment row** whose own audit-decision-row table (parsed in
+  Step 2) reflects unresolved ambiguity about what "correct" behavior even is — distinct from
+  rule (c)'s narrower untested-canonical-owner case.
+
+**Everything else is auto**: a clear existing test file or pattern nearby to mirror (the row's
+`files` column names a target adjacent to or extending an existing suite with the same
+layer/suffix convention, the fixture/mocking strategy already has precedent, no ambiguity).
+
+Rules (a)–(d) and the plan triggers are evaluated per row; if both a review and a plan trigger
+fire, plan wins. Credential rotation is not relevant here, so the only `hitl: true` this skill
+ever writes is the plan route's `kind: "prd"` task — never a dev task.
 
 **Worked example.**
 
-Row 1 — `hitl: false`:
+Row 1 — auto:
 ```
 T-071 | M4 | src/lib/formatCurrency.ts | unit | high-tier | add unit coverage for formatCurrency edge cases | bun test src/lib/formatCurrency.unit.test.ts
 ```
-`src/lib/formatCurrency.unit.test.ts` already exists with 10 sibling unit tests covering other
-pure functions in the same file, following the same `describe`/`it` structure and no external
-fixtures. This row simply extends that suite with more cases for the same function. Clear
-existing pattern to mirror, no boundary crossing, no audit ambiguity → `hitl: false`.
+`src/lib/formatCurrency.unit.test.ts` already exists with 10 sibling unit tests following the
+same `describe`/`it` structure and no external fixtures. Clear precedent, no boundary crossing,
+no audit ambiguity → **auto** (`kind: "dev"`, `status: "pending"`, `hitl: false`).
 
-Row 2 — `hitl: true` under rule (d):
+Row 2 — review under rule (d):
 ```
 T-088 | M2 | src/clients/paymentsGatewayClient.ts | integration | critical-path | add integration coverage for the new paymentsGatewayClient | bun test src/clients/paymentsGatewayClient.integration.test.ts
 ```
-This is the first integration test against a brand-new external payments gateway dependency —
-there is no existing `*.integration.test.ts` fixture/recording convention anywhere in the repo
-for this kind of third-party client (the repo's other integration tests all cover internal
-services with an established recorded-fixture pattern that doesn't obviously transfer to an
-external payment API's auth/retry semantics). No existing precedent to mirror, reasonable
-engineers could disagree on the fixture strategy → `hitl: true` per rule (d), even though
-neither rule (a), (b), nor (c) applies.
+This is the first integration test against a brand-new external payments gateway — no existing
+`*.integration.test.ts` fixture/recording convention transfers to an external payment API's
+auth/retry semantics. → **review**: `status: "blocked"`, `blockedReason: "needs-review: which
+fixture strategy (recorded vs sandbox) should the payments gateway integration test use?"`,
+`hitl: false`.
 
 ### 5.3 Build the `description` Field
 
-The `description` field must give `dev-task` (or the HITL executor) enough context to fix
+The `description` field must give `dev-task` (or the human reading it) enough context to fix
 without re-reading `test-readiness-plan.md`. It mirrors `issue.md.tmpl`'s body content minus
 the GitHub-specific "Closing checklist" section — `acceptanceCriteria` is the task-store
 equivalent of that checklist:
@@ -474,7 +473,7 @@ Context:
 
 Verification command: {verify}
 
-Task: {T-NNN} | HITL: {hitl}
+Task: {T-NNN} | Route: {auto|review|plan}
 ```
 
 Resolve the three context anchors the same way the former GitHub-issue publish skill's Step
@@ -511,7 +510,7 @@ Step 4/7.2 output. Step 4.5 (registry cross-check) is a local file read, not a t
 query, so it **does** still run in `--dry-run` mode — a preview should reflect suppressed rows
 the same way a real run would, printing `Would skip {T-NNN} — resolved per
 test-readiness-decisions.md ("{entry name}")` for each match instead of including it below. For
-each parsed row surviving Step 4.5, compute `priority` (5.1), `hitl`
+each parsed row surviving Step 4.5, compute `priority` (5.1), the route
 (5.2), and `dependencies` (5.4) in-memory, then print a preview:
 
 ```
@@ -525,7 +524,7 @@ Would queue {N} tasks:
      Outcome: {outcome} (T-NNN, M#)
      Layer: {test-layer} | Priority: {priority}
      Depends on: {dependency task IDs, or "none"}
-     HITL: {true|false} (classification per Step 5.2{a|b|c} or default)
+     Route: {auto|review|plan} (per Step 5.2{a|b|c|d} or default)
 
   2. ...
 
@@ -563,13 +562,13 @@ Skip this step if `--dry-run` was passed (handled in Step 6).
 TEST FIX — QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  QUEUED     {N} tasks   ({A} autonomous, {H} HITL)
+  QUEUED     {N} tasks   ({A} auto, {R} review, {P} plan)
   SKIPPED    {K} tasks (already active)
   FLAGGED    {F} tasks (possible near-duplicate, not skipped)
   SUPPRESSED {S} - resolved per test-readiness-decisions.md
 
 Tasks queued:
-  test-{t-nnn}-{repo-slug} — {outcome}  [layer: {test-layer}, priority: {priority}, hitl: {true|false}]
+  test-{t-nnn}-{repo-slug} — {outcome}  [layer: {test-layer}, priority: {priority}, route: {auto|review|plan}]
   ...
 
 {If any skipped:}
@@ -584,12 +583,29 @@ Flagged for review (possible near-duplicate, not skipped):
 Suppressed (resolved per test-readiness-decisions.md):
   {T-NNN} — {entry name}
 
-Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
-/shipwright:hitl.
+Run /shipwright:dev-task to execute auto tasks. Review tasks wait for a human to answer and
+unblock them (POST /tasks/{id}/unblock); plan tasks go through /shipwright:prd or
+/shipwright:plan-session.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Stop after printing — this is the sole final output for the regular flow.
+
+---
+
+## Run metrics
+
+This skill writes no counts into any repo file. It reports these numbers in its final output as
+a `metrics` object, and `/shipwright:test-readiness` merges them into the run record it posts
+through the shared recorder (see "System-cron contract" in
+[docs/task-store.md](../../../../docs/task-store.md)):
+
+```json
+{ "queued": 0, "auto": 0, "review": 0, "plan": 0, "skipped": 0, "flagged": 0, "suppressed": 0 }
+```
+
+`auto`, `review` and `plan` are counted separately; a `--dry-run` reports the would-queue counts
+and writes nothing.
 
 ---
 
@@ -613,8 +629,8 @@ Stop after printing — this is the sole final output for the regular flow.
 ## Constraints (Do Not Violate)
 
 - **Queue only** — this skill never opens PRs and never leaves the base branch. It only
-  writes tasks to the task store; the actual fix lands later via `dev-task` or
-  `/shipwright:hitl`.
+  writes tasks to the task store; the actual fix lands later via `dev-task` (after a human
+  unblocks a review task, or plans a plan task).
 - **No separate ready/blocked computation** — task-store's `dependencies` array and its own
   `ready:true` query are the sole readiness mechanism (Step 5.4). This skill never writes,
   toggles, or reads a local `ready` / `blocked` label the way the former GitHub-issue publish
@@ -624,16 +640,18 @@ Stop after printing — this is the sole final output for the regular flow.
 - **Cross-check test-readiness-decisions.md live, every run, for every row** — never trust
   that a row's classification is still unresolved by the registry; a human may have added a
   new decision entry since `test-readiness-plan.md` was generated (Step 4.5). This check is
-  unconditional across all rows, not scoped to rule-(d)/HITL rows only.
+  unconditional across all rows, not scoped to rule-(d)/review rows only.
 - **Fuzzy near-duplicate check (Step 4.1) never skips** — it only ever flags for human review
   (printed in Step 4's output and again in Step 7.2's summary). Only the exact-ID check can
   remove a row from the Step 5 build list; a fuzzy title match is never, on its own, a reason
   to withhold a task from the bulk POST.
-- **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the four
-  explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
-  owner, ambiguous fix approach) plus the Step 2 pre-filing-verification carry-forward
-  (unconfirmable indirect-reference rows). No file-count, line-count, or milestone-number
-  threshold ever forces the classification on its own.
+- **No numeric/count backstop on routing** — the only paths to review are the explicit rules
+  in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion owner, no
+  precedent to mirror, and the Step 2 pre-filing carry-forward); the only paths to plan are
+  the cross-boundary and audit-judgment triggers. No file-count, line-count, or
+  milestone-number threshold ever forces a route on its own.
+- **Never `hitl: true` on a dev task** — review tasks are `blocked` with `needs-review:`, auto
+  tasks are `hitl: false`; the plan route's `kind: "prd"` task is the only `hitl: true` write.
 - **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is

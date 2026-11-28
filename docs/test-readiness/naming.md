@@ -115,7 +115,7 @@ rename work landed since T-048:
 Still no cross-runner discovery gaps.
 
 **Re-confirmed (T-075):** re-ran the isolation check per-entry-point against the
-+18-file delta this cycle, which includes the 4 new Specialty manifest test files
++18-file delta in T-075's window, which includes the 4 new Specialty manifest test files
 (`admin/src/specialty-manifest-loader.unit.test.ts`,
 `admin/src/specialty-registry.unit.test.ts`,
 `admin/src/specialty-registry.schema.unit.test.ts`,

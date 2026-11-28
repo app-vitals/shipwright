@@ -5,8 +5,8 @@ description: >
   in its own worktree + branch. Runs test-inventory → test-design →
   test-migration → test-roadmap → test-fix in sequence, starting from the
   first stale artifact. Queued per repo by the admin system-cron scheduler;
-  exits early when all of the repo's phase artifacts are fresh. Requires
-  `--repo org/repo`.
+  exits early when all of the repo's phase artifacts are fresh. Records
+  every run through the shared cron-run recorder. Requires `--repo org/repo`.
 argument-hint: "--repo org/repo [--full] [--publish] [--dry-run]"
 ---
 
@@ -17,6 +17,12 @@ argument-hint: "--repo org/repo [--full] [--publish] [--dry-run]"
 Drive the complete test-readiness pipeline from the first stale phase to
 publication. This skill is the scheduler-facing entry point — it picks up where the
 staleness guard left off and runs all necessary phases to bring the docs current.
+
+It follows the system-cron contract in [docs/task-store.md](../../../../docs/task-store.md):
+one task per repo, one run record per run (every count and metric lives there, via the shared
+recorder in Step 5), artifacts that carry only detail (inventory rows, blueprint, migration
+buckets, roadmap tasks — no refresh logs or count lines), a docs PR only on material change,
+and follow-on tasks routed auto / review / plan by `/shipwright:test-fix`.
 
 ## When invoked
 
@@ -32,7 +38,7 @@ run is staleness-gated with phase 5 in dry-run.
 | Flag | Effect |
 |------|--------|
 | `--full` | Skip the staleness check entirely and run all phases 1→5 regardless of artifact freshness. Without it, the staleness gate decides the starting phase and exits early when everything is fresh. |
-| `--publish` | Run phase 5 as a **real publish** — forward real-queue mode to `/shipwright:test-fix` so it writes task-store tasks unattended (no confirmation gate — test-fix never has one, matching entropy-fix/error-fix). Without it, phase 5 runs `--dry-run` (preview only, no task-store writes). |
+| `--publish` | The queue-for-real switch. Run phase 5 as a **real publish** — forward real-queue mode to `/shipwright:test-fix` so it writes task-store tasks unattended (no confirmation gate — test-fix never has one, matching entropy-fix/error-fix). Without it, phase 5 runs `--dry-run` (preview only, no task-store writes). |
 | `--repo org/repo` | **Required.** The one repo to process. Naming a repo explicitly is the opt-in, so the `docs/test-readiness/` opt-in check does not apply. Finds the clone under `repos/` or clones it. The staleness gate still applies (unless `--full`), so a fresh repo is a no-op. A missing `--repo` is a usage error (see Step 1). |
 | `--dry-run` | Explicit preview: phase 5 runs `--dry-run`. This is the default when `--publish` is absent. |
 
@@ -60,7 +66,8 @@ re-published after any update.
 ## Process
 
 The skill runs for exactly one repo, given by `--repo org/repo`. Steps 2-3 run
-in that repo's own worktree + branch, and Step 4 (Report) prints the summary.
+in that repo's own worktree + branch, Step 4 (Report) prints the summary, and Step 5
+(at the end of this file) records the run.
 
 ### Step 1: Resolve the repo
 
@@ -187,6 +194,9 @@ From the starting phase through phase 5, in the current repo's worktree:
   follow-on tasks are stamped `originKind: "cron"` / `originRef: "test-readiness"`
   and can be counted per cron. Manual runs of this skill are stamped the same way.
 
+Each phase reports its `metrics` object (see its "Run metrics" section); keep them, they
+become the run record's metrics in Step 5 — nothing from them is written into the artifacts.
+
 Run each skill using the Skill tool. If any phase fails for this repo, report
 the failure for that repo and stop running further phases **for that repo
 only** — do not run subsequent phases for it, as each depends on the previous
@@ -204,6 +214,24 @@ as long as at least one phase produced artifacts for this repo. Commit only
 the artifacts of the completed phases, push the branch to origin and open (or
 update) a PR for the phase-artifact refresh. If no phase produced artifacts
 (the first phase failed), skip the commit and PR and go to Step 4.
+
+**Docs PR only on material change.** Before committing, decide per completed phase artifact
+whether it changed materially, using the shared checker
+`${CLAUDE_PLUGIN_ROOT}/scripts/check-patrol-docs.ts` (the same one the patrol skills and
+`research-docs --auto` use). For each artifact that already exists in `HEAD` (a new file is
+always material), write its committed version to a temp file and compare:
+
+```bash
+git show HEAD:{artifact-path} > /tmp/{slug}.current.md
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/check-patrol-docs.ts {artifact-path} /tmp/{slug}.current.md
+```
+
+Read `materiallyChanged` from the JSON and ignore `violations` and the exit code (the 150-line,
+count-table and run-history rules are for single patrol docs; these artifacts have their own
+shape). A timestamp-only change or a pure reorder is not material. Discard every artifact that
+is not materially changed (`git checkout -- {path}`). If **no** artifact is materially changed,
+open no PR: skip the commit, push and PR steps below, record `docs_pr: 0` and go to Step 4.
+Otherwise stage and commit only the materially changed artifacts and set `docs_pr: 1`.
 
 **Discard the failed phase's output before committing.** A phase that dies
 mid-write can leave a truncated or partial artifact on disk. Never commit it:
@@ -304,7 +332,8 @@ Error: {error}" \
   --label shipwright
 ```
 
-After the PR is open (or updated in the reused-branch case), proceed to Step 4.
+After the PR is open (or updated in the reused-branch case), proceed to Step 4. The PR body
+carries no counts or refresh log; those are in the run record.
 
 ### Step 4: Report
 
@@ -330,6 +359,7 @@ If a phase fails:
   title/body (or a comment on an existing open PR).
 - List the failed phase and its error for that repo in the Step 4 summary so
   the run log shows the failure.
+- Step 5 still records the run, with `outcome: "failed"`.
 - A failure in the skill itself is always logged.
 
 ## Notes
@@ -342,3 +372,31 @@ If a phase fails:
   The publish step is idempotent (it dedupes on already-active T-NNN
   task-store IDs per repo), so a daily real run queues tasks for new work —
   including doc-layer tasks — without creating duplicates.
+
+## Step 5: Record the run (last step)
+
+The last step of every invocation, whatever happened before it. Every run appends exactly one `RepoCronRun` through the shared recorder, including no-op and failed runs (system-cron
+contract point 3 in [docs/task-store.md](../../../../docs/task-store.md)). The cron id is
+`test-readiness`, hard-coded like the `--origin-cron` value in Step 3. Write the result file
+(temporary, never a `state/` file), then record against the repo's worktree `HEAD`:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts record \
+  --cron test-readiness --repo {org/repo} --commit "$(git rev-parse HEAD)" \
+  --result /tmp/test-readiness-result.json
+```
+
+The result file is `{ "outcome": "ok" | "no_op" | "failed", "metrics": {...} }`:
+
+- `outcome`: `no_op` when every artifact was fresh (nothing ran) or nothing changed and nothing
+  was queued; `failed` when a phase failed or the reuse-merge conflict blocked the repo; else
+  `ok`.
+- `metrics`: numbers only — `phases_run`, `phases_failed`, the phases' own counts
+  (`rows_added`, `rows_removed`, `rows_reverified`, bucket counts, roadmap task counts), test-fix's
+  `queued`, `auto`, `review`, `plan`, `skipped`, `flagged`, `suppressed`, and `docs_pr` (1 if a
+  docs PR was opened or updated). Without `--publish`, phase 5 is a dry run and the queue counts
+  are 0.
+
+A failed run is still recorded with the metrics gathered so far (a failed phase, or the
+reuse-merge conflict, is also named in the Step 4 summary). If the recorder itself fails, log it
+and report it in the summary; never fall back to a local state file.
