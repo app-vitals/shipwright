@@ -219,16 +219,18 @@ first.
 ### security-scan
 
 Scan a repo for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues,
-authn/authz anti-patterns, and posture gaps across three tiers. Report only — no code changes.
+authn/authz anti-patterns, and posture gaps across three tiers. Requires `--repo`; records
+findings in the task store (never a repo file). Report only — no code changes.
 
 *Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
 `/shipwright:security-scan` command.
 
 ### security-fix
 
-Read `security-report.md` and queue PR-worthy findings as task-store tasks, one task per rule,
-routing any finding that requires credential rotation/revocation through `/shipwright:hitl`
-instead of auto-remediating it. Requires security-scan to have run first.
+Read the repo's open security findings from the task store (`--repo` required) and route each
+rule group auto / review / plan as task-store tasks, one task per rule; any finding that requires
+credential rotation/revocation keeps `hitl: true` and goes through `/shipwright:hitl`. Requires
+security-scan to have run first.
 
 *Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
 `/shipwright:security-fix` command.
