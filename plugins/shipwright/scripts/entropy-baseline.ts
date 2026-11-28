@@ -45,16 +45,57 @@ const read = (dir: string, rel: string): string | null => {
 const anyExists = (dir: string, rels: string[]) =>
   rels.some((r) => existsSync(join(dir, r)));
 
+/**
+ * Strip JSONC comments and trailing commas, touching only text outside string
+ * literals — so `"@/*"` or `"src/**\/*"` in a tsconfig are left intact.
+ */
+function stripJsonc(raw: string): string {
+  let out = "";
+  let i = 0;
+  while (i < raw.length) {
+    const c = raw[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < raw.length && raw[j] !== '"') j += raw[j] === "\\" ? 2 : 1;
+      out += raw.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "/" && raw[i + 1] === "/") {
+      while (i < raw.length && raw[i] !== "\n") i++;
+    } else if (c === "/" && raw[i + 1] === "*") {
+      const end = raw.indexOf("*/", i + 2);
+      i = end === -1 ? raw.length : end + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  // Comments and strings are resolved; drop commas that precede only
+  // whitespace and a closing bracket (outside strings).
+  let res = "";
+  for (let k = 0; k < out.length; k++) {
+    const c = out[k];
+    if (c === '"') {
+      let j = k + 1;
+      while (j < out.length && out[j] !== '"') j += out[j] === "\\" ? 2 : 1;
+      res += out.slice(k, j + 1);
+      k = j;
+    } else if (c === ",") {
+      let j = k + 1;
+      while (j < out.length && /\s/.test(out[j])) j++;
+      if (out[j] !== "}" && out[j] !== "]") res += c;
+    } else {
+      res += c;
+    }
+  }
+  return res;
+}
+
 const readJson = (dir: string, rel: string): Record<string, unknown> | null => {
   const raw = read(dir, rel);
   if (raw === null) return null;
   try {
     // tsconfig allows comments and trailing commas
-    const stripped = raw
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[\s,{[])\/\/.*$/gm, "$1")
-      .replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
+    return JSON.parse(stripJsonc(raw));
   } catch {
     return null;
   }

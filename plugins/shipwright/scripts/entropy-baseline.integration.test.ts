@@ -98,6 +98,27 @@ describe("entropy baseline — stricter mode routes to review", () => {
     });
     expect(scanBaseline(d)).toEqual([]);
   });
+
+  it("flags strict-off when strings contain comment-like sequences", () => {
+    const d = fixture({
+      ...ts,
+      "package.json": JSON.stringify({ devDependencies: { typescript: "5" } }),
+      "tsconfig.json":
+        '{"compilerOptions":{"paths":{"@/*":["./src/*"]}},"include":["src/**/*"]}',
+    });
+    expect(scanBaseline(d).map((f) => f.ruleId)).toEqual([
+      "tooling_stricter_mode",
+    ]);
+  });
+
+  it("keeps comment-like sequences inside strings while stripping real comments", () => {
+    const d = fixture({
+      ...ts,
+      "tsconfig.json":
+        '{\n  // line comment\n  "compilerOptions": { /* block */ "strict": true, "baseUrl": "http://x/*y*/", },\n  "include": ["src/**/*",],\n}',
+    });
+    expect(scanBaseline(d)).toEqual([]);
+  });
 });
 
 describe("entropy baseline — idempotent re-run", () => {
