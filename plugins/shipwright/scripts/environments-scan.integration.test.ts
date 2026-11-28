@@ -105,3 +105,31 @@ describe("environments-scan on fixture repos", () => {
     expect(later).toEqual([]);
   });
 });
+
+describe("environments-fix routing (planned tasks)", () => {
+  it("queues the preview plan task as prd + hitl citing the preview pattern", () => {
+    bareRepo();
+    const t = run(null).tasks.find((x) =>
+      x.id.startsWith("environments-preview-environment-"),
+    );
+    expect(t?.kind).toBe("prd");
+    expect(t?.hitl).toBe(true);
+    for (const ref of [
+      "docs/preview-environment.md",
+      "scripts/preview-env.ts",
+      ".github/actions/preview-env",
+      "preview/canary/",
+      "throwaway cluster",
+    ])
+      expect(t?.description).toContain(ref);
+  });
+
+  it("does not add the preview pattern to other plan tasks", () => {
+    bareRepo();
+    const t = run(null).tasks.find((x) =>
+      x.id.startsWith("environments-tracing-metrics-"),
+    );
+    expect(t?.kind).toBe("prd");
+    expect(t?.description).not.toContain("preview-env");
+  });
+});
