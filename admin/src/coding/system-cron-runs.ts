@@ -60,8 +60,8 @@ export interface RepoRunSummary {
 /** Latest run per in-scope repo; `null` = never run, `undefined` entry = fetch failed. */
 export type RepoRunHistory = Record<string, RepoRunSummary | null | undefined>;
 
-/** Most repos shown per definition; the rest are summarised in a count. */
-export const REPO_HISTORY_LIMIT = 50;
+/** Repos fetched concurrently per definition. */
+export const REPO_FETCH_BATCH = 10;
 
 /** Copies only the displayable fields, so nothing else (machineState) can leak into HTML. */
 export function pickRepoRun(r: RepoRunSummary): RepoRunSummary {

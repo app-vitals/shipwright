@@ -36,7 +36,7 @@ import {
   formatTriggerRow,
   pickRepoRun,
   RECENT_RUNS_LIMIT,
-  REPO_HISTORY_LIMIT,
+  REPO_FETCH_BATCH,
   type RepoRunHistory,
   type RepoRunSummary,
   recentTriggers,
@@ -333,7 +333,6 @@ function renderRepoHistory(repos: string[], history: RepoRunHistory): string {
     return `<div data-repo-history="empty">${heading}<p class="empty-state" style="margin:4px 0 0">No repositories in scope.</p></div>`;
   }
   const rows = repos
-    .slice(0, REPO_HISTORY_LIMIT)
     .map((repo) => {
       const run = history[repo];
       const name = `<td>${escapeHtml(repo)}</td>`;
@@ -348,11 +347,7 @@ function renderRepoHistory(repos: string[], history: RepoRunHistory): string {
       return `<tr data-repo-run="${escapeHtml(repo)}" data-state="${failed ? "failed" : "ran"}">${name}<td>${escapeHtml(formatScheduledFor(run.finishedAt))}</td><td>${outcome}</td><td><code>${escapeHtml(shortSha(run.commitSha))}</code></td><td>${escapeHtml(formatMetrics(run.metrics))}</td></tr>`;
     })
     .join("");
-  const more =
-    repos.length > REPO_HISTORY_LIMIT
-      ? `<p style="font-size:12px;margin:4px 0 0">Showing ${REPO_HISTORY_LIMIT} of ${repos.length} repositories.</p>`
-      : "";
-  return `<div data-repo-history="table">${heading}<table style="font-size:13px;width:100%;margin-top:4px"><thead><tr><th align="left">Repository</th><th align="left">Last run</th><th align="left">Outcome</th><th align="left">Commit</th><th align="left">Metrics</th></tr></thead><tbody>${rows}</tbody></table>${more}</div>`;
+  return `<div data-repo-history="table">${heading}<table style="font-size:13px;width:100%;margin-top:4px"><thead><tr><th align="left">Repository</th><th align="left">Last run</th><th align="left">Outcome</th><th align="left">Commit</th><th align="left">Metrics</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
@@ -509,20 +504,20 @@ export function registerSystemCronsRoutes(
         crons.map(async (cron) => {
           const history: RepoRunHistory = {};
           repoHistory[cron.id] = history;
-          const repos = inScopeRepos(
-            cron,
-            repoListings[cron.accountId ?? ""],
-          ).slice(0, REPO_HISTORY_LIMIT);
-          await Promise.all(
-            repos.map(async (repo) => {
-              try {
-                const { runs } = await fetchRuns(cron.id, repo, 1);
-                history[repo] = runs[0] ? pickRepoRun(runs[0]) : null;
-              } catch {
-                history[repo] = undefined;
-              }
-            }),
-          );
+          const repos = inScopeRepos(cron, repoListings[cron.accountId ?? ""]);
+          // Batched so a definition covering many repos doesn't fan out unbounded.
+          for (let i = 0; i < repos.length; i += REPO_FETCH_BATCH) {
+            await Promise.all(
+              repos.slice(i, i + REPO_FETCH_BATCH).map(async (repo) => {
+                try {
+                  const { runs } = await fetchRuns(cron.id, repo, 1);
+                  history[repo] = runs[0] ? pickRepoRun(runs[0]) : null;
+                } catch {
+                  history[repo] = undefined;
+                }
+              }),
+            );
+          }
         }),
       );
     }
