@@ -582,10 +582,14 @@ export class SessionService implements SessionServiceLike {
     agentScope?: { agentId: string; repos: string[] },
     accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<SessionListItem | null> {
-    const session = await this.prisma.session.findUnique({
-      where: { accountId_slug: { accountId, slug } },
+    // Case-insensitive (STI-1.2): resolve to the canonical stored slug, then
+    // use it for the exact-match task/document lookups below. The STI-1.1
+    // unique index on (accountId, lower(slug)) guarantees at most one row.
+    const session = await this.prisma.session.findFirst({
+      where: { accountId, slug: { equals: slug, mode: "insensitive" } },
     });
     if (!session) return null;
+    slug = session.slug;
 
     const tasks = await this.prisma.task.findMany({
       where: { session: slug, accountId },
