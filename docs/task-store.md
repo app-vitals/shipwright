@@ -213,6 +213,32 @@ The scheduler is the admin's `system-cron-scheduler` background pass (`admin/src
 
 To query recent claimed slots, use `GET /system-crons/:id/triggers?limit=N` (admin-only; returns `{ triggers: [...], nextCursor }`, and `&cursor=` pages through older slots). Triggers are sorted newest first by `scheduledFor` (tie-break: `createdAt` desc), capped at `limit` (1–50, default 5). Each trigger object contains `scheduledFor` (ISO timestamp of the slot), `claimedAt` (when the slot was claimed), and `taskCount` (number of tasks created for that slot). This is read-only and does not record skipped ticks.
 
+### Finding routing (auto / review / plan)
+
+Patrol and system-cron fix skills route every finding one of three ways, so a human is involved only where judgment is needed and agents still do the execution. Every routed task carries `originKind: "cron"`, `originRef` = the system-cron definition id, and `repo`, and the run's `RepoCronRun.metrics` count `auto`, `review` and `plan` separately.
+
+| Route | Task shape | Who acts |
+|---|---|---|
+| **auto** (obvious fix) | `kind: dev`, `status: pending`, `hitl: false` | Agents scoped to the repo execute it through the normal loop |
+| **review** (non-obvious fix) | `kind: dev`, created `status: blocked` with `blockedReason` starting `needs-review:` and holding the specific question for the human. Never `hitl: true` | A human answers, optionally edits the description, and calls `POST /tasks/{id}/unblock`; the task then enters `?ready=true` and agents execute it |
+| **plan** (bigger than one task) | `kind: prd`, `hitl: true`, description = draft problem statement plus the findings | A human runs it through `/shipwright:prd` or `/shipwright:plan-session`, which produces agent-executable tasks. The autonomous plan phase skips it because it is `hitl: true` |
+
+**Human-only exception.** Credential rotation or revocation findings (security-fix) keep `hitl: true` and go to `/shipwright:hitl`, because no agent can rotate a credential. This is the only use of `hitl: true` on a dev finding.
+
+A review task is created directly in `blocked` (see "Create-as-blocked" above), so it is never briefly ready.
+
+### System-cron contract
+
+Every system cron (docs-freshness, test-readiness, entropy, security, consolidation, error) meets these seven points, and any future cron is held to them. Plan-session treats them as acceptance criteria for a new cron task. Patrol and cron skills link here rather than restating them.
+
+1. **One task per repo.** The admin scheduler queues one task per repo with `--repo {repo}` required. No multi-repo mode, no agent-level cron.
+2. **Scan then queue.** One task runs the scan step, then the queue-tasks step.
+3. **One run record.** Every run appends one `RepoCronRun` with outcome, commit and metrics. All numbers live there.
+4. **Detail placement.** Human-readable detail goes to one concise repo doc per cron, through a PR, only on material change, with no count tables. Machine state goes to the run's `machineState`, never a repo file. Security and error detail stays out of the repo entirely.
+5. **Routed findings.** Every queued finding is routed auto / review / plan (see "Finding routing"). `hitl: true` is used only for credential rotation.
+6. **No local state.** No agent-local `state/` files after the one-time import.
+7. **Seeded disabled.** Operators enable and scope the cron on the admin system-crons page.
+
 ### Coverage snapshots
 
 `CoverageSnapshot` stores one measured test-coverage reading per commit: `id`, `accountId`, `repo`, `branch`, `commitSha`, `linesCovered` / `linesTotal` / `linesPct`, optional `branchesCovered` / `branchesTotal` / `branchesPct` and `functionsCovered` / `functionsTotal` / `functionsPct`, `tool`, optional `runUrl`, `measuredAt`, `createdAt`. It is unique on `(accountId, repo, commitSha)` and indexed on `(repo, measuredAt)`. A snapshot has no parent task or PR, so its account comes from the caller.
