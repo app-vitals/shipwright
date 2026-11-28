@@ -349,11 +349,11 @@ a guideline.
 - **Injected-exec double** — one shared interface + fake implementation for `gh`/`git`/`helm`/
   `kubectl` shellouts, reused across `scripts/hitl.ts`, `minikube.ts`,
   `agent-workspace-pull.ts`, and the agent's `check-*.ts` family.
-  **Placement constraint (historical; `lib/` has since moved to the `@app-vitals/agent-lib` registry package, so a shared exec interface for production code under `agent/` must now come from that package or live in `agent/src/coding/`):** `agent/Dockerfile`'s runtime stage copies
-  `lib/` but not `scripts/`, so any shared exec interface that production code under `agent/`
-  imports must live in `lib/` — a `scripts/`-only home resolves locally and crash-loops the
-  deployed pod (the same reason `clone-plan.ts` was moved to `lib/`). A purely test-only fake
-  may live anywhere, but keep the interface and its fake side by side in `lib/`.
+  **Placement constraint:** `agent/Dockerfile`'s runtime stage copies `agent/src/coding` and
+  `agent/scripts` but not the root `scripts/`, so any shared exec interface that production code
+  under `agent/` imports must come from the `@app-vitals/agent-lib` package or live in
+  `agent/src/coding/` — a `scripts/`-only home resolves locally and crash-loops the deployed pod.
+  A purely test-only fake may live anywhere, but keep the interface and its fake side by side.
 - **Playwright auth fixture** — a shared login/session-cookie-injection fixture for
   `admin/e2e/*.e2e.ts` so every admin E2E spec doesn't re-implement login.
 - **Content-layer assertion helper** — a shared markdown-frontmatter/section-presence assertion

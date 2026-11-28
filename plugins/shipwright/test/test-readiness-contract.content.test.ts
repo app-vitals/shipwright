@@ -164,7 +164,9 @@ describe("docs/test-readiness artifacts — no refresh logs or count lines", () 
   for (const f of files) {
     it(`${f} carries no refresh-log blocks`, () => {
       const text = doc(f);
-      expect(text).not.toMatch(/^> \*\*20\d\d-\d\d-\d\d[^\n]*(refresh|delta|top-up)/im);
+      expect(text).not.toMatch(
+        /^> \*\*20\d\d-\d\d-\d\d[^\n]*(refresh|delta|top-up)/im,
+      );
       expect(text).not.toMatch(/^- \*\*Delta since the /m);
       expect(text).not.toMatch(/^- \*\*20\d\d-\d\d-\d\d delta/m);
       expect(text).not.toMatch(/\(last refreshed /);
@@ -198,4 +200,39 @@ describe("docs/test-readiness artifacts — no cycle-relative narrative", () => 
       expect(text).not.toMatch(/\b20\d\d-\d\d-\d\d cycle\b/i);
     });
   }
+});
+
+describe("docs/test-readiness artifacts — no stacked or superseded readings", () => {
+  // Each artifact keeps only the latest reading; git holds the history.
+  // Word-bounded so code identifiers such as `isSupersededBySameHeadApproval`
+  // stay legal while prose like "supersedes the 2026-11-25 figures" does not.
+  const files = [
+    "test-inventory.md",
+    "test-system.md",
+    "test-migration.md",
+    "test-readiness-plan.md",
+    "naming.md",
+  ];
+  for (const f of files) {
+    it(`${f} carries no superseded/re-sourced/prior-pass readings`, () => {
+      const text = doc(f);
+      expect(text).not.toMatch(/\bsupersed(e|es|ed|ing)\b/i);
+      expect(text).not.toMatch(/\bre-sourc(e|es|ed|ing)\b/i);
+      expect(text).not.toMatch(/\bmeasured this pass\b/i);
+      expect(text).not.toMatch(/\bolder readings?\b/i);
+      expect(text).not.toMatch(/\bcarried forward\b/i);
+      expect(text).not.toMatch(
+        /\b(first|second|third|prior|previous|earlier|this) pass\b/i,
+      );
+      expect(text).not.toMatch(/^\s*- \*\*20\d\d-\d\d-\d\d:/m);
+      expect(text).not.toMatch(/\(historical\b/i);
+    });
+  }
+
+  it("test-readiness-plan.md has a single Coverage Gate reading", () => {
+    const text = doc("test-readiness-plan.md");
+    const gate = text.split("## Coverage Gate")[1]?.split(/^## /m)[0] ?? "";
+    const verdicts = gate.match(/check-coverage-gate\.ts\n/g) ?? [];
+    expect(verdicts.length).toBe(1);
+  });
 });

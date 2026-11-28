@@ -28,7 +28,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 ## Sampling
 
 - `.claude/shipwright/test-readiness-decisions.md` re-checked per Step 0: **2 decisions loaded** — (a) `site/src/lib/html-escape.ts`, indirect e2e coverage accepted; (b) `scripts/hitl.ts` bootstrap sequence, unit-layer planner/executor split accepted over the originally-prescribed integration layer. Both remain applicable at this commit — no revisit condition met, no new entries added.
-- `deploy_model` re-verified as `direct` directly against `CLAUDE.md` at this commit — unchanged; canary eligibility tagging remains skipped for the entire inventory (see Step 5 / Notes).
+- `deploy_model` is `direct` per `CLAUDE.md`; canary eligibility tagging is skipped for the entire inventory (see Step 5 / Notes).
 
 ## Summary
 
@@ -363,7 +363,7 @@ Items where the classifier was not confident, or where a documented interim stat
 - **`charts/shipwright/` (Helm chart) and `demo/`** — top-level directories, declarative/config or media assets, not TypeScript source with a test-suffix convention. Excluded from this inventory as out of scope.
 - **`agent/src/coding/pr-state-reconciler.ts`'s removed orphan-reconciliation pass** — the removal (`listOrphanCandidateTasks`, `ghListOpenPrsForBranch`, `reconcileOrphanedTask(s)`) looks like a clean scope reduction, but this inventory has never verified *why* the pass was removed or whether the removed unit-test assertions represented coverage that's now genuinely unneeded. Recommend a human confirm the removal's rationale.
 - **`mcp-server/src/generated-tools.ts` and `scripts/test-env-preload.ts`** — classified as excluded (generated code / test infra respectively) by direct analogy to the already-accepted `lib/admin-types.ts`/`lib/task-store-types.ts` and `metrics/src/lib/test-helpers.ts`/`chat/src/test-fakes.ts` exclusions rather than individually confirmed with a human. Low-risk given the precedent is well-established, but flagged for a quick reviewer spot-check since they're the newest instances of the pattern.
-- **`charts/shipwright/tests/admin_*_test.yaml`** - helm-unittest cases for platform flag values live in the chart, outside `bun test` and outside the declared suffix convention; the prior "Helm chart excluded" note is now partially stale. Recommend a human decide whether helm-unittest is a recognized layer.
+- **`charts/shipwright/tests/admin_*_test.yaml`** - helm-unittest cases for platform flag values live in the chart, outside `bun test` and outside the declared suffix convention; the "Helm chart excluded" note above does not cover them. Recommend a human decide whether helm-unittest is a recognized layer.
 - **`scripts/audit-extraction.ts`** - survived the extraction cleanup while `extract-platform.ts`/`rehearse-extraction.ts` were removed; likely vestigial. Recommend confirming whether to delete or keep.
 - **Registry-package behavior** (`@app-vitals/agent-runtime`, `-admin`, `-lib`) - consumed, not owned; coverage here is seam-only (pins and contract smoke). Recommend a human confirm that is the intended boundary.
 - **`agent/src/contract/*.smoke.test.ts`** - classified smoke (image-level) though they need Docker and are skipped by default; canary-eligibility n/a under `direct`.

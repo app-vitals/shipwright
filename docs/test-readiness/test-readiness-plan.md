@@ -10,7 +10,7 @@
 The headline machine-checkable verdict — computed by `plugins/shipwright/scripts/check-coverage-gate.ts`,
 rendered verbatim below.
 
-**2026-11-27 re-sourcing (supersedes the 2026-11-25 figures below).** Coverage read via `plugins/shipwright/scripts/coverage-summary.ts` for the main CI run [45872756566](https://github.com/app-vitals/shipwright/actions/runs/45872756566) @ `05374a720` (lcov, lines 34978/38165 = 91.65%, functions 89.77%, 6.08% excluded; no branch data). Recorded to the task store as a coverage snapshot.
+Coverage read via `plugins/shipwright/scripts/coverage-summary.ts` for the main CI run [45872756566](https://github.com/app-vitals/shipwright/actions/runs/45872756566) @ `05374a720` (lcov, lines 34978/38165 = 91.65%, functions 89.77%, 6.08% excluded; no branch data). Recorded to the task store as a coverage snapshot.
 
 ```bash
 echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 91.65, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/45872756566 @ 05374a720", "branchPct": null, "branchSource": "no branch data in the lcov artifact"}' \
@@ -28,115 +28,7 @@ echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.m
 | Branch coverage | not measured (target 80%) |
 | **Verdict** | **READY** |
 
-**(superseded) 2026-11-26: carried forward, not re-measured** (`coverage-summary.ts` returned `not_reporting` / `no_new_artifact`); the figures below are the 2026-11-25 reading.
-
-**2026-11-25 re-sourcing (supersedes the 2026-11-18 figures below).** Coverage read via `plugins/shipwright/scripts/coverage-summary.ts` for the main CI run [45545387097](https://github.com/app-vitals/shipwright/actions/runs/45545387097) @ `ff9b35f09` (lcov, lines 34987/38152 = 91.70%, 6.04% excluded; functions 2757/3069). The artifact carries no branch data, so branch coverage is reported as not measured and does not block. Computed by:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 91.7, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/45545387097 @ ff9b35f09", "branchPct": null, "branchSource": "no branch data in the lcov artifact (branches absent from the coverage contract output)"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":91.7,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/45545387097 @ ff9b35f09","branch_coverage_pct":null,"branch_coverage_source":"no branch data in the lcov artifact (branches absent from the coverage contract output)","verdict":"READY","targets":{"feature":90,"line":90,"branch":80}}
-```
-
-| Field | Value |
-|---|---|
-| Feature coverage | 100% (target 90%) |
-| Line coverage | 91.7% (target 90%) |
-| Branch coverage | not measured (target 80%) |
-| **Verdict** | **READY** |
-
-**2026-11-18 re-sourcing (superseded by 2026-11-25 above; supersedes the 2026-11-17 figures below).** Coverage read via `plugins/shipwright/scripts/coverage-summary.ts` for the main CI run [44254716337](https://github.com/app-vitals/shipwright/actions/runs/44254716337) @ `fd764eb22` (lcov, lines 33882/37093 = 91.34%, 6.18% excluded via `.shipwright/coverage.json`; functions 2682/2991). Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 91.34, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/44254716337 @ fd764eb22"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":91.34,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/44254716337 @ fd764eb22","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-Verdict: **READY** (feature 100% / target 90%, line 91.34% / target 90%).
-
-**2026-11-17 re-sourcing (superseded by 2026-11-18 above).** Latest green `lint / typecheck / test` run on main: [run 44091676159](https://github.com/app-vitals/shipwright/actions/runs/44091676159) @ `d86d7a137`, `Lines: 91.01% (32798/36039) — threshold: 90%` (functions 89.21% vs 89%). Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 91.01, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/44091676159 @ d86d7a137"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":91.01,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/44091676159 @ d86d7a137","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-Verdict: **READY** (feature 100% / target 90%, line 91.01% / target 90%).
-
-**2026-11-12 re-sourcing (superseded by 2026-11-17 above).** Latest green `lint / typecheck / test` run on main: [run 43162172918](https://github.com/app-vitals/shipwright/actions/runs/43162172918) @ `bfc06b145`, `Lines: 90.66% (29658/32712) — threshold: 90%`. Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 90.66, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/43162172918 @ bfc06b145"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":90.66,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/43162172918 @ bfc06b145","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-Verdict: **READY** (feature 100% / target 90%, line 90.66% / target 90%).
-
-**2026-10-26 re-sourcing (supersedes the 2026-10-24 figures below).** Latest green `lint / typecheck / test` run on main: [run 40275940573](https://github.com/app-vitals/shipwright/actions/runs/40275940573) @ `b139236fe`, `Lines: 93.25% (53028/56864) — threshold: 90%`. Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.25, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/40275940573 @ b139236fe"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":93.25,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/40275940573 @ b139236fe","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-Verdict: **READY** (feature 100% / target 90%, line 93.25% / target 90%).
-
-**2026-10-24 re-sourcing (supersedes the 2026-10-21 figures below).** Latest green `lint / typecheck / test` run on main: [run 40061108872](https://github.com/app-vitals/shipwright/actions/runs/40061108872) @ `8ee00c73f`, `Lines: 93.50% (53156/56853) — threshold: 90%`. Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.5, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/40061108872 @ 8ee00c73f"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":93.5,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/40061108872 @ 8ee00c73f","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-| Field | Value |
-|---|---|
-| Feature coverage | 100% (target 90%) |
-| Line coverage | 93.5% (target 90%) |
-| **Verdict** | **READY** |
-
-Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-24). 
-
-**2026-10-21 re-sourcing (previous; superseded above).** Latest green `lint / typecheck / test` run on main: [run 39700470653](https://github.com/app-vitals/shipwright/actions/runs/39700470653) @ `45fc9d061`, `Lines: 93.63% (51582/55093) — threshold: 90%`. Computed via:
-
-```bash
-echo '{"featurePct": 100, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 93.63, "lineSource": "CI run https://github.com/app-vitals/shipwright/actions/runs/39700470653 @ 45fc9d061"}' \
-  | bun run plugins/shipwright/scripts/check-coverage-gate.ts
-```
-
-```json
-{"feature_coverage_pct":100,"feature_coverage_source":"docs/test-readiness/test-inventory.md","line_coverage_pct":93.63,"line_coverage_source":"CI run https://github.com/app-vitals/shipwright/actions/runs/39700470653 @ 45fc9d061","verdict":"READY","targets":{"feature":90,"line":90}}
-```
-
-| Field | Value |
-|---|---|
-| Feature coverage | 100% (target 90%) |
-| Line coverage | 93.63% (target 90%) |
-| **Verdict** | **READY** |
-
-Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-21).
+Stage-3 promotion remains `done` (`test-t-083-shipwright`).
 
 ## 1. Where we are now
 
@@ -147,7 +39,7 @@ Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-21
 | Unit | 206 `.unit.test.ts` | Dominant category-1 surface ( decision/classification logic, mutable-box refs, crypto helpers, parsing/validation, coverage-gate tooling, finding suppressions, extraction-script pure helpers, admin spec builder) | One optional net-new (`T-088`) |
 | Integration | 66 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item; including `stale-claim-reaper` / `skip-tracking` (task-store) | None |
 | Smoke | 59 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None |
-| E2E | 27 `site/tests/*.spec.ts` + 7 `{admin,metrics}/e2e/*.e2e.ts` (unchanged) | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None |
+| E2E | 27 `site/tests/*.spec.ts` + 7 `{admin,metrics}/e2e/*.e2e.ts` | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None |
 | Content | 75 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references,test}/*` plus root-level content tests | None |
 | Shell (unofficial 6th layer) | 4 `test-*.sh` bash assertion suites (`test-chart-release.sh`, `test-library-pin.sh`, `test-check-chart-drift.sh`, `test-helm-repos.sh`) | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh`, `chart-release.sh`, `library-pin.sh` | None — only a documentation-completeness question open (see Open risks) |
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step; only a taxonomy question open (see Open risks) |
@@ -161,11 +53,9 @@ Stage-3 promotion remains `done` (`test-t-083-shipwright`, re-queried 2026-10-21
 **100%** of the `bun test`-scanned files run locally with zero external network. The
 isolation-contract sweep (`mock.module(`, `global.fetch =`, `global.console =`, stray
 `DATABASE_URL` inside `*.unit.test.ts`, `globalThis.fetch =`) finds `mock.module(` hits
-comment-only and **one non-leaking violation**: four tests in
-`plugins/shipwright/scripts/check-helpers.unit.test.ts` (~lines 600-650) assign
-`globalThis.fetch` (save in `beforeEach`, restore in `afterEach`) because
-`createTaskStoreClient()` has no injected-fetch seam. No test is blocked on an external
-service; this is a convention violation, not a network dependency. `T-086` closed this (now deployed).
+comment-only. `T-086` (deployed) replaced the `globalThis.fetch` override in
+`plugins/shipwright/scripts/check-helpers.unit.test.ts` with an injected-fetch seam on
+`createTaskStoreClient()`. No test is blocked on an external service.
 
 ### Canary status
 
@@ -174,20 +64,15 @@ staging/production GitHub Environments, no deploy→canary→promote pipeline. S
 
 ### Speed status (Tier 1 aggregate vs. budget; Tier 2 not triggered)
 
-**2026-11-17 reading (CI, [run 44091676159](https://github.com/app-vitals/shipwright/actions/runs/44091676159) @ `d86d7a137`):** `lint / typecheck / test` 2m07s (13:20:26Z-13:22:33Z), about 14% of the <15 min budget; `bun test` step 24.45s; 8,545 tests across 407 files (8,538 pass, 7 skip, 0 fail); Lines 91.01%, Functions 89.21% (0.21 points above the 89% threshold). Tier 2 not triggered. Older readings preserved below.
-
-**2026-10-27 reading (local `bun test`, sandbox without test DB):** 8,192 tests across 343 files in 35-54s; 7,710 pass / 476 skip / 6 fail (4 real: agent-admin 0.9.0 seam pins, tracked as PBH-1.x; 2 sandbox-only: `gitleaks` absent; 5 more `loop-orchestrator` failures appear only when `SHIPWRIGHT_LOOP_DEV_TASK_ALT_COMMAND` is set in the shell). Last CI on main (`8b477fb05`) is red for the same 4. Far inside the <15 min budget; Tier 2 not triggered. The 2026-10-24 CI reading below is the last fully green measurement.
-
-**Tier 1 — aggregate (measured this pass, 2026-10-24, via live CI history, fetched directly via
-`gh run list`/`gh run view --json jobs` + `gh run view --log`):**
+**Tier 1 — aggregate (CI, [run 44091676159](https://github.com/app-vitals/shipwright/actions/runs/44091676159) @ `d86d7a137`, 2026-11-17):**
 
 | Aggregate wall-clock | Budget | Ratio |
 |---|---|---|
-| 1m50s ([run 40061108872](https://github.com/app-vitals/shipwright/actions/runs/40061108872), 2026-10-24T04:08:01Z–04:09:51Z, commit `8ee00c73f`) | <15 min (Full PR pipeline) | ~12% of budget |
+| 2m07s (`lint / typecheck / test`, 13:20:26Z-13:22:33Z) | <15 min (Full PR pipeline) | ~14% of budget |
 
-Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests across 546 files**. Coverage: **93.50%** lines (53156/56853), **91.42%** functions (4615/5048) — against the 90%/89% thresholds. Test-count trajectory: … → 10,427 (2026-10-02) → **12,587 (2026-10-24)**.
+Fully green run. `bun test` step 24.45s; 8,545 tests across 407 files (8,538 pass, 7 skip, 0 fail).
 
-**Tier 2 triggered:** no — ~12% of budget, far below the >7.5 min sustained-twice escalation trigger. No per-layer p95 table is populated (no fabricated numbers).
+**Tier 2 triggered:** no — ~14% of budget, far below the >7.5 min sustained-twice escalation trigger. No per-layer p95 table is populated (no fabricated numbers).
 
 ## 2. Where we want to be
 
@@ -207,12 +92,12 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
 - **Canary suite definition** — not applicable under the current `direct` deploy model;
   deferred until a staged-deploy model exists.
 - **Speed budgets per layer** — Unit <50ms p95 / Integration <2s / Smoke <5s / E2E <30s /
-  full PR pipeline <15min. Tier 1 aggregate confirms comfortable headroom (~12% of budget); no per-layer breakdown needed since Tier 2 has never triggered.
+  full PR pipeline <15min. Tier 1 aggregate confirms comfortable headroom (~14% of budget); no per-layer breakdown needed since Tier 2 has never triggered.
 - **Zero `rebuild` / `delete (redundant)` buckets, and every Promote/deepen finding closed
   promptly** — Rebuild and Delete are empty; no Promote/deepen items remain open (`T-086`
   is deployed).
 - **Every critical- and high-tier inventory item covered at its prescribed layer** — no open
-  critical/high *coverage* gap; the former open item (`T-086`, now deployed) was a convention fix
+  critical/high *coverage* gap; `T-086` (deployed) was a convention fix
   inside an already-covered critical-tier file, not missing coverage.
 
 ## 3. The gap
@@ -223,32 +108,23 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
   that has no coverage gap despite not fitting the existing taxonomy.
 - **Wrong-layer tests:** 0.
 - **External-only deps with no local substitute:** none.
-- **Resolved: small convention gap (`T-086`, deployed; text below is historical):**
-  `plugins/shipwright/scripts/check-helpers.unit.test.ts`'s `createTaskStoreClient` suite
-  overrides `globalThis.fetch` in 4 tests because `createTaskStoreClient()`
-  (`plugins/shipwright/scripts/check-helpers.ts:351`) has no injected-fetch seam — the
-  agent-side twin (`agent/src/coding/check-helpers.ts:663`, `opts?: { fetchFn?: FetchFn }`) already
-  has one. Pre-existing since 2026-06-24 (`#684`), restored per-test so it has never leaked,
-  and missed by every prior isolation sweep because the pattern only matched `global.`, not
-  `globalThis.`. The gap is to the repo's hard rule ("no `global.fetch`/`global.*` overrides"),
-  not to behavioral coverage — the envelope-unwrapping assertions themselves are adequate.
-- **All new source files this window are covered.** The 6 new source files
-  (`sync-config-clone.ts`, `filter-bot-comments.ts`, `check-patrol-scope.ts`, and the three
-  `*-ref.ts` files) each landed with a paired unit test; every in-place production change
-  (`task-service.ts`, `stale-claim-reaper.ts`, `check-helpers.ts`, agent `check-*.ts`, admin
-  `agents.ts`/`api.ts`, …) landed with a paired test change — confirmed via
-  `git diff --name-status d656f0d0a..HEAD` and the live CI file count (see
-  `test-migration.md`'s Method note).
-- **1 carried-forward, low-priority, non-gap item:** `admin/src/clock.ts` has no dedicated
+- **No open convention gap.** `T-086` (deployed) added an injected-fetch seam to
+  `createTaskStoreClient()` in `plugins/shipwright/scripts/check-helpers.ts`, removing the
+  `globalThis.fetch` override from `check-helpers.unit.test.ts`.
+- **New source files are covered.** `sync-config-clone.ts`, `filter-bot-comments.ts`,
+  `check-patrol-scope.ts` and the three `*-ref.ts` files each have a paired unit test, and
+  in-place production changes (`task-service.ts`, `stale-claim-reaper.ts`, `check-helpers.ts`,
+  agent `check-*.ts`, admin `agents.ts`/`api.ts`, …) have paired test changes.
+- **1 low-priority, non-gap item:** `admin/src/clock.ts` has no dedicated
   test file — consistent with the convention shared by all sibling `Clock` implementations
   (near-zero logic, proven via consumers). Not scored as a gap; no task minted.
 - **T-083's stage-3 coverage-promotion remains fully confirmed done** — see Coverage Gate.
 - **Infra gap: none.** Runner config (`bunfig.toml`), CI (`.github/`), `scripts/check-coverage.ts`
-  and `Taskfile.yml` are byte-for-byte unchanged since the inventory baseline; Postgres
-  containers, `Clock` helpers, recorded-fixture doubles, PR template all unchanged and correct.
+  and `Taskfile.yml` match `test-system.md`'s documented shape; Postgres containers, `Clock`
+  helpers, recorded-fixture doubles and the PR template are in place.
   `test-system.md` records one design note — a shared exec interface imported by production
-  `agent/` code must live in `lib/` (not `scripts/`), because `agent/Dockerfile` copies `lib/`
-  but not `scripts/` — which is already honored by `lib/clone-plan.ts`'s relocation; no task.
+  `agent/` code must come from `@app-vitals/agent-lib` or live in `agent/src/coding/` (not the
+  root `scripts/`), because `agent/Dockerfile` does not copy `scripts/`; no task.
 
 ### Speed delta
 
@@ -256,14 +132,12 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
 
 | Aggregate wall-clock | Budget | Ratio / time-to-close |
 |---|---|---|
-| 1m50s | <15 min (Full PR pipeline) | ~12% of budget — no time-to-close concern |
+| 2m07s | <15 min (Full PR pipeline) | ~14% of budget — no time-to-close concern |
 
 **Tier 2 — per-layer ratio (conditional on Tier 2 having triggered):**
 
 **Tier 2 triggered:** no. Per-layer numbers are not fabricated here — Tier 1's aggregate is
-the complete, sufficient measurement. Growth trajectory (546 files, 10,149 →
-12,587 tests since the 2026-09-30 baseline, re-measured 2026-10-24) is proportionate to the window, and the aggregate
-ratio held flat at ~11-12%, consistent with the job's wall-clock being dominated by fixed
+the complete, sufficient measurement. The job's wall-clock is dominated by fixed
 overhead rather than scaling with test count at this suite size.
 
 ## 4. Roadmap (five milestones)
@@ -272,13 +146,12 @@ overhead rather than scaling with test count at this suite size.
 **DOD:** Runners, local substitutes, CI pipeline shape in place. No new tests yet — just the rails.
 
 **Already satisfied — zero tasks.** T-083 (auto-emitted stage-3 coverage-check
-promotion) remains `done`. Naming convention + runner-exclusion config
-(`docs/test-readiness/naming.md`, `bunfig.toml`'s `pathIgnorePatterns`) re-verified
-unchanged. CI pipeline shape matches `test-system.md`'s documented target exactly
-(`.github/`, `Taskfile.yml`, `scripts/check-coverage.ts` unchanged since the inventory
-baseline). Postgres service containers, `Clock` injection, and recorded-fixture doubles all
-confirmed in place; this window's one Prisma migration
-(`20260930000000_add_task_last_skip_reason`) exercised the same infra with zero setup changes.
+promotion) is `done`. Naming convention + runner-exclusion config
+(`docs/test-readiness/naming.md`, `bunfig.toml`'s `pathIgnorePatterns`) are in place.
+CI pipeline shape (`.github/`, `Taskfile.yml`, `scripts/check-coverage.ts`) matches
+`test-system.md`'s documented target. Postgres service containers, `Clock` injection, and
+recorded-fixture doubles are all in place; Prisma migrations run on the same infra with no
+extra setup.
 `recorded_fixture_automation` is undeclared in root `CLAUDE.md` (defaults to `planned`), but
 the recorded-fixture-refresh loop remains explicitly deferred per `test-system.md`'s Repo
 configuration section — no task emitted for it.
@@ -290,10 +163,10 @@ configuration section — no task emitted for it.
 (`plugins/shipwright/scripts/check-helpers.ts`) is `critical` tier per
 `test-inventory.md` — the cron prechecks that decide what the autonomous loop does next
 depend on it — and the task is a convention fix on an already-adequately-covered file, not a
-new-coverage gap. No new critical-tier coverage gap was found: this window's `critical`-tier
-changes (`check-helpers.ts`/`check-test-readiness.ts`/`check-docs-freshness.ts`,
-`task-service.ts`, `stale-claim-reaper.ts`, `loop-orchestrator.ts`) all landed with paired test
-changes, confirmed in the live CI run.
+new-coverage gap. No critical-tier coverage gap is open: `critical`-tier files
+(`check-helpers.ts`/`check-test-readiness.ts`/`check-docs-freshness.ts`,
+`task-service.ts`, `stale-claim-reaper.ts`, `loop-orchestrator.ts`) all have paired tests at
+their prescribed layer.
 
 ### Milestone 3 — Canary suite live
 **DOD:** canary not applicable -- deploy_model=direct
@@ -304,13 +177,12 @@ section for what would need to change before this applies.
 ### Milestone 4 — High-tier coverage
 **DOD:** 100% of `high` tier inventory items covered.
 
-**Already satisfied — zero tasks.** Every `high`-tier addition in this window
-(`sync-config-clone.ts`, `filter-bot-comments.ts`, `check-patrol-scope.ts`, the three
-`agent/src/*-ref.ts` config refs) has direct, same-window test coverage at its prescribed
+**Already satisfied — zero tasks.** Every `high`-tier item
+(including `sync-config-clone.ts`, `filter-bot-comments.ts`, `check-patrol-scope.ts`, the three
+`agent/src/*-ref.ts` config refs) has direct test coverage at its prescribed
 layer — no gap found.
 
-`admin/src/clock.ts` remains the sole Net-new item from Phase 3 — `low` criticality, carried
-forward, unchanged, explicitly a non-gap. No task minted for it
+`admin/src/clock.ts` is a Net-new candidate from Phase 3 — `low` criticality, explicitly a non-gap. No task minted for it
 (it does not qualify for this milestone's `high`-tier walk).
 
 ### Milestone 5 — Cleanup
@@ -328,35 +200,28 @@ Flat, ordered, agent-executable. Format: `T-NNN | M# | files | layer | bucket | 
 
 **No open rows.** The one Net-new item, `coverage-snapshot-service.integration.test.ts`, is medium tier and sits outside the M2/M4 walk (see Open risks). `T-086` (check-helpers fetch seam) and `T-088` (anthropic-credential-guard unit test) were both completed and are `deployed` in the task store; they were dropped from the table to avoid filing redundant tasks.
 
-**Resolved (re-verified via direct task-store query):** all 10 previously-tracked
-IDs (`test-t-076-shipwright` through `test-t-085-shipwright`) remain at a terminal status
-(`deployed`/`done`) — see the Status section above. None require any action. `starting_offset`
+**Terminal (per task-store query):** the 10 tracked
+IDs `test-t-076-shipwright` through `test-t-085-shipwright` are at a terminal status
+(`deployed`/`done`). None require any action. `starting_offset`
 for the next minted task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
 
 ## 6. Open risks
 
-- **2026-11-17: `coverage-snapshot-service.ts` has no real-DB integration test (medium, small effort).** CVT-2.1's `CoverageSnapshotService` is covered only via `routes/coverage-snapshots.smoke.test.ts` over a hand-written Prisma double, so unique-constraint, ordering and retention behavior against real Postgres is unproven. Not minted as a task (medium tier, auxiliary feature, outside the critical/high milestone walk). A human may promote it to M4 if coverage snapshots become a decision input; model it on `document-service.integration.test.ts`.
-- **2026-11-17: `preview/canary/*.canary.test.ts` is a canary-suffix suite on a `direct` deploy model.** It targets a non-production preview environment, run only by `task preview:canary`; it is not wired as a deploy gate and Milestone 3 stays not applicable. If the team later wants it post-deploy against production, re-run `/test-design` with a declared `staged` model.
-- **2026-11-17: function-coverage margin is 0.21 points** (89.21% vs the 89% threshold) on the latest green main run; one large untested module would turn the gate red.
-
-- **Thin line-coverage margin (2026-11-12).** Latest green main run is 90.66% against the 90% floor (93.25% on 2026-10-26); a few untested lines can flip `check-coverage` red. No task filed; a coverage-promotion task is warranted only if the next refresh trends lower.
-- **Main CI red on platform bumps (2026-10-27).** The AGR-4.2 seam pins (`platform-migrations.unit`, `composed-surface.smoke` baseline, `generate-admin-spec` artifact) fail on every `@app-vitals/agent-*` release until a human-reviewed re-pin lands; PBH-1.1/1.2/1.3 and PBH-2.1 are the in-flight fixes (derive migration additions, contract test instead of baseline, regenerate spec, simulate bump merge gate). Re-check after PR #4598 merges; if the pins still need hand edits per release, that is a design smell for the planning owner, not a new test task.
+- **`coverage-snapshot-service.ts` has no real-DB integration test (medium, small effort).** CVT-2.1's `CoverageSnapshotService` is covered only via `routes/coverage-snapshots.smoke.test.ts` over a hand-written Prisma double, so unique-constraint, ordering and retention behavior against real Postgres is unproven. Not minted as a task (medium tier, auxiliary feature, outside the critical/high milestone walk). A human may promote it to M4 if coverage snapshots become a decision input; model it on `document-service.integration.test.ts`.
+- **`preview/canary/*.canary.test.ts` is a canary-suffix suite on a `direct` deploy model.** It targets a non-production preview environment, run only by `task preview:canary`; it is not wired as a deploy gate and Milestone 3 stays not applicable. If the team later wants it post-deploy against production, re-run `/test-design` with a declared `staged` model.
+- **Thin coverage margins.** The latest main run is 91.65% lines against the 90% floor and 89.77% functions against the 89% floor; one large untested module could turn `check-coverage` red. No task filed; a coverage-promotion task is warranted only if a later reading trends lower.
 - **Non-conventional test suffix:** `plugins/shipwright/commands/jq-arg-newline-fix.behavior.test.ts` (JNL-1.1) is scanned by `bun test` but its `*.behavior.test.ts` suffix is not in the documented convention; rename to `*.unit.test.ts` or extend `naming.md`. Too small to mint a task; fold into the next touching PR.
 - **`scripts/audit-extraction.ts` likely vestigial** after the extraction cleanup (its CLI tests need `gitleaks`); needs a human keep/delete call.
-- **Resolved (second pass 2026-10-09) -- Phase 1 inventory lag.** `test-inventory.md` was re-run at `54018b659` and now covers the account and prompt-audit families. Remaining human call: whether the cron should gate Phase 1 on commits-since-refresh as well as age (the 24h gate let it lag by 211 commits).
-- **The isolation sweep's regex had a spelling blind spot, now closed.** The
-  prior sweeps grepped `global.fetch =` / `global.console =` and so missed
-  `globalThis.fetch =` for ~3 months (the one hit, `check-helpers.unit.test.ts`, dates from
-  2026-06-24). `test-migration.md` now sweeps with `global(This)?\.(fetch|console)\s*=`;
-  `T-086` fixes the one instance. Residual: the sweep is still a manual grep run by this
-  pipeline, not a CI check — consider whether a lint rule or a `bun test`-time guard (e.g. a
+- **Phase 1 freshness gate is age-only.** A human call: whether the cron should gate Phase 1 on commits-since-refresh as well as age (a 24h age gate has let the inventory lag by 211 commits).
+- **The isolation sweep is a manual grep, not a CI check.** `test-migration.md` sweeps with
+  `global(This)?\.(fetch|console)\s*=`, but it is run by this pipeline rather than enforced — consider whether a lint rule or a `bun test`-time guard (e.g. a
   Biome/grep step in `task ci`) should enforce the rule mechanically so it stops depending on
   a Phase 3 re-run noticing. A human call; not minted as a task.
 - **The isolation-contract audit's singleton-mutation pattern set still has a documented blind
   spot.** The one known instance of this leak class (T-084, `agent-slack-membership-ref.unit.test.ts`)
-  was fixed (2026-08-23) via a manual diff read, not an automated sweep — the
-  pattern set still can't catch a recurrence of this leak class on its own. This window added
-  three more singleton-ref-shaped exports (`allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
+  was fixed via a manual diff read, not an automated sweep — the
+  pattern set still can't catch a recurrence of this leak class on its own. Three later
+  singleton-ref-shaped exports (`allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
   `cleanup-merged-worktrees-ref.ts`); each was checked by hand and found safe (every test builds
   a fresh ref via its `createXRef()` factory). Recommend a future Phase 3 run add a signal scanning
   for direct `.set(`/`.reset(`/mutation calls on this repo's known singleton-ref exports
@@ -364,7 +229,7 @@ for the next minted task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
   `patchAuthorAllowlistRef`, `agentTrialExpiryRef`, `allowSelfReviewRef`,
   `cleanupAfterDaysRef`, `cleanupMergedWorktreesRef`, and future `agent-*-ref.ts` additions)
   with no paired `afterEach`/`afterAll` in the same file — a Phase 3 process improvement, not
-  itself a task against the codebase. Carried forward; no new leak instance found.
+  itself a task against the codebase. No current leak instance found.
 - **The compile-time-only "type-parity check" pattern (`blocked-by-type-parity.check.ts`)
   still needs a taxonomy decision.** Not a coverage gap — confirmed wired into CI and
   passing — but it doesn't fit any of the five CLAUDE.md-declared suffixes or the unofficial
@@ -377,8 +242,7 @@ for the next minted task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
 - **The bash "shell" layer still needs a formal documentation decision.**
   `.github/workflows/lib/chart-tag-utils.sh` / `chart-drift-check.sh` and their `test-*.sh`
   siblings are genuinely tested code units that fall entirely outside the `bun test` runner
-  and the five-suffix convention declared in root `CLAUDE.md`. First flagged
-  2026-07-31. Not urgent; not
+  and the five-suffix convention declared in root `CLAUDE.md`. Not urgent; not
   blocking anything above.
 - **Recorded-fixture coverage breadth** (remaining `Http*Client` modules that could extend
   the `Recorded*Client` pattern) remains a Phase 2 design-level backlog item, not a
@@ -391,7 +255,7 @@ for the next minted task is **T-089** (`T-086`, `T-087`, `T-088` all retired).
   Session routes.** Documented, intentional interim state per
   `docs/session-notifications.md` — the predicate itself is fully unit-tested, so this is an
   application-logic sequencing gap, not a test-coverage gap. No task minted (this pipeline
-  doesn't mint tasks for application logic, only test coverage) — carried forward so a human
+  doesn't mint tasks for application logic, only test coverage) — listed so a human
   continues tracking the wiring-completion timeline.
 - **Recorded-fixture maintenance loop remains deferred** (`repo-config/SKILL.md` §5) —
   correctly not scheduled; sequence after fixture-authoring work matures.
