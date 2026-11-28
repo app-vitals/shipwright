@@ -9,12 +9,14 @@
  * is PAGE-scoped instead of repo-scoped: it operates on exactly one repo
  * (this repo, cwd) and reads site/docs-source-map.json (built by SDR-1) —
  * `{ "<page>.mdx": ["<source path>", ...] }` — to get N pages, each with its
- * OWN last-synced anchor SHA (not one shared repo-wide anchor).
+ * OWN last-synced anchor SHA (not one shared repo-wide anchor). Anchors live
+ * in the task store: GET /cron-runs/latest?cronId=site-docs-freshness, taken
+ * from the run's machineState ({ "<page>.mdx": { sha, timestamp } }).
  *
  * For each page in the source map:
- * - No anchor entry for that page (whether the anchor file itself is
- *   missing, or the file exists but this page has no entry yet — e.g. a
- *   page added to the source map after the anchor file was first created)
+ * - No anchor entry for that page (whether no run has ever been recorded, or
+ *   the latest run's machineState has no entry for this page yet — e.g. a
+ *   page added to the source map after the last recorded run)
  *   → page qualifies (first run, always worth checking)
  * - Anchor exists but no commits touch any of the page's mapped source
  *   paths since that SHA → page does not qualify
@@ -37,7 +39,9 @@ import { join } from "node:path";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Anchor {
+export const SITE_DOCS_CRON_ID = "site-docs-freshness";
+
+export interface Anchor {
   sha: string;
   timestamp: string;
 }
@@ -57,6 +61,45 @@ interface RunResult {
 interface PageFinding {
   page: string;
   changedFiles: string[];
+}
+
+// ─── Anchor store ─────────────────────────────────────────────────────────────
+
+/**
+ * Load per-page anchors from the latest site-docs-freshness run's
+ * machineState. 404 (no prior run) → no anchors, so every page is a first run.
+ * Any store/network failure warns on stderr and also returns no anchors, so
+ * every page is flagged (permissive).
+ */
+export async function loadAnchors(
+  fetchFn: typeof fetch,
+  baseUrl: string,
+  token: string,
+): Promise<Record<string, Anchor>> {
+  try {
+    const res = await fetchFn(
+      `${baseUrl}/cron-runs/latest?cronId=${encodeURIComponent(SITE_DOCS_CRON_ID)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.status === 404) return {};
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const run = (await res.json()) as { machineState?: unknown } | null;
+    const ms = run?.machineState;
+    if (typeof ms !== "object" || ms === null || Array.isArray(ms)) return {};
+    const anchors: Record<string, Anchor> = {};
+    for (const [page, v] of Object.entries(ms)) {
+      const a = v as Partial<Anchor> | null;
+      if (a && typeof a.sha === "string" && a.sha) {
+        anchors[page] = { sha: a.sha, timestamp: String(a.timestamp ?? "") };
+      }
+    }
+    return anchors;
+  } catch (err) {
+    process.stderr.write(
+      `check-site-docs-freshness: anchor lookup failed (${String(err)}) — flagging every page permissively\n`,
+    );
+    return {};
+  }
 }
 
 // ─── Per-page evaluation ───────────────────────────────────────────────────────
@@ -146,7 +189,7 @@ export async function run(deps: Deps): Promise<RunResult> {
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
-function buildProductionDeps(): Deps {
+async function buildProductionDeps(): Promise<Deps> {
   // This script lives inside the same repo whose site it checks — resolve
   // the repo root from the script's own location (scripts/ → shipwright/ →
   // plugins/ → root) rather than assuming a workspace/repos/<name> layout,
@@ -155,7 +198,6 @@ function buildProductionDeps(): Deps {
   const scriptDir = import.meta.dirname ?? process.cwd();
   const repoDir = join(scriptDir, "..", "..", "..");
   const sourceMapPath = join(repoDir, "site", "docs-source-map.json");
-  const anchorPath = join(repoDir, "state", "site-docs-last-synced.json");
 
   const readSourceMap = (): Record<string, string[]> => {
     if (!existsSync(sourceMapPath)) return {};
@@ -175,18 +217,17 @@ function buildProductionDeps(): Deps {
     }
   };
 
-  const readAllAnchors = (): Record<string, Anchor> => {
-    if (!existsSync(anchorPath)) return {};
-    try {
-      return JSON.parse(readFileSync(anchorPath, "utf-8")) as Record<
-        string,
-        Anchor
-      >;
-    } catch {
-      return {};
-    }
-  };
-  const anchors = readAllAnchors();
+  const baseUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "")
+    .trim()
+    .replace(/\/$/, "");
+  const token = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const anchors =
+    baseUrl && token
+      ? await loadAnchors(fetch, baseUrl, token)
+      : (process.stderr.write(
+          "check-site-docs-freshness: SHIPWRIGHT_TASK_STORE_URL/TOKEN not set — flagging every page permissively\n",
+        ),
+        {});
 
   return {
     sourceMap: readSourceMap(),
@@ -234,7 +275,7 @@ function buildProductionDeps(): Deps {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const deps = buildProductionDeps();
+  const deps = await buildProductionDeps();
   const result = await run(deps);
   if (result.exit === 0) {
     process.stdout.write(`${result.output}\n`);

@@ -100,12 +100,23 @@ describe("docs-sync.md — new flag/diff/propose/confirm flow present", () => {
     expect(content).toMatch(/branch/i);
   });
 
-  it("updates the page's anchor SHA in state/site-docs-last-synced.json on confirm/apply", () => {
-    expect(content).toContain("state/site-docs-last-synced.json");
+  it("reads anchors from the task store's latest site-docs-freshness run, not a state file", () => {
+    expect(content).toContain("/cron-runs/latest?cronId=site-docs-freshness");
+    expect(content).toContain("machineState");
+    expect(content).not.toContain("site-docs-last-synced");
+    expect(content).not.toContain("state/site-docs");
   });
 
-  it("never auto-edits in auto mode, and never touches the anchor file except on an applied edit", () => {
-    expect(content).toMatch(/never touch(es)? the anchor/i);
+  it("records exactly one run per applied page via the shared recorder, replacing only that page's entry", () => {
+    expect(content).toContain("cron-run-recorder.ts record");
+    expect(content).toContain("--cron site-docs-freshness");
+    expect(content).toMatch(/exactly one run/i);
+    expect(content).toMatch(/only this page's entry/i);
+    expect(content).toMatch(/every other page's entry is carried over/i);
+  });
+
+  it("never auto-edits in auto mode, and never records an anchor except on an applied edit", () => {
+    expect(content).toMatch(/never touch(es)? the anchors/i);
   });
 });
 
