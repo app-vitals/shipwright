@@ -58,7 +58,7 @@ signals from root `CLAUDE.md`'s Test isolation section and `references/principle
 | `global.console = ` (assignment) | 0 | **0** |
 | `DATABASE_URL` inside `*.unit.test.ts` | **7** — up from 6 (+1: `admin/src/trial-expiry-sweeper.unit.test.ts`) | **0** — the one new hit is a header-comment note ("DATABASE_URL_ADMIN_TEST is set; this file is what runs on every `task test`") documenting that the *unit* file runs regardless of DB availability, contrasting it with its own `.integration.test.ts` sibling — not an actual env-var read or DB dependency inside the unit file itself. |
 
-**This cycle (2026-10-02):** `mock.module(` count unchanged at 59 (no new hits — all 6 new unit files and the 4 new content files are clean); `global.fetch =`/`global.console =` still 0; `DATABASE_URL` in `*.unit.test.ts` still 7. The one new `globalThis.fetch =` finding is described above. The three new `*-ref.ts` singleton-shaped exports (`allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref`) were each checked by hand: every test builds a fresh ref through its `createXRef()` factory instead of mutating the shared singleton — no leak risk.
+The three `*-ref.ts` singleton-shaped exports (`allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref`) were each checked by hand: every test builds a fresh ref through its `createXRef()` factory instead of mutating the shared singleton — no leak risk.
 
 **Prior cycle's (2026-09-30) 6 new `mock.module(` hits, individually confirmed comment-only:**
 `admin/src/trial-expiry-sweeper.unit.test.ts`, `trial-expiry-warning-sweeper.integration.test.ts`,
@@ -157,11 +157,10 @@ None. See Delete (redundant assertion) analysis above.
 
 ### Net-new
 
-**This cycle (2026-11-17), 1 item:** `task-store/src/coverage-snapshot-service.integration.test.ts` for `coverage-snapshot-service.ts` (real-Postgres write/read/ordering/retention behavior; currently proven only against the `makePrismaDouble` fake in `routes/coverage-snapshots.smoke.test.ts`). Inventory tier: medium (Coverage tracking feature, auxiliary). Effort: small. Skips without `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`, like its siblings. The prior carried-forward trivial/optional item is unchanged.
+**`task-store/src/coverage-snapshot-service.integration.test.ts`** for `coverage-snapshot-service.ts` (real-Postgres write/read/ordering/retention behavior; currently proven only against the `makePrismaDouble` fake in `routes/coverage-snapshots.smoke.test.ts`). Inventory tier: medium (Coverage tracking feature, auxiliary). Effort: small. Skips without `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`, like its siblings. The other Net-new item (`admin/src/clock.ts`, see Candidate Phase 4 inputs below) is trivial/optional.
 
-One item, carried forward unchanged, trivial/optional. **This cycle (2026-09-30):** one new
-feature landed in Phase 1's refresh (Competitive-positioning freshness check, 24 → 25) but it
-does **not** create a Net-new entry here — `scripts/check-competitive-freshness.ts` shipped
+The Competitive-positioning freshness check feature does **not** create a Net-new entry
+here — `scripts/check-competitive-freshness.ts` shipped
 with its own `check-competitive-freshness.unit.test.ts` in the same commit, so it's already
 bucketed Reuse above (see Method note step 1). No new user journeys.
 
@@ -175,7 +174,7 @@ bucketed Reuse above (see Method note step 1). No new user journeys.
 - **CI workflow shape** (`.github/workflows/ci.yml`) — matches Phase 2's documented
   shape; unchanged this cycle.
 - **Postgres service container for admin/task-store/chat** — real DB per test run, all
-  three `DATABASE_URL_SHIPWRIGHT_*` vars wired in `ci.yml`. This cycle's two new
+  three `DATABASE_URL_SHIPWRIGHT_*` vars wired in `ci.yml`. The
   Prisma-backed models (`AgentPhaseMethodology`, `VerificationCheck`) and the `Agent`
   table's new trial-expiry columns exercise this same infra with no new setup needed —
   each service's existing migrate-then-test flow picked them up without modification.

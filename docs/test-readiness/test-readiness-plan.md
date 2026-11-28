@@ -189,11 +189,10 @@ re-queried the task-store result set (below) and confirmed **`test-t-083-shipwri
 
 ### Local-runnable status
 
-**100%** of the `bun test`-scanned files run locally with zero external network. This cycle's
+**100%** of the `bun test`-scanned files run locally with zero external network. The
 isolation-contract sweep (`mock.module(`, `global.fetch =`, `global.console =`, stray
-`DATABASE_URL` inside `*.unit.test.ts`, plus the newly-added `globalThis.fetch =` pattern)
-found counts unchanged (`mock.module(` 59, comment-only; `DATABASE_URL` in unit 7) and **one
-pre-existing, non-leaking violation**: four tests in
+`DATABASE_URL` inside `*.unit.test.ts`, `globalThis.fetch =`) finds `mock.module(` hits
+comment-only and **one non-leaking violation**: four tests in
 `plugins/shipwright/scripts/check-helpers.unit.test.ts` (~lines 600-650) assign
 `globalThis.fetch` (save in `beforeEach`, restore in `afterEach`) because
 `createTaskStoreClient()` has no injected-fetch seam. No test is blocked on an external
@@ -226,9 +225,8 @@ Fully green run (all 8 jobs). Main `bun test` step: 37.30s. **12,587 tests acros
 
 - **Framework matrix** — already fully realized: `bun test` (unit/integration/smoke/content),
   Playwright (E2E, 3 surfaces: `site/*.spec.ts`, `admin/e2e/*.e2e.ts`, `metrics/e2e/*.e2e.ts`), plain `bash` (the
-  shell layer). No framework changes needed. This cycle's new tests (injected-dep unit tests for
-  `sync-config-clone.ts`, pure-logic unit tests, markdown content tests) fit the existing
-  layers without a new framework.
+  shell layer). No framework changes needed. Injected-dep unit tests, pure-logic unit tests and markdown
+  content tests all fit the existing layers without a new framework.
 - **Local-substitute map** — every dependency named in the inventory has a working local
   substitute (recorded-fixture doubles for internal/third-party HTTP, real Postgres via CI
   service container for the three Prisma-backed services, a real locally-launched Chromium

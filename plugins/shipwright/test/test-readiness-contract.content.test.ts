@@ -171,6 +171,8 @@ describe("docs/test-readiness artifacts — no refresh logs or count lines", () 
       expect(text).not.toMatch(/preserved for continuity/);
       expect(text).not.toMatch(/^> \*\*\w+ pass \(/m);
       expect(text).not.toMatch(/\d+ rows? added, \d+ removed/);
+      expect(text).not.toMatch(/\*\*This cycle \(20\d\d-/);
+      expect(text).not.toMatch(/This cycle's /);
     });
   }
 });
