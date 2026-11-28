@@ -1,0 +1,7 @@
+[
+{"id":"docs-freshness","name":"Docs freshness","enabled":true,"repoScope":"all","repos":[]},
+{"id":"test-readiness","name":"Test readiness","enabled":true,"repoScope":"selected","repos":["acme/widgets"]},
+{"id":"entropy-patrol","name":"Entropy patrol","enabled":true,"repoScope":"all","repos":[]},
+{"id":"security-patrol","name":"Security patrol","enabled":true,"repoScope":"selected","repos":["acme/widgets","acme/other"]},
+{"id":"consolidation-patrol","name":"Consolidation patrol","enabled":true,"repoScope":"all","repos":[]}
+]

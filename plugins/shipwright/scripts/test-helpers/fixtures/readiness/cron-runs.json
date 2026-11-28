@@ -1,0 +1,7 @@
+[
+{"cronId":"docs-freshness","repo":"acme/widgets","startedAt":"2026-10-29T00:00:05.000Z","finishedAt":"2026-10-29T00:04:00.000Z","outcome":"ok","metrics":{"updated":2}},
+{"cronId":"test-readiness","repo":"acme/widgets","startedAt":"2026-11-27T06:00:05.000Z","finishedAt":"2026-11-27T06:04:00.000Z","outcome":"ok","metrics":{"suiteWallSeconds":420}},
+{"cronId":"entropy-patrol","repo":"acme/widgets","startedAt":"2026-11-24T04:00:05.000Z","finishedAt":"2026-11-24T04:04:00.000Z","outcome":"ok","metrics":{"findings":3,"high":0,"medium":2,"low":1}},
+{"cronId":"security-patrol","repo":"acme/widgets","startedAt":"2026-11-24T06:00:05.000Z","finishedAt":"2026-11-24T06:04:00.000Z","outcome":"ok","metrics":{"new":0,"regressed":0,"unchanged":2}},
+{"cronId":"consolidation-patrol","repo":"acme/widgets","startedAt":"2026-11-24T05:00:05.000Z","finishedAt":"2026-11-24T05:04:00.000Z","outcome":"ok","metrics":{"ready":1}}
+]

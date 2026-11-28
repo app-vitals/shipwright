@@ -1,0 +1,5 @@
+[
+{"cronId":"security-patrol","repo":"acme/widgets","fingerprint":"sec-1","status":"open","firstSeen":"2026-11-10T06:00:00.000Z","lastSeen":"2026-11-24T06:00:00.000Z","history":[{"at":"2026-11-10T06:00:00.000Z","status":"open","occurrenceCount":1}],"detail":{"severity":"high"}},
+{"cronId":"security-patrol","repo":"acme/widgets","fingerprint":"sec-2","status":"open","firstSeen":"2026-11-20T06:00:00.000Z","lastSeen":"2026-11-24T06:00:00.000Z","history":[{"at":"2026-11-20T06:00:00.000Z","status":"open","occurrenceCount":1}],"detail":{"severity":"critical"}},
+{"cronId":"consolidation-patrol","repo":"acme/widgets","fingerprint":"dup-a","status":"ready_to_propose","firstSeen":"2026-09-01T05:00:00.000Z","lastSeen":"2026-11-24T05:00:00.000Z","history":[{"at":"2026-09-01T05:00:00.000Z","status":"tracking","occurrenceCount":1},{"at":"2026-10-29T05:00:00.000Z","status":"ready_to_propose","occurrenceCount":3},{"at":"2026-11-24T05:00:00.000Z","status":"ready_to_propose","occurrenceCount":4}],"detail":null}
+]
