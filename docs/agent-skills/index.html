@@ -167,13 +167,15 @@ first.</p>
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="security-scan">security-scan</h3>
 <p>Scan a repo for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues,
-authn/authz anti-patterns, and posture gaps across three tiers. Report only — no code changes.</p>
+authn/authz anti-patterns, and posture gaps across three tiers. Requires <code>--repo</code>; records
+findings in the task store (never a repo file). Report only — no code changes.</p>
 <p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
 <code>/shipwright:security-scan</code> command.</p>
 <h3 id="security-fix">security-fix</h3>
-<p>Read <code>security-report.md</code> and queue PR-worthy findings as task-store tasks, one task per rule,
-routing any finding that requires credential rotation/revocation through <code>/shipwright:hitl</code>
-instead of auto-remediating it. Requires security-scan to have run first.</p>
+<p>Read the repo’s open security findings from the task store (<code>--repo</code> required) and route each
+rule group auto / review / plan as task-store tasks, one task per rule; any finding that requires
+credential rotation/revocation keeps <code>hitl: true</code> and goes through <code>/shipwright:hitl</code>. Requires
+security-scan to have run first.</p>
 <p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
 <code>/shipwright:security-fix</code> command.</p>
 <h2 id="other">Other</h2>
