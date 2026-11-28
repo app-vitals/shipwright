@@ -208,6 +208,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/task-store-pr-tracking.md** — task store PR origin metrics, verification checks, skip tracking, same-branch exclusivity guard, and session archive sweep
+- **docs/readiness.md** — the open agent-readiness model: five levels, the pass/fail check catalogue with one owning system cron per check, and how a repo's level is computed (mirrors `plugins/shipwright/scripts/readiness-catalogue.ts`)
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
 - **docs/chat.md** — pointer: the chat service now lives in the platform repo (`agent-chat` image); details in `docs/platform/chat-service.md`
 - **docs/session-notifications.md** — session-follow subsystem (C): the follow/mute + notification-prefs data model, the session-notification detail-level policy (operator ceiling × per-subscription opt-in × per-call ceiling), the `/admin/settings/notifications` page and follow/unfollow routes, and the `session-scope.ts` visibility model (not yet wired into most routes)
