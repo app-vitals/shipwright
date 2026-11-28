@@ -6921,6 +6921,24 @@ describe("long task ids (STI-2.2)", () => {
     expectTruncated(html);
   });
 
+  test("board card id truncates with full id in tooltip", () => {
+    const html = renderTasksPage(
+      [longTask],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    expectTruncated(html);
+  });
+
   test("PR list task column truncates linked long ids", () => {
     const pr: PrListItem = {
       id: "pr-long",

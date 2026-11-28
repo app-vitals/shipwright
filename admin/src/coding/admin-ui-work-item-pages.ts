@@ -38,7 +38,6 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links. */
 /**
  * Inline style that keeps a (possibly ~70 char) task id on one line, ellipsised
  * past ~24ch. Pair with `title="{full id}"` so hover shows the full id; the
@@ -47,6 +46,7 @@ import {
 export const ID_TRUNCATE_STYLE =
   "display:inline-block;max-width:min(24ch,45vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom";
 
+/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links; the id is truncated with a tooltip. */
 export function taskLink(taskId: string): string {
   return `<a href="/admin/tasks/${escapeHtml(taskId)}" class="id-trunc" title="${escapeHtml(taskId)}" style="color:var(--vos-brand, #6366f1);text-decoration:none;${ID_TRUNCATE_STYLE}">${escapeHtml(taskId)}</a>`;
 }
