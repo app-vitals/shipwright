@@ -166,6 +166,7 @@ describe("docs/test-readiness artifacts — no refresh logs or count lines", () 
       const text = doc(f);
       expect(text).not.toMatch(/^> \*\*20\d\d-\d\d-\d\d[^\n]*(refresh|delta|top-up)/im);
       expect(text).not.toMatch(/^- \*\*Delta since the /m);
+      expect(text).not.toMatch(/^- \*\*20\d\d-\d\d-\d\d delta/m);
       expect(text).not.toMatch(/\(last refreshed /);
       expect(text).not.toMatch(/preserved for continuity/);
       expect(text).not.toMatch(/^> \*\*\w+ pass \(/m);

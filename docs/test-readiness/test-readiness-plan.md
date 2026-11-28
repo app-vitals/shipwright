@@ -167,38 +167,6 @@ re-queried the task-store result set (below) and confirmed **`test-t-083-shipwri
 ("Promote coverage required check from never-decrease to hard ≥90% gate") remains at status
 **`done`** — no duplicate emission.
 
-## Status of the prior cycle's plan (2026-09-30) and everything since
-
-Queried task-store directly (`$SHIPWRIGHT_TASK_STORE_URL/tasks?repo=app-vitals%2Fshipwright&limit=500`,
-paginated across 3 pages — `offset=0`, `offset=500`, `offset=1000` — **1,380 tasks total**
-scanned this cycle for this repo, up from 1,366 last cycle). Filtered to
-`test-t-<NNN>-shipwright` IDs: the highest existing ID is still **`test-t-085-shipwright`** —
-no new `test-t-*` task has been created since the 2026-09-23 cycle. **`starting_offset = 86`**,
-and this cycle's one new row takes it (`T-086`). A title/description scan of every returned
-task for `createTaskStoreClient` / `globalThis.fetch` / `fetchImpl` found no existing task
-covering this item (the two keyword hits, `CHU-2.1` and `TSW-1.1`, are unrelated `deployed`
-features), so there is nothing to dedup against.
-
-**2026-11-17 re-verification.** Task-store re-queried this cycle (`limit=500`, 4 pages, **1,909 tasks** for `app-vitals/shipwright`). 89 `test-t-*` IDs exist; highest is `test-t-088-shipwright` (`T-087` retired). Every tracked ID `test-t-076` through `test-t-088` (minus 087) remains at a terminal status (`deployed` or `done`; `081` and `083` are `done`). No task minted, none updated.
-
-Re-verified the status of every previously-tracked ID (not assumed from the old doc, 2026-09-30 pass):
-
-| Task | Status | Title |
-|---|---|---|
-| `test-t-076-shipwright` | **deployed** (unchanged) | Split `specialty-manifest-loader.unit.test.ts`'s real-disk cases into a new `.integration.test.ts` file |
-| `test-t-077-shipwright` | **deployed** (unchanged) | `check-review.ts`'s `isBundleComplete` fail-open catch-path test |
-| `test-t-078-shipwright` | **deployed** (unchanged) | Make `isAuthorAllowed`'s ref dependency injectable + never-synced equivalence test |
-| `test-t-079-shipwright` | **deployed** (unchanged) | `scripts/generate-specialty-schema.ts` test-coverage class-level decision |
-| `test-t-080-shipwright` | **deployed** (unchanged) | HITL dev-loop bootstrap's full clone→seed→boot→poll sequence, injected `gh` exec fake |
-| `test-t-081-shipwright` | **done** (unchanged) | `TaskService.claim()`'s concurrent-race close (real Postgres) |
-| `test-t-082-shipwright` | **deployed** (unchanged) | `traceReviewCandidacyDecision`'s exclusion checks proven correct in 3+-condition combination |
-| `test-t-083-shipwright` | **done** (unchanged) | Promote coverage required check from never-decrease to hard ≥90% gate |
-| `test-t-084-shipwright` | **deployed** (unchanged) | Add `afterEach` reset to `agentSlackMembershipRef` singleton test |
-| `test-t-085-shipwright` | **deployed** (unchanged) | Add sweeping worktree add/remove absolute-fallback regression guard to `dev-task.content.test.ts` |
-
-**All 10 previously-tracked IDs remain at a terminal status** (`deployed`/`done`). No
-regression, no status churn.
-
 ## 1. Where we are now
 
 ### Layer coverage map
@@ -213,7 +181,7 @@ regression, no status churn.
 | Shell (unofficial 6th layer) | 4 `test-*.sh` bash assertion suites (`test-chart-release.sh`, `test-library-pin.sh`, `test-check-chart-drift.sh`, `test-helm-repos.sh`) | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh`, `chart-release.sh`, `library-pin.sh` | None — only a documentation-completeness question open (see Open risks) |
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step; only a taxonomy question open (see Open risks) |
 
-**Total (2026-11-17 recount via `git ls-files`, excluding `site/`): 406 `bun test`-scanned files** (206 unit + 66 integration + 59 smoke + 75 content; 362 on 2026-11-13; plus 5 opt-in `preview/canary/*.canary.test.ts` suites outside the default scan; CI reports 407 files including `app.unit.test.js`). Prior recount, preserved: **Total (2026-11-13 recount via `git ls-files`, excluding `site/`): 362 `bun test`-scanned files** (176 unit + 59 integration + 55 smoke + 72 content; 349 on 2026-11-10 and 350 on 2026-11-12, +12 this cycle from the system-crons, task-kinds, claim-heartbeat, risk-signals and local-store work; 351 on 2026-11-08, -1 unit, +1 integration, -2 content from the deploy-phase removal; the drop from 538 on 2026-10-26 is the extracted platform code and its tests, not lost coverage) **+ 27 site E2E + 7 admin/metrics E2E = 383 test files** (E2E counts unchanged). See `test-migration.md`'s 2026-11-10 top-up for the delta reconciliation.
+**Total (recount via `git ls-files`, excluding `site/`): 406 `bun test`-scanned files** (206 unit + 66 integration + 59 smoke + 75 content; plus 5 opt-in `preview/canary/*.canary.test.ts` suites outside the default scan; CI reports 407 files including `app.unit.test.js`). Prior recount, preserved: **Total (2026-11-13 recount via `git ls-files`, excluding `site/`): 362 `bun test`-scanned files** (176 unit + 59 integration + 55 smoke + 72 content; 349 on 2026-11-10 and 350 on 2026-11-12, +12 this cycle from the system-crons, task-kinds, claim-heartbeat, risk-signals and local-store work; 351 on 2026-11-08, -1 unit, +1 integration, -2 content from the deploy-phase removal; the drop from 538 on 2026-10-26 is the extracted platform code and its tests, not lost coverage) **+ 27 site E2E + 7 admin/metrics E2E = 383 test files** (E2E counts unchanged). See `test-migration.md`'s 2026-11-10 top-up for the delta reconciliation.
 
 **`## Features` section in `test-inventory.md`: 24 features, 100% covered** (21 -> 24 this cycle: Task store planning documents, Coverage tracking, Preview environment).
 
