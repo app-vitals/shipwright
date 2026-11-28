@@ -14,6 +14,7 @@ import { BadRequestError } from "./errors.ts";
 import { PatrolFindingService } from "./patrol-finding-service.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { ReadinessSnapshotService } from "./readiness-snapshot-service.ts";
 import { RepoCronRunService } from "./repo-cron-run-service.ts";
 import { SessionService } from "./session-service.ts";
 import { SystemCronService } from "./system-cron-service.ts";
@@ -70,6 +71,7 @@ describeOrSkip("cursor walks on list services (integration)", () => {
     await prisma.prFinding.deleteMany();
     await prisma.pullRequest.deleteMany();
     await prisma.coverageSnapshot.deleteMany();
+    await prisma.readinessSnapshot.deleteMany();
     await prisma.repoCronRun.deleteMany();
     await prisma.patrolFinding.deleteMany();
     await prisma.systemCronTrigger.deleteMany();
@@ -345,6 +347,38 @@ describeOrSkip("cursor walks on list services (integration)", () => {
     );
   });
 
+  it("GET /readiness-snapshots — newest first by (measuredAt, id)", async () => {
+    for (let i = 0; i < N; i++) {
+      await prisma.readinessSnapshot.create({
+        data: {
+          id: `rs-${pad(i)}`,
+          repo: REPO,
+          commitSha: `sha-${pad(i)}`,
+          level: 2,
+          passing: 1,
+          failing: 0,
+          checks: [],
+          catalogueVersion: "1",
+          measuredAt: new Date(`2026-01-0${(i % 3) + 1}T00:00:00.000Z`),
+        },
+      });
+    }
+    const service = new ReadinessSnapshotService(prisma);
+    const rows = await walk(async (cursor) => {
+      const r = await service.list({ limit: LIMIT, cursor, repo: REPO });
+      expect(r.total).toBe(N);
+      return { items: r.snapshots, nextCursor: r.nextCursor };
+    });
+    expectEachOnce(
+      rows.map((s) => s.id),
+      (
+        await prisma.readinessSnapshot.findMany({
+          orderBy: [{ measuredAt: "desc" }, { id: "desc" }],
+        })
+      ).map((s) => s.id),
+    );
+  });
+
   it("GET /system-crons/:id/triggers — newest scheduledFor first", async () => {
     await prisma.systemCronDefinition.create({
       data: {
@@ -422,6 +456,9 @@ describeOrSkip("cursor walks on list services (integration)", () => {
     ).rejects.toThrow(BadRequestError);
     await expect(
       new CoverageSnapshotService(prisma).list({ cursor: "!!" }),
+    ).rejects.toThrow(BadRequestError);
+    await expect(
+      new ReadinessSnapshotService(prisma).list({ cursor: "!!" }),
     ).rejects.toThrow(BadRequestError);
     await expect(
       new SystemCronService(prisma).recentTriggers("m-cron", 5, null, "!!"),

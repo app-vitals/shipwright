@@ -59,6 +59,7 @@ describe("list routes taking ?limit also support cursor/nextCursor", () => {
       "GET /sessions",
       "GET /verification-checks",
       "GET /coverage-snapshots",
+      "GET /readiness-snapshots",
       "GET /cron-runs",
       "GET /patrol-findings",
       "GET /system-crons/{id}/triggers",

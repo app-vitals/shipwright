@@ -31,6 +31,7 @@ import {
   enablePoolObservability,
 } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { ReadinessSnapshotService } from "./readiness-snapshot-service.ts";
 import { RepoCronRunService } from "./repo-cron-run-service.ts";
 import { SessionPlanService } from "./session-plan-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
@@ -234,6 +235,7 @@ async function startServer(): Promise<void> {
     documentService,
   );
   const coverageSnapshotService = new CoverageSnapshotService(prisma);
+  const readinessSnapshotService = new ReadinessSnapshotService(prisma);
   const repoCronRunService = new RepoCronRunService(prisma);
   const patrolFindingService = new PatrolFindingService(prisma);
   const systemCronService = new SystemCronService(
@@ -283,6 +285,7 @@ async function startServer(): Promise<void> {
     verificationCheckService,
     documentService,
     coverageSnapshotService,
+    readinessSnapshotService,
     repoCronRunService,
     patrolFindingService,
     systemCronService,

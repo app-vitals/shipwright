@@ -16,6 +16,7 @@
  *   * /documents/* — register/list/patch planning documents (PLU-2.2)
  *   * /verification-checks/* — record/list structured per-check verification outcomes
  *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
+ *   * /readiness-snapshots/* — record/list per-commit agent-readiness snapshots
  *   * /cron-runs/* — append/list per-repo system-cron run records
  *   * /patrol-findings/* — batch-upsert/list cross-run patrol findings
  *   * /system-crons/*  — system-cron definitions + idempotent fire (admin-only)
@@ -49,12 +50,14 @@ import type { DocumentServiceLike } from "./document-service.ts";
 import { ApiError, ConflictError } from "./errors.ts";
 import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
+import type { ReadinessSnapshotServiceLike } from "./readiness-snapshot-service.ts";
 import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createCronRunsRoutes } from "./routes/cron-runs.ts";
 import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPatrolFindingsRoutes } from "./routes/patrol-findings.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
+import { createReadinessSnapshotsRoutes } from "./routes/readiness-snapshots.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
@@ -190,6 +193,19 @@ const noopCoverageSnapshotService: CoverageSnapshotServiceLike = {
   },
 };
 
+/** No-op ReadinessSnapshotService used when the feature is not wired up in a test context. */
+const noopReadinessSnapshotService: ReadinessSnapshotServiceLike = {
+  async record(_data) {
+    return {} as never;
+  },
+  async list(_opts?) {
+    return { snapshots: [], total: 0 };
+  },
+  async latest() {
+    return [];
+  },
+};
+
 /** Disabled SystemCronService used when the feature is not wired up in a test context. */
 const unwiredSystemCronService: SystemCronServiceLike = {
   async list() {
@@ -225,6 +241,7 @@ export interface TaskStoreDeps {
   verificationCheckService?: VerificationCheckServiceLike;
   documentService?: DocumentServiceLike;
   coverageSnapshotService?: CoverageSnapshotServiceLike;
+  readinessSnapshotService?: ReadinessSnapshotServiceLike;
   repoCronRunService?: RepoCronRunServiceLike;
   patrolFindingService?: PatrolFindingServiceLike;
   systemCronService?: SystemCronServiceLike;
@@ -368,6 +385,12 @@ export function createTaskStoreApp(
     "/coverage-snapshots",
     createCoverageSnapshotsRoutes(
       deps.coverageSnapshotService ?? noopCoverageSnapshotService,
+    ),
+  );
+  app.route(
+    "/readiness-snapshots",
+    createReadinessSnapshotsRoutes(
+      deps.readinessSnapshotService ?? noopReadinessSnapshotService,
     ),
   );
   app.route(
