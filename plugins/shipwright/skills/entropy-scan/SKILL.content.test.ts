@@ -160,22 +160,14 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
     expect(content).toContain('`rule == "entropy"`');
   });
 
-  it("keeps suppressed findings out of the report and quality log", () => {
+  it("keeps suppressed findings out of the report and run-record counts", () => {
     expect(content).toMatch(/Never report a finding suppressed/);
-    expect(content).toContain("totalViolations");
+    expect(content).toContain("run record's counts");
   });
 
   it("links the per-principle match-key reference", () => {
     expect(content).toContain("references/suppressions.md");
     expect(existsSync(refPath)).toBe(true);
-  });
-
-  it("documents the optional suppressed field in the quality-log schema", () => {
-    const schema = readFileSync(
-      join(import.meta.dir, "references", "quality-log-schema.md"),
-      "utf-8",
-    );
-    expect(schema).toContain("`suppressed`");
   });
 
   it("reference names every scannable rule in principles.md", () => {
@@ -203,5 +195,26 @@ describe("SKILL.md — capped final summary (CSM-2.7)", () => {
     expect(section).toContain("ENTROPY SCAN COMPLETE");
     expect(section).toContain("docs/patrols/entropy.md");
     expect(section).not.toContain("━");
+  });
+});
+
+describe("SKILL.md — --trend reads durable run records", () => {
+  it("reads the trend from GET /cron-runs for this repo", () => {
+    expect(content).toContain(
+      "/cron-runs?cronId=entropy-patrol&repo={url-encoded-repo}",
+    );
+  });
+
+  it("skips failed runs and needs at least 2 runs", () => {
+    expect(content).toMatch(/outcome` `ok` or `no_op`/);
+    expect(content).toContain("need at least 2 runs");
+  });
+
+  it("keeps no local quality log", () => {
+    expect(content).not.toContain("quality-log.jsonl");
+    expect(content).not.toContain("Append to Quality Log");
+    expect(
+      existsSync(join(import.meta.dir, "references", "quality-log-schema.md")),
+    ).toBe(false);
   });
 });
