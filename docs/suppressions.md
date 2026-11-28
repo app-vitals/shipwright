@@ -68,7 +68,7 @@ It prints `{kept, suppressed, expired}`. If the file is invalid the script exits
 Expired entries stop suppressing. Their findings stay in `kept` and are reported again like any new finding, and the scan lists the expired entries so a human can renew or drop them:
 
 - `security-scan` summary: `Expired suppressions (no longer suppressing — their findings are reported again)`, listing rule, match key and `expires`.
-- `entropy-scan` report and summary: an `Expired Suppressions` section. It lists only `entropy` entries, since the file is shared and expired `osv`/`grype`/`posture` entries are not that scan's to report.
+- `entropy-scan`: the summary prints `Expired suppressions: {N} — see handoff.`, and the expired `entropy` entries are listed in `docs/patrols/entropy.md` and the handoff file (`.entropy-patrol/findings.json`). Expired `osv`/`grype`/`posture` entries are not that scan's to report, so they are left out.
 
 To renew a risk, edit the entry's `expires` (and `reason` if it changed) in a PR. To retire it, delete the entry.
 
