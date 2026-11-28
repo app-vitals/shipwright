@@ -1,18 +1,19 @@
 ---
 name: error-scan
-description: "Scan Sentry for new/regressed unresolved issues and map them to repos dynamically. Report only — no code changes. Flags: --summary (print counts only, skip report file), --dry-run (full scan, no files written)."
+description: "Scan Sentry (required --repo) for new/regressed unresolved issues whose project maps to that repo. Records PatrolFindings in the task store; no repo files, no code changes. Flags: --repo org/repo (required), --cron ID, --summary (print counts only), --dry-run (full scan, record nothing)."
 ---
 
 # /error-scan
 
-Query the Sentry Issues API for unresolved issues, diff against
-`state/error-patrol-ledger.json` to find what's new or regressed, dynamically derive a
-service → repo mapping, and generate `error-report.md`. Report only — no code changes.
+Query the Sentry Issues API for unresolved issues, keep only those whose Sentry project maps to
+the repo named by the required `--repo`, diff against that repo's PatrolFindings in the task
+store, and record the findings and one run. Unmapped issues are counted in metrics and get no
+task. Report only — no code changes, no repo files.
 
 **Flags:**
-- `--summary` — print a counts summary to stdout without writing `error-report.md` (the
-  ledger is still updated)
-- `--dry-run` — run the full scan but write nothing (no report, no ledger update); prints
-  what would have been written to stdout instead
+- `--repo org/repo` — required; prints a usage error without it
+- `--cron ID` — system-cron id (default `error-patrol`)
+- `--summary` — print a counts summary only
+- `--dry-run` — run the full scan but record nothing
 
 Invoke the error-scan skill.

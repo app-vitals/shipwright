@@ -2,7 +2,7 @@
  * error-fix content tests — pagination-safe dedup query (task-store /tasks
  * pagination gap).
  *
- * Step 5's dedup check queries `GET /tasks?status=pending` and
+ * The dedup check queries `GET /tasks?status=pending` and
  * `status=in_progress` unbounded (repo-unscoped — error-fix dedups
  * globally, not per-repo). task-store's plain GET /tasks path defaults to
  * `limit=50` and signals truncation via `nextCursor` (task-service.ts
@@ -12,7 +12,7 @@
  * already-queued tasks slip past dedup on 2026-07-23 (test-fix's own
  * dedup query, same shape).
  *
- * These tests assert Step 5 documents: an explicit high `limit=1000` on
+ * These tests assert the dedup step documents: an explicit high `limit=1000` on
  * both dedup queries, and a guard that checks the response's `nextCursor`
  * and pages via `cursor` until `nextCursor` is null.
  */
@@ -32,24 +32,37 @@ describe("error-fix — SKILL.md exists", () => {
   });
 });
 
-describe("error-fix — Step 8 task JSON derives org/repo, not the bare dir name", () => {
-  it("documents deriving org/repo via git remote get-url origin", () => {
+describe("error-fix — per-repo contract (PCR-3.4)", () => {
+  it("requires --repo with a usage error", () => {
     const skill = readSkill();
-    expect(skill).toContain("remote get-url origin");
-    expect(skill.toLowerCase()).toContain("org/repo");
+    expect(skill).toContain("Usage: /error-fix --repo org/repo");
+    expect(skill).toContain("Error: --repo is required.");
   });
 
-  it("references entropy-fix's derivation pattern for consistency", () => {
-    expect(readSkill()).toContain("entropy-fix");
+  it("uses --repo verbatim as the task repo instead of deriving it from a checkout", () => {
+    const skill = readSkill();
+    expect(skill).not.toContain("remote get-url origin");
+    expect(skill).toContain('"repo": "<REPO>"');
   });
 
-  it("the task JSON template's repo field is not documented as the bare dir name", () => {
+  it("reads findings from the store and links tasks back, with no report or ledger file", () => {
     const skill = readSkill();
-    const repoFieldLine = skill
-      .split("\n")
-      .find((line) => line.includes('"repo":') && line.includes("<"));
-    expect(repoFieldLine).toBeDefined();
-    expect(repoFieldLine).not.toContain("repo dir name from error-report.md");
+    expect(skill).toContain("/patrol-findings?cronId=");
+    expect(skill).toContain("/patrol-findings/batch");
+    expect(skill).not.toContain("error-report.md");
+    expect(skill).not.toContain("error-patrol-ledger");
+    expect(skill).not.toContain("taskLinks");
+  });
+
+  it("documents the three routes and emits no hitl: true", () => {
+    const skill = readSkill();
+    expect(skill).toContain("Finding routing");
+    for (const route of ["**auto**", "**review**", "**plan**"]) {
+      expect(skill).toContain(route);
+    }
+    expect(skill).toContain("needs-review:");
+    expect(skill).not.toMatch(/"hitl":\s*true/);
+    expect(skill).not.toContain("hitl: <true");
   });
 });
 
@@ -84,10 +97,10 @@ describe("error-fix — Step 5 dedup query is pagination-safe", () => {
 });
 
 describe("PLU-4.4 origin provenance", () => {
-  it("files tasks with originKind skill and its own name as originRef", () => {
+  it("files tasks with originKind cron and the system-cron id as originRef", () => {
     const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
-    expect(text).toContain('"originKind": "skill"');
-    expect(text).toContain('"originRef": "error-fix"');
+    expect(text).toContain('"originKind": "cron"');
+    expect(text).toContain('"originRef": "<CRON_ID>"');
   });
 
   it("still writes source unchanged", () => {

@@ -176,26 +176,27 @@ separate auto/review/plan counts. Requires entropy-scan to have run first.
 
 ### error-scan
 
-Scan Sentry for new/regressed unresolved issues, dynamically map them to repos. Report only — no
-code changes.
+Scan Sentry (required `--repo`) for new/regressed unresolved issues whose project maps to that
+repo, and record them as PatrolFindings in the task store. Report only — no code changes.
 
 *Invocation:* Backs the `/shipwright:error-scan` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).
 
 ### error-fix
 
-Read `error-report.md`, fetch each New/Regressed issue's Sentry detail and stack trace, classify
-hitl per issue, and queue task-store tasks (plus companion observability-fix tasks where
-instrumentation gaps hinder root-causing). Requires error-scan to have run first.
+Read the repo's open error PatrolFindings (required `--repo`), fetch each issue's Sentry detail and
+stack trace, route each auto / review / plan, and queue task-store tasks (plus companion
+observability-fix tasks where instrumentation gaps hinder root-causing). Requires error-scan to
+have run first.
 
 *Invocation:* Backs the `/shipwright:error-fix` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).
 
 ### error-resolve
 
-Read the error-patrol ledger, check each linked task's current status via the task store, and
-resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never
-resolves on merged or pr_open.
+Read error PatrolFindings (required `--repo`) and each linked task's current status from the task
+store, and resolve the corresponding Sentry issue once its gating task has reached deployed/done.
+Never resolves on merged or pr_open.
 
 *Invocation:* Backs the `/shipwright:error-resolve` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).
