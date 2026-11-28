@@ -163,6 +163,14 @@ jobs:
           fetch_all_tags: true
           dry_run: true
 
+      # 1a. No new tag: a sibling run already tagged a newer commit of this
+      #     service, so the compute step returns an empty new_tag. Skip every
+      #     later step cleanly (the run concludes success, nothing pushed or tagged)
+      #     rather than failing at build with an invalid image reference.
+      - name: Skip release (no new tag)
+        if: steps.tag.outputs.new_tag == ''
+        run: echo "::notice::No new tag computed for $SERVICE (a newer commit is already tagged); skipping build, push and tag."
+
       # 1b. Upstream record. Agent only: the released upstream is the
       #     `ARG PLATFORM_VERSION` pin in agent/Dockerfile at the source commit,
       #     written as `agent=<version>` (release standard form). Every other
@@ -171,6 +179,7 @@ jobs:
       #     or tag, so a tag never carries a wrong record.
       - name: Read upstream record
         id: upstream
+        if: steps.tag.outputs.new_tag != ''
         run: |
           UPSTREAM=""
           if [ "$SERVICE" = agent ]; then
@@ -185,6 +194,7 @@ jobs:
 
       # 2. Build locally; nothing is pushed yet.
       - name: Build Docker image
+        if: steps.tag.outputs.new_tag != ''
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
           DOCKERFILE: ${{ matrix.dockerfile }}
@@ -222,6 +232,7 @@ jobs:
       #    Only agent has a real smoke check (binaries on PATH). For every other
       #    service this is deliberately minimal: confirm the built image exists.
       - name: Verify image
+        if: steps.tag.outputs.new_tag != ''
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
         run: |
@@ -236,6 +247,7 @@ jobs:
 
       # 4. Push (versioned tag, then :latest where configured).
       - name: Log in to GHCR
+        if: steps.tag.outputs.new_tag != ''
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -243,6 +255,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Docker image
+        if: steps.tag.outputs.new_tag != ''
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
           LATEST: ${{ matrix.latest }}
@@ -258,6 +271,7 @@ jobs:
       #    persist credentials) so the tag push triggers chart-release.yml;
       #    GITHUB_TOKEN pushes would not.
       - name: Tag release
+        if: steps.tag.outputs.new_tag != ''
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
           WORKFLOW_RUN: ${{ github.run_id }}
