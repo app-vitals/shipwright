@@ -139,20 +139,21 @@ separate auto/review/plan counts. Requires entropy-scan to have run first.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:entropy-fix</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="error-scan">error-scan</h3>
-<p>Scan Sentry for new/regressed unresolved issues, dynamically map them to repos. Report only — no
-code changes.</p>
+<p>Scan Sentry (required <code>--repo</code>) for new/regressed unresolved issues whose project maps to that
+repo, and record them as PatrolFindings in the task store. Report only — no code changes.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:error-scan</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="error-fix">error-fix</h3>
-<p>Read <code>error-report.md</code>, fetch each New/Regressed issue’s Sentry detail and stack trace, classify
-hitl per issue, and queue task-store tasks (plus companion observability-fix tasks where
-instrumentation gaps hinder root-causing). Requires error-scan to have run first.</p>
+<p>Read the repo’s open error PatrolFindings (required <code>--repo</code>), fetch each issue’s Sentry detail and
+stack trace, route each auto / review / plan, and queue task-store tasks (plus companion
+observability-fix tasks where instrumentation gaps hinder root-causing). Requires error-scan to
+have run first.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:error-fix</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="error-resolve">error-resolve</h3>
-<p>Read the error-patrol ledger, check each linked task’s current status via the task store, and
-resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never
-resolves on merged or pr_open.</p>
+<p>Read error PatrolFindings (required <code>--repo</code>) and each linked task’s current status from the task
+store, and resolve the corresponding Sentry issue once its gating task has reached deployed/done.
+Never resolves on merged or pr_open.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:error-resolve</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="consolidation-scan">consolidation-scan</h3>

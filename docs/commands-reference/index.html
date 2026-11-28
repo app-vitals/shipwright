@@ -134,11 +134,11 @@ duplication. Each pair follows the same shape: a <code>-scan</code> command that
 </tr>
 <tr>
 <td><code>/shipwright:error-scan</code></td>
-<td>Query the Sentry Issues API for unresolved issues, diff against the error-patrol ledger to find what’s new or regressed, and generate <code>error-report.md</code>. Report only — no code changes. Wraps the <a href="/docs/agent-skills#error-scan"><code>error-scan</code> skill</a>.</td>
+<td>Query the Sentry Issues API for unresolved issues, keep only issues mapped to the required <code>--repo</code>, diff against the repo’s PatrolFindings in the task store, and record them. Report only — no code changes. Wraps the <a href="/docs/agent-skills#error-scan"><code>error-scan</code> skill</a>.</td>
 </tr>
 <tr>
 <td><code>/shipwright:error-fix</code></td>
-<td>Read <code>error-report.md</code>, fetch each New/Regressed issue’s Sentry detail and stack trace, classify HITL per issue, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires <code>/error-scan</code> first. Wraps the <a href="/docs/agent-skills#error-fix"><code>error-fix</code> skill</a>.</td>
+<td>Read the repo’s open error PatrolFindings (required <code>--repo</code>), fetch each issue’s Sentry detail and stack trace, route each auto / review / plan, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires <code>/error-scan</code> first. Wraps the <a href="/docs/agent-skills#error-fix"><code>error-fix</code> skill</a>.</td>
 </tr>
 <tr>
 <td><code>/shipwright:error-resolve</code></td>
