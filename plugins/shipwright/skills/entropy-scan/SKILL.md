@@ -165,7 +165,7 @@ If the recorder errors, log it and continue with no prior state.
 1. Check for a project-level override: `.claude/shipwright/principles.md` in the project root.
 2. If it exists, load it. Print: "Using project config: `.claude/shipwright/principles.md`"
 3. If it does not exist, load the plugin default: `references/principles.md` (relative to the plugin root). Print: "No project config found. Using default principles. Run `/entropy-scan --init` to customize."
-4. If neither file exists, print: "No principles found. Run `/entropy-scan --init` to get started." and stop.
+4. If neither file exists, print: "No principles found. Run `/entropy-scan --init` to get started." and skip to Step 3.2 — the built-in baseline still runs with no principles.
 5. Parse the markdown. Each `###` heading starting a rule entry; read its `**Domain:**`, `**Severity:**`, prose statement, and (if present) `**Detection:**`, `**PR-worthy:**`, and `**HITL:**` fields. `todo_max_age_days` defaults to 90 (no per-project override in this format — a project's `.claude/shipwright/principles.md` override can adjust the `stale_todo` entry's own Detection text if a different threshold is needed).
 6. **Filter to only entries containing a `**Detection:**` field** — these are the entropy-scannable rules; everything else is judgment-only (read by `review`/`plan-session`/`dev-task`, never mechanically scanned). Map each scannable entry's `**Domain:**` to a report category: `security` → `security`, `dead_code` → `dead_code`, `todo_debt` → `todo_debt`, `architecture` → `inconsistent_patterns`, `docs` → `documentation_gaps`. Print the count of scannable entries.
 
@@ -190,6 +190,36 @@ For each active rule (in order: security first, then high → medium → low sev
 5. `documentation_gaps`
 
 Within each category, process high-severity rules before medium before low.
+
+---
+
+## Step 3.2: Built-in Tooling Baseline
+
+A fixed baseline of code-quality tooling checks that runs on every repo, alongside (never
+instead of) the principles above, and needs no per-repo config or principles entry. It runs
+even when the repo has no principles file of its own. Checks:
+
+- linter configured
+- formatter configured
+- type checker configured (only where the language has one)
+- pre-commit hooks
+- CI running lint and type check
+- stricter mode available (TypeScript `strict` off)
+
+Detection reuses the config-file tier of `references/toolchain-patterns.md` (the same
+signals plan-session and prd use). Run the shared script from the worktree:
+
+```bash
+bun "${CLAUDE_PLUGIN_ROOT}/scripts/entropy-baseline.ts" scan .
+```
+
+It prints a findings array in the handoff shape, with `category: "tooling"` and a `route` of
+`auto` or `review` per finding (rule ids `tooling_linter`, `tooling_formatter`,
+`tooling_type_checker`, `tooling_pre_commit`, `tooling_ci_lint_typecheck`,
+`tooling_stricter_mode`). Merge these into the Step 3 findings. They pass through Step 3.5
+suppressions like any other finding (`symbol` is the match key) and are written to the same
+`docs/patrols/entropy.md` and handoff — no new file. The output is deterministic, so an
+unchanged repo yields an unchanged docs file (no PR).
 
 ---
 
