@@ -11,7 +11,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { run } from "./check-site-docs-freshness.ts";
+import {
+  loadAnchors,
+  repoFromRemote,
+  run,
+} from "./check-site-docs-freshness.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -333,5 +337,131 @@ describe("check-site-docs-freshness — multi page", () => {
     expect(result.exit).toBe(0);
     // Page identity must be present in the output, not just bare file paths.
     expect(result.output).toContain("page-a.mdx");
+  });
+});
+
+// ─── Store-backed anchors (injected fake store) ─────────────────────────────
+
+function fakeStore(
+  status: number,
+  body?: unknown,
+  seen: string[] = [],
+): typeof fetch {
+  return (async (url: string | URL | Request) => {
+    seen.push(String(url));
+    return new Response(body === undefined ? null : JSON.stringify(body), {
+      status,
+    });
+  }) as unknown as typeof fetch;
+}
+
+describe("loadAnchors — anchors from /cron-runs/latest machineState", () => {
+  test("queries the site-docs-freshness cron and returns machineState anchors", async () => {
+    const seen: string[] = [];
+    const anchors = await loadAnchors(
+      fakeStore(
+        200,
+        {
+          machineState: {
+            "a.mdx": { sha: "sha-a", timestamp: "2026-01-01T00:00:00Z" },
+          },
+        },
+        seen,
+      ),
+      "http://store",
+      "tok",
+      "o/r",
+    );
+    expect(seen).toEqual([
+      "http://store/cron-runs/latest?cronId=site-docs-freshness&repo=o%2Fr",
+    ]);
+    const q = new URL(seen[0]).searchParams;
+    expect(q.get("cronId")).toBe("site-docs-freshness");
+    expect(q.get("repo")).toBe("o/r");
+    expect(anchors).toEqual({
+      "a.mdx": { sha: "sha-a", timestamp: "2026-01-01T00:00:00Z" },
+    });
+  });
+
+  test("404 (no prior run) yields no anchors, so every page is first-run", async () => {
+    const anchors = await loadAnchors(fakeStore(404), "http://store", "tok", "o/r");
+    expect(anchors).toEqual({});
+    const result = await run(
+      makeDeps({ readAnchor: (p) => anchors[p] ?? null }),
+    );
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("getting-started.mdx");
+  });
+
+  test("a page whose anchor has no mapped-source changes is not flagged", async () => {
+    const anchors = await loadAnchors(
+      fakeStore(200, {
+        machineState: {
+          "getting-started.mdx": { sha: "abc123", timestamp: "t" },
+        },
+      }),
+      "http://store",
+      "tok",
+      "o/r",
+    );
+    const result = await run(
+      makeDeps({ readAnchor: (p) => anchors[p] ?? null }),
+    );
+    expect(result.exit).toBe(1);
+  });
+
+  test("a run with no machineState yields no anchors", async () => {
+    expect(
+      await loadAnchors(fakeStore(200, {}), "http://store", "tok", "o/r"),
+    ).toEqual({});
+  });
+
+  test("a store HTTP failure returns no anchors (page flagged permissively)", async () => {
+    const anchors = await loadAnchors(fakeStore(500), "http://store", "tok", "o/r");
+    expect(anchors).toEqual({});
+    const result = await run(
+      makeDeps({ readAnchor: (p) => anchors[p] ?? null }),
+    );
+    expect(result.exit).toBe(0);
+  });
+
+  test("a store that 400s without repo yields no anchors (permissive), and the script always sends repo", async () => {
+    // Mirrors the real route: 400 unless both cronId and repo are present.
+    const seen: string[] = [];
+    const strictStore = (async (url: string | URL | Request) => {
+      const u = new URL(String(url));
+      seen.push(String(url));
+      if (!u.searchParams.get("cronId") || !u.searchParams.get("repo")) {
+        return new Response(null, { status: 400 });
+      }
+      return new Response(
+        JSON.stringify({ machineState: { "a.mdx": { sha: "s", timestamp: "t" } } }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    expect(await loadAnchors(strictStore, "http://store", "tok", "o/r")).toEqual(
+      { "a.mdx": { sha: "s", timestamp: "t" } },
+    );
+    // An empty repo reaches the route without a usable value → 400 → permissive.
+    expect(await loadAnchors(strictStore, "http://store", "tok", "")).toEqual({});
+  });
+
+  test("a network error returns no anchors", async () => {
+    const boom = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    expect(await loadAnchors(boom, "http://store", "tok", "o/r")).toEqual({});
+  });
+});
+
+describe("repoFromRemote", () => {
+  test("parses https and ssh remotes into org/repo", () => {
+    expect(repoFromRemote("https://github.com/o/r.git\n")).toBe("o/r");
+    expect(repoFromRemote("git@github.com:o/r.git")).toBe("o/r");
+    expect(repoFromRemote("https://github.com/o/r")).toBe("o/r");
+  });
+
+  test("returns null when there is no owner/name tail", () => {
+    expect(repoFromRemote("not-a-remote")).toBeNull();
   });
 });

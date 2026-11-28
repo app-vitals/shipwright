@@ -23,7 +23,7 @@ Interactive invocation waits for explicit human confirmation before editing anyt
 
 Keys are bare `.mdx` filenames under `site/src/content/docs/`; values are repo-root-relative source paths (a file or a whole directory). See [`docs/site-docs-freshness.md`](../../docs/site-docs-freshness.md) for the full contract, including the empty-array `_notes` case (a page with no repo-doc source).
 
-Per-page sync anchors live at `state/site-docs-last-synced.json` — `{ "<page>.mdx": { "sha": "...", "timestamp": "..." } }`, one entry per page, each updated independently. This file does not exist until the first page has ever completed a sync.
+Per-page sync anchors live in the task store, not in a local file. Read them with `GET $SHIPWRIGHT_TASK_STORE_URL/cron-runs/latest?cronId=site-docs-freshness&repo={org/repo}` (same bearer auth as the other task-store calls); the response's `machineState` is `{ "<page>.mdx": { "sha": "...", "timestamp": "..." } }`, one entry per page, each updated independently. A 404 means no sync has ever been recorded, so every page is a first run.
 
 ## Procedure
 
@@ -44,7 +44,7 @@ Exit 0 + stdout lists the flagged pages (same two line-shapes as above). Exit 1 
 For each flagged page:
 
 1. Look up its source paths in `site/docs-source-map.json`.
-2. Read that page's anchor from `state/site-docs-last-synced.json`, if present.
+2. Read that page's anchor from the `machineState` of `GET /cron-runs/latest?cronId=site-docs-freshness&repo={org/repo}`, if present (404 or no entry for the page = no anchor).
 3. Diff:
    - **Anchor exists:** `git diff {anchor-sha}...HEAD -- {mapped source paths}`
    - **No anchor yet (first run):** treat the full current content of the mapped source(s) as the change scope — there's nothing to diff against, so read the source(s) in full instead of a diff.
@@ -73,12 +73,12 @@ Present, per flagged page:
 
 Then **wait for explicit human confirmation** — Apply or Skip — before editing. Do not proceed to an edit on an assumed or implied yes.
 
-- **Apply:** Make the edit(s) with `Edit` (focused old/new strings). Then update just that page's entry in `state/site-docs-last-synced.json` to the current HEAD SHA and timestamp — every other page's entry is left untouched. Run the build validation (below).
-- **Skip:** Make no changes to the page and do not touch its anchor entry. Move to the next flagged page.
+- **Apply:** Make the edit(s) with `Edit` (focused old/new strings). Run the build validation (below), then record the new anchor: write `{"outcome":"ok","metrics":{"pagesSynced":1},"machineState":<previous anchors, with only this page's entry replaced by {"sha":"<HEAD sha>","timestamp":"<now, ISO-8601>"}>}` to a temp file and record exactly one run through the shared recorder — `bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts record --cron site-docs-freshness --repo {org/repo} --commit {HEAD sha} --result {temp file}`. "Previous anchors" starts as the `machineState` read in Step 2, so every other page's entry is carried over untouched; after each successful record, the `machineState` you just recorded becomes the "previous anchors" for the next applied page in this session (or re-read `GET /cron-runs/latest?cronId=site-docs-freshness&repo={org/repo}`), so a later page never overwrites an earlier page's fresh anchor with its stale pre-sync value. One recorded run per applied page.
+- **Skip:** Make no changes to the page and do not record a run or touch its anchor entry. Move to the next flagged page.
 
 #### Step 3, auto mode
 
-Never edit a page directly, and never touch the anchor file — the anchor only advances on an actually-applied edit, and auto mode never applies one. For each flagged page, file **one** task-store proposal task via the same `/tasks/bulk` mechanism `research-docs.md` already uses (the same endpoint, same auth header — do not invent a second one):
+Never edit a page directly, and never touch the anchors (never record a run) — the anchor only advances on an actually-applied edit, and auto mode never applies one. For each flagged page, file **one** task-store proposal task via the same `/tasks/bulk` mechanism `research-docs.md` already uses (the same endpoint, same auth header — do not invent a second one):
 
 ```bash
 curl -sf -X POST \
