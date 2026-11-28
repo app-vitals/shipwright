@@ -83,7 +83,7 @@ Load the same principles file that the scan used, filtered the same way:
 
 1. Read the `findings` array of the handoff file (Step 1). Every finding in it is open: the
    scan re-derives the full set each run, so there is no checked-off state.
-2. Filter to only findings whose entry has `**PR-worthy:** true` in the principles file.
+2. Filter to only findings whose entry has `**PR-worthy:** true` in the principles file; keep every `tooling_*` baseline finding (all are PR-worthy; see Step 6.1).
 3. If `--rule` flag was passed, further filter to only that rule's findings. If no findings match that rule ID, print: "No unchecked findings for rule `{rule_id}`. Nothing to queue." and stop.
 4. Group findings by `rule_id`. One task will be queued per group.
 5. Sort groups: high-severity rules first, then medium, then low.
@@ -216,6 +216,19 @@ numeric backstop: no file-count or line-count threshold ever forces a route.
   yet to move the logic into, or it needs a new module or design decision). A human runs it
   through `/shipwright:prd` or `/shipwright:plan-session`, which produces agent-executable
   tasks; the autonomous plan phase skips it because it is `hitl: true`.
+
+**Built-in tooling baseline findings** (`category: "tooling"`, rule ids `tooling_*`, produced
+by `/entropy-scan` Step 3.2) are not in principles.md, so they skip the `**PR-worthy:**` /
+`**HITL:**` lookup and the Step 6.3 cross-check, and use the `route` the scan stamped on each
+finding. They are always one task per rule and never human-gated beyond the review route:
+
+- **auto** — adding a config that matches the detected toolchain (linter, formatter, type
+  checker), adding pre-commit hooks, or wiring existing lint/type-check commands into CI.
+- **review** — turning on a stricter mode that may break the build (e.g. TypeScript `strict`):
+  created blocked with `needs-review:` asking whether to enable it now and fix the fallout.
+
+Dedup (6.2) applies unchanged, so re-running on an unchanged repo queues no duplicates. The
+shared `scripts/entropy-baseline.ts` (`planBaselineTasks`) builds these task objects.
 
 Use judgment for `per-finding` groups (you are the Claude agent running this skill), grounded
 in the principle's prose; no default lean — judge each group on its own facts, at runtime.

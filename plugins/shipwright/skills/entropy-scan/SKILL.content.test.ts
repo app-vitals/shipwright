@@ -218,3 +218,37 @@ describe("SKILL.md — --trend reads durable run records", () => {
     ).toBe(false);
   });
 });
+
+describe("SKILL.md — built-in tooling baseline (RDY-3.1)", () => {
+  it("has a baseline step that runs without per-repo config", () => {
+    expect(content).toContain("## Step 3.2: Built-in Tooling Baseline");
+    expect(content).toContain("needs no per-repo config");
+    expect(content).toContain("entropy-baseline.ts");
+  });
+
+  it("names the fixed baseline checks", () => {
+    for (const c of [
+      "linter configured",
+      "formatter configured",
+      "type checker configured",
+      "pre-commit hooks",
+      "CI running lint and type check",
+    ])
+      expect(content).toContain(c);
+  });
+
+  it("reuses toolchain detection and writes no new file", () => {
+    expect(content).toContain("references/toolchain-patterns.md");
+    expect(content).toContain("no new file");
+  });
+
+  it("still runs the baseline when no principles file exists", () => {
+    expect(content).toContain("skip to Step 3.2");
+  });
+
+  it("runs the baseline before suppressions", () => {
+    expect(content.indexOf("## Step 3.2")).toBeLessThan(
+      content.indexOf("## Step 3.5"),
+    );
+  });
+});

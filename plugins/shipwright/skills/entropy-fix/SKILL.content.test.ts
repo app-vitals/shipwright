@@ -191,3 +191,22 @@ describe("PCR-3.1 — three-way routing (auto / review / plan)", () => {
     expect(dry).toMatch(/task store/i);
   });
 });
+
+describe("RDY-3.1 — built-in tooling baseline routing", () => {
+  it("routes config / pre-commit / CI wiring as auto and stricter mode as review", () => {
+    const c = readSkill();
+    expect(c).toContain("Built-in tooling baseline findings");
+    expect(c).toMatch(/\*\*auto\*\* — adding a config that matches the detected toolchain/);
+    expect(c).toMatch(/\*\*review\*\* — turning on a stricter mode that may break the build/);
+  });
+
+  it("keeps tooling findings out of the principles lookup and never hitl", () => {
+    const c = readSkill();
+    expect(c).toContain("skip the `**PR-worthy:**`");
+    expect(c).toContain("never human-gated beyond the review route");
+  });
+
+  it("dedups so a re-run queues no duplicates", () => {
+    expect(readSkill()).toContain("queues no duplicates");
+  });
+});
