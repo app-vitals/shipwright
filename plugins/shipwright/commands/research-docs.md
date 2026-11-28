@@ -48,7 +48,7 @@ The last-synced point comes from the run history, not a local file. Ask the shar
 bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts prior --cron docs-freshness --repo {org/repo} --legacy-shape docs-last-synced
 ```
 
-It prints `{latest, findings, imported}`. Use `latest.commitSha` of the last `ok` run (skip `failed` and `no_op` runs when they are returned as `latest`; a `no_op` run keeps the earlier point) as the last-synced SHA.
+It prints `{latest, findings, imported}`. Use `latest.commitSha` as the last-synced SHA. `latest` is the newest `ok` or `no_op` run (a `no_op` run means the docs were already current at that commit); `failed` runs are never returned, so they never advance the point.
 
 One-time import: if the repo has no run yet and a legacy `state/docs-last-synced.json` exists, the `--legacy-shape docs-last-synced` flag makes the recorder import its `sha` as the first run's commit, and the legacy file is deleted after the import succeeds. This is the only place `state/docs-last-synced.json` is touched; auto mode never reads or writes it otherwise.
 
@@ -231,7 +231,7 @@ The result file is `{outcome: "ok" | "no_op" | "failed", metrics, machineState?,
 - `metrics` holds the counts above (`docsUpdated`, `autoTasks`, `reviewTasks`, `planTasks` per the routing step, and so on); every value must be a finite number (no strings, `NaN` or `null`).
 - `machineState` and `findings` are optional; docs-freshness keeps none today.
 
-Failure path: if any step errors after Step A0 (recorder `prior` call, git diff, a doc rewrite, task filing, PR creation), do not skip recording. Still run the `record` command with `outcome: "failed"` and the metrics gathered so far, then continue to Step A9 and report the error there. A `failed` run never advances the last-synced point (Step A1 uses the last `ok` run), so the next run re-covers the same range. The `--commit` is the repo's `HEAD` at the end of the run.
+Failure path: if any step errors after Step A0 (recorder `prior` call, git diff, a doc rewrite, task filing, PR creation), do not skip recording. Still run the `record` command with `outcome: "failed"` and the metrics gathered so far, then continue to Step A9 and report the error there. A `failed` run never advances the last-synced point (Step A1 only sees `ok` and `no_op` runs), so the next run re-covers the same range. The `--commit` is the repo's `HEAD` at the end of the run.
 
 Each repo's run is recorded independently — recording repo A's run does not touch repo B's history.
 
