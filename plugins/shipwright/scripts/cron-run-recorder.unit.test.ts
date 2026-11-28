@@ -117,7 +117,7 @@ const consolidation = {
       history: [{ run: "2026-11-01T09:00:00.000Z" }],
     },
     fpB: {
-      repo: "app-vitals/vitals-os",
+      repo: "app-vitals/other-repo",
       description: "other",
       files: [],
       occurrence_count: 1,
@@ -136,7 +136,7 @@ const security = {
       count: 2,
       lastSeen: "2026-11-21T00:00:00.000Z",
     },
-    "security-secrets-vitals-os-2026-W47": {
+    "security-secrets-other-repo-2026-W47": {
       rule: "secrets",
       status: "unresolved",
       count: 1,
@@ -158,12 +158,12 @@ const errors = {
       status: "resolved",
       count: 1,
       lastSeen: "2026-11-22T00:00:00.000Z",
-      repo: "app-vitals/vitals-os",
+      repo: "app-vitals/other-repo",
     },
   },
   serviceRepoMap: {
     api: { status: "mapped", repo: "shipwright", matchedAt: "x.ts:1" },
-    web: { status: "mapped", repo: "vitals-os", matchedAt: "y.ts:2" },
+    web: { status: "mapped", repo: "other-repo", matchedAt: "y.ts:2" },
   },
 };
 
