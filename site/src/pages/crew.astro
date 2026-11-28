@@ -1,0 +1,143 @@
+---
+// Crew page (CRW-1.1). Copy verbatim from the task spec. The apply form
+// is hosted externally and linked, never embedded (MESSAGING.md §4: no email
+// capture on marketing surfaces). Reuses brand.css tokens only; zero runtime JS.
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { CREW_APPLY_URL } from "../consts";
+
+const levels = [
+  {
+    name: "Deckhand",
+    how: "Build something real with Shipwright, make it public, and send us the link.",
+    perks: [
+      "A private crew Slack channel with Dave and Dan",
+      "A monthly crew call with the whole crew",
+      "Early access to new features",
+      "A shout-out for your build on our channels",
+      "Real input on the roadmap",
+    ],
+  },
+  {
+    name: "First Mate",
+    how: "Keep shipping public work and help other builders along the way. We'll invite you.",
+    perks: [
+      "Everything Deckhands get",
+      "Your build featured in a how-to-factory episode, a short, or a co-written post",
+      "Your name on this page and in the README",
+    ],
+  },
+  {
+    name: "Master Builder",
+    how: "Invite only, reviewed once a year. Long-term builders who shape Shipwright itself.",
+    perks: [
+      "Everything First Mates get",
+      "A monthly 1:1 with Dave or Dan",
+      "Roadmap previews",
+      "Co-create launch content with us",
+    ],
+  },
+];
+
+const steps = [
+  "Build something real with Shipwright.",
+  "Make it public.",
+  "Apply with the link. We read every one and reply either way.",
+];
+
+// Later: { name, build } entries land here once people are accepted.
+const members: { name: string; build: string }[] = [];
+---
+
+<BaseLayout
+  title="Join the Crew | Shipwright Harness"
+  description="Build something real with Shipwright, show us, and join the crew. Three levels, a monthly crew call, and your work featured in our tutorials."
+  pagefindIgnore={true}
+>
+  <section class="relative z-10 pt-16 pb-12">
+    <p class="sw-label">Built on Claude Code</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">Join the Crew.</h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      Build something that lasts with Shipwright, show us, and come build the
+      next thing with us.
+    </p>
+  </section>
+
+  <section
+    class="relative z-10 pb-12"
+    style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;"
+  >
+    <h2 class="sw-h2">What we're looking for</h2>
+    <p class="mt-4 max-w-2xl">
+      Show us what you've built. A real repo, a real workflow, a real result. A
+      demo you can rerun beats a big claim. We read every submission and curate
+      for quality.
+    </p>
+    <p class="mt-4 max-w-2xl">
+      Anything public counts: a repo, a write-up, a video, a talk. Vague hype,
+      private work, and reposted marketing copy don't.
+    </p>
+  </section>
+
+  <section class="relative z-10 pb-12">
+    <h2 class="sw-h2">The levels</h2>
+    <div class="mt-6 grid gap-6 md:grid-cols-3">
+      {
+        levels.map((level) => (
+          <div class="sw-card flex flex-col gap-3">
+            <h3 class="sw-h3">{level.name}</h3>
+            <p>
+              <em>How you get in:</em> {level.how}
+            </p>
+            <ul class="flex list-disc flex-col gap-1 pl-5">
+              {level.perks.map((perk) => (
+                <li>{perk}</li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="relative z-10 pb-12">
+    <h2 class="sw-h2">How it works</h2>
+    <ol class="mt-4 flex max-w-2xl list-decimal flex-col gap-2 pl-5">
+      {steps.map((step) => <li>{step}</li>)}
+    </ol>
+    {
+      CREW_APPLY_URL ? (
+        <p class="mt-8">
+          <a href={CREW_APPLY_URL} class="sw-btn">
+            Apply to the Crew →
+          </a>
+        </p>
+      ) : (
+        <p class="mt-8" data-testid="crew-apply-soon">
+          Applications open soon.
+        </p>
+      )
+    }
+  </section>
+
+  <section
+    class="relative z-10 pb-20"
+    style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;"
+  >
+    <h2 class="sw-h2">The Crew</h2>
+    {
+      members.length === 0 ? (
+        <p class="mt-4 max-w-2xl">
+          The first crew is forming now. Your name could be here.
+        </p>
+      ) : (
+        <ul class="mt-4 flex flex-col gap-2">
+          {members.map((m) => (
+            <li>
+              <a href={m.build}>{m.name}</a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+</BaseLayout>
