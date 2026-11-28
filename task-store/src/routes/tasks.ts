@@ -1374,7 +1374,7 @@ export function createTasksRoutes(
       body.assignee = agentId;
     }
     const updated = await taskService.update(
-      c.req.param("id"),
+      task.id,
       body as Prisma.TaskUpdateInput,
     );
     return c.json(updated, 200);
@@ -1385,14 +1385,14 @@ export function createTasksRoutes(
   app.openapi(deleteRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const task = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    await taskService.remove(c.req.param("id"));
+    await taskService.remove(task.id);
     return c.body(null, 204);
   });
 
@@ -1401,7 +1401,7 @@ export function createTasksRoutes(
   app.openapi(claimRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
@@ -1420,7 +1420,7 @@ export function createTasksRoutes(
       }
       claimedBy = body.claimedBy;
     }
-    const task = await taskService.claim(c.req.param("id"), claimedBy);
+    const task = await taskService.claim(owned.id, claimedBy);
     return c.json(task, 200);
   });
 
@@ -1429,14 +1429,14 @@ export function createTasksRoutes(
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(
+    const owned = await requireOwnership(
       taskService,
       c.req.param("id"),
       agentId,
       repos,
       resolveAccountScope(c),
     );
-    const task = await taskService.heartbeat(c.req.param("id"));
+    const task = await taskService.heartbeat(owned.id);
     return c.json(task, 200);
   });
 

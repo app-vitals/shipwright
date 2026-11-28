@@ -1120,8 +1120,14 @@ export class TaskService implements TaskServiceLike {
   ): Promise<TaskWithBlockedBy | null> {
     // findUnique on the id PK plus a non-unique accountId filter (Prisma's
     // extended unique where) — a row in another account reads as missing.
-    const task = await this.prisma.task.findUnique({
-      where: isAccountScoped(accountId) ? { id, accountId } : { id },
+    // STI-1.3: ids resolve case-insensitively (backed by STI-1.1's lower(id)
+    // unique index, so at most one row can match); callers should use the
+    // returned task's canonical `id` for any follow-up write.
+    const task = await this.prisma.task.findFirst({
+      where: {
+        id: { equals: id, mode: "insensitive" },
+        ...(isAccountScoped(accountId) ? { accountId } : {}),
+      },
     });
     if (!task) return null;
     // Scope the dependency lookup to only the IDs this task depends on —
@@ -1147,6 +1153,7 @@ export class TaskService implements TaskServiceLike {
     const data = this.withBlockedAtOnCreate(input);
     const created = await this.prisma.$transaction(async (tx) => {
       let task: Task;
+      await this.assertNoCaseOnlyIdCollision(tx, data.id);
       try {
         task = await tx.task.create({ data });
       } catch (err: unknown) {
@@ -1281,6 +1288,30 @@ export class TaskService implements TaskServiceLike {
     return { inserted: createdRows.length, updated: 0, skipped: [] };
   }
 
+  /**
+   * STI-1.3: a new id that differs from an existing one only by case would
+   * trip STI-1.1's lower(id) unique index, which aborts the Postgres
+   * transaction and can't name the existing row. Look it up first so the
+   * 409 names the existing id (and, thrown inside the caller's transaction,
+   * rolls back the whole batch). Exact-id collisions are left to the P2002
+   * handlers at the call sites.
+   */
+  private async assertNoCaseOnlyIdCollision(
+    tx: Pick<BulkTxClient, "task">,
+    id: string | undefined,
+  ): Promise<void> {
+    if (!id) return;
+    const existing = await tx.task.findFirst({
+      where: { id: { equals: id, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existing && existing.id !== id) {
+      throw new ConflictError(
+        `task id '${id}' collides case-insensitively with existing task '${existing.id}' — bulk writes are all-or-nothing, the whole batch was rolled back`,
+      );
+    }
+  }
+
   /** bulk()'s transaction body: create each task + its session row in order, then dispatch once. */
   private async bulkInsert(
     tx: BulkTxClient,
@@ -1289,6 +1320,7 @@ export class TaskService implements TaskServiceLike {
     const rows: Task[] = [];
     for (const task of tasks) {
       let created: Task;
+      await this.assertNoCaseOnlyIdCollision(tx, task.id);
       try {
         created = await tx.task.create({
           data: this.withBlockedAtOnCreate(task),
