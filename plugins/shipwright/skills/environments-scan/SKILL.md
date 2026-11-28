@@ -46,7 +46,7 @@ it and continue with no prior state.
 
 ## Step 2: Fetch active tasks (dedup input)
 
-List this repo's active tasks (`status=pending`, `in_progress`, `blocked`; `limit=1000`;
+List this repo's active tasks (`status=pending`, `in_progress`, `pr_open`, `blocked`; `limit=1000`;
 follow `nextCursor` until null) and write `[{id, status}]` to `/tmp/environments-active.json`.
 
 ## Step 3: Detect

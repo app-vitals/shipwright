@@ -46,7 +46,7 @@ tasks (`tasks` in the handoff) with ids `environments-{check}-{repo-slug}-{YYYY-
 ## Step 3: Dedup and queue
 
 The scan's planned tasks already exclude checks with an active task. Re-check right before
-writing: query `pending`, `in_progress` and `blocked` tasks for the repo (`limit=1000`, follow
+writing: query `pending`, `in_progress`, `pr_open` and `blocked` tasks for the repo (`limit=1000`, follow
 `nextCursor`) and drop any planned task whose check already has an id starting
 `environments-{check}-{repo-slug}-`. Then `POST /tasks/bulk` the rest. A re-run on an unchanged
 repo therefore queues nothing. Count the accepted tasks per route.
