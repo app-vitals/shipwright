@@ -108,8 +108,9 @@ jobs:
       # Browser specs run from the trusted base checkout only. Nothing from the
       # PR head is installed or executed here.
       - name: Install Playwright Chromium
-        working-directory: trusted
-        run: bunx playwright install --with-deps chromium
+        uses: ./.github/actions/install-playwright
+        with:
+          working-directory: trusted
 
       - name: Browser e2e
         working-directory: trusted

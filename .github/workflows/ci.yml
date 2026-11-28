@@ -202,7 +202,10 @@ jobs:
           (cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma)
 
       - name: Install Playwright chromium-headless-shell
-        run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
+        uses: ./.github/actions/install-playwright
+        with:
+          browser: chromium-headless-shell
+          playwright-bin: ${{ github.workspace }}/agent/node_modules/.bin/playwright
 
       - name: Test
         run: task test:coverage
@@ -247,7 +250,9 @@ jobs:
         run: cd site && npm run brand-lint
 
       - name: Install Playwright chromium
-        run: cd site && bunx playwright install --with-deps chromium
+        uses: ./.github/actions/install-playwright
+        with:
+          working-directory: site
 
       - name: Playwright smoke
         run: cd site && bunx playwright test
@@ -392,7 +397,9 @@ jobs:
         run: task setup
 
       - name: Install Playwright chromium
-        run: cd metrics && bunx playwright install --with-deps chromium
+        uses: ./.github/actions/install-playwright
+        with:
+          working-directory: metrics
 
       - name: Run e2e tests
         run: task e2e
@@ -420,7 +427,9 @@ jobs:
         run: task setup
 
       - name: Install Playwright chromium
-        run: cd admin && bunx playwright install --with-deps chromium
+        uses: ./.github/actions/install-playwright
+        with:
+          working-directory: admin
 
       - name: Run e2e tests
         run: task e2e:admin

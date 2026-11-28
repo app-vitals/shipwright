@@ -1,0 +1,43 @@
+name: Install Playwright browser
+description: >-
+  Refreshes the apt indexes, then installs a Playwright browser with its OS
+  dependencies, retrying up to 3 times. Works around intermittent runner
+  failures where the Playwright `install --with-deps` hits "E: Unable to locate
+  package" because the Ubuntu archive indexes were not fetched. Only run
+  steps, so no third-party actions to pin.
+inputs:
+  browser:
+    description: Playwright browser to install (e.g. chromium, chromium-headless-shell).
+    required: false
+    default: chromium
+  working-directory:
+    description: Directory the install command runs from.
+    required: false
+    default: "."
+  playwright-bin:
+    description: Playwright executable (relative to working-directory or absolute).
+    required: false
+    default: bunx playwright
+runs:
+  using: composite
+  steps:
+    - name: Install Playwright ${{ inputs.browser }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BROWSER: ${{ inputs.browser }}
+        PLAYWRIGHT_BIN: ${{ inputs.playwright-bin }}
+      run: |
+        set -uo pipefail
+        max_attempts=3
+        for attempt in $(seq 1 "$max_attempts"); do
+          if sudo apt-get update && $PLAYWRIGHT_BIN install --with-deps "$BROWSER"; then
+            exit 0
+          fi
+          if [ "$attempt" -lt "$max_attempts" ]; then
+            echo "::warning::Playwright install attempt $attempt/$max_attempts failed; retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          fi
+        done
+        echo "::error::Playwright install failed after $max_attempts attempts"
+        exit 1

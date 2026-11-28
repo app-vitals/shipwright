@@ -244,8 +244,9 @@ jobs:
         run: task preview:canary ENV_FILE="$ENV_FILE"
 
       - name: Install Playwright Chromium
-        working-directory: trusted
-        run: bunx playwright install --with-deps chromium
+        uses: ./trusted/.github/actions/install-playwright
+        with:
+          working-directory: trusted
 
       - name: Browser e2e
         working-directory: trusted
