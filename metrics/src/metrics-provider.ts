@@ -8,6 +8,7 @@
  * No HogQL string ever crosses the handler↔provider boundary.
  */
 
+import type { ReadinessSummaryRecord } from "./lib/task-store-client.ts";
 import type { DatePreset, DateRange, HogQLResult } from "./types.ts";
 
 /** Preset or custom date range accepted by all metric queries. */
@@ -118,4 +119,10 @@ export interface MetricsProvider {
    * otherwise.
    */
   systemCrons?(range: QueryDateRange): Promise<SystemCronMetrics>;
+  /**
+   * Fleet agent-readiness roll-up (RDY-5.1), the task store's
+   * GET /readiness/summary passed through. Optional: the
+   * /metrics/readiness route answers 501 when a provider lacks it.
+   */
+  readiness?(): Promise<ReadinessSummaryRecord>;
 }

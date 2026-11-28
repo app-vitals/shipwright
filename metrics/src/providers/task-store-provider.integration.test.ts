@@ -78,6 +78,10 @@ class CountingTaskStoreClient implements TaskStoreClient {
   ) {
     return this.inner.listCoverageHistory(params);
   }
+
+  getReadinessSummary() {
+    return this.inner.getReadinessSummary();
+  }
 }
 
 // ─── Cassettes ────────────────────────────────────────────────────────────────

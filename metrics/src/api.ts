@@ -48,9 +48,10 @@ import {
   MergedPrsQuerySchema,
   MergedPrsResultSchema,
   PrOutcomesResultSchema,
-  SystemCronsResultSchema,
   QueueResultSchema,
+  ReadinessResultSchema,
   SummaryResultSchema,
+  SystemCronsResultSchema,
   TokensResultSchema,
   TrendsQuerySchema,
   TrendsResultSchema,
@@ -368,6 +369,32 @@ const systemCronsRoute = createRoute({
     },
     501: {
       description: "Provider does not support system-cron metrics",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const readinessRoute = createRoute({
+  method: "get",
+  path: "/metrics/readiness",
+  summary: "Fleet agent-readiness roll-up",
+  description:
+    "The task store's fleet readiness summary: percent of repos at Level 3+, per-repo level and failing checks (each with its owner cron and whether that owner is running), and a 12-week trend. Not date-range scoped. Authenticated only; there is no public variant.",
+  responses: {
+    200: {
+      description: "Readiness summary",
+      content: { "application/json": { schema: ReadinessResultSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    501: {
+      description: "Provider does not support readiness",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -1056,6 +1083,33 @@ function makeSystemCronsHandler(
   };
 }
 
+// ─── /metrics/readiness (RDY-5.1) ─────────────────────────────────────────
+
+function makeReadinessHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof readinessRoute> {
+  return async (c) => {
+    if (!provider.readiness) {
+      return c.json({ error: "readiness not supported" }, 501);
+    }
+    const startMs = Date.now();
+    try {
+      const result = await provider.readiness();
+      const now = new Date();
+      return c.json(
+        wrapResponse(result, {
+          dateRange: resolveDateRangeForMeta(undefined, undefined, undefined),
+          generatedAt: now.toISOString(),
+          queryTimeMs: Date.now() - startMs,
+        }),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
 // ─── /metrics/merged-prs (POM-2.1) ────────────────────────────────────────
 
 const ORIGIN_KEYS = [
@@ -1648,6 +1702,12 @@ export function createMetricsApp(
     coverageRoute,
     metricsPolicy,
     makeCoverageHandler(provider),
+  );
+  registerWithAuthz(
+    app,
+    readinessRoute,
+    metricsPolicy,
+    makeReadinessHandler(provider),
   );
   registerWithAuthz(
     app,
