@@ -174,38 +174,6 @@ querying Sentry for unresolved errors), with no dependency on
 <td>Mines the last day of merged PRs for durable learnings.</td>
 </tr>
 <tr>
-<td><code>entropy-patrol-maintenance</code></td>
-<td>weekly Mon 04:00</td>
-<td><code>/shipwright:entropy-scan</code> → <code>/shipwright:entropy-fix</code></td>
-<td>entropy-scan, entropy-fix</td>
-<td>off</td>
-<td>Scans for code entropy and fixes what’s PR-worthy.</td>
-</tr>
-<tr>
-<td><code>error-patrol-maintenance</code></td>
-<td>daily 04:00</td>
-<td><code>/shipwright:error-scan</code> → <code>/shipwright:error-fix</code> → <code>/shipwright:error-resolve</code></td>
-<td>error-scan, error-fix, error-resolve</td>
-<td>off</td>
-<td>Scans for unresolved Sentry errors and fixes what’s PR-worthy.</td>
-</tr>
-<tr>
-<td><code>security-patrol-maintenance</code></td>
-<td>weekly Mon 06:00</td>
-<td><code>/shipwright:security-scan</code> → <code>/shipwright:security-fix</code></td>
-<td>security-scan, security-fix</td>
-<td>off</td>
-<td>Scans for security vulnerabilities and fixes what’s PR-worthy.</td>
-</tr>
-<tr>
-<td><code>consolidation-patrol-maintenance</code></td>
-<td>weekly Mon 05:00</td>
-<td><code>/shipwright:consolidation-scan</code> → <code>/shipwright:consolidation-fix</code></td>
-<td>consolidation-scan, consolidation-fix</td>
-<td>off</td>
-<td>Proposes consolidation for duplicate patterns that have stabilized over time.</td>
-</tr>
-<tr>
 <td><code>prompt-audit-maintenance</code></td>
 <td>weekly Mon 07:00</td>
 <td><code>/shipwright:prompt-scan --with-doctor</code> → <code>/shipwright:prompt-fix</code></td>
