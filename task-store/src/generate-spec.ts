@@ -18,6 +18,7 @@ import type { DocumentServiceLike } from "./document-service.ts";
 import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import type { ReadinessSnapshotServiceLike } from "./readiness-snapshot-service.ts";
+import type { ReadinessSummaryServiceLike } from "./readiness-summary-service.ts";
 import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createCronRunsRoutes } from "./routes/cron-runs.ts";
@@ -25,6 +26,7 @@ import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPatrolFindingsRoutes } from "./routes/patrol-findings.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createReadinessSnapshotsRoutes } from "./routes/readiness-snapshots.ts";
+import { createReadinessSummaryRoutes } from "./routes/readiness-summary.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
@@ -228,6 +230,12 @@ const stubReadinessSnapshotService: ReadinessSnapshotServiceLike = {
   },
 };
 
+const stubReadinessSummaryService: ReadinessSummaryServiceLike = {
+  async summary() {
+    return {} as never;
+  },
+};
+
 const stubCoverageSnapshotService: CoverageSnapshotServiceLike = {
   async record() {
     return {} as never;
@@ -318,6 +326,9 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const readinessSnapshotsApp = createReadinessSnapshotsRoutes(
     stubReadinessSnapshotService,
   );
+  const readinessSummaryApp = createReadinessSummaryRoutes(
+    stubReadinessSummaryService,
+  );
   const cronRunsApp = createCronRunsRoutes(stubRepoCronRunService);
   const patrolFindingsApp = createPatrolFindingsRoutes(
     stubPatrolFindingService,
@@ -340,6 +351,8 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     coverageSnapshotsApp.getOpenAPI31Document(innerDocInfo);
   const readinessSnapshotsSpec =
     readinessSnapshotsApp.getOpenAPI31Document(innerDocInfo);
+  const readinessSummarySpec =
+    readinessSummaryApp.getOpenAPI31Document(innerDocInfo);
   const cronRunsSpec = cronRunsApp.getOpenAPI31Document(innerDocInfo);
   const patrolFindingsSpec =
     patrolFindingsApp.getOpenAPI31Document(innerDocInfo);
@@ -388,6 +401,13 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
       "/readiness-snapshots",
     ),
     ...prefixPaths(
+      (readinessSummarySpec.paths ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >,
+      "/readiness",
+    ),
+    ...prefixPaths(
       (cronRunsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/cron-runs",
     ),
@@ -424,6 +444,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(verificationChecksSpec.components?.schemas ?? {}),
         ...(coverageSnapshotsSpec.components?.schemas ?? {}),
         ...(readinessSnapshotsSpec.components?.schemas ?? {}),
+        ...(readinessSummarySpec.components?.schemas ?? {}),
         ...(cronRunsSpec.components?.schemas ?? {}),
         ...(patrolFindingsSpec.components?.schemas ?? {}),
         ...(systemCronsSpec.components?.schemas ?? {}),

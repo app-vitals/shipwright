@@ -32,6 +32,7 @@ import {
 } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { ReadinessSnapshotService } from "./readiness-snapshot-service.ts";
+import { ReadinessSummaryService } from "./readiness-summary-service.ts";
 import { RepoCronRunService } from "./repo-cron-run-service.ts";
 import { SessionPlanService } from "./session-plan-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
@@ -244,6 +245,11 @@ async function startServer(): Promise<void> {
     webhookDispatcher,
   );
 
+  const readinessSummaryService = new ReadinessSummaryService(
+    prisma,
+    systemCronService,
+  );
+
   // SCR-1.3: the default system-cron definitions (disabled), insert-if-missing.
   await systemCronService.seedDefaults();
   console.log("[task-store] default system-cron definitions seeded");
@@ -286,6 +292,7 @@ async function startServer(): Promise<void> {
     documentService,
     coverageSnapshotService,
     readinessSnapshotService,
+    readinessSummaryService,
     repoCronRunService,
     patrolFindingService,
     systemCronService,

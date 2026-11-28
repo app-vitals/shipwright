@@ -16,6 +16,7 @@
  *   * /documents/* — register/list/patch planning documents (PLU-2.2)
  *   * /verification-checks/* — record/list structured per-check verification outcomes
  *   * /coverage-snapshots/* — record/list per-commit test-coverage snapshots
+ *   * /readiness/summary — fleet readiness roll-up (RDY-4.1)
  *   * /readiness-snapshots/* — record/list per-commit agent-readiness snapshots
  *   * /cron-runs/* — append/list per-repo system-cron run records
  *   * /patrol-findings/* — batch-upsert/list cross-run patrol findings
@@ -51,6 +52,7 @@ import { ApiError, ConflictError } from "./errors.ts";
 import type { PatrolFindingServiceLike } from "./patrol-finding-service.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import type { ReadinessSnapshotServiceLike } from "./readiness-snapshot-service.ts";
+import type { ReadinessSummaryServiceLike } from "./readiness-summary-service.ts";
 import type { RepoCronRunServiceLike } from "./repo-cron-run-service.ts";
 import { createCoverageSnapshotsRoutes } from "./routes/coverage-snapshots.ts";
 import { createCronRunsRoutes } from "./routes/cron-runs.ts";
@@ -58,6 +60,7 @@ import { createDocumentsRoutes } from "./routes/documents.ts";
 import { createPatrolFindingsRoutes } from "./routes/patrol-findings.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
 import { createReadinessSnapshotsRoutes } from "./routes/readiness-snapshots.ts";
+import { createReadinessSummaryRoutes } from "./routes/readiness-summary.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createSystemCronsRoutes } from "./routes/system-crons.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
@@ -206,6 +209,28 @@ const noopReadinessSnapshotService: ReadinessSnapshotServiceLike = {
   },
 };
 
+/** Empty ReadinessSummaryService used when the feature is not wired up in a test context. */
+const noopReadinessSummaryService: ReadinessSummaryServiceLike = {
+  async summary() {
+    const levelDistribution = {
+      "0": 0,
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 0,
+      "5": 0,
+    };
+    return {
+      percentAtOrAboveFloor: null,
+      repoCount: 0,
+      staleCount: 0,
+      levelDistribution,
+      repos: [],
+      trend: [],
+    };
+  },
+};
+
 /** Disabled SystemCronService used when the feature is not wired up in a test context. */
 const unwiredSystemCronService: SystemCronServiceLike = {
   async list() {
@@ -242,6 +267,7 @@ export interface TaskStoreDeps {
   documentService?: DocumentServiceLike;
   coverageSnapshotService?: CoverageSnapshotServiceLike;
   readinessSnapshotService?: ReadinessSnapshotServiceLike;
+  readinessSummaryService?: ReadinessSummaryServiceLike;
   repoCronRunService?: RepoCronRunServiceLike;
   patrolFindingService?: PatrolFindingServiceLike;
   systemCronService?: SystemCronServiceLike;
@@ -391,6 +417,12 @@ export function createTaskStoreApp(
     "/readiness-snapshots",
     createReadinessSnapshotsRoutes(
       deps.readinessSnapshotService ?? noopReadinessSnapshotService,
+    ),
+  );
+  app.route(
+    "/readiness",
+    createReadinessSummaryRoutes(
+      deps.readinessSummaryService ?? noopReadinessSummaryService,
     ),
   );
   app.route(
