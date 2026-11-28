@@ -36,7 +36,9 @@ beforeAll(async () => {
     },
   );
   server = Bun.serve({ port: 0, fetch: app.fetch });
-});
+  // Chromium cold-start under full-suite CI load can exceed bun's 5s default
+  // hook timeout; match Playwright's own 30s launch budget.
+}, 30_000);
 
 afterAll(async () => {
   await browser?.close();

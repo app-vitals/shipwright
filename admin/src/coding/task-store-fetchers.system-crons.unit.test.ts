@@ -48,6 +48,16 @@ describe("system-cron fetchers", () => {
     expect(calls[0]?.url.searchParams.get("limit")).toBe("5");
   });
 
+  it("fetchCronRuns GETs /cron-runs with cronId, repo and limit, no includeDetail", async () => {
+    const { fetchers, calls } = make(200, { runs: [] });
+    await fetchers.fetchCronRuns<unknown>("dep-audit", "acme/api", 1);
+    expect(calls[0]?.url.pathname).toBe("/cron-runs");
+    expect(calls[0]?.url.searchParams.get("cronId")).toBe("dep-audit");
+    expect(calls[0]?.url.searchParams.get("repo")).toBe("acme/api");
+    expect(calls[0]?.url.searchParams.get("limit")).toBe("1");
+    expect(calls[0]?.url.searchParams.has("includeDetail")).toBe(false);
+  });
+
   it("patchSystemCron PATCHes JSON and returns the body", async () => {
     const { fetchers, calls } = make();
     expect(await fetchers.patchSystemCron("c1", { enabled: false })).toEqual({

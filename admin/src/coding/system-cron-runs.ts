@@ -41,3 +41,52 @@ export function recentTriggers(
     .sort((a, b) => Date.parse(b.scheduledFor) - Date.parse(a.scheduledFor))
     .slice(0, limit);
 }
+
+// ─── Per-repo run history (PCR-5.1) ──────────────────────────────────────────
+
+/**
+ * The fields of a GET /cron-runs record the page reads. Deliberately omits
+ * `machineState`: it is never rendered, and `pickRepoRun` drops it even if a
+ * caller passes the full record.
+ */
+export interface RepoRunSummary {
+  repo: string;
+  outcome: "ok" | "no_op" | "failed";
+  finishedAt: string;
+  commitSha: string;
+  metrics: Record<string, number>;
+}
+
+/** Latest run per in-scope repo; `null` = never run, `undefined` entry = fetch failed. */
+export type RepoRunHistory = Record<string, RepoRunSummary | null | undefined>;
+
+/** Repos fetched concurrently per definition. */
+export const REPO_FETCH_BATCH = 10;
+
+/** Copies only the displayable fields, so nothing else (machineState) can leak into HTML. */
+export function pickRepoRun(r: RepoRunSummary): RepoRunSummary {
+  return {
+    repo: r.repo,
+    outcome: r.outcome,
+    finishedAt: r.finishedAt,
+    commitSha: r.commitSha,
+    metrics: { ...r.metrics },
+  };
+}
+
+export function shortSha(sha: string): string {
+  return sha.slice(0, 7);
+}
+
+/** "scanned 12 · auto 2" — keys sorted, capped at `max` entries. */
+export function formatMetrics(
+  metrics: Record<string, number>,
+  max = 4,
+): string {
+  const entries = Object.entries(metrics).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const shown = entries.slice(0, max).map(([k, v]) => `${k} ${v}`);
+  if (entries.length > max) shown.push(`+${entries.length - max} more`);
+  return shown.join(" · ");
+}
