@@ -10,8 +10,10 @@
  * (this repo, cwd) and reads site/docs-source-map.json (built by SDR-1) —
  * `{ "<page>.mdx": ["<source path>", ...] }` — to get N pages, each with its
  * OWN last-synced anchor SHA (not one shared repo-wide anchor). Anchors live
- * in the task store: GET /cron-runs/latest?cronId=site-docs-freshness, taken
- * from the run's machineState ({ "<page>.mdx": { sha, timestamp } }).
+ * in the task store: GET /cron-runs/latest?cronId=site-docs-freshness&repo=<org/repo>,
+ * taken from the run's machineState ({ "<page>.mdx": { sha, timestamp } }).
+ * The repo is derived from this checkout's `origin` remote; if it can't be
+ * determined the script warns on stderr and flags every page (permissive).
  *
  * For each page in the source map:
  * - No anchor entry for that page (whether no run has ever been recorded, or
@@ -66,8 +68,17 @@ interface PageFinding {
 // ─── Anchor store ─────────────────────────────────────────────────────────────
 
 /**
+ * Parse `org/repo` from a git remote URL (https or ssh form). Returns null
+ * when the URL has no `owner/name` tail.
+ */
+export function repoFromRemote(url: string): string | null {
+  const m = /[:/]([^/:]+\/[^/]+?)(?:\.git)?\/?$/.exec(url.trim());
+  return m?.[1] ?? null;
+}
+
+/**
  * Load per-page anchors from the latest site-docs-freshness run's
- * machineState. 404 (no prior run) → no anchors, so every page is a first run.
+ * machineState for `repo` (org/repo — the route requires both cronId and repo). 404 (no prior run) → no anchors, so every page is a first run.
  * Any store/network failure warns on stderr and also returns no anchors, so
  * every page is flagged (permissive).
  */
@@ -75,10 +86,11 @@ export async function loadAnchors(
   fetchFn: typeof fetch,
   baseUrl: string,
   token: string,
+  repo: string,
 ): Promise<Record<string, Anchor>> {
   try {
     const res = await fetchFn(
-      `${baseUrl}/cron-runs/latest?cronId=${encodeURIComponent(SITE_DOCS_CRON_ID)}`,
+      `${baseUrl}/cron-runs/latest?cronId=${encodeURIComponent(SITE_DOCS_CRON_ID)}&repo=${encodeURIComponent(repo)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (res.status === 404) return {};
@@ -221,13 +233,29 @@ async function buildProductionDeps(): Promise<Deps> {
     .trim()
     .replace(/\/$/, "");
   const token = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
-  const anchors =
-    baseUrl && token
-      ? await loadAnchors(fetch, baseUrl, token)
-      : (process.stderr.write(
-          "check-site-docs-freshness: SHIPWRIGHT_TASK_STORE_URL/TOKEN not set — flagging every page permissively\n",
-        ),
-        {});
+  const resolveRepo = (): string | null => {
+    const r = spawnSync("git", ["remote", "get-url", "origin"], {
+      cwd: repoDir,
+      encoding: "utf-8",
+    });
+    if (r.error || r.status !== 0) return null;
+    return repoFromRemote(r.stdout ?? "");
+  };
+  let anchors: Record<string, Anchor> = {};
+  if (!baseUrl || !token) {
+    process.stderr.write(
+      "check-site-docs-freshness: SHIPWRIGHT_TASK_STORE_URL/TOKEN not set — flagging every page permissively\n",
+    );
+  } else {
+    const repo = resolveRepo();
+    if (repo) {
+      anchors = await loadAnchors(fetch, baseUrl, token, repo);
+    } else {
+      process.stderr.write(
+        "check-site-docs-freshness: could not derive org/repo from the origin remote — flagging every page permissively\n",
+      );
+    }
+  }
 
   return {
     sourceMap: readSourceMap(),
