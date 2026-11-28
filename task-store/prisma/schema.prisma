@@ -757,6 +757,8 @@ model Session {
   planningLockExpiresAt DateTime?
 
   @@unique([accountId, slug])
+  // STI-1.1: also unique on (accountId, lower(slug)) via raw SQL migration
+  // 20261128010000_add_case_insensitive_unique_indexes (Prisma can't declare it).
   @@index([accountId])
 }
 
