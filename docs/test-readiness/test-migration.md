@@ -11,131 +11,96 @@
 
 | Bucket | Test count | Infra count | Effort |
 |---|---|---|---|
-| Reuse as-is | ~405 (of 406 `bun test` files; 1 more pending Promote below) | 8 | — |
-| Promote / deepen | 1 (`check-helpers.unit.test.ts`, `createTaskStoreClient` suite) | 0 | small |
+| Reuse as-is | 519 (of 520 test files) | 8 | — |
+| Promote / deepen | 1 (`admin/src/coding/admin-ui-session-detail.smoke.test.ts`, `globalThis.fetch` wrapper) | 1 (`speed-baseline.md`) | small |
 | Rebuild | 0 | 0 | — |
 | Delete (redundant) | 0 | 0 | — |
-| Net-new | 1 | 0 | trivial, optional |
+| Net-new | 3 (`coverage-snapshot-service` integration, `bump-chart.sh` shell harness, `cutover-validate.ts`) | 2 (both deferred / optional) | small each |
 
-**Total existing test files discovered (ground-truth recount via
-`find . -name "*.<suffix>.test.ts"`, cross-checked against the live CI run's own "406 files"
-scan report):** 201 unit + 91 integration + 55 smoke + 59 content = **406 `bun test`-scanned
-files**, + 27 `site/tests/*.spec.ts` + 7 Playwright `*.e2e.ts` = **440 test files total** — up
-from 430 (+10: 6 unit — `sync-config-clone`, `filter-bot-comments`, `check-patrol-scope`,
-`allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref` — and 4
-content — `prd`, `research-docs`, `entropy-scan/SKILL`, root `renovate`). 6+4 = 10 reconciles
-exactly against the recount. `clone-plan.unit.test.ts` moved `scripts/lib/` → `lib/` (rename,
-not new).
+**Test files discovered (ground truth from `git ls-files`, cross-checked against the live CI run's
+own "478 files" scan report):** 227 unit + 88 integration + 71 smoke + 91 content + 1
+`*.behavior.test.ts` = **478 `bun test`-scanned files**, plus 6 `*.canary.test.ts` (preview suite,
+excluded from the default walk), 30 `site/tests/*.spec.ts` and 6 Playwright `*.e2e.ts`
+= **520 test files**, plus 4 bash assertion suites (`.github/workflows/test-*.sh`) and 1 Python
+suite (`whisper/test_ci_run.py`) outside the Bun runner.
 
-**Headline finding:** every real production change in this window landed with matching,
-correctly-layered, same-commit test coverage. The
-one open finding is not a regression: a **pre-existing** (since 2026-06-24) `globalThis.fetch`
-override in `plugins/shipwright/scripts/check-helpers.unit.test.ts`, never caught because the
-isolation sweep's pattern only matched the `global.` spelling. It is save/restore-scoped (no
-leak) but violates the repo's no-global-override rule — one **Promote / deepen** item, small
-effort (see below). Rebuild and Delete remain empty.
+**Headline finding:** the suite is healthy and correctly layered. Rebuild and Delete are empty.
+The one test-level finding is a new `globalThis.fetch` wrapper in an admin smoke test (save and
+restore scoped, so it does not leak), which breaks the repo's "no `global.*` overrides" rule and
+is a small Promote item. The `createTaskStoreClient` fetch-seam item from the previous cycle is
+resolved: `plugins/shipwright/scripts/check-helpers.ts` now takes an injected `fetchFn`.
 
 ## Isolation contract audit
 
-Grepped the full current suite (440 files, see Summary below) for the three hard-rule
-signals from root `CLAUDE.md`'s Test isolation section and `references/principles.md`'s
-`t1_no_global_mocking`:
+Grepped the full current suite for the hard-rule signals from root `CLAUDE.md`'s Test isolation
+section and `references/principles.md`'s `t1_no_global_mocking`:
 
 | Signal | Files matched | Real violations |
 |---|---|---|
-| `mock.module(` | **59** | **0** — every hit re-verified via `grep -vE ':\s*(\*\|//)'` returning zero matches (all hits are comment-only compliance documentation, each stating "no `mock.module()`" in that file's own isolation-approach header comment). |
-| `global.fetch = ` (assignment) | 0 | **0** |
-| `globalThis.fetch = ` (assignment) | **1** file (5 lines: 1 `afterEach` restore + 4 per-test assignments, all in `plugins/shipwright/scripts/check-helpers.unit.test.ts:586-646`) | **1 (non-leaking)** — pre-existing since `#684` (2026-06-24); `beforeEach` saves / `afterEach` restores, so no sibling-suite leak, but the file overrides a global rather than injecting a fetch seam. See Promote / deepen. |
-| `global.console = ` (assignment) | 0 | **0** |
-| `DATABASE_URL` inside `*.unit.test.ts` | **7** — up from 6 (+1: `admin/src/trial-expiry-sweeper.unit.test.ts`) | **0** — the one new hit is a header-comment note ("DATABASE_URL_ADMIN_TEST is set; this file is what runs on every `task test`") documenting that the *unit* file runs regardless of DB availability, contrasting it with its own `.integration.test.ts` sibling — not an actual env-var read or DB dependency inside the unit file itself. |
+| `mock.module(` | 35 | **0** — every hit is comment-only compliance documentation, except `agent/src/import-boundary.unit.test.ts:109`, which is a string literal inside a fixture the test feeds to its own import scanner (not a call). |
+| `global.fetch =` / `global.console =` (assignment) | 0 | **0** |
+| `globalThis.fetch =` (assignment) | 1 file: `admin/src/coding/admin-ui-session-detail.smoke.test.ts` (an `afterEach` restore plus a per-test wrapper that records requested URLs and delegates to the real fetch) | **1 (non-leaking)** — the restore runs after every test, so no sibling-suite leak, but it overrides a global rather than injecting a fetch seam. See Promote / deepen. |
+| `spyOn(global / globalThis, ...)` | 0 | **0** |
+| `DATABASE_URL` inside `*.unit.test.ts` | 3 files (`hitl.bootstrap`, `dev-tmux`, `pull-request-service`) | **0** — env-var-name strings and comments in command-builder assertions; none opens a connection. |
 
-The three `*-ref.ts` singleton-shaped exports (`allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref`) were each checked by hand: every test builds a fresh ref through its `createXRef()` factory instead of mutating the shared singleton — no leak risk.
-
-**The trial-expiry / process-tree / verification-check `mock.module(` hits, individually confirmed comment-only:**
-`admin/src/trial-expiry-sweeper.unit.test.ts`, `trial-expiry-warning-sweeper.integration.test.ts`,
-`agent/src/runtime/process-tree-kill.unit.test.ts`, `process-tree-kill.integration.test.ts`,
-`task-store/src/verification-check-service.unit.test.ts`, and
-`routes/verification-checks.smoke.test.ts` — each states its own no-`mock.module()`/
-no-global-overrides isolation approach in a header comment rather than actually calling
-`mock.module()`. `scripts/check-competitive-freshness.unit.test.ts`,
-`agent-policy-backfill.{unit,integration}.test.ts`, `agent-trial-expiry-ref.unit.test.ts`,
-`slack-trial-expiry.unit.test.ts` add **zero**
-hits to any of the four signals — fully dependency-injected (fake `Clock`/fake service
-doubles/real spawned processes), no globals touched.
-
-**No isolation-contract findings in those files** — every test file behind the
-trial-expiry, agent-policy-backfill, process-tree-kill and verification-check inventory rows,
-plus the no-row-of-its-own test file (`slack-trial-expiry.unit.test.ts`), passed the same three-signal
-sweep clean. The widened pattern-set recommendation (scanning for `.set(`/`.reset(` calls on
-named singleton-ref exports with no paired `afterEach`) remains **not implemented as an
-automated sweep** — a standing process-improvement
-recommendation (see Next step below). `agent-trial-expiry-ref.ts` is a
-singleton-ref-shaped export (mirrors `agent-slack-membership-ref.ts`); its
-`agent-trial-expiry-ref.unit.test.ts` was checked by hand and does reset/reconstruct a fresh
-ref per test case via `createAgentTrialExpiryRef()` rather than mutating the shared
-`agentTrialExpiryRef` singleton directly — no leak risk, consistent with
-`agent-slack-membership-ref.unit.test.ts`'s own established pattern.
+Singleton-ref-shaped exports (`allow-self-review-ref`, `loop-jobs-ref`, `review-author-allowlist-ref`,
+`patch-author-allowlist-ref`) were checked by hand: each test builds a fresh ref through the
+factory instead of mutating the shared singleton. The widened automated sweep for
+`.set(`/`.reset(` on named singleton refs with no paired `afterEach` is still not implemented and
+remains a standing process-improvement recommendation.
 
 ## Delete (redundant assertion) analysis
 
-**Zero delete/trim candidates identified** — each of the newest
-inventory rows' test files was checked against its nearest structural sibling for overlap:
-`trial-expiry-sweeper.*.test.ts` vs. `session-alert-sweeper.unit.test.ts` (distinct subject —
-cron-disabling vs. push-notification delivery, no shared assertion); `trial-expiry-warning-
-sweeper.*.test.ts` vs. `trial-expiry-sweeper.*.test.ts` (explicitly designed as two separate
-lifecycle halves per both files' own header comments — pre-expiry warning vs. post-expiry
-lockdown, no overlap); `agent-trial-expiry-ref.unit.test.ts` vs.
-`agent-slack-membership-ref.unit.test.ts` (same mutable-box *shape*, but each guards a
-distinct singleton with distinct state — not duplicate coverage of the same thing);
-`agent-policy-backfill.*.test.ts` vs. `pr-origin-backfill.unit.test.ts` (same one-off-backfill
-*shape*, different subject data — parses different fields from a different source file);
-`process-tree-kill.*.test.ts` — no sibling to overlap with, a genuinely new boundary (real OS
-process signaling); the since-retired process-budget wrapper test — replaces the retired inline-bash
-`setsid timeout` pattern rather than duplicating an existing test (that pattern was never
-itself unit/integration-tested, only exercised implicitly via `dev-task.md`/`patch.md`'s
-content tests asserting the *prompt text*, a different property); `verification-check-
-service.unit.test.ts`/`routes/verification-checks.smoke.test.ts` vs. `pull-request-
-service.unit.test.ts`/`routes/prs.ts`'s smoke tests (a new, distinct model with its own
-service/route pair, no shared assertion); `check-competitive-freshness.unit.test.ts` vs.
-`check-site-docs-freshness.unit.test.ts` (same precheck *shape*, different subject —
-git-SHA-based docs freshness vs. date-based marketing-page freshness, no overlap).
-`slack-trial-expiry.unit.test.ts` vs. `slack.unit.test.ts` — deliberately split into a
-separate file for a separate gate (`isTrialExpired()` vs. `isAllowedSlackSender()`/
-`shouldRejectSlackSender()`), no duplicate assertion of the other's logic.
+**Zero delete/trim candidates identified.** The newest surface was checked against its nearest
+structural sibling for overlap:
+
+- `readiness-catalogue` / `readiness-detectors` / `readiness-api-detectors` / `agent-readiness-scorer`
+  tests split cleanly by owner (model, file detectors, API detectors with injected clients,
+  scorer integration that posts a snapshot); the scorer test asserts composition, not each
+  detector's own verdicts.
+- `repo-cron-run-service`, `patrol-finding-service` and `readiness-snapshot-service` integration
+  tests each own a distinct table; their `routes/*.smoke.test.ts` siblings assert the wire contract
+  only (status codes, envelope), not service rules.
+- `cron-run-recorder.unit.test.ts` vs `error-patrol/repo-filter.integration.test.ts`: the recorder
+  test owns post/prior plumbing, the repo-filter test owns Sentry-to-repo filtering and diffing.
+- `environments-scan.unit.test.ts` vs `environments-scan.integration.test.ts`: planners vs. real
+  repo-file scans, no shared assertion.
+- `check-patrol-docs.unit.test.ts` vs `entropy-baseline.integration.test.ts`: doc validity vs.
+  baseline tooling checks.
 
 ## Tests — bucketed
 
 ### Reuse as-is
 
-The large majority of the suite. Grouped by cluster; each cluster was checked against Phase 1's
-delta list, not re-read in full where unchanged.
+Grouped by cluster; each cluster was checked against Phase 1's inventory rows rather than re-read
+in full where unchanged.
 
 | Cluster | Test files | Layer(s) | Functional unit | Notes |
 |---|---|---|---|---|
-| `lib/` | 14 files (re-verified via `find lib -maxdepth 1 -name "*.test.ts"`, including `clone-plan.unit.test.ts`, moved from `scripts/lib/` with `clone-plan.ts` itself, `#3849`) | unit | Cross-service pure helpers | |
-| `metrics/src/*` | 10 files at top-level (re-verified via `find metrics/src -maxdepth 1 -name "*.test.ts"`, unchanged file count) plus `lib/`/`providers/`/`dashboard/` subdirectories | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes, request coalescing, dashboard feature-grouping, merged-PRs-by-repo panel/endpoint, Shipwright-PRs-Merged KPI, commits-per-PR column (CPP-1.3/1.4) | |
-| `agent/src/*` | **75 files** (**71 files**, re-verified via `find agent/src -maxdepth 1 -name "*.test.ts"`, including `agent-trial-expiry-ref.unit.test.ts`, `agent-policy-backfill.unit.test.ts`+`.integration.test.ts`, `process-tree-kill.unit.test.ts`+`.integration.test.ts`, `slack-trial-expiry.unit.test.ts`) | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, headless-browser launcher, PR-origin historical backfill, session-store prune wiring, agent trial-expiry ref, agent-policy backfill, process-tree termination | |
-| `admin/src/*` | **92 files** (re-verified via `find admin/src -maxdepth 1 -name "*.test.ts"`, including `agent-phase-methodology.integration.test.ts`, `trial-expiry-sweeper.unit.test.ts`+`.integration.test.ts`, `trial-expiry-warning-sweeper.unit.test.ts`+`.integration.test.ts`, `agents.integration.test.ts`, `api.integration.test.ts`) | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, auth clients, admin UI, chat-token daily rollup, work-queue snapshots (+cross-agent merge), Sessions (follow/alert-sweep/admin-actions), Prisma 7 client extraction, Specialty manifest registry, per-phase subagent-methodology overrides, trial-expiry lockdown/warning sweeps | |
-| `task-store/src/*` | **49 files** (re-verified via `find task-store/src -maxdepth 1 -name "*.test.ts"`, up from 48: +2 top-level file — `verification-check-service.unit.test.ts` at top level, `routes/verification-checks.smoke.test.ts` under `routes/` and counted separately from the maxdepth-1 figure) | unit/integration/smoke | Task/PR/Token/Session services, dependency-resolution rules, routes, PR-origin derivation (colocated tests), outbound webhook dispatcher, Prisma 7 client extraction, structured per-check verification-outcome service + route (LVB-5.1) | |
-| `chat/src/*` | 15 files (re-verified via `find chat/src -maxdepth 1 -name "*.test.ts"`, unchanged file count) | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator, outbound reply-notification webhook, stall reaper, Prisma 7 client extraction, optional reply attachments | |
-| `mcp-server/src/*` | 9 files (re-verified via `find mcp-server/src -maxdepth 1 -name "*.test.ts"`, unchanged file count) | unit/integration/smoke | Tool allowlist, tool-caller proxy, MCP wire protocol, inbound bearer auth, Streamable HTTP transport + idle-session reaper, app-factory composition, fail-closed entrypoint guard, generated-tool-manifest structural invariants | |
-| `brand/*`, `site/brand/*` | 5 files (3 moved to `site/brand/`) | unit | Hex-color lint, CSS token generation | Unchanged. |
-| `scripts/*` | **30 files** (re-verified via `find scripts -maxdepth 1 -name "*.test.ts"`, including `check-competitive-freshness.unit.test.ts`) | unit/integration/smoke | Coverage gate(s), config-docs checker, dev supervisors, seed scripts, version sync, agent-provisioning poll loop, Minikube stack orchestration, HITL bootstrap, downstream chart-compatibility checker, hidden-dir test finder, test-env NODE_ENV preload guard, competitive-positioning freshness precheck (CF-2.1, not yet cron-wired) | |
-| `plugins/shipwright/scripts/*` | **20 files** (re-verified via `find plugins/shipwright/scripts -maxdepth 1 -name "*.test.ts"`, including the since-retired process-budget wrapper integration test) | unit/integration | `check-*.ts` cron prechecks, `classify_test_layer.ts`, `check-helpers.ts`, `compute-review-verdict.ts`, `compute-unresolved-comment-check.ts`, `compute-unaddressed-findings.ts`, `diagnose-review-candidacy.ts`, `is-ci-green.ts`, `resolve-dependency-watched-paths.ts`, `slack-say.ts`, shared process-group timeout wrapper (LVBS-1.1) | |
-| `plugins/shipwright/{commands,agents,skills,references,test}/*` | **52 dedicated `*.content.test.ts` files** (the root `renovate.content.test.ts` sits outside this cluster; includes `decisions-registry.content.test.ts`, 6 `methodology-contracts/*.content.test.ts` files (`deploy`/`dev-task`/`patch`/`plan-session`/`prd`/`review`), `consolidation-scan/SKILL.content.test.ts`, `principles-pattern-citation.content.test.ts`) + `.claude/commands/docs-sync.content.test.ts` (counted separately, unchanged, lives outside `plugins/shipwright/`) — plus `agent/workspace/{CLAUDE.md,BOOTSTRAP.md}.template.content.test.ts`, `specialties/coding/manifest.content.test.ts`, `docs/specialties.content.test.ts`, and `readme.content.test.ts`, which also live outside this row's directory scope by definition and roll up into the Summary's aggregate content total of 55, not itemized individually here | content/unit/integration | Command/skill/agent markdown prose assertions | |
-| `site/tests/*.spec.ts` | **27 files** (re-verified via `find site/tests -maxdepth 1 -name "*.spec.ts"`) | e2e | Marketing pages, incl. `docs/*` page specs, `/autonomy` staged-rollout page, `/vs/openhands` comparison page, STAR-1.1 star-CTA conversion flow | |
-| `admin/e2e/*.e2e.ts`, `metrics/e2e/*.e2e.ts` | 7 files | e2e | Admin login/agents/chat pages (incl. mobile-responsive assertions), metrics dashboard | |
+| `metrics/` | 39 | unit / integration / smoke / e2e | Formatters, provider selection, HTTP clients, `/metrics/*` routes (incl. coverage and system-crons endpoints), coalescing cache, auth gate, dashboard pages | `lib/session-middleware.ts` is covered indirectly through `api.auth-gate.integration.test.ts` (JWT cookie paths). |
+| `agent/` | 30 (src + scripts + `contract/`) | unit / integration / smoke | Work selection, `check-*` candidate providers, loop orchestrator, reconcilers, PR census/backfill, claim heartbeat, import-boundary and boot-order guards, CLI scripts, base-image contract smoke | `agent/src/coding/extension.ts` is exercised through `index.boot-order.unit.test.ts` and the real-boot smoke test. |
+| `admin/` | 58 | unit / integration / smoke / e2e | Coding extension composition, `agents-api-coding`, work-queue snapshots and merge, phase-methodology overrides, sessions (follow, alert sweeper, admin actions, documents), system-cron scheduler/pages, task-store fetchers, reconcile-open-work, composed-surface and platform-pin guards, Playwright page journeys | `admin-ui-coding.ts` and `openapi-schemas-coding.ts` are covered via the `admin-ui-*.smoke.test.ts` files and `admin-spec.smoke.test.ts`. |
+| `task-store/` | 111 | unit / integration / smoke | Task/PR/token/session/document/system-cron/coverage/cron-run/patrol-finding/readiness-snapshot services and routes, ready/blocked-by rules, claim reaper, diffs, cursor codec, webhook dispatcher, OpenAPI smoke | Real-Postgres integration suites skip without `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`; CI sets it. |
+| `mcp-server/` | 10 | unit / integration / smoke | Tool allowlist, tool-caller proxy, MCP wire protocol, bearer auth, Streamable HTTP transport, entrypoints | `serve.ts` is covered through `main.smoke.test.ts` / `http-transport.smoke.test.ts`. |
+| `scripts/` (root) | 50 | unit / integration / smoke | Coverage gate and tool dispatch, config-docs checker, dev supervisors, HITL bootstrap, minikube, preview env/gate/hold, platform bump/guard/retry/pin, version sync, seed scripts, hidden-dir finder, doctor, quickstart, local-store, downstream-compat | `generate-task-store-spec.ts` / `generate-mcp-tools.ts` are guarded by the CI generated-artifact drift step rather than a dedicated test. |
+| `plugins/shipwright/scripts/` | 66 | unit / integration | Cron prechecks, review/merge decision helpers, readiness model/detectors/scorer, environments and entropy baseline, cron-run recorder, error-patrol, suppressions, coverage parsers and summary, prompt-audit (rules, ledger, eval harness, hitl-policy) | `coverage/exclusions.ts` is covered through `coverage-summary.unit.test.ts`; `prompt-audit/eval-{cases,cost,diff}.ts` and `rules-{cost,stale,structure}.ts` through `eval-harness` / `rules` unit tests. |
+| `plugins/shipwright/{commands,agents,skills,references,assets,test}/` + plugin root | 87 | content / unit / integration | Prompt-content assertions for 35 commands, 30 skills, 5 agents, references and methodology contracts; rubric wiring; CLAUDE.md guards | Layer is correct (no I/O boundary). |
+| Root `*.content.test.ts` | 21 | content | Release, preview, platform-release, chart, renovate, README, lib-pin and plugin-import guards | Pins workflow and config shape that has no runtime test. |
+| `site/tests/*.spec.ts` | 30 | e2e | Marketing pages, docs pages, compare pages, CTA flows | Excluded from `bun test` by `bunfig.toml`. |
+| `site/brand/`, `brand/` | 3 | unit | Hex-color lint, CSS token generation | |
+| `admin/e2e/`, `metrics/e2e/` | 3 | e2e | Admin login and agents pages, metrics dashboard | Run in the `e2e` / `admin-e2e` CI jobs. |
+| `preview/canary/*.canary.test.ts`, `preview/e2e/*.e2e.ts` | 12 (6 canary, 3 e2e, 3 support/unit) | smoke (canary suffix) / e2e | Deployed preview stack checks | Opt-in via `task preview:canary` / `task preview:e2e`; not a deploy gate under `deploy_model: direct`. |
+| Shell and Python suites | 5 (`test-chart-release.sh`, `test-check-chart-drift.sh`, `test-library-pin.sh`, `test-helm-repos.sh`, `whisper/test_ci_run.py`) | shell / unit | Chart-tag logic, library pin, helm-repos retry, Whisper CI-run picker | Unofficial shell layer; first three run in the `ci` job. |
+| `.claude/` hidden-dir tests | 1 | content | `docs-sync` command | Run via `find-hidden-dir-tests.ts`. |
 
 ### Promote / deepen
 
-**One item:**
-
 | Test | Gap | Why Promote, not Rebuild | Effort |
 |---|---|---|---|
-| `plugins/shipwright/scripts/check-helpers.unit.test.ts` — the `createTaskStoreClient` describe block (4 tests at ~lines 600-650) | Overrides `globalThis.fetch` directly (save in `beforeEach`, restore in `afterEach`) because `createTaskStoreClient()` (`check-helpers.ts:351`) has no injected-fetch seam. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" hard rule. | Right layer (unit), right framework, adequate assertions (envelope-unwrapping cases), fast, and the override is restored per test — so it is not leaking today. The fix is mechanical: add an optional `opts?: { fetchFn?: FetchFn }` parameter (default global `fetch`) to `createTaskStoreClient()` and pass a fake from the 4 tests, mirroring the exact signature `agent/src/coding/check-helpers.ts:663` already uses for its own `createTaskStoreClient`. (Note: the plugin copy has no non-test caller in the repo — `scripts/hitl.ts` and the agent import the `agent/src/coding/check-helpers.ts` twin — so deleting the unused export plus its 4-test suite is an equally valid fix if the implementer confirms it's dead; default is to add the seam.) No assertion changes. | small |
+| `admin/src/coding/admin-ui-session-detail.smoke.test.ts` — the "renders owner, repos and a working link per merged and unmerged document, without calling GitHub" group | Replaces `globalThis.fetch` with a URL-recording wrapper (restored in `afterEach`) to prove the page never calls GitHub. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" rule. | Right layer (smoke), right framework, fast, and the override is restored per test, so nothing leaks today. The fix is mechanical: inject a fetch seam into the page's document-link path (or assert on the injected deps) and assert on that fake. Confirm the seam exists before scoping. | small |
 
-Also widen the isolation sweep's pattern to `global(This)?\.` so this class is caught
-automatically (see Next step, item 4). Not a risk-callout case (nothing is deleted or rebuilt).
+Also widen the isolation sweep's assignment pattern to `global(This)?\.(fetch|console)\s*=` so
+this class is caught automatically. Not a risk-callout case (nothing is deleted or rebuilt).
 
 ### Rebuild
 
@@ -147,53 +112,45 @@ None. See Delete (redundant assertion) analysis above.
 
 ### Net-new
 
-**`task-store/src/coverage-snapshot-service.integration.test.ts`** for `coverage-snapshot-service.ts` (real-Postgres write/read/ordering/retention behavior; currently proven only against the `makePrismaDouble` fake in `routes/coverage-snapshots.smoke.test.ts`). Inventory tier: medium (Coverage tracking feature, auxiliary). Effort: small. Skips without `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`, like its siblings. The other Net-new item (`admin/src/clock.ts`, see Candidate Phase 4 inputs below) is trivial/optional.
+| Item | Inventory tier | Why | Effort |
+|---|---|---|---|
+| `task-store/src/coverage-snapshot-service.integration.test.ts` for `coverage-snapshot-service.ts` | medium (Coverage tracking, auxiliary) | Real-Postgres write/read/ordering/retention behavior is proven only against a Prisma double in `routes/coverage-snapshots.smoke.test.ts`. Its three newer siblings (`repo-cron-run`, `patrol-finding`, `readiness-snapshot`) all have integration suites. Skips without `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`, like them. | small |
+| `scripts/bump-chart.sh` shell harness (fake `git` / tool binaries on `PATH`, like `local-store.unit.test.ts`) | medium (Operator CLI & chart tooling, auxiliary) | No test of any kind; version-bump arithmetic and `--dry-run` handling are unguarded. | small |
+| `agent/scripts/cutover-validate.ts` recorded-fixture test | medium (same feature) | CLI asserts an agent's config and crons; no test exists. | small |
 
-The Competitive-positioning freshness check feature does **not** create a Net-new entry
-here — `scripts/check-competitive-freshness.ts` shipped
-with its own `check-competitive-freshness.unit.test.ts` in the same commit, so it's already
-bucketed Reuse above (see Method note step 1). No new user journeys.
+The `blocked-by-type-parity.check.ts` compile-time guard is intentionally test-less (enforced by
+`task typecheck`) and is not a Net-new item. No new user journeys.
 
 ## Infrastructure — bucketed
 
 ### Reuse as-is
 
 - **Bun test runner config** (`bunfig.toml`'s `pathIgnorePatterns`) — re-verified:
-  `["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**", "**/*.canary.test.ts"]`,
-  unchanged and correct.
-- **CI workflow shape** (`.github/workflows/ci.yml`) — matches Phase 2's documented
-  shape.
-- **Postgres service container for admin/task-store/chat** — real DB per test run, all
-  three `DATABASE_URL_SHIPWRIGHT_*` vars wired in `ci.yml`. The
-  Prisma-backed models (`AgentPhaseMethodology`, `VerificationCheck`) and the `Agent`
-  table's new trial-expiry columns exercise this same infra with no new setup needed —
-  each service's existing migrate-then-test flow picked them up without modification.
-- **`Clock` injection helpers** — implementations across the repo — still the strongest,
-  most consistently-applied convention in the repo. No consumer deviates
-  from the pattern (`trial-expiry-sweeper.ts`/`trial-expiry-warning-sweeper.ts`/
-  `verification-check-service.ts` all take an injected `Clock`, `FixedClock` in their tests).
-- **Recorded-fixture doubles** — `RecordedKubernetesClient`,
-  `metrics/src/providers/task-store-recorded.ts`,
-  `metrics/src/fixtures/task-store-fixtures.ts`, `agent/src/runtime/shipwright-config-client.ts` —
-  the pattern is stable and extends cleanly to new clients.
-- **Real-process-spawn test harness** (backing `process-tree-kill.ts`) — no
-  fixture/mock needed; the tests spawn real short-lived child/grandchild processes and poll
-  for their actual termination. Confirmed exercising both the procfs-fallback path (this
-  runner's CI containers don't delegate cgroups) and its own unavailable-cgroup detection.
-- **`scripts/check-coverage.ts`** — the 90/89 line/function-threshold gate. Confirmed
-  passing on the live CI run in Speed measurement below.
-- **`.github/PULL_REQUEST_TEMPLATE.md`** — confirmed present directly, matches
-  `test-system.md`'s Repo configuration section's note that this is resolved, not a gap.
-- **`docs/test-readiness/speed-baseline.md`** — its numbers
-  remain directionally consistent with the live CI pull (see Speed measurement
-  below) — steady growth, no budget concern.
+  `["**/site/**/*.spec.ts", "**/metrics/e2e/**", "**/admin/e2e/**", "**/preview/e2e/**", "**/*.canary.test.ts"]`,
+  plus the `scripts/test-env-preload.ts` preload. Matches `test-system.md` and `naming.md`.
+- **CI workflow shape** (`.github/workflows/ci.yml`) — a single `ci` job running lint, banned strings,
+  chart shell tests, typecheck, config-docs, generated-spec drift, DB schema sync, coverage-gated
+  tests and secret scan, with `site`, `agent-docker-build`, docker-build, `e2e` and `admin-e2e`
+  jobs alongside. Matches Phase 2's one-job-per-layer-group default.
+- **Postgres service container for admin and task-store** — real DB per test run, both
+  `*_TEST` URLs and the migrate-deploy URLs wired in `ci.yml`. The chat database is gone with the
+  chat workspace.
+- **`Clock` injection helpers** — `task-store`, `mcp-server`, `metrics` and plugin-script clocks with
+  fixed-clock test doubles; still the most consistently applied convention. No consumer deviates.
+- **Recorded-fixture doubles** — `metrics/src/fixtures/`, `admin/src/coding/fixtures/task-store-provisioning-cassette.json`,
+  `mcp-server/src/fixtures/tool-caller-cassette.json`, `task-store/src/fixtures/plan-reconciler-github.json`.
+- **`scripts/check-coverage.ts`** and the hidden-dir finder — the 90/89 lines/functions gate, confirmed
+  passing on the live CI run (see Speed measurement).
+- **`.github/PULL_REQUEST_TEMPLATE.md`** — present with the Closing Checklist, matching
+  `test-system.md`'s Repo configuration section.
+- **Image-contract harness** (`agent/src/contract/*.smoke.test.ts` and the `agent-docker-build` job
+  steps) — opt-in via `SHIPWRIGHT_CONTRACT_BASE_IMAGE`; passing in CI.
 
 ### Promote / deepen
 
-None. The design-level backlog item (extending `Recorded*Client` fixture-double coverage
-to the remaining `Http*Client` modules named in `test-system.md`'s Local execution
-architecture table) remains a Phase 2 design-level item, not a migration-bucket verdict on
-any existing infra file — carried in `test-system.md`'s gaps summary, not restated here.
+- **`docs/test-readiness/speed-baseline.md`** — its numbers (258 files, 5,763 tests) predate the
+  platform extraction and are an order of magnitude behind today's suite; the conclusion (aggregate
+  well inside budget) still holds. Refresh with the aggregate below when next touched. Effort: small.
 
 ### Rebuild
 
@@ -205,48 +162,42 @@ None.
 
 ### Net-new
 
-None. No infrastructure gap identified.
+Both items are deferred by the blueprint and optional:
+
+- **`scripts/verify-layer-naming.ts`** — the `Bun.Glob`-based suffix-to-layer verifier called for in
+  `test-system.md`; not yet created. Effort: small.
+- **Local testcontainers Postgres / `docker/docker-compose.test.yml`** — local-dev convenience only;
+  CI already uses a `services:` container. Effort: medium, low priority.
 
 ## Risk callouts
 
-Environment-only local failures (not false-confidence tests): 5 `loop-orchestrator` cases fail only when `SHIPWRIGHT_LOOP_DEV_TASK_ALT_COMMAND` is set in the shell (pass with it unset), and 2 `audit-extraction` CLI cases need `gitleaks` on PATH. `scripts/audit-extraction.ts` itself survived the extraction cleanup and is flagged in the inventory as likely vestigial.
+Environment-only local failures (not false-confidence tests): `loop-orchestrator` cases can fail
+only when `SHIPWRIGHT_LOOP_DEV_TASK_ALT_COMMAND` is set in the shell, and `audit-extraction` CLI
+cases need `gitleaks` on `PATH`. `scripts/audit-extraction.ts` itself is flagged in the inventory as
+likely vestigial.
 
-No currently-green test received a `delete` or `rebuild` verdict, so
-the SKILL's mandatory risk-callout requirement has no entries to populate for the test
-suite as it exists today.
+No currently-green test received a `delete` or `rebuild` verdict, so the mandatory risk-callout
+requirement has no entries to populate.
 
-The `mock.module(`/`DATABASE_URL` grep-count growth was individually traced to specific
-files and confirmed comment-only, not a new violation (see Isolation contract audit above).
-The since-retired process-budget wrapper's header comment documented a false-pass bug in the
-bare-`setsid`-without-`--wait` pattern it replaced; the wrapper was itself the *fix*, landed
-with its own test proving the fix, not a currently-passing test masking a real bug — not a
-risk callout under this document's own criterion (that criterion applies to a currently-green
-test receiving `delete`/`rebuild`, not to a historical bug in an inline-bash pattern that was
-never itself a `bun test` file).
-
-**Adjacent risk note (not a delete/rebuild verdict, but worth flagging given the
-magnitude):** the `pr-state-reconciler.ts` orphan-reconciliation removal (PR #2527, DTC-1.1)
-deleted 547 lines of passing, green test assertions alongside their production code.
-The removal was deliberate and reviewed, and the replacement mechanisms
-(`StaleClaimReaper`, ready-set FIFO, `dev-task.md` Step 4's Branch/PR Reality Check) are real and tested — so no
-action is recommended. Flagging only so a future run doesn't need to re-derive this
-finding from scratch if the same pattern (large deletion of tested code) recurs elsewhere
-without a PR reference this clear.
+**Adjacent risk note:** the platform extraction removed whole workspaces' worth of passing tests
+(chat, runtime, admin core, shared lib) along with their production code. The replacement guard is
+seam-only (flag, migration, composed-surface, import-boundary and image-contract tests). That was
+deliberate and reviewed, and the inventory records the boundary for human confirmation, but the
+platform packages' own behavior is no longer exercised in this repo's CI.
 
 ## Speed measurement
 
 ### Tier 1 - aggregate (CI)
 
-- **Run:** [44091676159](https://github.com/app-vitals/shipwright/actions/runs/44091676159) (CI on commit `d86d7a137`, main), 2026-11-17T13:20:04Z. All 8 jobs `success` (`gh run view --json jobs` + `--log`).
-- **Job wall-clock:** 2m07s (`lint / typecheck / test`, 13:20:26Z-13:22:33Z); full workflow about 3m40s including both e2e jobs; `bun test` step 24.45s.
-- **Tests:** 8,545 tests across 407 files (8,538 pass, 7 skip, 0 fail).
-- **Coverage (`Test` step log):** Lines 91.01% (32798/36039) vs 90% threshold; Functions 89.21% (2572/2883) vs 89% threshold. Margin on functions is 0.21 points; new code should land with tests to keep the gate green.
-- **vs. budget:** 2m07s of the <15 min Full-PR-pipeline budget, about 14%. Tier 2 trigger (aggregate above 7.5 min sustained across 2 measurements) not approached; no per-layer numbers fabricated.
-- **feature_coverage_pct:** 100% (24/24), from `test-inventory.md`.
+- **Run:** [46117225381](https://github.com/app-vitals/shipwright/actions/runs/46117225381) (CI on `main`, commit `61a1584e5`). All 8 jobs `success` (`gh run view --json jobs` + `--log`).
+- **Job wall-clock:** about 2m11s (`lint / typecheck / test`); full workflow about 3m36s including both e2e jobs; `bun test` step 56.36s.
+- **Tests:** 9,675 tests across 478 files (9,668 pass, 7 skip, 0 fail).
+- **Coverage (`Test` step log):** Lines 91.54% (38117/41640) vs 90% threshold; Functions 89.54% (3038/3393) vs 89% threshold. Margin on functions is 0.54 points; new code should land with tests to keep the gate green.
+- **vs. budget:** about 2m11s of the <15 min Full-PR-pipeline budget, roughly 15%. Tier 2 trigger (aggregate above 7.5 min sustained across 2 measurements) not approached; no per-layer numbers fabricated.
 
 ### Tier 2 - per-layer breakdown (conditional)
 
-- **Tier 2 triggered:** no (~14% of budget, far below the 50% trigger). No per-layer numbers fabricated.
+- **Tier 2 triggered:** no (about 15% of budget, far below the 50% trigger). No per-layer numbers fabricated.
 
 ## Next step
 
@@ -255,19 +206,12 @@ Phase 2 blueprint into the executable roadmap.
 
 **Candidate Phase 4 inputs from this document:**
 
-1. **One small Promote/deepen item to queue:** add an optional `opts?: { fetchFn?: FetchFn }` seam (mirroring `agent/src/coding/check-helpers.ts:663`) to
-   `createTaskStoreClient()` (`plugins/shipwright/scripts/check-helpers.ts:351`) and convert the
-   4 `globalThis.fetch`-overriding tests in `check-helpers.unit.test.ts` (~lines 600-650) to inject
-   a fake. Mechanical, no assertion changes; removes the repo's only direct global-fetch
-   assignment. Effort: small.
-2. **Widen the isolation sweep pattern** (folds into item 4 below): a bare
-   `global.fetch =` pattern misses the `globalThis.` spelling. Use
-   `global(This)?\.(fetch|console)\s*=`.
-3. **Optional Net-new only.** No Rebuild or Delete candidates. `admin/src/clock.ts` and
-   `admin/src/anthropic-credential-guard.ts` remain trivial/optional unit-test candidates, and
-   the no-sibling wiring files remain indirect-coverage candidates.
-4. **Isolation-contract audit's pattern set still needs to widen to catch singleton-mutation
-   leaks as an automated sweep.** The singleton-ref-shaped files (`allow-self-review-ref`,
-   `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref`, `agent-trial-expiry-ref`) were
-   checked by hand and are safe; the manual approach keeps being needed.
+1. **Promote:** remove the `globalThis.fetch` wrapper from `admin-ui-session-detail.smoke.test.ts`
+   by asserting on injected deps. Mechanical, no coverage loss. Effort: small.
+2. **Widen the isolation sweep** to `global(This)?\.(fetch|console)\s*=`, and (still open) to
+   unpaired singleton-ref mutation. Effort: small.
+3. **Net-new (small each):** `coverage-snapshot-service.integration.test.ts`, a `bump-chart.sh`
+   shell harness, a `cutover-validate.ts` recorded-fixture test.
+4. **Optional infra:** refresh `speed-baseline.md`; create `scripts/verify-layer-naming.ts`;
+   testcontainers local Postgres stays deferred.
 5. **Speed in budget** — see Speed measurement above. No escalation.
