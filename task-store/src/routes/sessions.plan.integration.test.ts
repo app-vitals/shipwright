@@ -512,4 +512,147 @@ describeOrSkip("POST /sessions/{slug}/plan (integration)", () => {
     );
     await expectNothingWritten("fresh", []);
   });
+
+  // ─── Slug rules and case-insensitive lookup (STI-1.2) ────────────────────
+
+  const getSession = (app: ReturnType<typeof appFor>, slug: string) =>
+    app.request(`/${encodeURIComponent(slug)}`);
+
+  describe("new-session slug validation", () => {
+    it.each([
+      ["uppercase", "Fresh"],
+      ["leading digit", "1fresh"],
+      ["over 64 chars", "a".repeat(65)],
+      ["slash", "a%2Fb"],
+    ])(
+      "400 with a rename-me message for %s and nothing is written",
+      async (_n, slug) => {
+        const res = await post(
+          admin(),
+          slug,
+          planBody({ specs: [], tasks: [] }),
+        );
+        expect(res.status).toBe(400);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toContain("please choose a different name");
+        expect(await prisma.session.count()).toBe(0);
+      },
+    );
+
+    it("accepts a 64-char valid slug", async () => {
+      const res = await post(
+        admin(),
+        "a".repeat(64),
+        planBody({ specs: [], tasks: [] }),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("a legacy slug with uppercase still resolves and accepts plan writes", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "Legacy_Slug" },
+      });
+      const res = await post(
+        admin(),
+        "Legacy_Slug",
+        planBody({ specs: [], tasks: [task("LEG-1.1")] }),
+      );
+      expect(res.status).toBe(200);
+      expect(await prisma.session.count()).toBe(1);
+      expect((await getSession(admin(), "Legacy_Slug")).status).toBe(200);
+    });
+  });
+
+  describe("case-insensitive lookup", () => {
+    it("409 naming the existing slug for a case-variant of an existing session", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "existing" },
+      });
+      const res = await post(
+        admin(),
+        "Existing",
+        planBody({ specs: [], tasks: [] }),
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("'existing'");
+      expect(await prisma.session.count()).toBe(1);
+    });
+
+    it("409 names a legacy uppercase slug when a lowercase variant is requested", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "Legacy" },
+      });
+      const res = await post(
+        admin(),
+        "legacy",
+        planBody({ specs: [], tasks: [] }),
+      );
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: string }).error).toContain(
+        "'Legacy'",
+      );
+    });
+
+    it("the same slug in another account is not a conflict", async () => {
+      await prisma.session.create({
+        data: { accountId: "other", slug: "shared" },
+      });
+      const res = await post(
+        admin(),
+        "shared",
+        planBody({ specs: [], tasks: [] }),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("GET /sessions/:slug matches case-insensitively and returns the canonical slug", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "mixed-case" },
+      });
+      const res = await getSession(admin(), "MIXED-Case");
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { slug: string }).slug).toBe("mixed-case");
+    });
+
+    it("GET /sessions/:slug rolls up tasks and documents of the canonical slug", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "rollup" },
+      });
+      await prisma.task.create({
+        data: { id: "R-1.1", title: "t", status: "pending", session: "rollup" },
+      });
+      await seedSpec("rollup", 1);
+      const res = await getSession(admin(), "ROLLUP");
+      const body = (await res.json()) as {
+        documents: unknown[];
+        counts?: unknown;
+      };
+      expect(body.documents).toHaveLength(1);
+    });
+
+    it("session= filter on tasks and documents is case-insensitive", async () => {
+      await prisma.session.create({
+        data: { accountId: "default", slug: "filtered" },
+      });
+      await prisma.task.create({
+        data: {
+          id: "F-1.1",
+          title: "t",
+          status: "pending",
+          session: "filtered",
+        },
+      });
+      await seedSpec("filtered", 1);
+      const tasks = await new TaskService(prisma, clock).list({
+        session: "FILTERED",
+      });
+      expect(tasks.tasks.map((t) => t.id)).toEqual(["F-1.1"]);
+      const docs = await new DocumentService(prisma).list(
+        { session: "Filtered" },
+        { repos: null, accountId: null },
+      );
+      expect(docs.documents).toHaveLength(1);
+    });
+  });
 });

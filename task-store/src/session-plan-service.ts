@@ -35,13 +35,18 @@
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import type { DocumentServiceLike } from "./document-service.ts";
-import { BadRequestError, ForbiddenError } from "./errors.ts";
+import { BadRequestError, ConflictError, ForbiddenError } from "./errors.ts";
 import type { Prisma, PrismaClient } from "./index.ts";
 import {
   isBlankSession,
   planningLockFreeTo,
   planningLockHeldError,
 } from "./session-service.ts";
+import {
+  invalidSessionSlugMessage,
+  isValidSessionSlug,
+  sessionSlugCaseConflictMessage,
+} from "./session-slug.ts";
 import {
   type BulkTxClient,
   bulkTxTimeoutMs,
@@ -136,6 +141,23 @@ export class SessionPlanService implements SessionPlanServiceLike {
     return this.prisma.$transaction(
       async (tx) => {
         const now = this.clock.now();
+
+        // 0. Slug rules for a NEW session (STI-1.2). An existing session with
+        // this exact slug is grandfathered; one differing only by case is a
+        // 409 naming it; otherwise the slug must match the format.
+        const existing = await tx.session.findFirst({
+          where: { accountId, slug: { equals: slug, mode: "insensitive" } },
+          select: { slug: true },
+        });
+        if (existing && existing.slug !== slug) {
+          throw new ConflictError(
+            sessionSlugCaseConflictMessage(slug, existing.slug),
+            { existingSlug: existing.slug },
+          );
+        }
+        if (!existing && !isValidSessionSlug(slug)) {
+          throw new BadRequestError(invalidSessionSlugMessage(slug));
+        }
 
         // 1. Session row (race-safe ON CONFLICT DO NOTHING, as in
         // SessionService.upsert / DocumentService.register).

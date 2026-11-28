@@ -353,7 +353,10 @@ function effectiveFilters(
  * absent fields impose no restriction.
  */
 function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
-  if (filters.session !== undefined && task.session !== filters.session)
+  if (
+    filters.session !== undefined &&
+    task.session?.toLowerCase() !== filters.session.toLowerCase()
+  )
     return false;
   if (filters.source !== undefined && task.source !== filters.source)
     return false;
@@ -671,7 +674,8 @@ export class TaskService implements TaskServiceLike {
       where.status = { in: ["in_progress", "pr_open", "approved"] };
     }
     if (filters.source) where.source = filters.source;
-    if (filters.session) where.session = filters.session;
+    if (filters.session)
+      where.session = { equals: filters.session, mode: "insensitive" };
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;

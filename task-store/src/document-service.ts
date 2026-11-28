@@ -234,7 +234,8 @@ export class DocumentService implements DocumentServiceLike {
         ],
       });
     }
-    if (filters.session !== undefined) and.push({ session: filters.session });
+    if (filters.session !== undefined)
+      and.push({ session: { equals: filters.session, mode: "insensitive" } });
     if (filters.kind !== undefined) and.push({ kind: filters.kind });
     if (filters.owner !== undefined) and.push({ owner: filters.owner });
     if (filters.planned === false) {

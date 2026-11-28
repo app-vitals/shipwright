@@ -26,6 +26,7 @@ import {
 } from "../errors.ts";
 import { buildTaskStoreSpec } from "../generate-spec.ts";
 import { type SpecParam, sampleValue } from "../lib/spec-param-sample.ts";
+import { SessionPlanService } from "../session-plan-service.ts";
 import type {
   PlanningLock,
   SessionListFilters,
@@ -1028,5 +1029,70 @@ describe("GET /preflight/scope (smoke)", () => {
     const parent = makeAdminParent(makeApp());
     expect((await get(parent, "")).status).toBe(400);
     expect((await get(parent, "repo=org/a&bogus=1")).status).toBe(400);
+  });
+});
+
+// ─── POST /sessions/:slug/plan slug validation (STI-1.2) ─────────────────────
+
+describe("POST /sessions/:slug/plan new-slug validation (smoke)", () => {
+  function planApp(existingSlug: string | null) {
+    const tx = {
+      session: {
+        findFirst: async () =>
+          existingSlug === null ? null : { slug: existingSlug },
+        createMany: async () => ({ count: 1 }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => unknown) => fn(tx),
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: minimal prisma double
+    const planner = new SessionPlanService(prisma as any, {} as any, {} as any);
+    const app = createSessionsRoutes(fakeSessionService([]), planner);
+    const parent = makeAdminParent(app);
+    parent.onError((err, c) => {
+      if (err instanceof ApiError) {
+        return c.json({ error: err.message }, err.statusCode as 400);
+      }
+      return c.json({ error: String(err) }, 500);
+    });
+    return parent;
+  }
+
+  const body = JSON.stringify({
+    plan: { repo: "org/home", path: "p.md" },
+    tasks: [],
+    specs: [],
+  });
+  const post = (app: ReturnType<typeof planApp>, slug: string) =>
+    app.request(`/${slug}/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+
+  it.each(["Upper", "1lead", "a".repeat(65)])(
+    "400 with a rename-me message for new slug %p",
+    async (slug) => {
+      const res = await post(planApp(null), slug);
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toContain("please choose a different name");
+    },
+  );
+
+  it("409 naming the existing slug for a case-variant", async () => {
+    const res = await post(planApp("legacy"), "Legacy");
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain(
+      "'legacy'",
+    );
+  });
+
+  it("an existing legacy slug (exact match) is grandfathered", async () => {
+    const res = await post(planApp("Legacy"), "Legacy");
+    expect(res.status).not.toBe(400);
+    expect(res.status).not.toBe(409);
   });
 });

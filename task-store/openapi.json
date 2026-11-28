@@ -3199,7 +3199,7 @@
           "sessions"
         ],
         "summary": "Write a session's plan document, tasks and planned specs atomically",
-        "description": "One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.",
+        "description": "One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. Slug rules (STI-1.2): a NEW session's slug must match `^[a-z][a-z0-9-]{0,63}$` (`400` otherwise, asking for a different name); existing sessions are grandfathered under their legacy slug, and a slug that differs from an existing one only by case is a `409` naming the existing slug. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.",
         "parameters": [
           {
             "schema": {
@@ -3244,7 +3244,7 @@
             }
           },
           "400": {
-            "description": "Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number",
+            "description": "Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, an unregistered spec number, or an invalid slug for a NEW session (must match `^[a-z][a-z0-9-]{0,63}$`; the message asks for a different name — slugs are never truncated)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3274,7 +3274,7 @@
             }
           },
           "409": {
-            "description": "Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written",
+            "description": "Conflict — the planning lock is held by someone else (lock body), a task id is unavailable, or the slug differs only by case from an existing session (the message names it); nothing was written",
             "content": {
               "application/json": {
                 "schema": {
