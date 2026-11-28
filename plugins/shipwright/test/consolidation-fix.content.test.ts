@@ -4,7 +4,7 @@
  * Verifies plugins/shipwright/skills/consolidation-fix/SKILL.md and its thin
  * command wrapper (commands/consolidation-fix.md) exist and document the
  * required behavior:
- *   - Reads consolidation-report.md, acts only on ready_to_propose entries
+ *   - Reads PatrolFinding rows from the store, acts only on ready_to_propose entries
  *     (never `tracking`)
  *   - Cross-checks .claude/shipwright/consolidation-decisions.md before queueing
  *   - Dedupes against pending/in-progress task-store tasks using the exact same
@@ -51,9 +51,9 @@ describe("consolidation-fix — files exist", () => {
 
 // ── Reads consolidation-report.md, only ready_to_propose entries ────────────
 
-describe("consolidation-fix — reads consolidation-report.md, ready_to_propose only", () => {
-  it("mentions reading consolidation-report.md", () => {
-    expect(readSkill()).toContain("consolidation-report.md");
+describe("consolidation-fix — reads PatrolFinding rows, ready_to_propose only", () => {
+  it("reads findings from the store's PatrolFinding ledger", () => {
+    expect(readSkill()).toContain("PatrolFinding");
   });
 
   it("mentions acting on ready_to_propose entries", () => {
@@ -191,12 +191,12 @@ describe("consolidation-fix — per-finding hitl classification", () => {
     expect(readSkill()).toContain('"hitl"');
   });
 
-  it("documents the single-clear-canonical-shape / existing-precedent path to hitl: false", () => {
+  it("documents the single-clear-canonical-shape / existing-precedent path to auto", () => {
     const lower = readSkill().toLowerCase();
     expect(lower).toContain("existing precedent");
   });
 
-  it("documents multiple-plausible-shapes / crosses-service-boundary / >~5 call sites path to hitl: true", () => {
+  it("documents multiple-plausible-shapes / crosses-service-boundary / >~5 call sites path to review or plan", () => {
     const lower = readSkill().toLowerCase();
     expect(lower.includes("multiple plausible")).toBe(true);
     expect(lower.includes("service") || lower.includes("repo boundar")).toBe(
