@@ -108,6 +108,15 @@ export const DEFAULT_SYSTEM_CRONS: readonly CreateSystemCronInput[] = [
       "/shipwright:environments-scan --repo {repo}\n/shipwright:environments-fix --repo {repo}",
   },
   {
+    id: "agent-readiness",
+    name: "Agent readiness",
+    schedule: "0 8 * * *",
+    timezone: "UTC",
+    enabled: false,
+    titleTemplate: "Agent readiness: {repo}",
+    descriptionTemplate: "/shipwright:agent-readiness --repo {repo}",
+  },
+  {
     id: "security-patrol",
     name: "Security patrol",
     schedule: "0 6 * * 1",
