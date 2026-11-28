@@ -196,11 +196,11 @@ false positives to suppress), **skip suppression** and go straight to marking th
      task written directly in that format), use those fingerprints directly — no further
      lookup needed.
    - Otherwise, `TASK_DESC`'s findings list is plain `- {file}:{line} — {finding_description}`
-     (per `security-fix/SKILL.md` Step 6q.5) with no commit SHA. Ask the human to supply the
+     (per `security-fix/SKILL.md` Step 6.4) with no commit SHA. Ask the human to supply the
      full fingerprint for each confirmed finding, since that is what gitleaks actually
      matches on. If they only have `file:line`, tell them to look up the commit SHA via
-     `git blame`/`git log` on that file/line, or via the original `security-report.md` that
-     generated the task (security-scan writes the commit SHA per finding there).
+     `git blame`/`git log` on that file/line, or via the finding's PatrolFinding in the task store
+     (`GET /patrol-findings`, fingerprint in the task id), which holds the per-finding detail.
 
 2. **Create a worktree for the target repo**, following the standard convention. Use branch
    name `chore/gitleaksignore-suppress-{TASK_ID}` for this suppression PR (a new, distinct

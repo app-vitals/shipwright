@@ -429,17 +429,14 @@ describe("SKILL.md — Step 3.5a zizmor.yml suppression filter", () => {
     expect(section.toLowerCase()).toContain("not suppressed");
   });
 
-  it("documents that suppressed findings are dropped before Step 6 and never reach the report or ledger", () => {
+  it("documents that suppressed findings are dropped before Step 6 and never recorded", () => {
     const section = content.slice(
       content.indexOf("### 3.5a"),
       content.indexOf("## Step 4:"),
     );
     const text = section.toLowerCase();
     expect(text).toContain("step 6");
-    expect(text.includes("security-report.md") || text.includes("report")).toBe(
-      true,
-    );
-    expect(text).toContain("ledger");
+    expect(text).toContain("never recorded");
   });
 
   it("references the live ignore-entry format from this repo's own .github/zizmor.yml", () => {
@@ -459,35 +456,72 @@ describe("SKILL.md — Step 3.5a zizmor.yml suppression filter", () => {
   });
 });
 
-describe("SKILL.md — Step 2 consumes a precheck-provided repo list (RSF-3.1)", () => {
-  it("documents the precheck-driven repo list as the preferred source", () => {
-    expect(content).toContain("Precheck-driven (preferred)");
-    expect(content).toContain("shipwright:check-patrol-scope.ts");
+describe("SKILL.md — requires --repo (PCR-3.3)", () => {
+  it("documents --repo as required with a usage error", () => {
+    expect(content).toContain("`--repo org/repo` — **required**");
+    expect(content).toContain("Usage: /security-scan --repo org/repo");
+    expect(content).toContain("Error: --repo is required.");
   });
 
-  it("names the security-patrol-maintenance cron whose preCheck supplies the list", () => {
+  it("has no precheck/current-directory fallback", () => {
+    expect(content).not.toContain("Precheck-driven");
+    expect(content).not.toContain("git remote get-url origin");
+    expect(content).toContain("No fallback to the current directory");
+  });
+
+  it("takes the system-cron id via --cron", () => {
+    expect(content).toContain("`--cron ID`");
     expect(content).toContain("security-patrol-maintenance");
-  });
-
-  it("documents that the preCheck's stdout becomes the invoking prompt", () => {
-    const text = content.toLowerCase();
-    expect(text).toContain("stdout becomes the actual prompt");
-  });
-
-  it("preserves manual single-repo invocation as an explicit fallback", () => {
-    expect(content).toContain("Fallback (manual invocation");
-    expect(content).toContain("git remote get-url origin");
-  });
-
-  it("documents running Steps 3-9 once per repo in the resolved list", () => {
-    const text = content.toLowerCase();
-    expect(text).toContain("once per repo in the resolved list");
   });
 });
 
-describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
-  it("references the security-patrol ledger location", () => {
-    expect(content).toContain("state/security-patrol-ledger.json");
+describe("SKILL.md — store-only findings, no repo write path (PCR-3.3)", () => {
+  it("never mentions security-report.md or a docs/ output", () => {
+    expect(content).not.toContain("security-report.md");
+    expect(content).not.toContain("docs/");
+  });
+
+  it("holds finding detail in PatrolFinding and hands off through the store", () => {
+    expect(content).toContain("PatrolFinding");
+    expect(content).toMatch(/hand-off to `\/security-fix` is the\s+store/);
+    expect(content).toContain("writes **no finding to any repo path**");
+  });
+
+  it("keeps the result file outside the repo", () => {
+    expect(content).toContain("mktemp -d");
+    expect(content).toContain("security-result.json");
+  });
+
+  it("diffs via the recorder's prior and records one run with metrics", () => {
+    expect(content).toContain("cron-run-recorder.ts");
+    expect(content).toMatch(/cron-run-recorder\.ts"? prior/);
+    expect(content).toMatch(/cron-run-recorder\.ts"? record/);
+    expect(content).toContain('"metrics"');
+  });
+
+  it("--dry-run records nothing", () => {
+    expect(content).toContain("`--dry-run` records nothing");
+  });
+
+  it("mentions the legacy state files only inside the one-time import step", () => {
+    const start = content.indexOf("### One-time legacy import");
+    const end = content.indexOf("\n---", start);
+    expect(start).toBeGreaterThan(-1);
+    const outside = content.slice(0, start) + content.slice(end);
+    for (const file of [
+      "state/security-patrol-ledger.json",
+      "state/security-patrol-last-run.json",
+    ]) {
+      expect(content.slice(start, end)).toContain(file);
+      expect(outside).not.toContain(file);
+    }
+    expect(outside).not.toContain("security-patrol-last-run");
+  });
+});
+
+describe("SKILL.md — store classification with repo-namespaced fingerprints", () => {
+  it("diffs against the task store via the recorder", () => {
+    expect(content).toContain("--legacy-shape security-patrol-ledger");
   });
 
   it("classifies findings as new", () => {
@@ -541,8 +575,8 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
     expect(content).toContain("`posture`");
   });
 
-  it("drops suppressed findings before report and ledger", () => {
-    expect(content).toMatch(/never appears in `security-report\.md`/);
+  it("drops suppressed findings before they are recorded", () => {
+    expect(content).toContain("is never recorded (Step 8)");
   });
 
   it("prints the suppressed count in the summary", () => {
@@ -560,11 +594,12 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
 });
 
 describe("SKILL.md — capped final summary (CSM-2.7)", () => {
-  it("caps the final summary at 3-5 lines and keeps detail in the report file", () => {
-    const section = content.match(/## Step \d+: Print Summary[\s\S]*?\n---/)?.[0] ?? "";
+  it("caps the final summary at 3-5 lines and prints a summary only", () => {
+    const section =
+      content.match(/## Step \d+: Print Summary[\s\S]*?\n---/)?.[0] ?? "";
     expect(section).toContain("3-5 lines");
     expect(section).toContain("SECURITY SCAN COMPLETE");
-    expect(section).toContain("security-report.md");
+    expect(section).toContain("Print a summary only");
     expect(section).not.toContain("━");
   });
 });

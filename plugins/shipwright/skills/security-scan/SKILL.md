@@ -1,13 +1,14 @@
 ---
 name: security-scan
-description: Scan a repo for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues, authn/authz anti-patterns, and posture gaps across three tiers. Report only — no code changes.
+description: Scan a repo (required --repo) for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues, authn/authz anti-patterns, and posture gaps across three tiers. Records PatrolFindings in the task store; no repo files, no code changes.
 ---
 
 # Security Scan
 
-Run a report-only, three-tier security scan against a single checked-out repo and write a
-structured report plus a cross-run ledger. This skill makes **no code changes** — it reads,
-runs read-only tools, and reports only. A companion `/security-fix` skill (not this one) acts
+Run a report-only, three-tier security scan against a single repo (named by the required
+`--repo`) and record the findings as `PatrolFinding`s in the task store, with one run and its
+metrics. All finding detail lives in the store; nothing is written to any repo path. This skill
+makes **no code changes** — it reads, runs read-only tools, and records only. A companion `/security-fix` skill (not this one) acts
 on the findings.
 
 The three tiers are:
@@ -16,7 +17,7 @@ The three tiers are:
   scan, full history), `osv-scanner` (lockfile CVEs), `grype` + `syft` (container CVE scan +
   SBOM generation), and `zizmor` (GitHub Actions workflow lint). Each tool has an explicit
   per-tool fallback — if its download or checksum step fails, that one tool's findings are
-  skipped, the gap is noted in the report, and the scan continues. **A single tool's download
+  skipped, the gap is noted in the summary, and the scan continues. **A single tool's download
   failure must never fail or abort the whole scan.**
 - **Tier 2 — LLM-driven checks.** Judgment-based Read/Grep passes for authn/authz
   anti-patterns and hardcoded credentials not caught by gitleaks. No binaries.
@@ -34,13 +35,11 @@ The three tiers are:
 
 ## Setup: Parse Arguments
 
-Before starting, check if any flags were passed:
-
+- `--repo org/repo` — **required** (see Step 2; a usage error is printed without it)
+- `--cron ID` — the system-cron id for the recorded run (default `security-patrol-maintenance`)
 - `--init` — copy the default security-scan principles file to the project and exit (no scan)
-- `--summary` — print counts to stdout; skip writing `security-report.md`
-- `--dry-run` — run the full scan (tool downloads, Tier 2/3 checks, diffing) but skip writing
-  `security-report.md` **and** skip updating `state/security-patrol-ledger.json`. Print
-  everything that would have been written to stdout instead.
+- `--summary` — print counts only
+- `--dry-run` — run the full scan and diff but record nothing; print what would be recorded
 
 ---
 
@@ -62,49 +61,31 @@ shared with `entropy-scan`.
 
 ---
 
-## Step 2: Resolve Repo List, Detect Each Repo + Derive `repo-slug`
+## Step 2: Resolve the Repo, Derive `repo-slug`
 
-This skill scans one repo at a time. Before Step 3, determine which repo(s) are in scope, in
-this priority order:
+This skill scans exactly one repo per invocation, named by the required `--repo org/repo`
+argument (e.g. `app-vitals/shipwright`). If `--repo` is missing or not `org/repo`, print and stop:
 
-1. **Precheck-driven (preferred).** The `security-patrol-maintenance` cron's `preCheck`
-   (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and its
-   stdout — which became this prompt (per the specialty manifest's cron `preCheck` contract:
-   "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") —
-   lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its local clone
-   directory per section. Parse the repo names and directories out of the invoking prompt and
-   use that as the repo list.
-2. **Fallback (manual invocation, or no repo list available in the prompt).** Detect the
-   current repo from git directly (today's single-repo behavior, unchanged): run
-   `git remote get-url origin` and scan just the current working directory.
+```
+Usage: /security-scan --repo org/repo [--cron ID] [--summary] [--dry-run] [--init]
+Error: --repo is required.
+```
 
-For each repo in the resolved list, `cd` into its local clone directory, then detect that
-repo from git: run `git remote get-url origin` and strip the `https://github.com/` (or
-`git@github.com:`) prefix and the `.git` suffix to get the `org/repo` value — e.g.
-`app-vitals/shipwright`.
+Set `REPO` to the `--repo` value and `CRON_ID` to the `--cron` value (the system-cron id the
+scheduler passes; default `security-patrol-maintenance`). `cd` into the repo's local clone
+before Step 3.
 
-Derive `repo-slug` from it: **the last path segment, lowercased** — e.g.
-`app-vitals/shipwright` → `shipwright`. (This mirrors the `repo-slug` derivation used by
-`entropy-fix`, `test-fix`, and `consolidation-fix`.) Compute this once per repo and reuse it
-for every ledger key and finding ID below, for that repo.
+Derive `repo-slug`: **the last path segment, lowercased** — e.g. `app-vitals/shipwright` →
+`shipwright`. Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date.
 
-**Why this matters (critical):** ledger keys and per-finding IDs are namespaced as
+**Why this matters (critical):** finding fingerprints are namespaced as
 `security-{rule}-{repo-slug}-{YYYY-Www}` — rule + **repo-slug** + ISO week — **not** just
 `{rule}-{YYYY-Www}`. This avoids the known `entropy-fix` task-ID **collision** bug: when an
-ID is built from rule + week only (no repo component), the same rule firing in two different
-repos in the same ISO week produces an identical ID, and the second repo's run silently
-no-ops because the ID already exists from the first repo. The `{repo-slug}` component keeps
-IDs unique per repo so same-week multi-repo runs never collide.
-
-Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date — this is
-shared across every repo in the resolved list (the same run, the same week).
-
-Run Steps 3-9 below once per repo in the resolved list, scoped to that repo's working
-directory and its own `repo-slug`. After the last repo completes Step 9, Step 10's summary is
-printed once per repo processed (a single-repo fallback run prints exactly one summary block,
-as today).
+ID is built from rule + week only, the same rule firing in two repos in the same ISO week
+produces an identical ID, and the second repo's run silently no-ops.
 
 ---
+
 
 ## Step 3: Tier 1 — Real Binary Tools (pinned + sha256-verified)
 
@@ -123,7 +104,7 @@ download+checksum in its own guarded block. If the `curl` download **or** the `s
 verification fails for a specific tool, do **not** abort the scan. Instead:
 
 1. Skip only that tool's findings.
-2. Add a note to the report's "Skipped tools" section, e.g.
+2. Count it in `tools_skipped` and note it in the summary, e.g.
    `gitleaks: download failed, skipped — see error above`.
 3. Continue with the remaining tools.
 
@@ -206,7 +187,7 @@ secret scan so secrets committed and later removed are still caught.
 curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" -o "$TOOLS_DIR/gitleaks.tar.gz"
 echo "141c3b2dede46d8b3a53b47116da756bd223decc0374797559a6b50ecba5590c  $TOOLS_DIR/gitleaks.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/gitleaks.tar.gz" -C "$TOOLS_DIR" gitleaks
-"$TOOLS_DIR/gitleaks" detect --source . --redact --report-format json --report-path gitleaks-report.json
+"$TOOLS_DIR/gitleaks" detect --source . --redact --report-format json --report-path "$TOOLS_DIR/gitleaks-report.json"
 ```
 
 (Full-history mode: run `gitleaks detect` **without** `--no-git` so it walks the git log.)
@@ -231,7 +212,7 @@ grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .gi
 curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o "$TOOLS_DIR/osv-scanner"
 echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  $TOOLS_DIR/osv-scanner" | sha256sum -c
 chmod +x "$TOOLS_DIR/osv-scanner"
-"$TOOLS_DIR/osv-scanner" scan --recursive --format json --output osv-report.json .
+"$TOOLS_DIR/osv-scanner" scan --recursive --format json --output "$TOOLS_DIR/osv-report.json" .
 ```
 
 > **osv-cve is authoritative for Bun-lockfile dependency CVEs.** For repos using `bun.lock`,
@@ -257,7 +238,7 @@ Anchore projects publish `grype_{version}_linux_amd64.tar.gz` plus a
 curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o "$TOOLS_DIR/grype.tar.gz"
 echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  $TOOLS_DIR/grype.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/grype.tar.gz" -C "$TOOLS_DIR" grype
-"$TOOLS_DIR/grype" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file grype-report.json
+"$TOOLS_DIR/grype" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file "$TOOLS_DIR/grype-report.json"
 ```
 
 ### 3.4 syft — SBOM generation
@@ -270,7 +251,7 @@ feeds Tier 3's SBOM-presence posture check.
 curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o "$TOOLS_DIR/syft.tar.gz"
 echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  $TOOLS_DIR/syft.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/syft.tar.gz" -C "$TOOLS_DIR" syft
-"$TOOLS_DIR/syft" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json=sbom.cyclonedx.json
+"$TOOLS_DIR/syft" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json="$TOOLS_DIR/sbom.cyclonedx.json"
 ```
 
 The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for. Note: this SBOM's
@@ -291,7 +272,7 @@ asset and hashing it locally.
 curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v1.27.0/zizmor-x86_64-unknown-linux-gnu.tar.gz" -o "$TOOLS_DIR/zizmor.tar.gz"
 echo "277f2bd8fd37cf60c42ab7afca6faa884e65440fa31e02b44bdaae60f62a358f  $TOOLS_DIR/zizmor.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/zizmor.tar.gz" -C "$TOOLS_DIR" zizmor
-"$TOOLS_DIR/zizmor" --format json .github/workflows/ > zizmor-report.json
+"$TOOLS_DIR/zizmor" --format json .github/workflows/ > "$TOOLS_DIR/zizmor-report.json"
 ```
 
 If the repo has no `.github/workflows/` directory, record "no workflows to scan" — not a
@@ -333,10 +314,9 @@ Step 6 should know zizmor findings have already been filtered by the time they g
      finding proceed normally; it may be a genuinely new or different finding at that
      location, not the same accepted-risk decision.
 4. **Suppressed findings are dropped here, before Step 6.** A suppressed finding gets no
-   finding record at all — it never appears in `security-report.md` (Step 8) and is never
-   diffed against the ledger (Step 7). Step 7's existing "present in ledger as unresolved but
-   absent from this run ⇒ resolved" logic already handles the case where a finding that used
-   to be unresolved becomes suppressed on a later run — no additional ledger-side logic is
+   finding record at all — it is never recorded (Step 8) or diffed against the store
+   (Step 7). Step 7's "open in the store but absent from this run ⇒ resolved" logic already handles the case where a finding that used
+   to be unresolved becomes suppressed on a later run — no additional store-side logic is
    needed for that transition.
 
 ---
@@ -412,13 +392,12 @@ not a replacement for, the tool-native handling that already ran: `.gitleaksigno
    ```
    It prints `{kept, suppressed, expired}`. A missing suppressions file is valid (nothing
    suppressed). A non-zero exit means the file is invalid — print the error, treat it as
-   "no suppressions applied", and note it under the report's Skipped Tools-style gaps; never
+   "no suppressions applied", and note it as a skipped-tool-style gap; never
    abort the scan.
 3. **Drop suppressed findings here.** Every finding in `suppressed` is removed before Step 6:
-   it gets no finding record, never appears in `security-report.md` (Step 8), and is never
-   written to the ledger (Step 9). Step 7's "unresolved in ledger but absent this run ⇒
+   it gets no finding record, is never recorded (Step 8). Step 7's "open in the store but absent this run ⇒
    resolved" logic covers a finding that becomes suppressed on a later run.
-4. **Track the counts** for Step 10: `suppressed_count` = `suppressed.length`, and the
+4. **Track the counts** for Step 9: `suppressed_count` = `suppressed.length`, and the
    `expired` entries (rule, match key, `expires`). Expired entries stop suppressing, so their
    findings stay in `kept` and surface normally.
 
@@ -430,209 +409,127 @@ zizmor findings reach this step only after passing the Step 3.5a suppression fil
 anything matching an accepted-risk entry in `.github/zizmor.yml` was already dropped and
 never gets a record here.
 
-All findings from Tier 1, Tier 2, and Tier 3 use one common record shape:
+Group the findings by rule: one record per rule per repo per ISO week. Each record is one
+`PatrolFinding` in the task store — all finding detail lives there, never in a repo file:
 
 ```json
 {
-  "id": "security-{rule}-{repo-slug}-{YYYY-Www}",
-  "rule": "<e.g. gitleaks-secret | osv-cve | grype-cve | zizmor-lint | authz-missing-check | hardcoded-credential | posture-security-md-missing>",
-  "tier": "1 | 2 | 3",
-  "severity": "critical | high | medium | low",
-  "file": "<path>",
-  "line": "<line number if applicable>",
-  "description": "<one-line specifics, e.g. CVE id or secret rule>",
-  "count": "<occurrence count for this rule this run>"
+  "fingerprint": "security-{rule}-{repo-slug}-{YYYY-Www}",
+  "status": "open",
+  "detail": {
+    "rule": "<gitleaks-secret | osv-cve | grype-cve | zizmor-lint | authz-missing-check | secret-weak-compare | hardcoded-credential | posture-security-md-missing | ...>",
+    "tier": "1 | 2 | 3",
+    "severity": "critical | high | medium | low",
+    "count": 0,
+    "findings": [{ "file": "<path>", "line": 0, "description": "<CVE id, secret rule, ...>" }]
+  }
 }
 ```
 
-The `id` is **repo-namespaced** (`security-{rule}-{repo-slug}-{YYYY-Www}`) exactly as
-described in Step 2 — this is the ledger key and the collision-safe finding identifier.
+The `fingerprint` is **repo-namespaced** (`security-{rule}-{repo-slug}-{YYYY-Www}`) exactly as
+described in Step 2 — it is the collision-safe finding identifier and `/security-fix` reuses
+it as the task id.
 
 ---
 
-## Step 7: Diff Against the Ledger
+## Step 7: Diff Against the Store
 
-The ledger lives at `state/security-patrol-ledger.json` — **one level up from the repo
-checkout, in agent workspace state, not tracked inside this repo** (same state tier and
-location convention as `state/error-patrol-ledger.json` and `state/entropy-patrol-last-run.json`;
-it is a sibling of the `repos/<repo>` checkouts, not a path inside the invoking repo's working
-tree). This mirrors `error-scan`'s Step 5 classification logic.
+Load prior state from the task store (read-only; works in `--dry-run` too):
 
-1. If `state/security-patrol-ledger.json` does not exist yet, treat the ledger as empty
-   (`{"lastRun": null, "findings": {}}`) — a normal first run, not an error.
-2. If it exists, read and parse it. Expected shape:
-   ```json
-   {
-     "lastRun": "<ISO8601 timestamp of previous run>",
-     "findings": {
-       "security-{rule}-{repo-slug}-{YYYY-Www}": {
-         "rule": "<rule>",
-         "status": "unresolved | resolved",
-         "count": <last-seen occurrence count>,
-         "lastSeen": "<ISO8601>"
-       }
-     }
-   }
-   ```
-   Every key is repo-namespaced (`security-{rule}-{repo-slug}-{YYYY-Www}`), so a same-week run
-   against a different repo writes distinct keys and never clobbers this repo's entries.
-3. Classify each finding from this run against its ledger entry (keyed by its repo-namespaced
-   `id`), using the same logic shape as `error-scan`'s Step 5:
-   - **New**: no entry exists for this finding's `id` in the ledger at all (first seen this run).
-   - **Regressed**: an entry exists, and *either* (a) the ledger's recorded `status` was
-     `resolved` (i.e. it was previously marked fixed/absent and has reappeared), *or* (b) the
-     status was already `unresolved` but the current `count` is greater than the ledger's
-     recorded `count` (it kept firing — more occurrences accumulated since last run). Document
-     precisely which condition triggered the regressed flag.
-   - **Unchanged**: an entry exists, status was already `unresolved`, and the current `count`
-     is not greater than the ledger's recorded `count`. Unchanged findings are **not** listed
-     in the report body — only reflected in summary counts.
-4. Findings present in the ledger as `unresolved` but absent from this run are presumed
-   fixed/resolved since last run — note them for the ledger update in Step 9 (mark
-   `status: resolved`), but they need no report section of their own.
-
----
-
-## Step 8: Write the Report
-
-If `--summary` or `--dry-run` was passed, skip writing the file — for `--dry-run`, print the
-exact content that would have been written; for `--summary`, print only the counts table.
-
-Write `security-report.md` to the project root (overwrite if it exists). Format:
-
-```markdown
-# Security Report
-
-**Generated:** {YYYY-MM-DD HH:MM} {timezone}
-**Repo:** {org/repo}  (repo-slug: {repo-slug})
-**ISO week:** {YYYY-Www}
-
-## Summary
-
-| | Count |
-|---|---|
-| New findings | N |
-| Regressed findings | N |
-| Unchanged (not shown below) | N |
-| Skipped tools | N |
-
-## Skipped Tools
-
-{For each Tier 1 tool whose download/checksum failed:}
-- {tool}: download failed, skipped — {error summary}
-{If none: "All Tier 1 tools ran."}
-
----
-
-## New Findings
-
-{If none: "No new findings since last run."}
-
-{For each new finding, as a checkbox:}
-- [ ] `{id}` — {description} _{severity}_ (tier {tier})
-  - {file}:{line}
-
-## Regressed Findings
-
-{If none: "No regressed findings since last run."}
-
-{For each regressed finding, as a checkbox:}
-- [ ] `{id}` — {description} _{severity}_ (tier {tier})
-  - Why flagged: {"was resolved, now unresolved" | "count grew from {old} to {new}"}
-
----
-_Run `/security-fix` to classify these findings and queue task-store tasks._
+```bash
+bun "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" prior --cron "$CRON_ID" --repo "$REPO" \
+  --legacy-shape security-patrol-ledger
 ```
 
-New and regressed findings are each sorted by severity (critical → low) within their section.
+It prints `{latest, findings, imported}`; `findings` are this repo's PatrolFindings for the
+cron. Classify each Step 6 record by its `fingerprint`:
+
+- **New**: no PatrolFinding with that fingerprint.
+- **Regressed**: one exists and *either* its `status` was `resolved`, *or* it was `open` and
+  the current `detail.count` is greater than the stored `detail.count`.
+- **Unchanged**: `open` and the count has not grown. Reflected only in summary counts.
+- **Resolved**: stored `open` but absent from this run (a finding that became suppressed
+  lands here too). Re-send it with `status: "resolved"` so the next run can detect a regression.
+
+### One-time legacy import (the only place the legacy state files are touched)
+
+The `--legacy-shape security-patrol-ledger` flag above is the one-time import (PCR-2.1). When
+the store has no run for this cron+repo yet, the recorder reads the agent-local
+`state/security-patrol-ledger.json`, keeps only entries for this repo (other repos' entries are
+ignored), posts them as PatrolFindings, and deletes the file after both posts succeed — a
+failed post leaves it for a retry. The old `state/security-patrol-last-run.json` marker is
+superseded by the recorded run. This skill never reads or writes either file directly and
+never creates them.
 
 ---
 
-## Step 9: Update the Ledger
+## Step 8: Record the Run
 
-Skip this entire step if `--dry-run` was passed (dry runs mutate nothing). `--summary` alone
-does **not** skip it — the ledger must stay current so the next run's diff is correct.
+Skip this step if `--dry-run` was passed (dry runs record nothing). `--summary` alone does
+**not** skip it.
 
-1. Build the new ledger content — one entry per finding observed this run, keyed by its
-   repo-namespaced `id`:
-   ```json
-   {
-     "lastRun": "<current UTC ISO-8601>",
-     "findings": {
-       "security-{rule}-{repo-slug}-{YYYY-Www}": {
-         "rule": "<rule>",
-         "status": "unresolved",
-         "count": <current occurrence count>,
-         "lastSeen": "<ISO8601>"
-       }
-     }
-   }
+1. Write the result file **outside the repo**, in a temp dir:
+   ```bash
+   RESULT="$(mktemp -d)/security-result.json"
    ```
-2. For any finding present in the *previous* ledger but absent from this run, retain it with
-   `"status": "resolved"` (retaining preserves the "this used to be unresolved" signal for the
-   next run's regressed detection).
-3. Overwrite `state/security-patrol-ledger.json` with this new content (full replace — a
-   current-state snapshot, not an append-only log).
-4. Print: `Ledger updated: state/security-patrol-ledger.json`
+   Content: `{"outcome": "ok", "metrics": {"new": N, "regressed": N, "unchanged": N,
+   "resolved": N, "suppressed": N, "tools_skipped": N}, "findings": [<Step 6 records for
+   new/regressed/unchanged, plus resolved ones>]}`. Use `"outcome": "no_op"` when nothing
+   new, regressed or resolved.
+2. Record one run:
+   ```bash
+   bun "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" record --cron "$CRON_ID" --repo "$REPO" \
+     --commit "$(git rev-parse HEAD)" --result "$RESULT" --legacy-shape security-patrol-ledger
+   ```
+3. Delete the temp result file.
 
-Because every key includes `{repo-slug}`, overwriting this repo's snapshot never touches
-another repo's entries even if both were scanned in the same ISO week.
+Findings are upserted by fingerprint, so a re-run in the same week is idempotent.
 
 ---
 
-## Step 10: Print Summary
+## Step 9: Print Summary
 
-Whether or not `--summary` was passed, always print a summary after the scan. Cron runs post
-this to a channel where nobody can reply in the moment, so **cap the final response at
-3-5 lines**: a status line, the counts, and a link. The full detail (findings, skipped tools,
-expired suppressions) stays in `security-report.md` — never repeat it in the response.
+Print a summary only — no file is written. Cron runs post this to a channel where nobody can
+reply in the moment, so **cap the final response at 3-5 lines**: a status line, the counts,
+and a hint. The full detail stays in the store's PatrolFindings — never repeat it here.
 
 ```
 SECURITY SCAN COMPLETE — {org/repo} ({YYYY-Www}): {N} new, {M} regressed (suppressed: {N})
 Tools run: {N} / 5 (skipped: {list})
-{If new/regressed: "Next: /security-fix to queue tasks."}  {If zero: "✓ No new or regressed findings."}
-{If expired suppressions: "Expired suppressions: {N} — see report."}
-{If --dry-run: "Dry run — no files written."}  {Else if --summary: "Summary only — report not written; ledger still updated."}  {Else: "Report: security-report.md"}
+{If new/regressed: "Next: /security-fix --repo {org/repo} to route findings."}  {If zero: "✓ No new or regressed findings."}
+{If expired suppressions: "Expired suppressions: {N}."}
+{If --dry-run: "Dry run — nothing recorded."}  {Else: "Recorded to the task store."}
 ```
 
 ---
 
 ## Constraints (Do Not Violate)
 
-- **No code changes.** This skill reads, runs read-only scanners, and reports only. The only
-  files written are `security-report.md` (project root) and
-  `state/security-patrol-ledger.json` (agent workspace state, one level up from repo
-  checkouts) — plus transient tool report artifacts (`gitleaks-report.json`, `osv-report.json`,
-  `grype-report.json`, `sbom.cyclonedx.json`, `zizmor-report.json`) which are scan byproducts,
-  never committed. Neither the report nor the ledger is written in `--dry-run` mode.
+- **`--repo` is required.** No fallback to the current directory or a repo list.
+- **No code changes.** This skill reads, runs read-only scanners, and records to the task
+  store only. It writes **no finding to any repo path** — no report file, nothing under the
+  project tree. The only local files are transient tool artifacts staged under `$TOOLS_DIR` /
+  a temp dir (`gitleaks-report.json`, `osv-report.json`, `grype-report.json`,
+  `sbom.cyclonedx.json`, `zizmor-report.json`, the Step 8 result file), never committed.
+- **Findings live in the store.** All finding detail is held in `PatrolFinding`; the
+  hand-off to `/security-fix` is the store, not a file.
 - **No git operations.** Do not commit, branch, or stage anything. Writing scan-local
   entries to `.git/info/exclude` (Step 3.0) is exempt — it is untracked, per-checkout git
   metadata, not the tracked `.gitignore`, and involves no commit, branch, or staged change.
-- **No PR creation.** `security-scan` never creates PRs or tasks — queueing findings as
+- **No PR creation.** `security-scan` never creates PRs or tasks — routing findings into
   task-store tasks belongs to `/security-fix`.
 - **No tool aborts the scan.** Every Tier 1 tool has a per-tool fallback: a failed download or
-  checksum skips only that tool's findings, notes the gap in the report, and the scan
-  continues. The overall scan **never fails** because one tool couldn't be fetched or verified.
+  checksum skips only that tool's findings, notes the gap in the summary, and the scan
+  continues.
 - **Never ship a fabricated checksum.** Every Tier 1 checksum must match the vendor's published
   SHA256 for the exact pinned version. An unverified-but-plausible hash defeats checksum
   verification — treat an unverifiable tool as unavailable (fallback) instead.
 - **Trivy stays excluded.** Do not reintroduce Trivy (GHSA-69fq-xp46-6x23) without an explicit
   security review; Grype + Syft cover container CVE + SBOM.
-- **Never report a zizmor finding already suppressed in `.github/zizmor.yml`.** Step 3.5a's
-  drift-tolerant match runs before any zizmor finding reaches Step 6 — a finding matching an
-  accepted-risk ignore entry is dropped, not merely deprioritized, and must never appear in
-  `security-report.md` or the ledger.
-- **Never report a finding suppressed in `.shipwright/suppressions.yml`.** Step 5.5 drops
-  matching findings before Step 6 — they must never appear in `security-report.md` or the
-  ledger. Expired entries are not suppressions: report them in the summary and let their
-  findings through.
-- **Repo-namespaced IDs, always.** Every ledger key and finding ID is
-  `security-{rule}-{repo-slug}-{YYYY-Www}` — never `{rule}-{YYYY-Www}` — so same-week
-  multi-repo runs never collide (the `entropy-fix` task-ID collision bug).
-- **One scan, one report.** Each run fully overwrites `security-report.md`. The ledger, not old
-  reports, is the historical record.
-- **Ledger is a snapshot, not a log.** `state/security-patrol-ledger.json` is fully overwritten
-  each run with current state.
-- **`--dry-run` mutates nothing.** No report write, no ledger write — everything that would be
-  written is printed to stdout instead.
-- **`--summary` skips only the report file**, not the ledger update.
+- **Never record a finding already suppressed** in `.github/zizmor.yml` (Step 3.5a) or
+  `.shipwright/suppressions.yml` (Step 5.5) — it is dropped before Step 6. Expired entries are
+  not suppressions: report them in the summary and let their findings through.
+- **Repo-namespaced fingerprints, always.** `security-{rule}-{repo-slug}-{YYYY-Www}` — never
+  `{rule}-{YYYY-Www}` — so same-week multi-repo runs never collide (the `entropy-fix` task-ID
+  collision bug).
+- **`--dry-run` records nothing.** Everything that would be recorded is printed instead.

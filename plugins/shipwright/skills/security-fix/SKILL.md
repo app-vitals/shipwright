@@ -1,131 +1,111 @@
 ---
 name: security-fix
-description: Read security-report.md and queue PR-worthy findings as task-store tasks, one task per rule, routing any finding that requires credential rotation/revocation through /shipwright:hitl instead of auto-remediating it. Requires security-scan to have run first.
+description: Read open security PatrolFindings from the task store (required --repo) and route each rule group auto / review / plan as task-store tasks, one task per rule; credential rotation/revocation findings keep hitl true and go through /shipwright:hitl. Requires security-scan to have run first.
 ---
 
 # Security Fix
 
-Read the latest `security-report.md` and queue focused, human-reviewable tasks for
-`PR-worthy` findings. Each task fixes one rule — no bundled concerns. Findings are never
-turned into direct PRs; they always become task-store tasks that `dev-task` (for autonomous
-tasks) or a human via `/shipwright:hitl` (for credential-rotation tasks) picks up later.
+Read the repo's open security `PatrolFinding`s from the task store and queue focused,
+human-reviewable tasks for `PR-worthy` findings. Each task fixes one rule — no bundled
+concerns. Findings are never turned into direct PRs, and the scan-to-fix hand-off is the store:
+this skill reads no report file and writes no finding to any repo path.
 
-**Prerequisites:** Run `/security-scan` first to produce `security-report.md`.
+**Prerequisites:** Run `/security-scan --repo org/repo` first so open PatrolFindings exist.
 
-> **Task store setup:** This skill pushes findings to the Shipwright task store. If
-> `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke
-> `/shipwright:task-store` for setup instructions.
+> **Task store setup:** If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is
+> missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
 
 ## Setup: Parse Arguments
 
-Before starting, check for flags:
+- `--repo org/repo` — **required**. If missing or not `org/repo`, print and stop:
+  ```
+  Usage: /security-fix --repo org/repo [--cron ID] [--dry-run] [--rule {id}]
+  Error: --repo is required.
+  ```
+- `--cron ID` — the system-cron id the scheduler passes (default `security-patrol-maintenance`);
+  used as `CRON_ID` for reads, `originRef` and the recorded run.
+- `--dry-run` — print what would be routed without writing tasks, findings or a run
+- `--rule {id}` — route only findings of one rule (e.g. `--rule osv-cve`)
 
-- `--dry-run` — print what tasks would be queued without querying the task store for
-  dedup or writing any tasks
-- `--rule {id}` — queue only findings of a specific rule ID (e.g., `--rule osv-cve`)
-
-> **Note:** Queueing is the only mode. There is no PR mode and no `--queue` flag — every
-> run queues tasks. `--dry-run` shows a preview and stops without touching the task store.
+Set `REPO` to the `--repo` value and derive `repo-slug`: the last path segment, lowercased
+(`app-vitals/shipwright` → `shipwright`). `cd` into the repo's local clone before Step 1 so
+verification, suppressions and `git rev-parse HEAD` run against `--repo`. Queueing is the only
+mode — no PR mode.
 
 ---
 
-## Step 1: Verify security-report.md Exists
+## Step 1: Load Open Findings from the Store
 
-1. Look for `security-report.md` in the project root.
-2. If it does not exist, print:
-   ```
-   No security-report.md found. Run /security-scan first to generate a report.
-   ```
-   Then stop.
-3. Read the report.
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/patrol-findings?cronId=$CRON_ID&repo={url-encoded-repo}&status=open&limit=200" | jq '.findings'
+```
+
+Page with `nextCursor` until exhausted. If none are returned, print
+`No open security findings for {repo}. Run /security-scan --repo {repo} first.` and stop.
+Each finding's `fingerprint` is `security-{rule}-{repo-slug}-{YYYY-Www}` and its `detail` holds
+`rule`, `tier`, `severity`, `count` and the `findings` list (`file`, `line`, `description`).
 
 ---
 
 ## Step 2: Rule Classification Table
 
-Unlike `entropy-fix`, there is no shared principles file for `security-scan`'s rule set — the
-rules below are a fixed, closed set defined by `security-scan` itself. This table is the
-single source of truth for `security-fix`'s classification and is embedded directly here
-rather than loaded from a file:
+The rules below are a fixed, closed set defined by `security-scan`. This table is the single
+source of truth for classification. **Route** maps today's HITL column onto the three finding
+routes (see `/shipwright:task-store` "Finding routing"): `auto` = `kind: dev`, `pending`,
+`hitl: false`; `review` = `kind: dev`, created `blocked`, `blockedReason: "needs-review: <question>"`,
+never `hitl: true`; `plan` = `kind: prd`, `hitl: true`. `credential` is the one human-only
+exception.
 
-| rule | PR-worthy | HITL | requires-credential-action | rationale / fix guidance |
-|---|---|---|---|---|
-| `gitleaks-secret` | true | always | true | A secret ever committed to git history is compromised — code alone can't un-compromise it. Human must rotate/revoke the credential at its source before any code cleanup matters. |
-| `hardcoded-credential` | true | always | true | Same reasoning as gitleaks-secret — a live credential value found in code (Tier 2 LLM check) needs rotation, not just removal. |
-| `osv-cve` | true | never | false | Mechanical dependency-lockfile bump to the patched version. |
-| `grype-cve` | true | never | false | Mechanical base-image/dependency bump to the patched version. |
-| `zizmor-lint` | true | never | false | Mostly mechanical — SHA-pin unpinned GitHub Actions (the common case); for other zizmor findings in the same group that aren't simple pinning fixes, fix if straightforward, else note as a follow-up in the PR body. |
-| `secret-weak-compare` | true | never | false | Mechanical — swap a non-constant-time comparison for `crypto.timingSafeEqual` or equivalent. |
-| `authz-missing-check` | true | per-finding | false | Security-sensitive judgment call, not a credential issue — some routes are intentionally public. Use judgment per finding group: `hitl:false` when the missing check is unambiguous (e.g. an obviously-authenticated-only route with zero auth check), `hitl:true` when it's unclear whether the route should be public. |
-| `posture-security-md-missing` | true | never | false | Mechanical — add a `SECURITY.md` from a standard template (reporting process + supported versions). |
-| `posture-sbom-missing` | false | n/a | false | Not filed as a task — SBOM generation is a CI/tooling configuration decision, not a single mechanical code fix. Left for manual triage. |
-| `posture-branch-protection-missing` | false | n/a | false | Not filed as a task — a GitHub repo settings change, not a code PR. Left for manual triage. |
+| rule | PR-worthy | HITL (was) | Route | requires-credential-action | rationale / fix guidance |
+|---|---|---|---|---|---|
+| `gitleaks-secret` | true | always | credential | true | A secret ever committed to git history is compromised — code alone can't un-compromise it. Human must rotate/revoke the credential at its source before any code cleanup matters. |
+| `hardcoded-credential` | true | always | credential | true | Same reasoning as gitleaks-secret — a live credential value found in code (Tier 2 LLM check) needs rotation, not just removal. |
+| `osv-cve` | true | never | auto | false | Mechanical dependency-lockfile bump to the patched version. If no patched version exists, route review instead. |
+| `grype-cve` | true | never | auto | false | Mechanical base-image/dependency bump to the patched version. |
+| `zizmor-lint` | true | never | auto | false | Mostly mechanical — SHA-pin unpinned GitHub Actions; for other zizmor findings in the group that aren't simple pinning fixes, fix if straightforward, else note as a follow-up in the PR body. |
+| `secret-weak-compare` | true | never | auto | false | Mechanical — swap a non-constant-time comparison for `crypto.timingSafeEqual` or equivalent. |
+| `authz-missing-check` | true | per-finding | auto, review or plan | false | Security-sensitive judgment call, not a credential issue — some routes are intentionally public. Per Step 4. |
+| `posture-security-md-missing` | true | never | auto | false | Mechanical — add a `SECURITY.md` from a standard template (reporting process + supported versions). |
+| `posture-sbom-missing` | false | n/a | none | false | Not filed — SBOM generation is a CI/tooling decision, not a single mechanical code fix. Left for manual triage. |
+| `posture-branch-protection-missing` | false | n/a | none | false | Not filed — a GitHub repo settings change, not a code PR. Left for manual triage. |
 
-Rules with `PR-worthy: false` (`posture-sbom-missing`, `posture-branch-protection-missing`)
-are **never** queued — Step 3 filters them out before they reach the dedup or task-building
-steps, mirroring how `entropy-fix` handles its own `PR-worthy: false` rules.
+`PR-worthy: false` rules are **never** queued — Step 3 filters them out.
 
-`requires-credential-action: true` (`gitleaks-secret`, `hardcoded-credential`) is the literal
-tag this skill checks in Step 6q.3 to decide HITL routing — it is not a synonym for
-`HITL: always` in general (`authz-missing-check` can also end up `hitl: true` per-finding
-without requiring credential action), but for these two rules the two concepts coincide:
-every finding of these rules is both `HITL: always` and `requires-credential-action: true`.
-
-Do not hardcode a duplicate copy of this table elsewhere — this section is the single source
-of truth `security-fix` reads.
+**Never-auto rule.** Any finding that today's criteria would send to a human (`HITL: always`,
+or a `HITL: per-finding` group that is ambiguous, cross-boundary, precedent-free, or that
+fails pre-filing verification) must never become `auto`: credential findings stay
+`hitl: true` via `/shipwright:hitl`; the others become `review` or `plan`. Do not hardcode a
+duplicate copy of this table elsewhere.
 
 ---
 
 ## Step 3: Filter and Group Findings
 
-1. Parse the report's `## New Findings` and `## Regressed Findings` sections, in that order.
-   Collect all unchecked (`- [ ]`) findings from both — the report deliberately omits
-   "Unchanged" findings from its body, so New + Regressed is already the full actionable set.
-2. Each finding's `{id}` already encodes `rule` + `repo-slug` + `YYYY-Www` (format
-   `security-{rule}-{repo-slug}-{YYYY-Www}`, per `security-scan`'s Step 2/Step 6). Group
-   findings by `id` directly — do not re-derive `rule` separately; the id IS the group key,
-   and it is reused unchanged as the task-store task id in Step 6q.3.
-3. Filter to only groups whose rule has `PR-worthy: true` in the Step 2 table.
-4. If `--rule` flag was passed, further filter to only that rule's group. If no findings
-   match that rule ID, print: "No unchecked findings for rule `{rule_id}`. Nothing to
-   queue." and stop.
-5. Sort groups: critical first, then high, then medium, then low.
-6. If no `PR-worthy` unchecked findings exist, print:
-   ```
-   No PR-worthy findings to queue. All findings are either:
-   - Already checked off (fixed)
-   - For rules marked PR-worthy: false (posture-sbom-missing, posture-branch-protection-missing — fix manually)
-   Run /security-scan to refresh the report.
-   ```
-   Then stop.
-7. Run each surviving finding through the pre-filing verification checklist —
-   `references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
-   any further toward becoming a task. This re-verifies the finding against the current repo
-   state (the security report is a snapshot that may already be stale by the time this skill
-   runs) and catches task ID / branch collisions early. Treat
-   `references/pre-filing-verification.md` as canonical for how to apply the checklist. Per its
-   four checks:
-   - Drop findings whose file/line no longer exists or whose described gap is already fixed
-     (Checklist Items 1–2) — do not queue a task for them. Log them the same way as other
-     skipped findings (Step 6q.7 summary).
-   - Route findings that can't be confirmed by a literal check to HITL rather than assuming
-     they're safe to drop (Checklist Item 3) — this feeds into the `hitl` computation in
-     Step 6q.3.
-   - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 6q.1
-     dedup check; no separate action is needed here beyond noting the overlap.
-   This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the real queue
-   path (Step 6) operate on the same already-verified finding set.
+1. Each open finding already is one rule group (its fingerprint is the group key and is reused
+   unchanged as the task id). Skip findings whose `taskId` is already set.
+2. Filter to rules with `PR-worthy: true` in the Step 2 table.
+3. If `--rule` was passed, keep only that rule; if none match print
+   "No open findings for rule `{rule_id}`. Nothing to queue." and stop.
+4. Sort critical → high → medium → low.
+5. If nothing survives, print `No PR-worthy findings to queue.` (posture-sbom-missing and
+   posture-branch-protection-missing are left for manual triage) and stop.
+6. Run each survivor through `references/pre-filing-verification.md` (relative to the plugin
+   root) — the store finding is a snapshot that may be stale. Drop findings whose file/line no
+   longer exists or whose gap is already fixed (Items 1–2); a finding that cannot be confirmed
+   by a literal check routes `review`, never `auto` (Item 3); Item 4 (id/branch collisions) is
+   covered by Step 6.1 dedup.
 
 ---
 
 ## Step 3.5: Re-check Suppressions (defense in depth)
 
-`security-scan` already drops suppressed findings, but a stale `security-report.md` written
-before a suppression landed can still list them. Before dedup, re-check every surviving
+`security-scan` already drops suppressed findings, but a store finding recorded before a
+suppression landed can still list them. Before dedup, re-check every surviving
 finding against `.shipwright/suppressions.yml` in the **repo being fixed** (schema:
-`references/suppressions-schema.md`) so a stale report cannot refile it.
+`references/suppressions-schema.md`) so a stale finding cannot refile it.
 
 1. **Build candidates** for `osv-cve`, `grype-cve` and `posture-*` findings only, parsing the
    match key from the finding description (never a line number): `{rule: "osv"|"grype", cve,
@@ -141,71 +121,66 @@ finding against `.shipwright/suppressions.yml` in the **repo being fixed** (sche
 3. **Skip each `suppressed` finding** — remove it before dedup and task-building, and print:
    `Skipping {rule} — suppressed in .shipwright/suppressions.yml ({status}: {reason})`
    This message is distinct from the "task already active" and "recently closed" messages in
-   6q.1. If a rule group is left empty, drop the group; if no groups remain, print the Step 3
+   6.1. If a rule group is left empty, drop the group; if no groups remain, print the Step 3
    "No PR-worthy findings" message and stop.
 
 ---
 
-## Step 4: Dry-Run Output (if --dry-run)
+## Step 4: Route Each Group
 
-If `--dry-run` was passed, print a preview and stop without querying or writing to the task
-store:
+Decide the route per group using the Step 2 table:
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECURITY FIX — DRY RUN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- **credential** (`gitleaks-secret`, `hardcoded-credential`) → `hitl: true`, `kind: dev`, with a
+  `## Human steps` section (6.4). Never auto-remediated: a committed or hardcoded credential is
+  compromised the moment it exists, and only rotating or revoking it at its issuing source can
+  fix that.
+- **auto** → the rule is `HITL: never`, or an `authz-missing-check` group with a **single,
+  obvious, canonical fix shape** and existing precedent in the same repo.
+- **review** → `authz-missing-check` (or any group failing pre-filing verification) where
+  multiple plausible fixes exist, intent is unclear (public vs authenticated), there is no
+  precedent, or you are unsure. State the specific question in `blockedReason`
+  (`needs-review: <question>`).
+- **plan** → the fix is bigger than one task: it would cross repo or service boundaries or
+  needs a design decision first. `kind: prd`, `hitl: true`, description = draft problem
+  statement plus the findings.
 
-Would queue {N} tasks:
+Default toward `review` (or `plan` if large) when genuinely unsure — never toward `auto`.
 
-  1. security-{rule}-{repo-slug}-{YYYY-Www}
-     Rule: {rule description} ({severity})
-     Findings: {count} instances
-     Files: {list of unique file paths}
-     HITL: {true|false}  requires-credential-action: {true|false}
-
-  2. ...
-
-No tasks written to task store.
-Re-run without --dry-run to queue tasks.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Stop after printing.
+**Worked example:** Two `authz-missing-check` findings from the same scan. The first flags
+`src/routes/admin-users.ts:41`, a route with no auth check at all; there's no existing
+"require-admin" middleware or equivalent pattern anywhere else in the codebase to model the
+fix on, and it's genuinely unclear whether this route was meant to be public or just never
+had auth wired up — a judgment call. Per the criterion above, this finding is `hitl: true`:
+no clear precedent, ambiguous intent. Contrast that with a second finding at
+`src/routes/billing-export.ts:19`, where the file already imports `requireAuth()` and uses
+it on every other route in the same file except this one — the fix is a single, obvious,
+mechanical addition of the same middleware call already used throughout the file, so this
+finding is `hitl: false`.
 
 ---
 
-## Step 5: Cap Check
+## Step 5: Dry-Run Output (if --dry-run)
 
-If there are more than 10 rule groups to queue, note:
+Print, then stop without writing tasks, findings or a run:
 
 ```
-Found {N} rules with PR-worthy findings. Capping at 10 tasks per run.
-Queueing highest-severity rules first. Re-run after these land to continue.
+SECURITY FIX — DRY RUN ({repo})
+Would route {N} tasks:
+  1. security-{rule}-{repo-slug}-{YYYY-Www}  [auto | review | plan | credential]  {rule} ({severity}, {count} instances)
+No tasks written. Re-run without --dry-run to queue.
 ```
-
-Process only the first 10 groups (sorted by severity, per Step 3).
 
 ---
 
 ## Step 6: Queue Tasks
 
-Queueing is the only mode. Run this workflow for every run.
+Cap at 10 groups per run (highest severity first); note the cap if more remain.
 
-### 6q.1 Dedup Check
+### 6.1 Dedup Check
 
-First, detect the current repo from git: run `git remote get-url origin` and strip the
-`https://github.com/` (or `git@github.com:`, stripping the `.git` suffix) prefix to get the
-`org/repo` value — e.g. `app-vitals/shipwright`. This is the `repo` value used both to scope
-the dedup queries below and, unchanged, as the task JSON's `repo` field in 6q.3 — compute it
-once here and reuse it there.
+Query active and recently-closed tasks for the repo (URL-encode `REPO`):
 
-Derive `repo-slug` from it too: the last path segment, lowercased — e.g.
-`app-vitals/shipwright` → `shipwright`. This slug is used in task IDs throughout this skill
-(6q.3) to keep IDs unique per repo — the same repo-namespacing `security-scan` already uses
-for its own finding IDs and ledger keys.
-
-Run (URL-encode the detected repo, e.g. `app-vitals%2Fshipwright`):
+Run (URL-encoded repo, e.g. `app-vitals%2Fshipwright`; also query `status=blocked` the same way so an awaiting-review task counts as active):
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&repo={url-encoded-repo}" | jq '.tasks'
@@ -258,121 +233,53 @@ For each rule group:
   string above) — distinctly worded from the "already active" message above so operators can
   tell an active in-flight task from a recently-closed one at a glance in run output.
 
-### 6q.2 Build Task JSON
-
-For each remaining rule group, build a task object. Reuse the `repo` and `repo-slug` values
-detected in 6q.1 — do not re-derive them. The task's `id` is the finding group's `{id}`
-itself (already `security-{rule}-{repo-slug}-{YYYY-Www}` per Step 3, item 2) — reuse it
-unchanged rather than reconstructing it:
+### 6.2 Build Task JSON
 
 ```json
 {
   "id": "security-{rule}-{repo-slug}-{YYYY-Www}",
   "title": "Security fix: {rule description}",
   "source": "security-fix",
-  "originKind": "skill",
-  "originRef": "security-fix",
-  "repo": "<repo, as detected in 6q.1>",
+  "originKind": "cron",
+  "originRef": "<CRON_ID>",
+  "repo": "<REPO>",
+  "kind": "dev | prd",
   "branch": "fix/security-{rule}-{short-description}",
   "layer": "Shared",
-  "status": "pending",
-  "hitl": <true | false — computed per Step 6q.4>,
-  "description": "<findings summary — see 6q.4/6q.5>"
+  "status": "pending | blocked",
+  "blockedReason": "needs-review: <question>  (review route only)",
+  "hitl": false,
+  "description": "<see 6.3 / 6.4>"
 }
 ```
 
-`{repo-slug}` is the last path segment of the detected `repo` value (from 6q.1), lowercased.
-It namespaces the task ID per repo so the same rule scanned in two different repos in the
-same ISO week never collides — this is the exact fix for the known `entropy-fix` same-week
-multi-repo task-ID collision bug, carried over from how `security-scan` already namespaces
-its own finding IDs and ledger keys.
+Route shapes: auto = `kind: dev`, `status: pending`, `hitl: false`; review = `kind: dev`,
+`status: blocked`, `blockedReason` set, `hitl: false` (a human unblocks with
+`POST /tasks/{id}/unblock`); plan = `kind: prd`, `status: pending`, `hitl: true` (no branch);
+credential = `kind: dev`, `status: pending`, `hitl: true`. Omit `blockedReason` unless review.
+The id is the finding's fingerprint, reused unchanged. `short-description`: lowercase, hyphens,
+max 5 words.
 
-The `{YYYY-Www}` suffix uses ISO week format and is inherited directly from the finding
-group's `{id}` — do not recompute it independently; it must match the report's ID exactly so
-the dedup check in 6q.1 and any future re-run agree on the same task ID.
-
-`short-description`: lowercase, hyphens, max 5 words from the rule's description.
-
-### 6q.3 Compute the `hitl` and `requires-credential-action` Fields
-
-Look up the rule in the Step 2 classification table and route:
-
-- **`HITL: never`** → `hitl: false` unconditionally. Applies to `osv-cve`, `grype-cve`,
-  `zizmor-lint`, `secret-weak-compare`, `posture-security-md-missing`. The fix is mechanical
-  by construction — no numeric threshold ever forces these to HITL.
-- **`HITL: always`** → `hitl: true` unconditionally. Applies to `gitleaks-secret` and
-  `hardcoded-credential` — both are also `requires-credential-action: true`. These findings
-  are **never auto-remediated**: a committed or hardcoded credential is compromised the
-  moment it exists in the codebase, and a code edit alone cannot undo that — only rotating
-  or revoking the credential at its issuing source can. `security-fix` never attempts this
-  autonomously.
-- **`HITL: per-finding`** → evaluate the specific finding group and decide. Applies to
-  `authz-missing-check`. Use judgment (you are the Claude agent running this skill), grounded
-  in the Step 2 table's rationale:
-  - `hitl: false` (autonomous) when the missing check is unambiguous — an obviously
-    authenticated-only route with zero auth check.
-  - `hitl: true` (needs a human) when it's unclear whether the route should be public or
-    not — a judgment call, not a mechanical fix.
-  - No default lean either way; judge each group on its own facts.
-
-**General ambiguous-fix criterion (structures the `HITL: per-finding` judgment call above):**
-the `HITL: per-finding` bullet above says to "use judgment" per finding group but doesn't
-say what that judgment should weigh. For any finding whose rule is classified
-`HITL: per-finding` in the Step 2 table (`authz-missing-check` today), apply this additional
-structure, mirroring `consolidation-fix`'s Step 7 per-finding `hitl` heuristic:
-
-- `hitl: false` (autonomous) when there is a **single, obvious, canonical fix shape** with
-  **existing precedent elsewhere in the codebase** — e.g. the rule's own fix guidance in the
-  Step 2 table names one clear, mechanical remediation (as `osv-cve`'s "bump to the patched
-  version" or `secret-weak-compare`'s "swap in `crypto.timingSafeEqual`" already do), or this
-  finding clearly matches a fix pattern already used successfully elsewhere in this same
-  repo.
-- `hitl: true` (needs a human) when **any** of the following hold:
-  - Multiple plausible fix approaches exist and reasonable engineers could disagree about
-    which one to apply.
-  - The fix would cross repo or service boundaries (e.g. the vulnerable code path spans both
-    `plugins/shipwright/` and `agent/`, or two separate repositories).
-  - There is no clear precedent elsewhere in the codebase for how to remediate this specific
-    finding.
-  - Default toward `hitl: true` when genuinely unsure.
-
-**Worked example:** Two `authz-missing-check` findings from the same scan. The first flags
-`src/routes/admin-users.ts:41`, a route with no auth check at all; there's no existing
-"require-admin" middleware or equivalent pattern anywhere else in the codebase to model the
-fix on, and it's genuinely unclear whether this route was meant to be public or just never
-had auth wired up — a judgment call. Per the criterion above, this finding is `hitl: true`:
-no clear precedent, ambiguous intent. Contrast that with a second finding at
-`src/routes/billing-export.ts:19`, where the file already imports `requireAuth()` and uses
-it on every other route in the same file except this one — the fix is a single, obvious,
-mechanical addition of the same middleware call already used throughout the file, so this
-finding is `hitl: false`.
-
-### 6q.4 Build the Description — Autonomous Tasks (`hitl: false`)
-
-For rule groups classified `hitl: false`, the `description` field follows this shape:
+### 6.3 Description — auto, review and plan tasks
 
 ```
 Security patrol finding: {rule} — {rule description} ({severity}, tier {tier})
 
 Findings ({count} total):
 - {file}:{line} — {finding_description}
-{Include ALL findings that survived filtering. If there are more than 20, include the first
-20 and append: "(+N more — re-run /security-fix to see all)"}
+{First 20 only; append "(+N more — see the PatrolFinding {fingerprint} in the task store)"}
 
 Fix guidance: {rule's fix guidance from the Step 2 table}
 
-Rule: {rule} | Severity: {severity} | Tier: {tier} | HITL: false
+Rule: {rule} | Severity: {severity} | Tier: {tier} | Route: {auto|review|plan}
 ```
 
-### 6q.5 Build the Description — Credential-Rotation Tasks (`requires-credential-action: true`)
+For review, open with the question; for plan, open with a draft problem statement.
 
-For `gitleaks-secret` and `hardcoded-credential` findings (`requires-credential-action:
-true`), the `description` field MUST state plainly that this requires credential
-rotation/revocation and is therefore never auto-remediated, and MUST include a `## Human
-steps` section — this is what routes the task through `/shipwright:hitl`: filing the task
-with `hitl: true` plus a well-formed `## Human steps` block IS the routing mechanism (there
-is no separate skill-invocation step; `/shipwright:hitl {task-id}` finds and displays this
-section when a human or the `hitl` skill picks the task up).
+### 6.4 Description — credential-rotation tasks (`requires-credential-action: true`)
+
+Filing the task with `hitl: true` plus a well-formed `## Human steps` block IS the routing
+mechanism: `/shipwright:hitl {task-id}` finds and displays this section.
 
 ```
 Security patrol finding: {rule} — {rule description} ({severity}, tier {tier})
@@ -404,91 +311,64 @@ Pick this up via /shipwright:hitl {task-id}.
 Rule: {rule} | Severity: {severity} | Tier: {tier} | HITL: true | requires-credential-action: true
 ```
 
-### 6q.6 Write and Append
+### 6.5 Write, Append and Link Back
 
-1. Write all task objects to `/tmp/security-tasks-{unix-timestamp}.json` as a JSON array
-2. Run:
+1. Write the task array to a temp file outside the repo (`TASKS="$(mktemp -d)/security-tasks.json"`).
+2. `POST $SHIPWRIGHT_TASK_STORE_URL/tasks/bulk` with `--data-binary @"$TASKS"` (bearer auth,
+   `Content-Type: application/json`); delete the temp file afterwards.
+3. Set `taskId` back on each routed finding (the batch keeps `detail`; status stays `open`):
    ```bash
-   curl -sf -X POST \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
-     --data-binary @/tmp/security-tasks-{unix-timestamp}.json | jq .
+   curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/patrol-findings/batch" \
+     --data '{"cronId":"'"$CRON_ID"'","repo":"'"$REPO"'","findings":[{"fingerprint":"<fp>","status":"open","taskId":"<fp>"}]}'
    ```
-3. Delete the temp file after appending
+4. Record one run with the routing counts (the temp result file lives outside the repo):
+   ```bash
+   bun "${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts" record --cron "$CRON_ID" --repo "$REPO" \
+     --commit "$(git rev-parse HEAD)" --result "$RESULT"
+   ```
+   `$RESULT` = `{"outcome":"ok","metrics":{"auto":N,"review":N,"plan":N,"credential":N,"skipped":N}}`
+   (`"no_op"` when nothing was routed). Do not pass a legacy-import flag; the import belongs to
+   `/security-scan`.
 
-### 6q.7 Print Summary
+### 6.6 Print Summary
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECURITY FIX — QUEUED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
-  SKIPPED   {N} rule groups (already active, or recently closed)
-
-Tasks queued:
-  security-{rule}-{repo-slug}-{YYYY-Www} — {rule description}  [hitl: {true|false}]
-  ...
-
-{If any skipped:}
-Skipped (already active):
-  {rule} — task already in queue or in progress
-
-Skipped (recently closed, within 14-day dedup window):
-  {rule} — closed {date} as {outcome}
-
-{If any suppressed:}
-Skipped (suppressed in .shipwright/suppressions.yml):
-  {rule} — {status}: {reason}
-
-Run /shipwright:dev-task to execute autonomous tasks. HITL tasks (credential rotation,
-per-finding authz calls marked hitl:true) are picked up via /shipwright:hitl.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY FIX — {repo}: {A} auto, {R} review, {P} plan, {C} credential (hitl); {S} skipped
+{If any skipped: one line per rule — "Skipped (already active)", "Skipped (recently closed, within 14-day dedup window): {rule} — closed {date} as {outcome}", or "Skipped (suppressed in .shipwright/suppressions.yml): {rule} — {status}: {reason}".}
+Auto tasks run via the loop; review tasks wait for a human unblock; plan and credential tasks go to /shipwright:prd | /shipwright:plan-session and /shipwright:hitl.
 ```
 
-Stop after printing — this is the sole final output.
+Stop after printing.
 
 ---
 
 ## Error Handling
 
-- **Task-store query fails** (dedup in 6q.1): log the failure and stop. Do not queue tasks
-  without a dedup pass, or you risk duplicate tasks for the same finding group.
-- **Bulk append fails** (`/tasks/bulk` non-2xx): log the response body and stop. Do not retry
-  blindly; re-running the skill is idempotent because the dedup check will skip already-queued
-  rules.
-- **No PR-worthy findings**: handled in Step 3 — print the "nothing to queue" message and stop.
-- **More than 10 groups**: cap at 10 as described in Step 5. Always queue highest-severity first.
-- **No security-report.md**: handled in Step 1 — print guidance to run `/security-scan` first
-  and stop.
+- **Store read fails** (Step 1 or 6.1 dedup): log and stop. Never queue without a dedup pass.
+- **Bulk append fails**: log the response body and stop; re-running is idempotent because dedup
+  skips already-queued rules and findings with a `taskId` are skipped.
+- **Link-back or run record fails** after tasks were created: print the error and the created
+  ids; do not re-create tasks.
 
 ---
 
 ## Constraints (Do Not Violate)
 
+- **`--repo` is required** — no fallback to the current directory.
 - **One task per rule** — never bundle multiple rule findings into one task.
-- **Queue only** — this skill never opens PRs and never leaves the base branch. It only
-  writes tasks to the task store; the actual fix lands later via `dev-task` or
-  `/shipwright:hitl`.
-- **`requires-credential-action` findings always route to HITL and are never
-  auto-remediated** — `gitleaks-secret` and `hardcoded-credential` are always filed with
-  `hitl: true` and a `## Human steps` section, unconditionally. `security-fix` (and
-  `dev-task`, which never picks up `hitl: true` tasks autonomously) must never attempt to
-  rotate, revoke, or otherwise "fix" a credential finding in code alone.
-- **Repo-namespaced IDs, always** — every task ID is `security-{rule}-{repo-slug}-{YYYY-Www}`,
-  reused unchanged from the finding group's own `id` (as produced by `security-scan`) — never
-  `{rule}-{YYYY-Www}` — so same-week multi-repo runs never collide (the known `entropy-fix`
-  task-ID collision bug).
-- **`PR-worthy: false` rules are never queued** — `posture-sbom-missing` and
-  `posture-branch-protection-missing` are filtered out in Step 3 and left for manual triage.
-- **No cascade** — only queue what's in the current `security-report.md`. Do not re-scan
-  during a run.
-- **No classification table changes** — the fix skill enforces the Step 2 classification, it
-  does not modify it; the table is embedded here as this skill's single source of truth
-  rather than loaded from a shared file, since `security-scan`'s rule set has no equivalent
-  shared principles file to defer to.
-- **security-report.md is not checked off here** — a queued task only means a fix is
-  scheduled. The report's findings are checked off when the queued task actually lands its
-  fix (or, for HITL tasks, when a human completes it via `/shipwright:hitl`), via a separate
-  mechanism, not by this skill.
+- **Store only** — findings are read from, and linked back to, the task store; no finding
+  detail is written to any repo path, and no other local state is read or written.
+- **Queue only** — never opens PRs and never leaves the base branch.
+- **Three routes, one exception** — every queued finding is `auto`, `review` or `plan`.
+  `requires-credential-action` findings (`gitleaks-secret`, `hardcoded-credential`) are the
+  only `hitl: true` dev tasks, always carry `## Human steps`, and are never auto-remediated by
+  `dev-task` or this skill.
+- **Never auto a previously-human finding** — nothing today's criteria send to a human may
+  become `auto`.
+- **Repo-namespaced IDs, always** — `security-{rule}-{repo-slug}-{YYYY-Www}`, the finding's
+  fingerprint, so same-week multi-repo runs never collide (the `entropy-fix` task-ID bug).
+- **`PR-worthy: false` rules are never queued.**
+- **No cascade** — only route what is in the store now; do not re-scan during a run.
+- **No classification table changes** — this skill enforces the Step 2 table, it does not
+  modify it.
