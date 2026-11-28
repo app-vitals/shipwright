@@ -187,7 +187,7 @@ secret scan so secrets committed and later removed are still caught.
 curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" -o "$TOOLS_DIR/gitleaks.tar.gz"
 echo "141c3b2dede46d8b3a53b47116da756bd223decc0374797559a6b50ecba5590c  $TOOLS_DIR/gitleaks.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/gitleaks.tar.gz" -C "$TOOLS_DIR" gitleaks
-"$TOOLS_DIR/gitleaks" detect --source . --redact --report-format json --report-path gitleaks-report.json
+"$TOOLS_DIR/gitleaks" detect --source . --redact --report-format json --report-path "$TOOLS_DIR/gitleaks-report.json"
 ```
 
 (Full-history mode: run `gitleaks detect` **without** `--no-git` so it walks the git log.)
@@ -212,7 +212,7 @@ grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .gi
 curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o "$TOOLS_DIR/osv-scanner"
 echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  $TOOLS_DIR/osv-scanner" | sha256sum -c
 chmod +x "$TOOLS_DIR/osv-scanner"
-"$TOOLS_DIR/osv-scanner" scan --recursive --format json --output osv-report.json .
+"$TOOLS_DIR/osv-scanner" scan --recursive --format json --output "$TOOLS_DIR/osv-report.json" .
 ```
 
 > **osv-cve is authoritative for Bun-lockfile dependency CVEs.** For repos using `bun.lock`,
@@ -238,7 +238,7 @@ Anchore projects publish `grype_{version}_linux_amd64.tar.gz` plus a
 curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o "$TOOLS_DIR/grype.tar.gz"
 echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  $TOOLS_DIR/grype.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/grype.tar.gz" -C "$TOOLS_DIR" grype
-"$TOOLS_DIR/grype" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file grype-report.json
+"$TOOLS_DIR/grype" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file "$TOOLS_DIR/grype-report.json"
 ```
 
 ### 3.4 syft — SBOM generation
@@ -251,7 +251,7 @@ feeds Tier 3's SBOM-presence posture check.
 curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o "$TOOLS_DIR/syft.tar.gz"
 echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  $TOOLS_DIR/syft.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/syft.tar.gz" -C "$TOOLS_DIR" syft
-"$TOOLS_DIR/syft" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json=sbom.cyclonedx.json
+"$TOOLS_DIR/syft" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json="$TOOLS_DIR/sbom.cyclonedx.json"
 ```
 
 The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for. Note: this SBOM's
@@ -272,7 +272,7 @@ asset and hashing it locally.
 curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v1.27.0/zizmor-x86_64-unknown-linux-gnu.tar.gz" -o "$TOOLS_DIR/zizmor.tar.gz"
 echo "277f2bd8fd37cf60c42ab7afca6faa884e65440fa31e02b44bdaae60f62a358f  $TOOLS_DIR/zizmor.tar.gz" | sha256sum -c
 tar -xz -f "$TOOLS_DIR/zizmor.tar.gz" -C "$TOOLS_DIR" zizmor
-"$TOOLS_DIR/zizmor" --format json .github/workflows/ > zizmor-report.json
+"$TOOLS_DIR/zizmor" --format json .github/workflows/ > "$TOOLS_DIR/zizmor-report.json"
 ```
 
 If the repo has no `.github/workflows/` directory, record "no workflows to scan" — not a
