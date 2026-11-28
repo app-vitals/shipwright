@@ -17,7 +17,7 @@ If `$ARGUMENTS` is provided without `--auto`, focus on just that module or topic
 
 When `$ARGUMENTS` includes `--auto`, skip all interactive steps. Run the following steps in sequence, then stop. Do NOT enter the Interactive Mode steps.
 
-Auto mode runs for exactly one repo, named by `--repo org/repo` (queued per repo by the admin system-cron scheduler). Steps A1-A8 run scoped to that repo's own `state/docs-last-synced.json` and git history, and Step A9 prints the summary.
+Auto mode runs for exactly one repo, named by `--repo org/repo` (queued per repo by the admin system-cron scheduler). Steps A1-A8 run scoped to that repo's own run history (task-store `RepoCronRun` records for `docs-freshness`) and git history, and Step A9 prints the summary. This follows the system-cron contract in `docs/task-store.md`: one task per repo with `--repo {repo}` required, scan then queue in that one task (A1-A6 scan and update docs, A5.5/A7 queue follow-on tasks), and exactly one run record per run (A8). No agent-local `state/` files are read or written.
 
 ### Step A0: Confirm Auto Mode and Resolve the Repo
 
@@ -36,25 +36,29 @@ Mode: auto (unattended)
 Usage: /shipwright:research-docs --auto --repo org/repo
 ```
 
-Find the repo's clone by matching each `repos/*/`'s `git remote get-url origin` against `org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Then `git -C repos/{dirname} pull`. The local clone directory is `repos/{dirname}` (not necessarily the `org/repo` string). Rely on the per-repo freshness gate (Step A1/A2 sync anchor and diff) so a repo with no changes since its anchor is a no-op.
+Find the repo's clone by matching each `repos/*/`'s `git remote get-url origin` against `org/repo`; if none matches, clone it (`git clone https://github.com/{org}/{repo}.git repos/{repo}`). Then `git -C repos/{dirname} pull`. The local clone directory is `repos/{dirname}` (not necessarily the `org/repo` string). Rely on the per-repo freshness gate (Step A1 last-synced commit and the Step A2 diff) so a repo with no source changes since its last recorded run is a no-op.
 
-`cd` into `repos/{dirname}` and run Steps A1-A8 below scoped to that repo (all relative paths in A1-A8 — `state/docs-last-synced.json`, `docs/*.md`, `git diff`, etc. — resolve against that repo's working directory). A repo with no `docs/` directory is skipped cleanly: do not create `docs/`, do not read or write a sync anchor, do not emit a per-repo section for it in Step A9 beyond a one-line "skipped (no docs/)" note. After the last repo, `cd` back and print the aggregated Step A9 summary once.
+`cd` into `repos/{dirname}` and run Steps A1-A8 below scoped to that repo (all relative paths in A1-A8 — `docs/*.md`, `git diff`, etc. — resolve against that repo's working directory). A repo with no `docs/` directory is skipped cleanly: do not create `docs/`, do not read or record a run, do not emit a per-repo section for it in Step A9 beyond a one-line "skipped (no docs/)" note. After the last repo, `cd` back and print the aggregated Step A9 summary once.
 
-### Step A1: Read Sync Anchor
+### Step A1: Find the Last-Synced Commit
 
-Read `state/docs-last-synced.json` (relative to the current repo's working directory — see Step A0) to get the last-synced SHA:
+The last-synced point comes from the run history, not a local file. Ask the shared recorder for this repo's prior state (equivalent to `GET /cron-runs/latest?cronId=docs-freshness` for the repo):
 
 ```bash
-cat state/docs-last-synced.json 2>/dev/null
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts prior --cron docs-freshness --repo {org/repo} --legacy-shape docs-last-synced
 ```
 
-Extract the `"sha"` field. If the file does not exist or is absent, treat all source files as changed (full audit scope — no SHA filter applied).
+It prints `{latest, findings, imported}`. Use `latest.commitSha` as the last-synced SHA. `latest` is the newest `ok` or `no_op` run (a `no_op` run means the docs were already current at that commit); `failed` runs are never returned, so they never advance the point.
 
-Store: `ANCHOR_SHA={sha from file, or empty string if absent}`
+One-time import: if the repo has no run yet and a legacy `state/docs-last-synced.json` exists, the `--legacy-shape docs-last-synced` flag makes the recorder import its `sha` as the first run's commit, and the legacy file is deleted after the import succeeds. This is the only place `state/docs-last-synced.json` is touched; auto mode never reads or writes it otherwise.
+
+If there is no prior run and no legacy file (the first run), treat all source files as changed (full audit scope — no SHA filter applied).
+
+Store: `ANCHOR_SHA={latest.commitSha, or empty string on the first run}`
 
 ### Step A2: Find Changed Source Files
 
-If `ANCHOR_SHA` is set, get the list of source files changed since the last sync:
+If `ANCHOR_SHA` is set, get the list of source files changed since the last recorded run:
 
 ```bash
 git diff --name-only {ANCHOR_SHA}...HEAD
@@ -62,7 +66,7 @@ git diff --name-only {ANCHOR_SHA}...HEAD
 
 Filter to source files only (exclude `docs/`, `state/`, `.github/`). Store as `CHANGED_FILES`.
 
-If `ANCHOR_SHA` is empty (no sync anchor), set `CHANGED_FILES` to all source files (full scope).
+If `ANCHOR_SHA` is empty (first run), set `CHANGED_FILES` to all source files (full scope).
 
 ### Step A3: Filter Docs to Candidates
 
@@ -94,7 +98,7 @@ Run immediately after Step A5, against each doc Step A5 just touched (stale cand
 
 Apply the same four checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty, 6.5d Measured Values — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
 
-For each hit, file **one** task-store task via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
+For each hit, file **one** task-store task, routed per "Finding routing" below, via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
 
 ```bash
 curl -sf -X POST \
@@ -113,18 +117,18 @@ Task titles, one shape per check:
 - 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
 - 6.5d hit → `title: "Review {doc} for observed measured value"`
 
-Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
+Each quality-flag task is a **review**-route task: `kind: "dev"`, `hitl` unset, `status: "blocked"` with `blockedReason: "needs-review: <the specific question, e.g. which of the two docs is canonical>"` (these flags need human judgment before an agent edits). Also: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
 After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold, its scope rule (`docs/*.md` only — never `plugins/shipwright/` command/skill files), its spec-detection logic, and its section-grouping logic rather than re-deriving any of them here.
 
-**Over 200 lines: apply the same three-branch decision tree Step 6.6 defines** — first check whether the doc primarily documents an HTTP API (routes, params, request/response shapes) that has a corresponding generated OpenAPI spec in the repo, using the same `Glob`/`Grep` discovery Step 6.6 uses — then take exactly one branch. Auto mode never trims a doc, never creates a split file, and never applies a pointer-conversion itself: every branch files **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint).
+**Over 200 lines: apply the same three-branch decision tree Step 6.6 defines** — first check whether the doc primarily documents an HTTP API (routes, params, request/response shapes) that has a corresponding generated OpenAPI spec in the repo, using the same `Glob`/`Grep` discovery Step 6.6 uses — then take exactly one branch. Auto mode never trims a doc, never creates a split file, and never applies a pointer-conversion itself: every branch files **one** task-store task (routed as noted per branch) via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint).
 
 1. **Spec-backed, and the spec's routes already carry adequate descriptions** → file a **pointer-conversion** task instead of a split task:
    - `title: "Convert {doc} to a pointer to {spec} — exceeds {N} lines"`
    - `description`: which endpoint/param/response tables the spec already covers and can therefore be dropped, and which prose must be kept (the auth model, field semantics not expressible in OpenAPI, cross-cutting gotchas) — the same DOA-4 pattern Step 6.6 cites for `docs/agent-api.md` and `docs/agent-api-ops.md`
-   - `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being converted (**required**, see that step's note on why an unbranched task stalls silently)
+   - **auto** route (`kind: "dev"`, `status: "pending"` — required, `/tasks/bulk` rejects a task without it with a 400 — `hitl: false`), `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being converted (**required**, see that step's note on why an unbranched task stalls silently)
 2. **Spec-backed, but the spec isn't enriched** (routes exist but lack descriptions worth pointing to) → file the split task below, and state in its `description` that enriching the spec's route descriptions is a prerequisite for pointer-conversion on a future pass.
 3. **No spec exists** → file the split task below unchanged.
 
@@ -132,9 +136,21 @@ After the quality-pass checks above, also check the doc's resulting **line count
 
 - `title: "Split {doc} — exceeds {N} lines"`
 - `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6 — plus, for branch 2, the spec-enrichment prerequisite note above
-- `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
+- **review** route (`kind: "dev"`, `status: "blocked"`, `blockedReason: "needs-review: <how should the sections be grouped?>"` — the grouping needs judgment), `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
 
 Track a running count of size-governance tasks filed this way for the current repo — split proposals and pointer-conversion proposals alike, since each oversized doc yields exactly one of the two. That combined count becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
+
+### Finding routing (auto / review / plan)
+
+Every task filed by Steps A5.5 and A7 is routed one of three ways, per the finding-routing contract in `docs/task-store.md` and the task-store skill. Routing is decided at filing time; the origin stamp, `session`, `layer` and `branch` rules in those steps apply to all three routes.
+
+| Route | Task shape | docs-freshness criteria |
+|---|---|---|
+| **auto** | `kind: "dev"`, `status: "pending"`, `hitl: false` | Obvious scope and an obvious fix: a missing-doc `Document {module} module` task, or a spec-backed pointer-conversion task |
+| **review** | `kind: "dev"`, `status: "blocked"`, `blockedReason: "needs-review: <specific question>"`, never `hitl: true` | Needs human judgment before an agent acts: quality-pass flags (6.5a-d), split proposals, and `Document {concern} conventions` tasks (whether the concern deserves a doc and its scope is a judgment call) |
+| **plan** | `kind: "prd"`, `hitl: true`, description = draft problem statement plus the findings | Multi-doc or architectural: one root cause spanning three or more docs, a restructure of the docs layout, or a missing-doc cluster covering a whole subsystem. File one `prd` task for the cluster instead of one task per doc |
+
+A `prd` task for the plan route is the only task that carries `hitl: true`, because a human runs it through `/shipwright:prd` or `/shipwright:plan-session`. In short, no `hitl: true` dev task is emitted by this command. Review tasks are created directly as `blocked` (never briefly ready) and a human releases them with `POST /tasks/{id}/unblock`. Keep a running count per route for the run record (Step A8): `autoTasks`, `reviewTasks`, `planTasks`.
 
 ### Step A6: Update CLAUDE.md References
 
@@ -150,7 +166,7 @@ If it doesn't, skip this step.
 
 For any module that has no corresponding doc (identified by scanning for modules without a `docs/{module}.md` counterpart among the changed source files):
 
-Do NOT generate the doc automatically. Instead, write a follow-on task via the task store API:
+Do NOT generate the doc automatically. Instead, write a follow-on task via the task store API, routed per "Finding routing" above:
 
 ```bash
 curl -sf -X POST \
@@ -162,13 +178,13 @@ curl -sf -X POST \
 
 Every A7 task payload (structural and concern-based) also carries the same cron origin stamp as Step A5.5: `originKind: "cron"`, `originRef: "docs-freshness"`, `source: "docs-freshness"`, and `repo` — add `source` and `repo` if missing.
 
-Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased: lowercased, with every `/` and run of whitespace collapsed to a single `-`, so the slug is always one flat segment and never a nested git ref (e.g. `api/billing` → `api-billing`, giving `docs/api-billing-20260909`). `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
+Each missing module produces one **auto**-route task with: `title: "Document {module} module"`, `kind: "dev"`, `hitl: false`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased: lowercased, with every `/` and run of whitespace collapsed to a single `-`, so the slug is always one flat segment and never a nested git ref (e.g. `api/billing` → `api-billing`, giving `docs/api-billing-20260909`). `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
 
-Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `status: "pending"` (required — `/tasks/bulk` rejects a task without it with a 400), `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased by the same rule as `{module-slug}` above: every `/` and run of whitespace collapses to a single `-`, producing one flat segment rather than a nested git ref (e.g. `authorization/access-control` → `authorization-access-control`, and `secrets/credential rotation` → `secrets-credential-rotation`, giving `docs/secrets-credential-rotation-20260909`), same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"` as a **review**-route task (`kind: "dev"`, `status: "blocked"`, `blockedReason: "needs-review: <should {concern} get its own doc, and with what scope?>"`), `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased by the same rule as `{module-slug}` above: every `/` and run of whitespace collapses to a single `-`, producing one flat segment rather than a nested git ref (e.g. `authorization/access-control` → `authorization-access-control`, and `secrets/credential rotation` → `secrets-credential-rotation`, giving `docs/secrets-credential-rotation-20260909`), same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set. If the missing modules or concerns cluster into a subsystem-wide gap (see the plan route above), file one `kind: "prd"`, `hitl: true` task for the cluster in the same payload instead of the individual tasks.
 
-### Step A7.5: Commit and Open PR
+### Step A7.5: Commit and Open PR (Only on Material Change)
 
-After all doc updates are complete for this repo (Steps A5 and A6), commit and open a PR for the doc-refresh changes, scoped to this repo's working directory.
+After all doc updates are complete for this repo (Steps A5 and A6), commit and open a PR for the doc-refresh changes, scoped to this repo's working directory. A docs PR is opened only on material change, using the shared checker `${CLAUDE_PLUGIN_ROOT}/scripts/check-patrol-docs.ts` (the same one the patrol skills use before committing a patrol doc). The checker is built for a single `docs/patrols/<patrol>.md`, so its 150-line / count-table / run-history `violations` rules do not apply to the multi-file refresh (docs have their own 200-line governance in A5.5). What is reused is the `materiallyChanged` result: a timestamp-only change or a pure reorder is not material.
 
 First, check whether there are any changes to commit:
 
@@ -178,7 +194,13 @@ git status --porcelain -- docs/ CLAUDE.md
 
 If this prints nothing, there is nothing to commit — print `⏭ No doc changes to commit — skipping PR-open step` and continue to Step A8.
 
-Otherwise, create a dedicated branch, commit, push, and open a PR with the shipwright label:
+Otherwise, apply the checker per changed doc: for each changed file (modified, not newly created — a new file is always material), write its `HEAD` version to a temp file (`git show HEAD:{doc} > /tmp/{slug}.current.md`) and run:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/check-patrol-docs.ts {doc} /tmp/{slug}.current.md
+```
+
+Read `materiallyChanged` from the JSON (ignore its `violations` and exit code). `CLAUDE.md` reference additions or removals count as material. If no doc is materially changed, discard the cosmetic edits (`git checkout -- docs/ CLAUDE.md`), print `⏭ No doc is materially changed — skipping PR-open step`, and continue to Step A8. Otherwise create a dedicated branch, commit, push, and open a PR with the shipwright label:
 
 ```bash
 YYYYMMDD=$(date -u +%Y%m%d)
@@ -192,15 +214,26 @@ gh pr create --title "docs: auto-refresh ($YYYYMMDD)" --body "Automated doc refr
 
 The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring. This allows reviewers to see this step in the command text without flagging it as a repeated mutation.
 
-### Step A8: Write Sync Anchor
+### Step A8: Record the Run
 
-After all updates complete for this repo, write that repo's own sync anchor (relative to its working directory — see Step A0):
+Every run records exactly one `RepoCronRun` through the shared recorder, including no-op and failed runs. Write the result file, then record (relative to the repo's working directory — see Step A0; the file is temporary, never a `state/` file):
 
 ```bash
-echo '{"sha":"'$(git rev-parse HEAD)'","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > state/docs-last-synced.json
+cat > /tmp/docs-freshness-result.json <<EOF
+{"outcome": "ok", "metrics": {"candidatesChecked": 0, "docsUpdated": 0, "docsCurrent": 0, "claudeMdUpdated": 0, "autoTasks": 0, "reviewTasks": 0, "planTasks": 0, "qualityFlags": 0, "splitProposals": 0, "docsPrOpened": 0}}
+EOF
+bun ${CLAUDE_PLUGIN_ROOT}/scripts/cron-run-recorder.ts record --cron docs-freshness --repo {org/repo} --commit "$(git rev-parse HEAD)" --result /tmp/docs-freshness-result.json
 ```
 
-The `"sha"` and `"timestamp"` fields are required. Any future auto run for this repo will diff against this SHA. Each repo's anchor is written independently — writing repo A's anchor does not touch repo B's `state/docs-last-synced.json`.
+The result file is `{outcome: "ok" | "no_op" | "failed", metrics, machineState?, findings?}`:
+
+- `outcome` is `"ok"` when docs were updated or tasks filed, `"no_op"` when nothing changed since the last recorded commit (A2 found no changed source files, or no candidate was stale and nothing was filed), and `"failed"` on error.
+- `metrics` holds the counts above (`docsUpdated`, `autoTasks`, `reviewTasks`, `planTasks` per the routing step, and so on); every value must be a finite number (no strings, `NaN` or `null`).
+- `machineState` and `findings` are optional; docs-freshness keeps none today.
+
+Failure path: if any step errors after Step A0 (recorder `prior` call, git diff, a doc rewrite, task filing, PR creation), do not skip recording. Still run the `record` command with `outcome: "failed"` and the metrics gathered so far, then continue to Step A9 and report the error there. A `failed` run never advances the last-synced point (Step A1 only sees `ok` and `no_op` runs), so the next run re-covers the same range. The `--commit` is the repo's `HEAD` at the end of the run.
+
+Each repo's run is recorded independently — recording repo A's run does not touch repo B's history.
 
 After Step A8 (or skipping the repo for having no `docs/` directory), proceed to Step A9.
 
@@ -223,7 +256,8 @@ Repos processed: {N}
   Tasks created: {N missing-doc tasks, or "none"}
   Quality flags tasked: {N}
   Split proposals tasked: {N}
-  Sync anchor: {HEAD SHA} → state/docs-last-synced.json
+  Tasks routed: auto {N}, review {N}, plan {N}
+  Run record: {outcome} at {HEAD SHA} → cron-run-recorder (docs-freshness)
 
 {org/repo-2}: skipped (no docs/ directory)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

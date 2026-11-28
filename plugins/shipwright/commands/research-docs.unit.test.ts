@@ -27,28 +27,160 @@ describe("research-docs.md — auto mode detection", () => {
   });
 });
 
-describe("research-docs.md — auto mode sync anchor", () => {
-  it("reads state/docs-last-synced.json for the last-synced SHA", () => {
-    expect(content).toContain("state/docs-last-synced.json");
+describe("research-docs.md — auto mode last-synced point from run history", () => {
+  function stepSection(from: string, to: string): string {
+    const i = content.indexOf(from);
+    const j = content.indexOf(to, i);
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(i);
+    return content.slice(i, j);
+  }
+
+  it("Step A1 reads the last ok run via cron-run-recorder prior", () => {
+    const a1 = stepSection("### Step A1:", "### Step A2:");
+    expect(a1).toContain("cron-run-recorder.ts prior");
+    expect(a1).toContain("--cron docs-freshness");
+    expect(a1).toContain("--repo {org/repo}");
+    expect(a1).toContain("--legacy-shape docs-last-synced");
+    expect(a1).toContain("cron-runs/latest?cronId=docs-freshness");
+    expect(a1).toContain("latest.commitSha");
   });
 
-  it("treats absent sync anchor as full audit scope", () => {
-    const hasAbsentFallback =
-      content.includes("file doesn't exist") ||
-      content.includes("does not exist") ||
-      content.includes("absent") ||
-      content.includes("not found") ||
-      content.includes("missing");
-    expect(hasAbsentFallback).toBe(true);
+  it("treats no prior run and no legacy file as full audit scope", () => {
+    const a1 = stepSection("### Step A1:", "### Step A2:");
+    expect(a1).toContain("first run");
+    expect(a1).toContain("full audit scope");
   });
 
-  it("writes state/docs-last-synced.json with sha and timestamp after auto run", () => {
-    const syncAnchorIdx = content.indexOf("state/docs-last-synced.json");
-    const afterWriteIdx = content.lastIndexOf("state/docs-last-synced.json");
-    // Must appear at least twice: read and write
-    expect(syncAnchorIdx).not.toBe(afterWriteIdx);
-    expect(content).toContain('"sha"');
-    expect(content).toContain('"timestamp"');
+  it("mentions state/docs-last-synced.json only in the one-time import step", () => {
+    const occurrences = content.split("state/docs-last-synced.json").length - 1;
+    expect(occurrences).toBeGreaterThan(0);
+    const a1 = stepSection("### Step A1:", "### Step A2:");
+    expect(a1.split("state/docs-last-synced.json").length - 1).toBe(
+      occurrences,
+    );
+    expect(a1.toLowerCase()).toContain("one-time import");
+    expect(a1).toContain("deleted");
+  });
+
+  it("no longer writes a sync anchor file", () => {
+    expect(content).not.toContain("Write Sync Anchor");
+    expect(content).not.toContain('"timestamp"');
+  });
+});
+
+describe("research-docs.md — Step A8 records the run through the shared recorder", () => {
+  function a8(): string {
+    const i = content.indexOf("### Step A8: Record the Run");
+    expect(i).toBeGreaterThan(-1);
+    return content.slice(i, content.indexOf("### Step A9:", i));
+  }
+
+  it("calls cron-run-recorder record with cron, repo, commit and result file", () => {
+    const s = a8();
+    expect(s).toContain("cron-run-recorder.ts record");
+    expect(s).toContain("--cron docs-freshness");
+    expect(s).toContain("--repo {org/repo}");
+    expect(s).toContain("--commit");
+    expect(s).toContain("--result");
+  });
+
+  it("documents the result file shape and all three outcomes", () => {
+    const s = a8();
+    expect(s).toContain("machineState");
+    expect(s).toContain("findings");
+    for (const o of ['"ok"', '"no_op"', '"failed"']) expect(s).toContain(o);
+  });
+
+  it("records every run including a failed outcome on any step error", () => {
+    const s = a8();
+    expect(s.toLowerCase()).toContain("every run");
+    expect(s).toContain('outcome: "failed"');
+    expect(s.toLowerCase()).toContain("any step");
+  });
+
+  it("metrics carry routed counts and are finite numbers", () => {
+    const s = a8();
+    for (const m of ["auto", "review", "plan", "docsUpdated"]) {
+      expect(s).toContain(m);
+    }
+    expect(s.toLowerCase()).toContain("finite");
+  });
+
+  it("no longer talks about a sync anchor", () => {
+    expect(content.toLowerCase()).not.toContain("sync anchor");
+  });
+});
+
+describe("research-docs.md — three-way finding routing", () => {
+  function routing(): string {
+    const i = content.indexOf("### Finding routing (auto / review / plan)");
+    expect(i).toBeGreaterThan(-1);
+    return content.slice(i, content.indexOf("### Step A6:", i));
+  }
+
+  it("documents auto, review and plan routes per docs/task-store.md", () => {
+    const s = routing();
+    expect(s).toContain("docs/task-store.md");
+    expect(s).toContain("**auto**");
+    expect(s).toContain("**review**");
+    expect(s).toContain("**plan**");
+    expect(s).toContain('kind: "dev"');
+    expect(s).toContain('status: "blocked"');
+    expect(s).toContain('blockedReason: "needs-review:');
+    expect(s).toContain('kind: "prd"');
+    expect(s).toContain("hitl: false");
+  });
+
+  it("documents docs-freshness routing criteria", () => {
+    const s = routing().toLowerCase();
+    expect(s).toContain("pointer-conversion");
+    expect(s).toContain("judgment");
+    expect(s).toContain("multi-doc");
+  });
+
+  it("never emits a hitl: true dev task", () => {
+    expect(content).toContain("no `hitl: true` dev task is emitted");
+    const auto = content.slice(
+      content.indexOf("## Auto Mode"),
+      content.indexOf("## Interactive Mode"),
+    );
+    for (const line of auto.split("\n")) {
+      if (line.includes("hitl: true")) {
+        expect(line).toMatch(/prd|plan|never|no `hitl/i);
+      }
+    }
+  });
+
+  it("A5.5 and A7 reference the routes and keep the branch requirement", () => {
+    const a55 = content.slice(
+      content.indexOf("### Step A5.5:"),
+      content.indexOf("### Step A6:"),
+    );
+    const a7 = content.slice(
+      content.indexOf("### Step A7:"),
+      content.indexOf("### Step A7.5:"),
+    );
+    expect(a55).toContain("needs-review:");
+    expect(a7).toContain("Finding routing");
+    expect(a7).toContain("branch");
+  });
+});
+
+describe("research-docs.md — docs PR only on material change via shared checker", () => {
+  it("Step A7.5 uses check-patrol-docs.ts and skips the PR when nothing is material", () => {
+    const i = content.indexOf("### Step A7.5:");
+    const s = content.slice(i, content.indexOf("### Step A8:", i));
+    expect(s).toContain("check-patrol-docs.ts");
+    expect(s).toContain("materiallyChanged");
+    expect(s.toLowerCase()).toContain("no doc is materially changed");
+  });
+});
+
+describe("research-docs.md — system-cron description template", () => {
+  it("is one task per repo: scan then queue, with --repo {repo}", () => {
+    expect(content).toContain("scan then queue");
+    expect(content).toContain("--repo {repo}");
   });
 });
 
@@ -155,11 +287,8 @@ describe("research-docs.md — auto mode per-repo iteration", () => {
     expect(content).toContain("do not create `docs/`");
   });
 
-  it("documents each repo's sync anchor being written independently", () => {
-    const hasIndependentAnchor =
-      content.includes("independently") &&
-      content.includes("state/docs-last-synced.json");
-    expect(hasIndependentAnchor).toBe(true);
+  it("documents each repo's run being recorded independently", () => {
+    expect(content).toContain("independently");
   });
 
   it("Step A9 aggregates a per-repo summary across all processed repos", () => {
@@ -344,7 +473,7 @@ describe("research-docs.md — quality pass", () => {
 
     // Must reuse the same endpoint Step A7 documents — not invent a new one
     const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
-    const stepA7End = content.indexOf("### Step A8: Write Sync Anchor");
+    const stepA7End = content.indexOf("### Step A8: Record the Run");
     const stepA7Section = content.slice(stepA7Idx, stepA7End);
     expect(stepA7Section).toContain("/tasks/bulk");
 
@@ -604,7 +733,7 @@ describe("research-docs.md — branch field on auto-mode bulk task payloads", ()
 
   it("Step A7's missing-doc-module task payload computes a docs/{module-slug}-{YYYYMMDD} branch", () => {
     const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
-    const stepA8Idx = content.indexOf("### Step A8: Write Sync Anchor");
+    const stepA8Idx = content.indexOf("### Step A8: Record the Run");
     expect(stepA7Idx).toBeGreaterThan(-1);
     expect(stepA8Idx).toBeGreaterThan(stepA7Idx);
     const section = content.slice(stepA7Idx, stepA8Idx);
@@ -626,7 +755,7 @@ describe("research-docs.md — branch field on auto-mode bulk task payloads", ()
 
   it("Step A7's concern-based task payload computes a docs/{concern-slug}-{YYYYMMDD} branch", () => {
     const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
-    const stepA8Idx = content.indexOf("### Step A8: Write Sync Anchor");
+    const stepA8Idx = content.indexOf("### Step A8: Record the Run");
     const section = content.slice(stepA7Idx, stepA8Idx);
 
     const concernTitleIdx = section.indexOf(
