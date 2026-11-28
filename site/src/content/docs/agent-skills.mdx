@@ -174,6 +174,16 @@ separate auto/review/plan counts. Requires entropy-scan to have run first.
 *Invocation:* Backs the `/shipwright:entropy-fix` command — see
 [Commands Reference](/docs/commands-reference#maintenance-patrols).
 
+### agent-readiness
+
+Score one repo (`--repo org/repo`, required) against the agent-readiness catalogue with a
+deterministic scorer: every file-based and GitHub/task-store detector runs, the level is computed,
+and one readiness snapshot and one run record are posted to the task store. No model judgment, no
+tasks queued, no repo files written.
+
+*Invocation:* Backs the `/shipwright:agent-readiness` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
 ### environments-scan
 
 Scan one repo (`--repo org/repo`, required) for environment readiness gaps: lockfile, pinned tool

@@ -522,10 +522,11 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     await prisma.$disconnect();
   });
 
-  it("seeds all seven definitions disabled in the default account", async () => {
+  it("seeds all eight definitions disabled in the default account", async () => {
     await service.seedDefaults();
     const defs = await service.list({ accountId: null });
     expect(defs.map((d) => d.id).sort()).toEqual([
+      "agent-readiness",
       "consolidation-patrol",
       "docs-freshness",
       "entropy-patrol",
@@ -554,6 +555,12 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     expect(schedules["consolidation-patrol"]).toBe("0 5 * * 1");
     for (const d of defs) expect(d.repoScope).toBe("all");
     expect(schedules.environments).toBe("0 3 * * 1");
+    expect(schedules["agent-readiness"]).toBe("0 8 * * *");
+    expect(byId["agent-readiness"].enabled).toBe(false);
+    expect(byId["agent-readiness"].repoScope).toBe("all");
+    expect(byId["agent-readiness"].descriptionTemplate).toBe(
+      "/shipwright:agent-readiness --repo {repo}",
+    );
     expect(byId.environments.enabled).toBe(false);
     expect(byId.environments.descriptionTemplate).toBe(
       "/shipwright:environments-scan --repo {repo}\n/shipwright:environments-fix --repo {repo}",
@@ -609,7 +616,7 @@ describeOrSkip("SystemCronService.seedDefaults (integration)", () => {
     );
     expect(def?.descriptionTemplate).toBe("custom {repo}");
     expect(def?.enabled).toBe(true);
-    expect(await service.list({ accountId: null })).toHaveLength(7);
+    expect(await service.list({ accountId: null })).toHaveLength(8);
   });
 
   it("leaves an edited patrol definition intact on re-seed", async () => {
