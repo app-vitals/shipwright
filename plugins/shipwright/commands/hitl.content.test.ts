@@ -45,7 +45,14 @@ describe("hitl.md — findings suppression close-out step (FPS-2.1)", () => {
 
   it("drafts false_positive and accepted_risk entries for osv/grype/posture/entropy rules", () => {
     const s = extractFindingsSuppressionSubStep(content);
-    for (const t of ["false_positive", "accepted_risk", "osv-cve", "grype-cve", "posture-", "entropy"]) {
+    for (const t of [
+      "false_positive",
+      "accepted_risk",
+      "osv-cve",
+      "grype-cve",
+      "posture-",
+      "entropy",
+    ]) {
       expect(s).toContain(t);
     }
     expect(s).toContain(".shipwright/suppressions.yml");
@@ -71,7 +78,9 @@ describe("hitl.md — findings suppression close-out step (FPS-2.1)", () => {
   });
 
   it("does not use line numbers in match keys", () => {
-    expect(extractFindingsSuppressionSubStep(content)).toContain("no line numbers");
+    expect(extractFindingsSuppressionSubStep(content)).toContain(
+      "no line numbers",
+    );
   });
 });
 
@@ -139,7 +148,8 @@ describe("hitl.md — fingerprint resolution (GLB-2.2)", () => {
     const mentionsLookup =
       lower.includes("git blame") || lower.includes("git log");
     expect(mentionsLookup).toBe(true);
-    expect(lower).toContain("security-report.md");
+    expect(lower).toContain("patrolfinding");
+    expect(lower).not.toContain("security-report.md");
   });
 });
 
@@ -302,6 +312,8 @@ describe("hitl.md — concise task context, ask last (CSM-2.4)", () => {
     const s = step4();
     expect(s).toContain("Details: {link}");
     expect(s).toContain("as the **last line**");
-    expect(s.indexOf("Details: {link}")).toBeLessThan(s.indexOf("Ready for step 1?"));
+    expect(s.indexOf("Details: {link}")).toBeLessThan(
+      s.indexOf("Ready for step 1?"),
+    );
   });
 });

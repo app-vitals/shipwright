@@ -48,9 +48,9 @@ The parser does not fill in a missing `expires`; it rejects the entry and sugges
 
 | Skill | Step | Behavior |
 |---|---|---|
-| `security-scan` | 5.5 | Drops suppressed `osv`/`grype`/`posture` findings before they become records: they never reach `security-report.md` or the ledger. |
+| `security-scan` | 5.5 | Drops suppressed `osv`/`grype`/`posture` findings before they become records: they are never recorded as PatrolFindings. |
 | `entropy-scan` | 3.5 | Drops suppressed findings before `docs/patrols/entropy.md`, the handoff and the summary; they are excluded from the run record's `findings`, `high`, `medium` and `low` metrics. |
-| `security-fix` | 3.5 | Re-checks surviving findings before dedup, so a stale `security-report.md` written before a suppression landed cannot refile a task. Prints `Skipping {rule} — suppressed in .shipwright/suppressions.yml ({status}: {reason})`. |
+| `security-fix` | 3.5 | Re-checks surviving findings before dedup, so a stale store finding recorded before a suppression landed cannot refile a task. Prints `Skipping {rule} — suppressed in .shipwright/suppressions.yml ({status}: {reason})`. |
 | `entropy-fix` | 3.5 | Same re-check for the scan handoff (`.entropy-patrol/findings.json`). |
 
 All four call the shared script from the repo being scanned or fixed:

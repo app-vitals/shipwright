@@ -34,13 +34,95 @@ describe("SKILL.md — frontmatter", () => {
   });
 });
 
-describe("SKILL.md — reads security-report.md as input", () => {
-  it("references security-report.md as the input report", () => {
-    expect(content).toContain("security-report.md");
+describe("SKILL.md — reads open PatrolFindings from the store", () => {
+  it("reads findings from GET /patrol-findings for the repo", () => {
+    expect(content).toContain("/patrol-findings?cronId=");
+    expect(content).toContain("status=open");
   });
 
   it("requires security-scan to have run first", () => {
     expect(content).toContain("/security-scan");
+  });
+
+  it("sets taskId back on routed findings", () => {
+    expect(content).toContain("/patrol-findings/batch");
+    expect(content).toContain('"taskId"');
+  });
+});
+
+describe("SKILL.md — requires --repo (PCR-3.3)", () => {
+  it("documents --repo as required with a usage error", () => {
+    expect(content).toContain("`--repo org/repo` — **required**");
+    expect(content).toContain("Usage: /security-fix --repo org/repo");
+    expect(content).toContain("Error: --repo is required.");
+  });
+
+  it("takes the system-cron id via --cron", () => {
+    expect(content).toContain("--cron ID");
+  });
+});
+
+describe("SKILL.md — no repo write path, no legacy state files (PCR-3.3)", () => {
+  it("never mentions security-report.md or a docs/ output", () => {
+    expect(content).not.toContain("security-report.md");
+    expect(content).not.toContain("docs/");
+  });
+
+  it("never reads or writes the legacy state files", () => {
+    expect(content).not.toContain("security-patrol-ledger");
+    expect(content).not.toContain("security-patrol-last-run");
+    expect(content).not.toContain("--legacy-shape");
+  });
+
+  it("keeps temp files outside the repo", () => {
+    expect(content).toContain("mktemp");
+  });
+});
+
+describe("SKILL.md — three routes plus the credential exception (PCR-3.3)", () => {
+  it("documents auto, review and plan route shapes", () => {
+    expect(content).toContain(
+      "auto = `kind: dev`, `status: pending`, `hitl: false`",
+    );
+    expect(content).toContain("review = `kind: dev`");
+    expect(content).toContain("needs-review:");
+    expect(content).toContain("POST /tasks/{id}/unblock");
+    expect(content).toContain("plan = `kind: prd`");
+  });
+
+  it("stamps routed tasks with originKind cron and the cron id as originRef", () => {
+    expect(content).toContain('"originKind": "cron"');
+    expect(content).toContain('"originRef": "<CRON_ID>"');
+  });
+
+  it("records one run with auto/review/plan metrics", () => {
+    expect(content).toContain("cron-run-recorder.ts");
+    expect(content).toContain('"auto":N,"review":N,"plan":N');
+  });
+
+  it("keeps credential findings as the only hitl:true dev route via /shipwright:hitl", () => {
+    expect(content).toContain("the one human-only\nexception");
+    expect(content).toContain(
+      "`hitl: true`, `kind: dev`, with a\n  `## Human steps`",
+    );
+    expect(content).toContain("only `hitl: true` dev tasks");
+  });
+
+  it("never makes a previously-human finding auto", () => {
+    expect(content).toContain("Never-auto rule");
+    expect(content).toContain("must never become `auto`");
+    expect(content).toContain("never toward `auto`");
+    expect(content).toContain("Never auto a previously-human finding");
+  });
+
+  it("maps the per-finding authz rule to auto, review or plan, never hitl:true", () => {
+    const idx = content.indexOf("| `authz-missing-check`");
+    const row = content.slice(idx, idx + 250);
+    expect(row).toContain("auto, review or plan");
+  });
+
+  it("routes unconfirmable pre-filing findings to review, not auto", () => {
+    expect(content).toContain("routes `review`, never `auto`");
   });
 });
 
@@ -52,6 +134,10 @@ describe("SKILL.md — Setup: flags", () => {
   it("documents --rule flag", () => {
     expect(content).toContain("--rule");
   });
+
+  it("instructs to cd into the --repo local clone", () => {
+    expect(content).toContain("`cd` into the repo's local clone before Step 1");
+  });
 });
 
 describe("SKILL.md — bulk task-store POST pattern", () => {
@@ -59,8 +145,9 @@ describe("SKILL.md — bulk task-store POST pattern", () => {
     expect(content).toContain("/tasks/bulk");
   });
 
-  it("writes a temp file before posting", () => {
-    expect(content).toContain("/tmp/security-tasks-");
+  it("writes a temp file outside the repo before posting", () => {
+    expect(content).toContain("security-tasks.json");
+    expect(content).toContain("mktemp");
   });
 });
 
@@ -236,7 +323,7 @@ describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () =
     expect(step).toBeGreaterThan(
       content.indexOf("## Step 3: Filter and Group Findings"),
     );
-    expect(step).toBeLessThan(content.indexOf("## Step 4: Dry-Run Output"));
+    expect(step).toBeLessThan(content.indexOf("## Step 5: Dry-Run Output"));
   });
 
   it("reads .shipwright/suppressions.yml via the shared script", () => {
@@ -259,10 +346,10 @@ describe("SKILL.md — honors suppressions (.shipwright/suppressions.yml)", () =
 });
 
 describe("PLU-4.4 origin provenance", () => {
-  it("files tasks with originKind skill and its own name as originRef", () => {
+  it("files tasks with originKind cron and the system-cron id as originRef", () => {
     const text = readFileSync(join(import.meta.dir, "SKILL.md"), "utf8");
-    expect(text).toContain('"originKind": "skill"');
-    expect(text).toContain('"originRef": "security-fix"');
+    expect(text).toContain('"originKind": "cron"');
+    expect(text).toContain('"originRef": "<CRON_ID>"');
   });
 
   it("still writes source unchanged", () => {
