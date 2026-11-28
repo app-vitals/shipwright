@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type RecorderDeps,
-  type RunContext,
   filterLegacy,
   loadPriorState,
   parseLegacyShape,
+  type RecorderDeps,
+  type RunContext,
   runWithRecorder,
 } from "./cron-run-recorder.ts";
 
@@ -22,7 +22,10 @@ function fakeStore(opts: {
   failPost?: "batch" | "run";
 }) {
   const calls: Call[] = [];
-  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetchFn = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -145,8 +148,18 @@ const security = {
 const errors = {
   lastRun: "2026-11-22T00:00:00.000Z",
   issues: {
-    "111": { status: "unresolved", count: 4, lastSeen: "2026-11-22T00:00:00.000Z", repo: REPO },
-    "222": { status: "resolved", count: 1, lastSeen: "2026-11-22T00:00:00.000Z", repo: "app-vitals/vitals-os" },
+    "111": {
+      status: "unresolved",
+      count: 4,
+      lastSeen: "2026-11-22T00:00:00.000Z",
+      repo: REPO,
+    },
+    "222": {
+      status: "resolved",
+      count: 1,
+      lastSeen: "2026-11-22T00:00:00.000Z",
+      repo: "app-vitals/vitals-os",
+    },
   },
   serviceRepoMap: {
     api: { status: "mapped", repo: "shipwright", matchedAt: "x.ts:1" },
@@ -173,40 +186,68 @@ describe("filterLegacy", () => {
   test("error-patrol-ledger keeps the repo's issues and serviceRepoMap in machineState", () => {
     const r = filterLegacy("error-patrol-ledger", errors, REPO);
     expect(r?.findings.map((f) => f.fingerprint)).toEqual(["111"]);
-    expect(Object.keys(r?.machineState.serviceRepoMap as object)).toEqual(["api"]);
+    expect(Object.keys(r?.machineState.serviceRepoMap as object)).toEqual([
+      "api",
+    ]);
   });
 
   test("entropy-patrol-last-run: per-repo map entry, else global lastRun", () => {
     const perRepo = filterLegacy(
       "entropy-patrol-last-run",
-      { repos: { [REPO]: { lastRun: "2026-11-01T00:00:00Z" }, "o/x": { lastRun: "z" } } },
+      {
+        repos: {
+          [REPO]: { lastRun: "2026-11-01T00:00:00Z" },
+          "o/x": { lastRun: "z" },
+        },
+      },
       REPO,
     );
     expect(perRepo?.machineState.lastRun).toBe("2026-11-01T00:00:00Z");
     expect(perRepo?.findings).toEqual([]);
-    const global = filterLegacy("entropy-patrol-last-run", { lastRun: "2026-11-02T00:00:00Z" }, REPO);
+    const global = filterLegacy(
+      "entropy-patrol-last-run",
+      { lastRun: "2026-11-02T00:00:00Z" },
+      REPO,
+    );
     expect(global?.machineState.lastRun).toBe("2026-11-02T00:00:00Z");
     expect(
-      filterLegacy("entropy-patrol-last-run", { repos: { "o/x": { lastRun: "z" } } }, REPO),
+      filterLegacy(
+        "entropy-patrol-last-run",
+        { repos: { "o/x": { lastRun: "z" } } },
+        REPO,
+      ),
     ).toBeNull();
   });
 
   test("docs-last-synced: flat anchor or per-repo map", () => {
     expect(
-      filterLegacy("docs-last-synced", { sha: "s1", timestamp: "t1" }, REPO)?.machineState,
+      filterLegacy("docs-last-synced", { sha: "s1", timestamp: "t1" }, REPO)
+        ?.machineState,
     ).toMatchObject({ sha: "s1", timestamp: "t1" });
     expect(
-      filterLegacy("docs-last-synced", { "o/x": { sha: "no", timestamp: "t" } }, REPO),
+      filterLegacy(
+        "docs-last-synced",
+        { "o/x": { sha: "no", timestamp: "t" } },
+        REPO,
+      ),
     ).toBeNull();
   });
 
   test("returns null when nothing belongs to the repo", () => {
-    expect(filterLegacy("consolidation-ledger", { candidates: { z: { repo: "o/x", status: "tracking" } } }, REPO)).toBeNull();
+    expect(
+      filterLegacy(
+        "consolidation-ledger",
+        { candidates: { z: { repo: "o/x", status: "tracking" } } },
+        REPO,
+      ),
+    ).toBeNull();
     expect(filterLegacy("consolidation-ledger", "garbage", REPO)).toBeNull();
   });
 
   test("parseLegacyShape rejects unknown shapes", () => {
-    expect(parseLegacyShape("security-patrol-ledger")).toBe("security-patrol-ledger");
+    expect(parseLegacyShape("security-patrol-ledger")).toBe(
+      "security-patrol-ledger",
+    );
     expect(parseLegacyShape("nope")).toBeNull();
   });
 });
@@ -215,10 +256,18 @@ describe("recorder", () => {
   test("posts exactly one ok run with commit, metrics and times", async () => {
     const store = fakeStore({ latest: { machineState: { k: 1 } } });
     const { deps } = makeDeps(store);
-    await runWithRecorder(ctx({ taskId: "SC-1" }), async (prior) => {
-      expect(prior.latest?.machineState).toEqual({ k: 1 });
-      return { outcome: "ok", metrics: { scanned: 3 }, machineState: { k: 2 } };
-    }, deps);
+    await runWithRecorder(
+      ctx({ taskId: "SC-1" }),
+      async (prior) => {
+        expect(prior.latest?.machineState).toEqual({ k: 1 });
+        return {
+          outcome: "ok",
+          metrics: { scanned: 3 },
+          machineState: { k: 2 },
+        };
+      },
+      deps,
+    );
     const posts = runPosts(store);
     expect(posts).toHaveLength(1);
     expect(posts[0].body).toMatchObject({
@@ -231,16 +280,22 @@ describe("recorder", () => {
       machineState: { k: 2 },
     });
     expect(posts[0].body?.startedAt).toBe("2026-11-27T06:00:00.000Z");
-    expect(String(posts[0].body?.finishedAt) > String(posts[0].body?.startedAt)).toBe(true);
+    expect(
+      String(posts[0].body?.finishedAt) > String(posts[0].body?.startedAt),
+    ).toBe(true);
   });
 
   test("records outcome failed (one run) and rethrows when the work throws", async () => {
     const store = fakeStore({ latest: { machineState: {} } });
     const { deps } = makeDeps(store);
     await expect(
-      runWithRecorder(ctx(), async () => {
-        throw new Error("scan exploded");
-      }, deps),
+      runWithRecorder(
+        ctx(),
+        async () => {
+          throw new Error("scan exploded");
+        },
+        deps,
+      ),
     ).rejects.toThrow("scan exploded");
     const posts = runPosts(store);
     expect(posts).toHaveLength(1);
@@ -251,17 +306,28 @@ describe("recorder", () => {
   test("posts the work's findings via /patrol-findings/batch", async () => {
     const store = fakeStore({ latest: { machineState: {} } });
     const { deps } = makeDeps(store);
-    await runWithRecorder(ctx(), async () => ({
-      outcome: "ok",
-      metrics: {},
-      findings: [{ fingerprint: "f1", status: "open" }],
-    }), deps);
+    await runWithRecorder(
+      ctx(),
+      async () => ({
+        outcome: "ok",
+        metrics: {},
+        findings: [{ fingerprint: "f1", status: "open" }],
+      }),
+      deps,
+    );
     const batch = store.calls.find((c) => c.path === "/patrol-findings/batch");
-    expect(batch?.body).toMatchObject({ cronId: "consolidation-patrol", repo: REPO, findings: [{ fingerprint: "f1" }] });
+    expect(batch?.body).toMatchObject({
+      cronId: "consolidation-patrol",
+      repo: REPO,
+      findings: [{ fingerprint: "f1" }],
+    });
   });
 
   test("loadPriorState reads latest and findings", async () => {
-    const store = fakeStore({ latest: { id: "x", machineState: { a: 1 } }, findings: [{ fingerprint: "f" }] });
+    const store = fakeStore({
+      latest: { id: "x", machineState: { a: 1 } },
+      findings: [{ fingerprint: "f" }],
+    });
     const { deps } = makeDeps(store);
     const prior = await loadPriorState(ctx(), deps);
     expect(prior.latest?.id).toBe("x");
@@ -273,20 +339,31 @@ describe("recorder", () => {
 
 describe("legacy import", () => {
   const LEGACY = "/state/consolidation-ledger.json";
-  const lctx = () => ctx({ legacyShape: "consolidation-ledger", legacyPath: LEGACY });
+  const lctx = () =>
+    ctx({ legacyShape: "consolidation-ledger", legacyPath: LEGACY });
 
   test("404 + legacy file: imports filtered findings, seeds prior, deletes file after success, logs once", async () => {
     const store = fakeStore({ latest: null });
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(consolidation) });
     let seen: unknown;
-    await runWithRecorder(lctx(), async (prior) => {
-      seen = prior.imported;
-      return { outcome: "ok", metrics: {}, machineState: { own: true } };
-    }, h.deps);
+    await runWithRecorder(
+      lctx(),
+      async (prior) => {
+        seen = prior.imported;
+        return { outcome: "ok", metrics: {}, machineState: { own: true } };
+      },
+      h.deps,
+    );
     expect((seen as { findings: unknown[] }).findings).toHaveLength(1);
     const batch = store.calls.find((c) => c.path === "/patrol-findings/batch");
-    expect((batch?.body?.findings as { fingerprint: string }[]).map((f) => f.fingerprint)).toEqual(["fpA"]);
-    const run = runPosts(store)[0].body as { machineState: Record<string, unknown> };
+    expect(
+      ((batch?.body?.findings ?? []) as { fingerprint: string }[]).map(
+        (f) => f.fingerprint,
+      ),
+    ).toEqual(["fpA"]);
+    const run = runPosts(store)[0].body as {
+      machineState: Record<string, unknown>;
+    };
     expect(run.machineState.own).toBe(true);
     expect(run.machineState.lastRun).toBe(consolidation.lastRun);
     expect(h.deleted).toEqual([LEGACY]);
@@ -297,21 +374,35 @@ describe("legacy import", () => {
     const store = fakeStore({ latest: null, failPost: "batch" });
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(consolidation) });
     await expect(
-      runWithRecorder(lctx(), async () => ({ outcome: "ok", metrics: {} }), h.deps),
+      runWithRecorder(
+        lctx(),
+        async () => ({ outcome: "ok", metrics: {} }),
+        h.deps,
+      ),
     ).rejects.toThrow();
     expect(h.deleted).toEqual([]);
     expect(LEGACY in h.files).toBe(true);
     expect(h.logs.filter((l) => l.includes("legacy import"))).toHaveLength(0);
     const posts = runPosts(store);
     expect(posts.every((p) => p.body?.outcome === "failed")).toBe(true);
-    expect(posts.every((p) => !(p.body?.machineState as Record<string, unknown> | undefined)?.lastRun)).toBe(true);
+    expect(
+      posts.every(
+        (p) =>
+          !(p.body?.machineState as Record<string, unknown> | undefined)
+            ?.lastRun,
+      ),
+    ).toBe(true);
   });
 
   test("failed run post leaves the file and does not log the import", async () => {
     const store = fakeStore({ latest: null, failPost: "run" });
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(consolidation) });
     await expect(
-      runWithRecorder(lctx(), async () => ({ outcome: "ok", metrics: {} }), h.deps),
+      runWithRecorder(
+        lctx(),
+        async () => ({ outcome: "ok", metrics: {} }),
+        h.deps,
+      ),
     ).rejects.toThrow();
     expect(h.deleted).toEqual([]);
     expect(h.logs.filter((l) => l.includes("legacy import"))).toHaveLength(0);
@@ -321,7 +412,13 @@ describe("legacy import", () => {
     const store = fakeStore({ latest: null });
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(consolidation) });
     await expect(
-      runWithRecorder(lctx(), async () => { throw new Error("x"); }, h.deps),
+      runWithRecorder(
+        lctx(),
+        async () => {
+          throw new Error("x");
+        },
+        h.deps,
+      ),
     ).rejects.toThrow("x");
     expect(h.deleted).toEqual([]);
   });
@@ -329,7 +426,11 @@ describe("legacy import", () => {
   test("repeat run finds /latest and never reads a local file", async () => {
     const store = fakeStore({ latest: { machineState: {} } });
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(consolidation) });
-    await runWithRecorder(lctx(), async () => ({ outcome: "no_op", metrics: {} }), h.deps);
+    await runWithRecorder(
+      lctx(),
+      async () => ({ outcome: "no_op", metrics: {} }),
+      h.deps,
+    );
     expect(h.reads).toEqual([]);
     expect(h.deleted).toEqual([]);
   });
@@ -337,16 +438,29 @@ describe("legacy import", () => {
   test("404 and no legacy file: plain first run", async () => {
     const store = fakeStore({ latest: null });
     const h = makeDeps(store);
-    await runWithRecorder(lctx(), async () => ({ outcome: "ok", metrics: {} }), h.deps);
+    await runWithRecorder(
+      lctx(),
+      async () => ({ outcome: "ok", metrics: {} }),
+      h.deps,
+    );
     expect(h.deleted).toEqual([]);
-    expect(store.calls.some((c) => c.path === "/patrol-findings/batch")).toBe(false);
+    expect(store.calls.some((c) => c.path === "/patrol-findings/batch")).toBe(
+      false,
+    );
   });
 
   test("legacy file with only other repos' entries imports nothing and keeps the file", async () => {
     const store = fakeStore({ latest: null });
-    const other = { lastRun: "x", candidates: { z: { repo: "o/x", status: "tracking" } } };
+    const other = {
+      lastRun: "x",
+      candidates: { z: { repo: "o/x", status: "tracking" } },
+    };
     const h = makeDeps(store, { [LEGACY]: JSON.stringify(other) });
-    await runWithRecorder(lctx(), async () => ({ outcome: "ok", metrics: {} }), h.deps);
+    await runWithRecorder(
+      lctx(),
+      async () => ({ outcome: "ok", metrics: {} }),
+      h.deps,
+    );
     expect(h.deleted).toEqual([]);
   });
 });

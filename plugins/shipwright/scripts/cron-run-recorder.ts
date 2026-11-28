@@ -252,7 +252,8 @@ async function mustOk(res: Response, what: string): Promise<Response> {
 function legacyPathFor(ctx: RunContext): string | null {
   if (!ctx.legacyShape) return null;
   return (
-    ctx.legacyPath ?? join(resolveWorkspacePath(), "state", `${ctx.legacyShape}.json`)
+    ctx.legacyPath ??
+    join(resolveWorkspacePath(), "state", `${ctx.legacyShape}.json`)
   );
 }
 
@@ -433,8 +434,12 @@ export async function runWithRecorder(
 
 // ─── Production wiring + CLI ──────────────────────────────────────────────────
 
-export function buildProductionDeps(clock: Clock = SystemClock()): RecorderDeps {
-  const baseUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim().replace(/\/$/, "");
+export function buildProductionDeps(
+  clock: Clock = SystemClock(),
+): RecorderDeps {
+  const baseUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "")
+    .trim()
+    .replace(/\/$/, "");
   const token = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
   if (!baseUrl || !token) {
     throw new Error(
@@ -452,7 +457,10 @@ export function buildProductionDeps(clock: Clock = SystemClock()): RecorderDeps 
   };
 }
 
-function parseArgs(argv: string[]): { cmd: string; flags: Record<string, string> } {
+function parseArgs(argv: string[]): {
+  cmd: string;
+  flags: Record<string, string>;
+} {
   const [cmd = "", ...rest] = argv;
   const flags: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
@@ -470,7 +478,8 @@ function ctxFromFlags(f: Record<string, string>): RunContext {
   let legacyShape: LegacyShape | undefined;
   if (f["legacy-shape"]) {
     legacyShape = parseLegacyShape(f["legacy-shape"]) ?? undefined;
-    if (!legacyShape) throw new Error(`unknown --legacy-shape ${f["legacy-shape"]}`);
+    if (!legacyShape)
+      throw new Error(`unknown --legacy-shape ${f["legacy-shape"]}`);
   }
   return {
     cronId: f.cron,
@@ -484,18 +493,25 @@ function ctxFromFlags(f: Record<string, string>): RunContext {
   };
 }
 
-export async function main(argv: string[], deps: RecorderDeps): Promise<number> {
+export async function main(
+  argv: string[],
+  deps: RecorderDeps,
+): Promise<number> {
   const { cmd, flags } = parseArgs(argv);
   const ctx = ctxFromFlags(flags);
   if (cmd === "prior") {
-    process.stdout.write(`${JSON.stringify(await loadPriorState(ctx, deps))}\n`);
+    process.stdout.write(
+      `${JSON.stringify(await loadPriorState(ctx, deps))}\n`,
+    );
     return 0;
   }
   if (cmd === "record") {
     if (!ctx.commitSha || !flags.result) {
       throw new Error("--commit and --result are required");
     }
-    const parsed = JSON.parse(readFileSync(flags.result, "utf-8")) as Partial<Omit<WorkResult, "outcome">> & {
+    const parsed = JSON.parse(readFileSync(flags.result, "utf-8")) as Partial<
+      Omit<WorkResult, "outcome">
+    > & {
       outcome?: Outcome;
     };
     const outcome = parsed.outcome;
@@ -527,7 +543,9 @@ export async function main(argv: string[], deps: RecorderDeps): Promise<number> 
     );
     return 0;
   }
-  throw new Error("usage: cron-run-recorder.ts prior|record --cron ID --repo org/repo ...");
+  throw new Error(
+    "usage: cron-run-recorder.ts prior|record --cron ID --repo org/repo ...",
+  );
 }
 
 if (import.meta.main) {
