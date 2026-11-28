@@ -434,11 +434,21 @@ export const detectTracingMetricsInstrumented: Detector = (r) =>
 const CANARY =
   /\b(canary|blue[-/ ]?green|argo-?rollouts?|flagger|progressive[-_ ]delivery|traffic[-_ ]split)\b|kind:\s*Rollout\b/i;
 
+// Paths where a staging+production mention actually describes a deploy pipeline.
+const DEPLOY_PATH = /(^|\/)(deploy|deployment|deployments|k8s|kubernetes|helm|charts|infra|terraform)\//;
+const LOCKFILE = /(^|\/)(pnpm-lock\.ya?ml|yarn\.lock|[\w.-]+\.lock|package-lock\.json)$/;
+
 export const detectStagedCanaryDeploy: Detector = (r) => {
   const fs = files(r);
-  const deployFiles = fs.filter((f) => CI_FILE.test(f) || /\.(ya?ml|tf)$/.test(f));
+  const yamlOrTf = fs.filter((f) => CI_FILE.test(f) || (/\.(ya?ml|tf)$/.test(f) && !LOCKFILE.test(f)));
+  if (CANARY.test(text(r, yamlOrTf))) return "pass";
+  // The staging+production keyword fallback only counts CI and deploy-ish files —
+  // OpenAPI specs, compose files and lockfiles mention those words incidentally.
+  const deployFiles = fs.filter(
+    (f) => CI_FILE.test(f) || (!LOCKFILE.test(f) && (f.endsWith(".tf") || (DEPLOY_PATH.test(f) && /\.ya?ml$/.test(f)))),
+  );
   const t = text(r, deployFiles);
-  return yn(CANARY.test(t) || (/\bstaging\b/i.test(t) && /\b(production|prod)\b/i.test(t)));
+  return yn(/\bstaging\b/i.test(t) && /\b(production|prod)\b/i.test(t));
 };
 
 // ---------- registry ----------

@@ -215,6 +215,26 @@ describe("individual detectors", () => {
       run("staged-canary-deploy", { ".github/workflows/d.yml": "environment: staging\nenvironment: production" }),
     ).toBe("pass");
   });
+  test("staged-canary-deploy: staging+production in lockfile/OpenAPI/compose does not pass", () => {
+    const both = "servers:\n  - url: https://staging.example.com\n  - url: https://production.example.com\n";
+    expect(
+      run("staged-canary-deploy", {
+        "package.json": '{"name":"app"}',
+        "pnpm-lock.yaml": "staging-utils@1.0.0:\n  production-deps@2.0.0:\n",
+        "openapi.yaml": both,
+        "docker-compose.yml": both,
+      }),
+    ).toBe("fail");
+  });
+  test("staged-canary-deploy: staging+production in deploy-ish paths passes", () => {
+    const both = "env: staging\n---\nenv: production\n";
+    expect(run("staged-canary-deploy", { "deploy/values.yaml": both })).toBe("pass");
+    expect(run("staged-canary-deploy", { "helm/app/values-envs.yaml": both })).toBe("pass");
+    expect(run("staged-canary-deploy", { "k8s/overlays.yml": both })).toBe("pass");
+    expect(run("staged-canary-deploy", { "main.tf": 'workspace = "staging"\n# production\n' })).toBe("pass");
+    // CANARY keywords still count in any yaml.
+    expect(run("staged-canary-deploy", { "rollout.yaml": "kind: Rollout\n" })).toBe("pass");
+  });
   test("large files: ratio threshold", () => {
     const small = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [`s${i}.ts`, lines(10)]));
     expect(run("large-files-within-limit", { ...small, "big.ts": lines(501) })).toBe("pass"); // 1/20 = 5%
