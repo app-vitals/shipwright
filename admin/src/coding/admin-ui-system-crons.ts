@@ -31,10 +31,17 @@ import { escapeHtml } from "@app-vitals/agent-admin/admin-ui-styles";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { validateScopeForm, validateTemplateForm } from "./system-cron-form.ts";
 import {
+  formatMetrics,
+  formatScheduledFor,
   formatTriggerRow,
+  pickRepoRun,
   RECENT_RUNS_LIMIT,
+  REPO_HISTORY_LIMIT,
+  type RepoRunHistory,
+  type RepoRunSummary,
   recentTriggers,
   type SystemCronTrigger,
+  shortSha,
 } from "./system-cron-runs.ts";
 
 export const SYSTEM_CRONS_SETTINGS_PATH = "/admin/settings/system-crons";
@@ -128,6 +135,12 @@ export interface SystemCronsFetchers {
     id: string,
     limit: number,
   ) => Promise<{ triggers: SystemCronTrigger[] }>;
+  /** GET /cron-runs (PCR-1.1): newest runs for one cron + repo. */
+  fetchCronRuns?: (
+    cronId: string,
+    repo: string,
+    limit: number,
+  ) => Promise<{ runs: RepoRunSummary[] }>;
 }
 
 /** A cron's recent triggers, or `null` when the fetch failed (or isn't wired). */
@@ -165,6 +178,8 @@ interface PageOpts {
   crons: SystemCronItem[];
   /** Recent triggers keyed by cron id; a missing/null entry renders the fetch-failure note. */
   recentRuns?: Record<string, RecentRuns>;
+  /** Latest run per repo, keyed by cron id (PCR-5.1); a missing cron entry hides the table. */
+  repoHistory?: Record<string, RepoRunHistory>;
   degraded: boolean;
   lookupConfigured: boolean;
   notice?: string;
@@ -299,6 +314,47 @@ function renderRecentRuns(runs: RecentRuns | undefined): string {
   return `<div data-recent-runs="list">${heading}<ul style="font-size:13px;margin:4px 0 0;padding-left:20px">${rows}</ul></div>`;
 }
 
+/** Repos a definition covers: its selection, or every non-archived repo the lookup App sees. */
+export function inScopeRepos(
+  c: SystemCronItem,
+  listing: RepoListing | undefined,
+): string[] {
+  if ((c.repoScope ?? "all") === "selected") return [...(c.repos ?? [])].sort();
+  if (!listing || !("repos" in listing)) return [];
+  return listing.repos
+    .filter((r) => !r.archived)
+    .map((r) => r.fullName)
+    .sort();
+}
+
+function renderRepoHistory(repos: string[], history: RepoRunHistory): string {
+  const heading = `<div class="form-label" style="margin-top:16px">Run history by repository</div>`;
+  if (repos.length === 0) {
+    return `<div data-repo-history="empty">${heading}<p class="empty-state" style="margin:4px 0 0">No repositories in scope.</p></div>`;
+  }
+  const rows = repos
+    .slice(0, REPO_HISTORY_LIMIT)
+    .map((repo) => {
+      const run = history[repo];
+      const name = `<td>${escapeHtml(repo)}</td>`;
+      if (run === undefined)
+        return `<tr data-repo-run="${escapeHtml(repo)}" data-state="unavailable">${name}<td colspan="4">Unavailable</td></tr>`;
+      if (run === null)
+        return `<tr data-repo-run="${escapeHtml(repo)}" data-state="never">${name}<td colspan="4">never run</td></tr>`;
+      const failed = run.outcome === "failed";
+      const outcome = failed
+        ? `<span class="badge" data-run-failed style="color:var(--vos-danger, #b91c1c)">failed</span>`
+        : escapeHtml(run.outcome === "no_op" ? "no-op" : run.outcome);
+      return `<tr data-repo-run="${escapeHtml(repo)}" data-state="${failed ? "failed" : "ran"}">${name}<td>${escapeHtml(formatScheduledFor(run.finishedAt))}</td><td>${outcome}</td><td><code>${escapeHtml(shortSha(run.commitSha))}</code></td><td>${escapeHtml(formatMetrics(run.metrics))}</td></tr>`;
+    })
+    .join("");
+  const more =
+    repos.length > REPO_HISTORY_LIMIT
+      ? `<p style="font-size:12px;margin:4px 0 0">Showing ${REPO_HISTORY_LIMIT} of ${repos.length} repositories.</p>`
+      : "";
+  return `<div data-repo-history="table">${heading}<table style="font-size:13px;width:100%;margin-top:4px"><thead><tr><th align="left">Repository</th><th align="left">Last run</th><th align="left">Outcome</th><th align="left">Commit</th><th align="left">Metrics</th></tr></thead><tbody>${rows}</tbody></table>${more}</div>`;
+}
+
 function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
   const id = encodeURIComponent(c.id);
   const draft = opts.draft?.id === c.id ? opts.draft : undefined;
@@ -330,6 +386,7 @@ function renderCronCard(c: SystemCronItem, opts: PageOpts): string {
       <button type="submit" class="btn btn-primary">Save</button>
     </form>
     ${renderRecentRuns(opts.recentRuns?.[c.id])}
+    ${opts.repoHistory?.[c.id] ? renderRepoHistory(inScopeRepos(c, opts.repoListings?.[accountKey(c)]), opts.repoHistory[c.id] as RepoRunHistory) : ""}
   </div>`;
 }
 
@@ -445,6 +502,30 @@ export function registerSystemCronsRoutes(
         ),
       );
     }
+    const repoHistory: Record<string, RepoRunHistory> = {};
+    const fetchRuns = deps.fetchCronRuns;
+    if (fetchRuns) {
+      await Promise.all(
+        crons.map(async (cron) => {
+          const history: RepoRunHistory = {};
+          repoHistory[cron.id] = history;
+          const repos = inScopeRepos(
+            cron,
+            repoListings[cron.accountId ?? ""],
+          ).slice(0, REPO_HISTORY_LIMIT);
+          await Promise.all(
+            repos.map(async (repo) => {
+              try {
+                const { runs } = await fetchRuns(cron.id, repo, 1);
+                history[repo] = runs[0] ? pickRepoRun(runs[0]) : null;
+              } catch {
+                history[repo] = undefined;
+              }
+            }),
+          );
+        }),
+      );
+    }
     const noticeKey = c.req.query("notice");
     const errorKey = c.req.query("error");
     return deps.html(
@@ -453,6 +534,7 @@ export function registerSystemCronsRoutes(
         nav: getSettingsNav(c) ?? { sections: [] },
         crons,
         recentRuns,
+        repoHistory,
         repoListings,
         degraded,
         lookupConfigured: await lookupAppConfigured(c),

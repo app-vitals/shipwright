@@ -576,3 +576,74 @@ describe("Repo selection (CRS-1.3)", () => {
     });
   });
 });
+
+describe("per-repo run history (PCR-5.1)", () => {
+  const run = (over: Record<string, unknown> = {}) => ({
+    repo: "acme/api",
+    outcome: "ok",
+    finishedAt: "2026-11-27T06:04:00.000Z",
+    commitSha: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+    metrics: { scanned: 12, auto: 2 },
+    machineState: { secret: "SENTINEL-MACHINE-STATE" },
+    ...over,
+  });
+
+  async function render(runs: Record<string, unknown>, repos: string[]) {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([makeCron({ repoScope: "selected", repos })]),
+      fetchCronRuns: async (_id: string, repo: string) => ({
+        runs: runs[repo] ? [runs[repo] as never] : [],
+      }),
+      githubEnterpriseApi: gheApi({ slug: "lookup-app" }),
+    });
+    const res = await app.request(PATH, {
+      headers: { Cookie: await adminCookie() },
+    });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  it("renders one row per in-scope repo: last run, never run, and failed marker", async () => {
+    const html = await render(
+      {
+        "acme/api": run(),
+        "acme/web": run({ repo: "acme/web", outcome: "failed" }),
+      },
+      ["acme/api", "acme/web", "acme/new"],
+    );
+    expect(html.match(/data-repo-run="/g)?.length).toBe(3);
+    expect(html).toMatch(/data-repo-run="acme\/api" data-state="ran"/);
+    expect(html).toContain("2026-11-27 06:04 UTC");
+    expect(html).toContain("9fceb02");
+    expect(html).toContain("auto 2 · scanned 12");
+    expect(html).toMatch(
+      /data-repo-run="acme\/new" data-state="never"[\s\S]*?never run/,
+    );
+    expect(html).toMatch(
+      /data-repo-run="acme\/web" data-state="failed"[\s\S]*?data-run-failed/,
+    );
+  });
+
+  it("never renders machineState content", async () => {
+    const html = await render({ "acme/api": run() }, ["acme/api"]);
+    expect(html).toContain('data-repo-run="acme/api"');
+    expect(html).not.toContain("SENTINEL-MACHINE-STATE");
+    expect(html).not.toContain("machineState");
+  });
+
+  it("marks a repo unavailable when its fetch fails, without failing the page", async () => {
+    const app = createCodingTestApp({
+      ...makeCodingMockDeps(),
+      ...makeStore([makeCron({ repoScope: "selected", repos: ["acme/api"] })]),
+      fetchCronRuns: async () => {
+        throw new Error("boom");
+      },
+    });
+    const res = await app.request(PATH, {
+      headers: { Cookie: await adminCookie() },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toMatch(/data-state="unavailable"/);
+  });
+});

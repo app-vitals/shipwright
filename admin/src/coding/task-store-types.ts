@@ -4,5407 +4,5985 @@
  */
 
 export interface paths {
-    "/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List tasks
-         * @description Returns `{ tasks, total, limit, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. Unknown query params (including `?offset`) are a 400, and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    status?: string;
-                    state?: "open" | "closed" | "in_progress" | "ready" | "blocked";
-                    source?: string;
-                    session?: string;
-                    /** @description Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). */
-                    repo?: string | string[];
-                    /** @description Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter. */
-                    org?: string | string[];
-                    assignee?: string;
-                    /** @description Only tasks whose owner (requester email) equals this exactly. */
-                    owner?: string;
-                    /** @description Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400. */
-                    originKind?: "document" | "skill" | "cron" | "human";
-                    /** @description Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id. */
-                    originRef?: string;
-                    claimedBy?: string;
-                    branch?: string;
-                    pr?: string;
-                    limit?: string;
-                    /** @description Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor; `total` is the exact column size. Paginated list only; an unknown value is a 400. */
-                    column?: "planning" | "ideas" | "queued" | "in_progress" | "blocked";
-                    /** @description Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. A malformed cursor is a 400. Paginated list only. */
-                    cursor?: string;
-                    ready?: "true" | "false";
-                    /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
-                    accountId?: string;
-                    hitl?: "true" | "false";
-                    /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally. */
-                    kind?: "dev" | "prd" | "initiative" | "idea";
-                    /** @description Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility. */
-                    scopeAgentIds?: string;
-                    /** @description Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`. */
-                    scopeRepos?: string;
-                    sort?: "asc" | "desc";
-                    /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
-                    updatedSince?: string;
-                    /** @description Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
-                    createdFrom?: string;
-                    /** @description Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
-                    createdTo?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of tasks with total count */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskListResponse"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Create a task
-         * @description Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateTaskBody"];
-                };
-            };
-            responses: {
-                /** @description Created task */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — the agent token's account scope could not be resolved */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body) */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/tasks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tasks/bulk": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * List tasks
+     * @description Returns `{ tasks, total, limit, nextCursor, scopeDegraded }`. `nextCursor` is an opaque keyset cursor (the last row's createdAt + id) — pass it back as `?cursor=` to fetch the next page with stable ordering (createdAt, id; reversed for `sort=desc`); it is `null` on the last page. Unknown query params (including `?offset`) are a 400, and a malformed cursor is a 400. `?ready=true` / `?state=blocked` responses always have `nextCursor: null`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.
+     */
+    get: {
+      parameters: {
+        query?: {
+          status?: string;
+          state?: "open" | "closed" | "in_progress" | "ready" | "blocked";
+          source?: string;
+          session?: string;
+          /** @description Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). */
+          repo?: string | string[];
+          /** @description Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter. */
+          org?: string | string[];
+          assignee?: string;
+          /** @description Only tasks whose owner (requester email) equals this exactly. */
+          owner?: string;
+          /** @description Only tasks with this origin kind. Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400. */
+          originKind?: "document" | "skill" | "cron" | "human";
+          /** @description Only tasks with this origin ref (exact match). For cron tasks this is the SystemCronDefinition id. */
+          originRef?: string;
+          claimedBy?: string;
+          branch?: string;
+          pr?: string;
+          limit?: string;
+          /** @description Only tasks the admin board places in this column (planning, ideas, queued, in_progress, blocked) — identical to bucketTaskColumn, including dependency-blocked, hitl and PR-blocked tasks. Composes with limit/cursor; `total` is the exact column size. Paginated list only; an unknown value is a 400. */
+          column?: "planning" | "ideas" | "queued" | "in_progress" | "blocked";
+          /** @description Opaque keyset cursor from a previous response's `nextCursor`. Returns rows after that (createdAt, id) position. A malformed cursor is a 400. Paginated list only. */
+          cursor?: string;
+          ready?: "true" | "false";
+          /** @description Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account. */
+          accountId?: string;
+          hitl?: "true" | "false";
+          /** @description Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=<prd|initiative|idea>&ready=true` is always empty — ready.ts excludes every non-dev kind structurally. */
+          kind?: "dev" | "prd" | "initiative" | "idea";
+          /** @description Admin tokens only: comma-separated agent ids. With `scopeRepos`, restricts the list to tasks whose `assignee` is in these ids OR whose `repo` is in `scopeRepos` (assignee only, not claimedBy). The scope is active when either param is present; an empty scope returns no tasks. ANDs with every other filter. Agent tokens get a 400 — they cannot widen their own visibility. */
+          scopeAgentIds?: string;
+          /** @description Admin tokens only: comma-separated repos (`org/repo`). See `scopeAgentIds`. */
+          scopeRepos?: string;
+          sort?: "asc" | "desc";
+          /** @description Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
+          updatedSince?: string;
+          /** @description Only return tasks with createdAt >= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
+          createdFrom?: string;
+          /** @description Only return tasks with createdAt <= this ISO timestamp (inclusive). Applies to the paginated list only, not `?state=ready|blocked`. */
+          createdTo?: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk insert tasks
-         * @description Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's `accountId` is stamped from the caller exactly as for `POST /tasks`; an agent token's id collision returns the generic `task id unavailable` 409 body.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["BulkInsertBody"];
-                };
-            };
-            responses: {
-                /** @description Bulk insert result */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["BulkInsertResponse"];
-                    };
-                };
-                /** @description Bad request — malformed body, a missing repo key, or more than 500 tasks in one batch */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — the agent token's account scope could not be resolved */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — a task id in the batch is unavailable; the entire batch was rolled back */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Webhook delivery failed; the entire batch was rolled back */
-                502: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of tasks with total count */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskListResponse"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/by-pr": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    /**
+     * Create a task
+     * @description Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. A task may be created blocked (`status: "blocked"` plus `blockedReason`) in one call so it is never briefly ready: the server stamps `blockedAt` when none is supplied (a supplied value wins), and `POST /tasks/{id}/unblock` clears both. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["CreateTaskBody"];
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Mark merged tasks deployed or released by PR number
-         * @description For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of `repo` whose `pr` is in `prNumbers` and whose status is `merged` is moved to `status` (`deployed` | `released`) and its `deployedAt`/`releasedAt` is stamped with `at` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported `unchanged` (idempotent); tasks in any other status are `skipped` with their status and never modified. At most 100 PR numbers per call. Equivalent manual flow: `GET /tasks?pr=&repo=` then `PATCH /tasks/:id`.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchTasksByPrBody"];
-                };
-            };
-            responses: {
-                /** @description Per-task outcome */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PatchTasksByPrResponse"];
-                    };
-                };
-                /** @description Bad request — empty or more than 100 prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — a task changed status concurrently; the whole call was rolled back, retry */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Webhook delivery failed; the whole call was rolled back */
-                502: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Created task */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        trace?: never;
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — the agent token's account scope could not be resolved */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body) */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/distinct": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get distinct session and repo values
-         * @description Returns distinct `sessions`, `repos` (`org/repo` strings), and `orgs` (the `org` prefix of each `repo`) across the caller's visible task set — useful for populating filter dropdowns in a UI.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Distinct values */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DistinctResponse"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/bulk": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tasks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Bulk insert tasks
+     * @description Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's `accountId` is stamped from the caller exactly as for `POST /tasks`; an agent token's id collision returns the generic `task id unavailable` 409 body. Tasks created with `status: "blocked"` get `blockedAt` stamped by the server when none is supplied (a supplied value wins), same as `POST /tasks`.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["BulkInsertBody"];
         };
-        /**
-         * Get a task by ID
-         * @description Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Bulk insert result */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["BulkInsertResponse"];
+          };
         };
-        put?: never;
-        post?: never;
-        /**
-         * Delete a task
-         * @description Deletes a task and its TaskEvent audit rows. Agent tokens can only delete tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos). Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Deleted */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Bad request — malformed body, a missing repo key, or more than 500 tasks in one batch */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        options?: never;
-        head?: never;
-        /**
-         * Update a task
-         * @description Applies partial task fields. Agent tokens can only update tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["UpdateTaskBody"];
-                };
-            };
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        trace?: never;
+        /** @description Forbidden — the agent token's account scope could not be resolved */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — a task id in the batch is unavailable; the entire batch was rolled back */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Webhook delivery failed; the entire batch was rolled back */
+        502: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/{id}/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Atomically claim a task
-         * @description Atomically claims a pending task via a single conditional `UPDATE ... WHERE status='pending' AND "claimedBy" IS NULL`, setting `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeping it if already set) in one round-trip. Agent tokens send no body — the service pins `claimedBy` to the calling agent's ID server-side; admin tokens must supply `{ claimedBy: string }`. Returns `200` with the claimed task, or `409` if the task is already claimed or not in `pending` status. A DB-level CHECK constraint independently enforces that a row can never have `status='pending'` with a non-null `claimedBy` simultaneously, as defense-in-depth against any write path — including manual admin PATCHes — that might otherwise leave a task claimed-yet-pending.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["ClaimBody"];
-                };
-            };
-            responses: {
-                /** @description Claimed task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — already claimed */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/by-pr": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tasks/{id}/heartbeat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Mark merged tasks deployed or released by PR number
+     * @description For automation that knows PRs, not task ids (MPD-1.2). In ONE transaction, every task of `repo` whose `pr` is in `prNumbers` and whose status is `merged` is moved to `status` (`deployed` | `released`) and its `deployedAt`/`releasedAt` is stamped with `at` (default now), with TaskEvent rows — a bundle of tasks on one PR is all-or-nothing. Tasks already at the target status are reported `unchanged` (idempotent); tasks in any other status are `skipped` with their status and never modified. At most 100 PR numbers per call. Equivalent manual flow: `GET /tasks?pr=&repo=` then `PATCH /tasks/:id`.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchTasksByPrBody"];
         };
-        get?: never;
-        put?: never;
-        /**
-         * Touch heartbeatAt on a claimed task
-         * @description Updates `heartbeatAt` to now. Agents call this periodically to renew a claim before any long-running operation (dispatching a subagent, waiting on CI) so the stale-claim reaper doesn't reclaim the task mid-pipeline. This write is deliberately excluded from both the `task.write` webhook and the TaskEvent audit trail — it's the highest-volume write path in the service and a heartbeat-only change isn't an audit-worthy event.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Per-task outcome */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PatchTasksByPrResponse"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request — empty or more than 100 prNumbers, non-positive-integer PR number, status not deployed|released, malformed repo or at */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — repo is outside the agent token's repo scope, or its account scope could not be resolved */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — a task changed status concurrently; the whole call was rolled back, retry */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Webhook delivery failed; the whole call was rolled back */
+        502: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/{id}/complete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mark a task as done
-         * @description Sets `status=done` and `completedAt` to now, ending the task's lifecycle successfully.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    trace?: never;
+  };
+  "/tasks/distinct": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tasks/{id}/fail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * Get distinct session and repo values
+     * @description Returns distinct `sessions`, `repos` (`org/repo` strings), and `orgs` (the `org` prefix of each `repo`) across the caller's visible task set — useful for populating filter dropdowns in a UI.
+     */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Distinct values */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DistinctResponse"];
+          };
         };
-        get?: never;
-        put?: never;
-        /**
-         * Mark a task as blocked
-         * @description Sets `status=blocked`, pausing the task (it returns to `pending` on retry). Optional body `{ reason: string }` records why.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["FailBody"];
-                };
-            };
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
     };
-    "/tasks/{id}/release": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Release a task back to pending
-         * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, and resets `status=pending`. Use when an agent stops work without completing or failing, so the task becomes claimable again.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tasks/{id}/skip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * Get a task by ID
+     * @description Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.
+     */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Record a skip — increments skipCount, auto-blocks at threshold
-         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["SkipBody"];
-                };
-            };
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/{id}/skip/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a task
+     * @description Deletes a task and its TaskEvent audit rows. Agent tokens can only delete tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos). Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.
+     */
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Reset skip tracking — skipCount back to 0
-         * @description Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by the skip threshold.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Deleted */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/{id}/unblock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update a task
+     * @description Applies partial task fields. Agent tokens can only update tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Atomically unblock a task to pending, pr_open, merged, deployed or released
-         * @description Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["UnblockBody"];
-                };
-            };
-            responses: {
-                /** @description Unblocked task */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Task"];
-                    };
-                };
-                /** @description Bad request — unknown `to`, or a non-pending `to` on a task with no `pr` */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["UpdateTaskBody"];
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tasks/{id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Max records to return */
-                    limit?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Task's event history */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskEventsResponse"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/tokens": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Atomically claim a task
+     * @description Atomically claims a pending task via a single conditional `UPDATE ... WHERE status='pending' AND "claimedBy" IS NULL`, setting `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeping it if already set) in one round-trip. Agent tokens send no body — the service pins `claimedBy` to the calling agent's ID server-side; admin tokens must supply `{ claimedBy: string }`. Returns `200` with the claimed task, or `409` if the task is already claimed or not in `pending` status. A DB-level CHECK constraint independently enforces that a row can never have `status='pending'` with a non-null `claimedBy` simultaneously, as defense-in-depth against any write path — including manual admin PATCHes — that might otherwise leave a task claimed-yet-pending.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /**
-         * List all tokens
-         * @description Admin-only. Returns token metadata (hash, label, agentId) for every token — raw token values are never returned once past creation.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Array of token metadata */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskToken"][];
-                    };
-                };
-                /** @description Forbidden — admin token required */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["ClaimBody"];
         };
-        put?: never;
-        /**
-         * Create a new token — raw value returned exactly once
-         * @description Admin-only. Body is optional: `{ label?, agentId? }`. Omitting `agentId` creates an unrestricted admin token; supplying it creates an agent-scoped token. Only the token's SHA-256 hash is persisted — the raw value is included in this response and never retrievable again.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["TokenBody"];
-                };
-            };
-            responses: {
-                /** @description Created token including the one-time raw value */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskTokenWithRaw"];
-                    };
-                };
-                /** @description Forbidden — admin token required */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Claimed task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — already claimed */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/tokens/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Revoke a token
-         * @description Admin-only. Soft-deletes the token by setting `revokedAt` — the record is not removed, so its history stays intact, but the raw token stops authenticating requests.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Revoked token metadata */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskToken"];
-                    };
-                };
-                /** @description Forbidden — admin token required */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Token not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        /**
-         * Update token label and/or agentId
-         * @description Admin-only. Body: `{ label?, agentId? }`. Returns `400` if the target token has already been revoked.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["TokenBody"];
-                };
-            };
-            responses: {
-                /** @description Updated token metadata */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TaskToken"];
-                    };
-                };
-                /** @description Bad request — token is revoked */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — admin token required */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Token not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Touch heartbeatAt on a claimed task
+     * @description Updates `heartbeatAt` to now. Agents call this periodically to renew a claim before any long-running operation (dispatching a subagent, waiting on CI) so the stale-claim reaper doesn't reclaim the task mid-pipeline. This write is deliberately excluded from both the `task.write` webhook and the TaskEvent audit trail — it's the highest-volume write path in the service and a heartbeat-only change isn't an audit-worthy event.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /**
-         * List pull requests
-         * @description Returns `{ prs, total, limit, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos. */
-                    repo?: string | string[];
-                    /** @description Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND). */
-                    org?: string | string[];
-                    /** @description PR number (parsed as integer) */
-                    prNumber?: string;
-                    state?: "open" | "merged" | "closed";
-                    reviewState?: "pending" | "in_progress" | "posted" | "approved";
-                    /** @description Filter by staged flag */
-                    staged?: "true" | "false";
-                    /** @description Max records to return */
-                    limit?: string;
-                    /** @description When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does. */
-                    ready?: "true" | "false";
-                    /** @description When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open). */
-                    blocked?: "true" | "false";
-                    /** @description Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering. */
-                    sort?: "asc" | "desc";
-                    /** @description Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
-                    updatedSince?: string;
-                    /** @description Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values. */
-                    origin?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of pull requests */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PrListResponse"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/claim": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claim a pull request (atomic)
-         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["ClaimPrBody"];
-                };
-            };
-            responses: {
-                /** @description Updated existing claim */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description New claim created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404) */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — already claimed with same commitSha */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/claim-next": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Mark a task as done
+     * @description Sets `status=done` and `completedAt` to now, ending the task's lifecycle successfully.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Atomic find-and-claim of oldest eligible PR
-         * @description Atomically finds and claims the oldest eligible PR not yet claimed by the calling agent, in one round-trip — useful for agents implementing a pull-based queue instead of manually claiming a specific PR. Optional `maxConcurrent` (default `1`) caps how many PRs the agent may hold at once; if the agent already has that many claimed, returns `204`. Agent tokens see only PRs in their configured repo scope; admin tokens see all. Returns `200` with `{ pr, phase }`, or `204` if nothing eligible.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["ClaimNextBody"];
-                };
-            };
-            responses: {
-                /** @description PR claimed — returns {pr, phase} */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ClaimNextResponse"];
-                    };
-                };
-                /** @description No eligible PR found */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/census": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Batch upsert PR origin/author/branch/title/state metadata
-         * @description Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CensusBody"];
-                };
-            };
-            responses: {
-                /** @description Upserted PR rows, one per input entry */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CensusResponse"];
-                    };
-                };
-                /** @description Bad request — malformed entry, or more than 200 entries in one batch */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — an entry's repo is outside the agent token's scope */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/census/cursor": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Mark a task as blocked
+     * @description Sets `status=blocked`, pausing the task (it returns to `pending` on retry). Optional body `{ reason: string }` records why.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /**
-         * Get the census incremental-search-window cursor for a repo
-         * @description Returns `{ cursor }`: the max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin` is not null, or `null` when no such row exists. Used by POM-4.1's census sweep to derive its incremental search window.
-         */
-        get: {
-            parameters: {
-                query: {
-                    /** @description Repository in org/repo format. */
-                    repo: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Census cursor */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CensusCursorResponse"];
-                    };
-                };
-                /** @description Bad request — missing or malformed repo */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — repo is outside the agent token's scope */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["FailBody"];
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Fetch a single pull request
-         * @description Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Pull request record */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update pull request fields
-         * @description Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["UpdatePrBody"];
-                };
-            };
-            responses: {
-                /** @description Updated pull request */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/release": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/{id}/heartbeat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Release a task back to pending
+     * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, and resets `status=pending`. Use when an agent stops work without completing or failing, so the task becomes claimable again.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Touch heartbeatAt for a claimed PR
-         * @description Updates `heartbeatAt` to now to signal the claiming agent is still working. Deliberately excluded from the PullRequestEvent audit trail — a bare liveness ping recording would be a guaranteed no-op, and keeping this a single cheap UPDATE avoids dominating write volume.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description PR with updated heartbeatAt */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/{id}/complete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mark PR review as complete (reviewState=posted)
-         * @description Sets `reviewState=posted`, increments `reviewCycles`, sets `reviewedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase` so the review claim is released as soon as the review is done. Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Completed PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/skip": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/{id}/patch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Record a skip — increments skipCount, auto-blocks at threshold
+     * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` (`hitl` is left unchanged), with `blockedReason` naming the consecutive count and reason.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature
-         * @description Increments `patchCycles`, sets `patchedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. `reviewState` is reset conditionally based on the optional `commitSha` field: omitted resets unconditionally to `pending`; provided and differing from the stored `commitSha` also resets to `pending` and updates `commitSha`; provided and matching leaves `reviewState` untouched (a no-op patch cycle). The optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure — a matching signature increments `consecutiveCiFailureCount`, a differing or absent one resets it to 1; crossing the threshold (3, `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` with a descriptive `blockedReason`. Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PatchPrBody"];
-                };
-            };
-            responses: {
-                /** @description Patched PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["SkipBody"];
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/{id}/release": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Release a claim (reviewState=pending, claimedBy cleared)
-         * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`. Resets `reviewState=pending` unless it's already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched. Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Released PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/skip/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/{id}/skip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Reset skip tracking — skipCount back to 0
+     * @description Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by the skip threshold.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Record a skip — increments skipCount, auto-blocks at threshold
-         * @description Increments `skipCount` and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3), auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"`. Mirrors `POST /tasks/:id/skip`. Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/{id}/skip/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism
-         * @description Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips") or starting with the patch no-progress escalation prefix ("patch dispatch made no progress"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/unblock": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/{id}/unblock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Atomically unblock a task to pending, pr_open, merged, deployed or released
+     * @description Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0`, `lastSkippedAt` and `lastSkipReason` to `null` — all in one round-trip, for every target. The optional body `{to}` picks the resulting status (`pending`, `pr_open`, `merged`, `deployed` or `released`); every target other than `pending` requires the task to have a non-null `pr` (`400` otherwise), and terminal targets stamp `mergedAt`/`deployedAt`/`releasedAt` when still empty. When `to` is omitted the target is inferred: no `pr` → `pending`; PR record open (or absent) → `pr_open`; PR record merged → `merged`; PR record closed without merging → `409` requiring an explicit `to`. Inference never yields `deployed` or `released`. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task). `hitl` is never touched.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak
-         * @description Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Unblocked PR */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PullRequest"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — the PR is not currently blocked */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["UnblockBody"];
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
+      responses: {
+        /** @description Unblocked task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Bad request — unknown `to`, or a non-pending `to` on a task with no `pr` */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — task is not currently blocked, or its PR is closed without merging and no explicit `to` was given */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/prs/{id}/findings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'
-         * @description Appends a `PrFinding` row: `{ ref, disposition, source, evidence, at?, agentId? }`, where `disposition` is one of `resolved`, `superseded`, `rejected`, and `source` is one of `review`, `patch`. Server-enforced authority rule: `source:"patch"` may only submit `disposition:"rejected"` (patch cannot unilaterally resolve or supersede a finding it didn't originate) — any other combination returns `400`. `source:"review"` may submit any disposition. Returns `201` with the created finding.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CreateFindingBody"];
-                };
-            };
-            responses: {
-                /** @description Finding recorded */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PrFinding"];
-                    };
-                };
-                /** @description Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected' */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/prs/{id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)
+     * @description Returns `{ events, total, limit, nextCursor }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the task doesn't exist or is outside the caller's scope. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
+          cursor?: string;
         };
-        /**
-         * Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)
-         * @description Returns `{ events, total, limit, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Max records to return */
-                    limit?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description PR's event history */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PrEventsResponse"];
-                    };
-                };
-                /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        header?: never;
+        path: {
+          id: string;
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Task's event history */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskEventsResponse"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List sessions
-         * @description Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the distinct task repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering. */
-                    state?: "waiting" | "active" | "closed" | "empty" | "archived" | "all";
-                    /** @description 'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last. */
-                    sort?: "waitingSince" | "lastActivityAt";
-                    /** @description Only sessions whose rollup.agentIds includes this agent. */
-                    agentId?: string;
-                    /** @description Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b). */
-                    repo?: string | string[];
-                    /** @description Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`). */
-                    org?: string | string[];
-                    /** @description Case-insensitive substring match against slug OR title. */
-                    q?: string;
-                    /** @description Only sessions whose owner equals this email exactly. */
-                    owner?: string;
-                    /** @description Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                    limit?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of sessions with total count */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionListResponse"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/sessions/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * List all tokens
+     * @description Admin-only. Returns token metadata (hash, label, agentId) for every token — raw token values are never returned once past creation.
+     */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Array of token metadata */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskToken"][];
+          };
         };
-        /**
-         * Get a session by slug
-         * @description Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Session */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Session"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        /** @description Forbidden — admin token required */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update a session (title, archive, owner, homeRepo)
-         * @description Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear. A `repos` key is not part of the body and is ignored (a session's repos derive from its tasks and documents). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
-         */
-        patch: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["SessionPatchBody"];
-                };
-            };
-            responses: {
-                /** @description Updated session */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Session"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only) */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+      };
     };
-    "/sessions/preflight/scope": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    put?: never;
+    /**
+     * Create a new token — raw value returned exactly once
+     * @description Admin-only. Body is optional: `{ label?, agentId? }`. Omitting `agentId` creates an unrestricted admin token; supplying it creates an agent-scoped token. Only the token's SHA-256 hash is persisted — the raw value is included in this response and never retrievable again.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["TokenBody"];
         };
-        /**
-         * Scope preflight for a list of repos
-         * @description Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.
-         */
-        get: {
-            parameters: {
-                query: {
-                    /** @description A repo (org/repo) to check. Repeatable (?repo=a&repo=b). */
-                    repo: string | string[];
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Covered and uncovered repos */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ScopePreflightResponse"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Created token including the one-time raw value */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskTokenWithRaw"];
+          };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Forbidden — admin token required */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/sessions/{slug}/lock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Acquire the session planning lock
-         * @description Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["SessionLockBody"];
-                };
-            };
-            responses: {
-                /** @description Lock acquired */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionLock"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Lock held and unexpired */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionLockConflict"];
-                    };
-                };
-            };
-        };
-        /**
-         * Release the session planning lock
-         * @description Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.
-         */
-        delete: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["SessionLockBody"];
-                };
-            };
-            responses: {
-                /** @description Lock released */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionLockRelease"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Lock held by someone else */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tokens/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/sessions/{slug}/plan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke a token
+     * @description Admin-only. Soft-deletes the token by setting `revokedAt` — the record is not removed, so its history stays intact, but the raw token stops authenticating requests.
+     */
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        get?: never;
-        put?: never;
-        /**
-         * Write a session's plan document, tasks and planned specs atomically
-         * @description One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["SessionPlanBody"];
-                };
-            };
-            responses: {
-                /** @description Plan written: the plan document id and the inserted task count */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionPlanResponse"];
-                    };
-                };
-                /** @description Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SessionLockConflict"];
-                    };
-                };
-                /** @description Webhook delivery failed; nothing was written */
-                502: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Revoked token metadata */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskToken"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Forbidden — admin token required */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Token not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/documents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update token label and/or agentId
+     * @description Admin-only. Body: `{ label?, agentId? }`. Returns `400` if the target token has already been revoked.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
         };
-        /**
-         * List planning documents
-         * @description Returns `{ documents, total }`. `?planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `?planned=true` returns documents with `plannedAt` set. Any query parameter not documented here is rejected with `400`. Agent tokens only see documents in their account whose home repo is in the token's repo scope.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    session?: string;
-                    kind?: "spec" | "plan";
-                    owner?: string;
-                    /** @description `false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set. */
-                    planned?: "true" | "false";
-                    /** @description Admin tokens only: narrow to one account. Ignored for agent tokens. */
-                    accountId?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Matching documents */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PlanDocumentListResponse"];
-                    };
-                };
-                /** @description Bad request — unknown query parameter */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["TokenBody"];
         };
-        put?: never;
-        /**
-         * Register a planning document
-         * @description Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["RegisterPlanDocumentBody"];
-                };
-            };
-            responses: {
-                /** @description Registered (or re-registered) document */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PlanDocument"];
-                    };
-                };
-                /** @description Bad request — missing/invalid fields */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Updated token metadata */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["TaskToken"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request — token is revoked */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — admin token required */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Token not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/documents/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update a planning document
-         * @description Sets any of `plannedAt` (specs only; null clears), `prUrl`, `owner`, `state`. Omitted fields are untouched. `404` when the document does not exist or is outside the caller's scope.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["PatchPlanDocumentBody"];
-                };
-            };
-            responses: {
-                /** @description Updated document */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PlanDocument"];
-                    };
-                };
-                /** @description Bad request — invalid field */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        trace?: never;
+    trace?: never;
+  };
+  "/prs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/verification-checks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * List pull requests
+     * @description Returns `{ prs, total, limit, nextCursor }`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400. Keyset order is (createdAt, id); `?blocked=true` wraps an internal offset in the cursor. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos. */
+          repo?: string | string[];
+          /** @description Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND). */
+          org?: string | string[];
+          /** @description PR number (parsed as integer) */
+          prNumber?: string;
+          state?: "open" | "merged" | "closed";
+          reviewState?: "pending" | "in_progress" | "posted" | "approved";
+          /** @description Filter by staged flag */
+          staged?: "true" | "false";
+          /** @description Max records to return */
+          limit?: string;
+          /** @description When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does. */
+          ready?: "true" | "false";
+          /** @description When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open). */
+          blocked?: "true" | "false";
+          /** @description Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering. */
+          sort?: "asc" | "desc";
+          /** @description Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor. */
+          updatedSince?: string;
+          /** @description Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values. */
+          origin?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of pull requests. A malformed cursor is a 400. */
+          cursor?: string;
         };
-        /**
-         * List verification checks for a task, a PR, or a repo+checkName pair
-         * @description Returns `{ checks, total, limit, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required. */
-                    taskId?: string;
-                    prId?: string;
-                    /** @description Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak. */
-                    repo?: string;
-                    /** @description Paired with ?repo= — supplying only one of the pair is 400. */
-                    checkName?: string;
-                    /** @description Max records to return */
-                    limit?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Verification check history */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["VerificationCheckListResponse"];
-                    };
-                };
-                /** @description Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of pull requests */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PrListResponse"];
+          };
         };
-        put?: never;
-        /**
-         * Record a single per-check verification outcome
-         * @description Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted. Agent tokens are scoped (SSP-6.10): `repo` must be in the token's repos (else `403`), and the parent task/PR must be in the token's repos and account (else `404`, indistinguishable from missing). The row is stamped with the parent's `accountId`. Admin tokens are unrestricted.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CreateVerificationCheckBody"];
-                };
-            };
-            responses: {
-                /** @description Recorded verification check */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["VerificationCheck"];
-                    };
-                };
-                /** @description Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — `repo` is not in the agent token's scope */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — the referenced task/pr does not exist or is outside the token's repo/account scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+      };
     };
-    "/coverage-snapshots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List coverage snapshots, newest first
-         * @description Returns `{ snapshots, total, limit, nextCursor }` ordered by `measuredAt` descending (default `limit=50`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Only snapshots for this repo. */
-                    repo?: string;
-                    /** @description ISO timestamp; only snapshots measured at or after it. */
-                    since?: string;
-                    /** @description Max records to return */
-                    limit?: string;
-                    /** @description Admin tokens only: narrow to one account. */
-                    accountId?: string;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Coverage snapshot history */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CoverageSnapshotListResponse"];
-                    };
-                };
-                /** @description Bad request — `since` is not a valid ISO timestamp */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Record (upsert) a coverage snapshot for a commit
-         * @description Records the measured coverage for one commit. The body carries covered/total counts; the server computes `linesPct` (and `branchesPct`/`functionsPct` when those pairs are supplied). The row is unique on (account, `repo`, `commitSha`): the first POST returns `201`, a repeat POST for the same commit replaces the measurements and returns `200`. `400` when `linesTotal` is not > 0, any covered exceeds its total, `commitSha` is empty, or `repo` is not `owner/repo`. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CreateCoverageSnapshotBody"];
-                };
-            };
-            responses: {
-                /** @description Existing snapshot for this commit, updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CoverageSnapshot"];
-                    };
-                };
-                /** @description Created coverage snapshot */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CoverageSnapshot"];
-                    };
-                };
-                /** @description Bad request — missing/invalid fields or counts */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — `repo` is not in the agent token's scope */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/coverage-snapshots/latest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Claim a pull request (atomic)
+     * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`merge` phases preserve `reviewState` as-is rather than resetting it; `merge` also stamps `readyForMergeAt` when unset. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["ClaimPrBody"];
         };
-        /**
-         * Latest coverage snapshot per repo
-         * @description Returns `{ snapshots }` with exactly one row per repo — the newest by `measuredAt` — across the repos visible to the caller. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Admin tokens only: narrow to one account. */
-                    accountId?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Newest snapshot per repo */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["CoverageSnapshotLatestResponse"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Updated existing claim */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description New claim created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404) */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — already claimed with same commitSha */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/system-crons": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List system-cron definitions — admin-only
-         * @description Returns `{ systemCrons }`, ordered by id. `?enabled=true|false` filters by enabled state; `?accountId=` narrows to one account (omitted: every account).
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Only definitions with this enabled state. */
-                    enabled?: "true" | "false";
-                    /** @description Restrict to one account's definitions. Omitted: every account's definitions. */
-                    accountId?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description System-cron definitions */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronListResponse"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Create a system-cron definition — admin-only
-         * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["CreateSystemCronBody"];
-                };
-            };
-            responses: {
-                /** @description Created definition */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronDefinition"];
-                    };
-                };
-                /** @description Bad request — invalid or missing fields */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — a definition with this id already exists */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/claim-next": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/system-crons/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Atomic find-and-claim of oldest eligible PR
+     * @description Atomically finds and claims the oldest eligible PR not yet claimed by the calling agent, in one round-trip — useful for agents implementing a pull-based queue instead of manually claiming a specific PR. Optional `maxConcurrent` (default `1`) caps how many PRs the agent may hold at once; if the agent already has that many claimed, returns `204`. Agent tokens see only PRs in their configured repo scope; admin tokens see all. Returns `200` with `{ pr, phase }`, or `204` if nothing eligible.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["ClaimNextBody"];
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update a system-cron definition — admin-only
-         * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
-         */
-        patch: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["PatchSystemCronBody"];
-                };
-            };
-            responses: {
-                /** @description The system-cron definition */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronDefinition"];
-                    };
-                };
-                /** @description Bad request — invalid or missing fields */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description PR claimed — returns {pr, phase} */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ClaimNextResponse"];
+          };
         };
-        trace?: never;
+        /** @description No eligible PR found */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/system-crons/{id}/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enable a system-cron definition — admin-only
-         * @description Sets `enabled: true` so /fire accepts the definition again. Idempotent.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description The system-cron definition */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronDefinition"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/census": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/system-crons/{id}/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Batch upsert PR origin/author/branch/title/state metadata
+     * @description Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/merge's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CensusBody"];
         };
-        get?: never;
-        put?: never;
-        /**
-         * Disable a system-cron definition — admin-only
-         * @description Sets `enabled: false`; a disabled definition's /fire is `409`. Idempotent.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description The system-cron definition */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronDefinition"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+      };
+      responses: {
+        /** @description Upserted PR rows, one per input entry */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CensusResponse"];
+          };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request — malformed entry, or more than 200 entries in one batch */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — an entry's repo is outside the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/system-crons/{id}/fire": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Fire one slot of a system cron, exactly once — admin-only
-         * @description Claims the `(id, scheduledFor)` slot and, in the same transaction, creates one task per distinct repo: kind `dev`, status `pending`, `hitl: false`, no assignee, `source: 'system-cron'`, id `SC-{id}-{slot}-{owner}-{repo}` where slot is the compact UTC form of scheduledFor (`YYYYMMDDTHHMMSSZ`), and title/description rendered from the definition's templates by plain `{repo}` substitution (nothing else is evaluated). `scheduledFor` must carry an explicit timezone and is truncated to whole seconds. `201 { claimed: true, taskIds }` when this call claimed the slot; `200 { claimed: false, taskIds: [] }` when it was already claimed or a concurrent call won the race — nothing is created. A failed fire rolls back the claim with the tasks, so retrying is always safe. Disabled definition: `409`.
-         */
-        post: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["FireSystemCronBody"];
-                };
-            };
-            responses: {
-                /** @description Slot already claimed — nothing created (claimed: false) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["FireSystemCronResponse"];
-                    };
-                };
-                /** @description Slot claimed — tasks created (claimed: true) */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["FireSystemCronResponse"];
-                    };
-                };
-                /** @description Bad request — invalid or missing fields */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Conflict — the definition is disabled */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/census/cursor": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/system-crons/{id}/last-trigger": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    /**
+     * Get the census incremental-search-window cursor for a repo
+     * @description Returns `{ cursor }`: the max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin` is not null, or `null` when no such row exists. Used by POM-4.1's census sweep to derive its incremental search window.
+     */
+    get: {
+      parameters: {
+        query: {
+          /** @description Repository in org/repo format. */
+          repo: string;
         };
-        /**
-         * Most recent claimed slot of a system cron — admin-only
-         * @description Returns `{ scheduledFor }`: the max claimed `scheduledFor` (whole-second UTC ISO) across the definition's triggers, or `null` when it has never fired. Read-only; used by the scheduler's catch-up.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Last claimed slot (or null) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["LastTriggerResponse"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Census cursor */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CensusCursorResponse"];
+          };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+        /** @description Bad request — missing or malformed repo */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — repo is outside the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
     };
-    "/system-crons/{id}/triggers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Recent claimed slots of a system cron — admin-only
-         * @description Returns `{ triggers, nextCursor }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded. `nextCursor` is an opaque cursor — pass it back as `?cursor=` for the next page; `null` on the last page; a malformed cursor is a `400`.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Optional: require the definition to belong to this account (404 otherwise). */
-                    accountId?: string;
-                    /** @description Max triggers to return (1-50, default 5). */
-                    limit?: number;
-                    /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. A malformed cursor is a 400. */
-                    cursor?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Recent claimed slots, newest first */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SystemCronTriggersResponse"];
-                    };
-                };
-                /** @description Bad request — invalid or missing fields */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden — system-cron routes are admin-only */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Not found — no such definition, or it is outside the ?accountId= scope */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /**
+     * Fetch a single pull request
+     * @description Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.
+     */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Pull request record */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update pull request fields
+     * @description Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForMergeAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["UpdatePrBody"];
+        };
+      };
+      responses: {
+        /** @description Updated pull request */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/prs/{id}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Touch heartbeatAt for a claimed PR
+     * @description Updates `heartbeatAt` to now to signal the claiming agent is still working. Deliberately excluded from the PullRequestEvent audit trail — a bare liveness ping recording would be a guaranteed no-op, and keeping this a single cheap UPDATE avoids dominating write volume.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description PR with updated heartbeatAt */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mark PR review as complete (reviewState=posted)
+     * @description Sets `reviewState=posted`, increments `reviewCycles`, sets `reviewedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase` so the review claim is released as soon as the review is done. Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Completed PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/patch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature
+     * @description Increments `patchCycles`, sets `patchedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. `reviewState` is reset conditionally based on the optional `commitSha` field: omitted resets unconditionally to `pending`; provided and differing from the stored `commitSha` also resets to `pending` and updates `commitSha`; provided and matching leaves `reviewState` untouched (a no-op patch cycle). The optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure — a matching signature increments `consecutiveCiFailureCount`, a differing or absent one resets it to 1; crossing the threshold (3, `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` with a descriptive `blockedReason`. Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["PatchPrBody"];
+        };
+      };
+      responses: {
+        /** @description Patched PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/release": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Release a claim (reviewState=pending, claimedBy cleared)
+     * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`. Resets `reviewState=pending` unless it's already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched. Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Released PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/skip": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record a skip — increments skipCount, auto-blocks at threshold
+     * @description Increments `skipCount` and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3), auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"`. Mirrors `POST /tasks/:id/skip`. Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/skip/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism
+     * @description Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips") or starting with the patch no-progress escalation prefix ("patch dispatch made no progress"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/unblock": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Unblock a blocked PR — atomically resets blocked, blockedReason, blockedHeadSha, skip tracking and the CI-failure streak
+     * @description Human-driven unblock via a single conditional update (`WHERE blocked=true`) that sets `blocked=false` and resets `blockedReason`, `blockedHeadSha`, `skipCount`, `lastSkippedAt`, `consecutiveCiFailureCount` and `lastCiFailureSignature` — regardless of which mechanism set the block (unlike `POST /:id/skip/reset`, which only clears skip-mechanism blocks and leaves the CI-failure streak untouched). Resetting the CI-failure streak counter and signature means the next `POST /:id/patch` starts a fresh streak instead of re-blocking. Returns `409` if the PR is not currently blocked (never a silent no-op). Records field-level transitions as PullRequestEvent rows.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Unblocked PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — the PR is not currently blocked */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/findings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'
+     * @description Appends a `PrFinding` row: `{ ref, disposition, source, evidence, at?, agentId? }`, where `disposition` is one of `resolved`, `superseded`, `rejected`, and `source` is one of `review`, `patch`. Server-enforced authority rule: `source:"patch"` may only submit `disposition:"rejected"` (patch cannot unilaterally resolve or supersede a finding it didn't originate) — any other combination returns `400`. `source:"review"` may submit any disposition. Returns `201` with the created finding.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CreateFindingBody"];
+        };
+      };
+      responses: {
+        /** @description Finding recorded */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PrFinding"];
+          };
+        };
+        /** @description Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected' */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)
+     * @description Returns `{ events, total, limit, nextCursor }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit` (default `limit=50`). Returns `404` if the PR doesn't exist. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of events. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description PR's event history */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PrEventsResponse"];
+          };
+        };
+        /** @description Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List sessions
+     * @description Returns `{ sessions, total, limit, nextCursor }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Each session also carries `owner`, `homeRepo` and its `documents`; `repos` is the distinct task repos, and `?owner=` filters on the exact owner email. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope — or a document whose home repo or a target repo is in that scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering. */
+          state?:
+            | "waiting"
+            | "active"
+            | "closed"
+            | "empty"
+            | "archived"
+            | "all";
+          /** @description 'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last. */
+          sort?: "waitingSince" | "lastActivityAt";
+          /** @description Only sessions whose rollup.agentIds includes this agent. */
+          agentId?: string;
+          /** @description Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b). */
+          repo?: string | string[];
+          /** @description Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`). */
+          org?: string | string[];
+          /** @description Case-insensitive substring match against slug OR title. */
+          q?: string;
+          /** @description Only sessions whose owner equals this email exactly. */
+          owner?: string;
+          /** @description Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+          limit?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of sessions. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description List of sessions with total count */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionListResponse"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/sessions/{slug}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get a session by slug
+     * @description Returns the same flattened session+rollup shape as the list route, including `owner`, `homeRepo`, `repos` and the session's `documents`. A session with no qualifying task is also visible to an agent token when one of its documents has its home repo or a target repo in the token's scope. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Session */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Session"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update a session (title, archive, owner, homeRepo)
+     * @description Follows task-store scope. Admin tokens are unrestricted. An agent token may write only when EVERY repo in the session — the union of its task repos and document repos (home and target) — is in the token's repo scope. A session the agent cannot see (same visibility rule as `GET /sessions/:slug`, or another account's session) is `404`, indistinguishable from a missing one; a visible session only partly in scope is `403`; a session with no repos at all is admin-only (`403` for agents). `archivedBy` records the caller (the agent id, or `admin`). Body: `{ title?: string | null, archived?: boolean, owner?: string | null, homeRepo?: string | null }`, all optional (an empty body is a no-op). `owner`/`homeRepo` accept `null` to clear. A `repos` key is not part of the body and is ignored (a session's repos derive from its tasks and documents). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist (or is not visible to the agent). Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.
+     */
+    patch: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["SessionPatchBody"];
+        };
+      };
+      responses: {
+        /** @description Updated session */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Session"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — session not wholly within the agent token's repo scope, or has no repos (admin-only) */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/sessions/preflight/scope": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Scope preflight for a list of repos
+     * @description Read-only credential check, not a permission model: given `?repo=` (repeatable), reports which repos the calling token may write to (`covered`) and which it may not (`uncovered`). Admin tokens cover every repo; an agent token covers the repos in its resolved scope. Request order is preserved and duplicates collapse.
+     */
+    get: {
+      parameters: {
+        query: {
+          /** @description A repo (org/repo) to check. Repeatable (?repo=a&repo=b). */
+          repo: string | string[];
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Covered and uncovered repos */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ScopePreflightResponse"];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/sessions/{slug}/lock": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Acquire the session planning lock
+     * @description Takes a short-lived, self-expiring planning lock so a planning pass can read the plan and write tasks without another pass interleaving. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Returns `200 { holder, acquiredAt, expiresAt }`. If the lock is held and unexpired the response is `409` and the body names the `holder`, `acquiredAt` and `expiresAt`; an expired lock can be re-acquired, and the current holder re-acquiring just extends it. Agent tokens need the session in scope (404 otherwise); `404` when the session does not exist.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["SessionLockBody"];
+        };
+      };
+      responses: {
+        /** @description Lock acquired */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionLock"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Lock held and unexpired */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionLockConflict"];
+          };
+        };
+      };
+    };
+    /**
+     * Release the session planning lock
+     * @description Releases the planning lock after tasks are written and the plan is pushed. Body (optional): `{ holder? }` — defaults to the token's agent id (`admin` for admin tokens). Only the holder may release a live lock (`403` otherwise); releasing a free or expired lock is a no-op `200`. `404` when the session does not exist or is out of an agent token's scope.
+     */
+    delete: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["SessionLockBody"];
+        };
+      };
+      responses: {
+        /** @description Lock released */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionLockRelease"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Lock held by someone else */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/sessions/{slug}/plan": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Write a session's plan document, tasks and planned specs atomically
+     * @description One transaction for what a planning pass used to do in three calls (POST /documents, POST /tasks/bulk, PATCH /documents/:id). Ensures the session row (setting `owner` and `homeRepo` as POST /documents does), registers the plan document (number 1, idempotent), creates the tasks (same shape and validation as POST /tasks/bulk) stamped with the session, `planDocumentId`, `originKind: document` and `originRef` (the plan document id), and sets `plannedAt` on the listed specs. Agent tokens: every repo involved — the plan's `repo` and `repos`, every task `repo`, and every repo the session already spans — must be in the token's scope, else `403`. A planning lock held (unexpired) by anyone other than `holder` is a `409` with the lock body. A task id collision is a `409` (agent tokens get the generic `task id unavailable` body) and, like a webhook delivery failure (`502`) or an unregistered spec (`400`), rolls back everything — including the session row and the plan document. Re-sending the same plan is idempotent for the document and a `409` for task ids that already exist. Admin tokens may pass `?accountId=` (default: `default`). POST /tasks/bulk is unchanged.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account. */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["SessionPlanBody"];
+        };
+      };
+      responses: {
+        /** @description Plan written: the plan document id and the inserted task count */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionPlanResponse"];
+          };
+        };
+        /** @description Bad request — malformed body, an invalid task (as POST /tasks/bulk), a task whose `session` differs from the slug, or an unregistered spec number */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — a repo in the request or the session is outside the agent token's scope, or the token's account scope could not be resolved */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — the planning lock is held by someone else (lock body), or a task id is unavailable; nothing was written */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SessionLockConflict"];
+          };
+        };
+        /** @description Webhook delivery failed; nothing was written */
+        502: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List planning documents
+     * @description Returns `{ documents, total }`. `?planned=false` returns specs with no `plannedAt` and excludes `abandoned` ones; `?planned=true` returns documents with `plannedAt` set. Any query parameter not documented here is rejected with `400`. Agent tokens only see documents in their account whose home repo is in the token's repo scope.
+     */
+    get: {
+      parameters: {
+        query?: {
+          session?: string;
+          kind?: "spec" | "plan";
+          owner?: string;
+          /** @description `false` returns specs with no plannedAt, excluding abandoned ones; `true` returns documents with plannedAt set. */
+          planned?: "true" | "false";
+          /** @description Admin tokens only: narrow to one account. Ignored for agent tokens. */
+          accountId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Matching documents */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PlanDocumentListResponse"];
+          };
+        };
+        /** @description Bad request — unknown query parameter */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Register a planning document
+     * @description Idempotent on `(accountId, session, kind, number)`: registering the same key again updates `prUrl`, `title`, `owner`, `repos` and `state` on the one row. Ensures the session row exists, sets the session's `owner` from the first document that carries one (never overwritten by later documents) and sets its `homeRepo` when empty. Plans are always number 1. Agent tokens: `repo` — and the repo of any existing document at that key — must be in the token's repo scope, else `403`. Admin tokens may pass `?accountId=` (default: `default`).
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["RegisterPlanDocumentBody"];
+        };
+      };
+      responses: {
+        /** @description Registered (or re-registered) document */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PlanDocument"];
+          };
+        };
+        /** @description Bad request — missing/invalid fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo`, or the existing document's repo, is outside the token's repo scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/documents/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update a planning document
+     * @description Sets any of `plannedAt` (specs only; null clears), `prUrl`, `owner`, `state`. Omitted fields are untouched. `404` when the document does not exist or is outside the caller's scope.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["PatchPlanDocumentBody"];
+        };
+      };
+      responses: {
+        /** @description Updated document */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PlanDocument"];
+          };
+        };
+        /** @description Bad request — invalid field */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/verification-checks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List verification checks for a task, a PR, or a repo+checkName pair
+     * @description Returns `{ checks, total, limit, nextCursor }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required. */
+          taskId?: string;
+          prId?: string;
+          /** @description Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak. */
+          repo?: string;
+          /** @description Paired with ?repo= — supplying only one of the pair is 400. */
+          checkName?: string;
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of verification checks. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Verification check history */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["VerificationCheckListResponse"];
+          };
+        };
+        /** @description Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist) */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Record a single per-check verification outcome
+     * @description Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted. Agent tokens are scoped (SSP-6.10): `repo` must be in the token's repos (else `403`), and the parent task/PR must be in the token's repos and account (else `404`, indistinguishable from missing). The row is stamped with the parent's `accountId`. Admin tokens are unrestricted.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CreateVerificationCheckBody"];
+        };
+      };
+      responses: {
+        /** @description Recorded verification check */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["VerificationCheck"];
+          };
+        };
+        /** @description Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo` is not in the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — the referenced task/pr does not exist or is outside the token's repo/account scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/coverage-snapshots": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List coverage snapshots, newest first
+     * @description Returns `{ snapshots, total, limit, nextCursor }` ordered by `measuredAt` descending (default `limit=50`). Optional `?repo=` filters to one repo and `?since=` (ISO timestamp, else `400`) keeps only snapshots measured at or after it. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=` to fetch the next page; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Only snapshots for this repo. */
+          repo?: string;
+          /** @description ISO timestamp; only snapshots measured at or after it. */
+          since?: string;
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Admin tokens only: narrow to one account. */
+          accountId?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of snapshots. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Coverage snapshot history */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CoverageSnapshotListResponse"];
+          };
+        };
+        /** @description Bad request — `since` is not a valid ISO timestamp */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Record (upsert) a coverage snapshot for a commit
+     * @description Records the measured coverage for one commit. The body carries covered/total counts; the server computes `linesPct` (and `branchesPct`/`functionsPct` when those pairs are supplied). The row is unique on (account, `repo`, `commitSha`): the first POST returns `201`, a repeat POST for the same commit replaces the measurements and returns `200`. `400` when `linesTotal` is not > 0, any covered exceeds its total, `commitSha` is empty, or `repo` is not `owner/repo`. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CreateCoverageSnapshotBody"];
+        };
+      };
+      responses: {
+        /** @description Existing snapshot for this commit, updated */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CoverageSnapshot"];
+          };
+        };
+        /** @description Created coverage snapshot */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CoverageSnapshot"];
+          };
+        };
+        /** @description Bad request — missing/invalid fields or counts */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo` is not in the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/coverage-snapshots/latest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Latest coverage snapshot per repo
+     * @description Returns `{ snapshots }` with exactly one row per repo — the newest by `measuredAt` — across the repos visible to the caller. Agent tokens only see their own account's rows; admin tokens are unrestricted and may narrow with `?accountId=`.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Admin tokens only: narrow to one account. */
+          accountId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Newest snapshot per repo */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CoverageSnapshotLatestResponse"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/cron-runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List cron runs, newest first
+     * @description Returns `{ runs, total, limit, nextCursor }` ordered by `finishedAt` descending (default `limit=50`). Optional `?cronId=` and `?repo=` filters. `machineState` is omitted from each run unless `?includeDetail=true`. Agent tokens only see their own account's rows (and only in-scope repos); admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=`; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          cronId?: string;
+          repo?: string;
+          /** @description `true` to include `machineState` on each run. */
+          includeDetail?: string;
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Admin tokens only: narrow to one account. */
+          accountId?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of runs. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Cron run history */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RepoCronRunListResponse"];
+          };
+        };
+        /** @description Bad request — malformed cursor */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Append a per-repo cron run record
+     * @description Appends one record of a system-cron run for a repo. Append-only: every POST creates a new row (`201`), even for the same `cronId` + `repo`. `400` when `repo` is not `owner/repo`, `outcome` is not `ok | no_op | failed`, a timestamp is not valid ISO, `cronId`/`commitSha` is empty, `metrics` is not an object of finite numbers, or the `auto`/`review`/`plan` routing counts in `metrics` are not non-negative integers. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CreateRepoCronRunBody"];
+        };
+      };
+      responses: {
+        /** @description Created run record */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RepoCronRun"];
+          };
+        };
+        /** @description Bad request — missing/invalid fields or metrics */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo` is not in the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/cron-runs/latest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Latest successful run for a cron + repo
+     * @description Returns the newest run (by `finishedAt`) for `?cronId=` + `?repo=` whose `outcome` is `ok` or `no_op`, including `machineState`. `failed` runs are skipped. `404` when there is no such run (or the repo is outside the caller's scope). Any in-scope token may read it, not only the one that wrote the run.
+     */
+    get: {
+      parameters: {
+        query: {
+          cronId: string;
+          repo: string;
+          /** @description Admin tokens only: narrow to one account. */
+          accountId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Newest ok/no_op run */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["RepoCronRun"];
+          };
+        };
+        /** @description Bad request — `cronId` or `repo` missing */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description No ok/no_op run for this cron + repo */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/patrol-findings/batch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Batch-upsert patrol findings for one cron + repo
+     * @description Upserts findings keyed by `(account, cronId, repo, fingerprint)`. New fingerprints are created (`occurrenceCount` 1, `firstSeen = lastSeen = observedAt`). Continued ones get `occurrenceCount + 1`, `lastSeen = observedAt`, the new `status`, and a new `history` entry appended — earlier history entries are never rewritten. A finding whose `lastSeen` is already >= `observedAt` is a replay and is returned unchanged, so retrying an identical request does not corrupt history. `detail` / `taskId`, when omitted, keep their existing values. `400` when `repo` is not `owner/repo`, `cronId`/`fingerprint` is empty, `status` is not one of `tracking | ready_to_propose | open | resolved | suppressed`, `observedAt` is not ISO, fingerprints repeat, or more than 500 findings are sent. Agent tokens may write only repos in their scope (`403` otherwise) and always write to their own account; admin tokens are unrestricted and may pass `accountId` (default `default`).
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["UpsertPatrolFindingsBody"];
+        };
+      };
+      responses: {
+        /** @description The upserted findings, in request order */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["UpsertPatrolFindingsResponse"];
+          };
+        };
+        /** @description Bad request — missing/invalid fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo` is not in the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/patrol-findings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List patrol findings, most recently seen first
+     * @description Returns `{ findings, total, limit, nextCursor }` ordered by `lastSeen` descending (default `limit=50`). Optional `?cronId=`, `?repo=` and `?status=` filters. Agent tokens see their own account's findings regardless of which agent wrote them, only for in-scope repos; a `?repo=` outside the token's scope is `403`. Admin tokens are unrestricted and may narrow with `?accountId=`. `nextCursor` is an opaque cursor — pass it back as `?cursor=`; it is `null` on the last page. A malformed cursor is a 400.
+     */
+    get: {
+      parameters: {
+        query?: {
+          cronId?: string;
+          repo?: string;
+          status?: string;
+          /** @description Max records to return */
+          limit?: string;
+          /** @description Admin tokens only: narrow to one account. */
+          accountId?: string;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of findings. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Patrol findings */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PatrolFindingListResponse"];
+          };
+        };
+        /** @description Bad request — malformed cursor */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — `repo` is not in the agent token's scope */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List system-cron definitions — admin-only
+     * @description Returns `{ systemCrons }`, ordered by id. `?enabled=true|false` filters by enabled state; `?accountId=` narrows to one account (omitted: every account).
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Only definitions with this enabled state. */
+          enabled?: "true" | "false";
+          /** @description Restrict to one account's definitions. Omitted: every account's definitions. */
+          accountId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description System-cron definitions */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronListResponse"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Create a system-cron definition — admin-only
+     * @description Creates a definition in `?accountId=` (default: 'default'). `id` must be a lowercase slug; it is embedded in every generated task id. `schedule` must be a 5-field cron expression and `timezone` (default UTC) a valid IANA zone. `repoScope` (default `all`) is `all` or `selected`; `selected` requires a non-empty, de-duplicated `repos` list of org/repo (max 500); `all` ignores `repos`. A duplicate id is `409`.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CreateSystemCronBody"];
+        };
+      };
+      responses: {
+        /** @description Created definition */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronDefinition"];
+          };
+        };
+        /** @description Bad request — invalid or missing fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — a definition with this id already exists */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update a system-cron definition — admin-only
+     * @description Updates any of `name`, `schedule`, `timezone`, `titleTemplate`, `descriptionTemplate`, `repoScope`, `repos` (`repoScope` is `all` or `selected`; `selected` needs a non-empty `repos` of org/repo, de-duplicated and capped; `all` clears `repos`); omitted fields are untouched. Use /enable and /disable to toggle `enabled`.
+     */
+    patch: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["PatchSystemCronBody"];
+        };
+      };
+      responses: {
+        /** @description The system-cron definition */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronDefinition"];
+          };
+        };
+        /** @description Bad request — invalid or missing fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/system-crons/{id}/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Enable a system-cron definition — admin-only
+     * @description Sets `enabled: true` so /fire accepts the definition again. Idempotent.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The system-cron definition */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronDefinition"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons/{id}/disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Disable a system-cron definition — admin-only
+     * @description Sets `enabled: false`; a disabled definition's /fire is `409`. Idempotent.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The system-cron definition */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronDefinition"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons/{id}/fire": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Fire one slot of a system cron, exactly once — admin-only
+     * @description Claims the `(id, scheduledFor)` slot and, in the same transaction, creates one task per distinct repo: kind `dev`, status `pending`, `hitl: false`, no assignee, `source: 'system-cron'`, id `SC-{id}-{slot}-{owner}-{repo}` where slot is the compact UTC form of scheduledFor (`YYYYMMDDTHHMMSSZ`), and title/description rendered from the definition's templates by plain `{repo}` substitution (nothing else is evaluated). `scheduledFor` must carry an explicit timezone and is truncated to whole seconds. `201 { claimed: true, taskIds }` when this call claimed the slot; `200 { claimed: false, taskIds: [] }` when it was already claimed or a concurrent call won the race — nothing is created. A failed fire rolls back the claim with the tasks, so retrying is always safe. Disabled definition: `409`.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["FireSystemCronBody"];
+        };
+      };
+      responses: {
+        /** @description Slot already claimed — nothing created (claimed: false) */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["FireSystemCronResponse"];
+          };
+        };
+        /** @description Slot claimed — tasks created (claimed: true) */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["FireSystemCronResponse"];
+          };
+        };
+        /** @description Bad request — invalid or missing fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Conflict — the definition is disabled */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons/{id}/last-trigger": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Most recent claimed slot of a system cron — admin-only
+     * @description Returns `{ scheduledFor }`: the max claimed `scheduledFor` (whole-second UTC ISO) across the definition's triggers, or `null` when it has never fired. Read-only; used by the scheduler's catch-up.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Last claimed slot (or null) */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["LastTriggerResponse"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/system-crons/{id}/triggers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Recent claimed slots of a system cron — admin-only
+     * @description Returns `{ triggers, nextCursor }`: the definition's claimed slots newest first (by `scheduledFor`, `createdAt` desc tie-break), each `{ scheduledFor, claimedAt, taskCount }`. `claimedAt` is when the slot was claimed. `?limit=` is 1-50 (default 5); out-of-range or non-integer values are `400`. Read-only; skipped ticks are not recorded. `nextCursor` is an opaque cursor — pass it back as `?cursor=` for the next page; `null` on the last page; a malformed cursor is a `400`.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Optional: require the definition to belong to this account (404 otherwise). */
+          accountId?: string;
+          /** @description Max triggers to return (1-50, default 5). */
+          limit?: number;
+          /** @description Opaque cursor from a previous response's `nextCursor`. Returns the next page of triggers. A malformed cursor is a 400. */
+          cursor?: string;
+        };
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Recent claimed slots, newest first */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SystemCronTriggersResponse"];
+          };
+        };
+        /** @description Bad request — invalid or missing fields */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden — system-cron routes are admin-only */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found — no such definition, or it is outside the ?accountId= scope */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        TaskListResponse: {
-            tasks: components["schemas"]["Task"][];
-            /** @example 10 */
-            total: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page and for `?ready=true` / `?state=blocked`.
-             * @example null
-             */
-            nextCursor: string | null;
-            /**
-             * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
-             * @example false
-             */
-            scopeDegraded: boolean;
-        };
-        Task: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example Implement feature X */
-            title: string;
-            /**
-             * @example pending
-             * @enum {string}
-             */
-            status: "pending" | "in_progress" | "pr_open" | "approved" | "merged" | "done" | "deployed" | "released" | "blocked" | "cancelled";
-            /** @example manual */
-            source?: string | null;
-            /** @example session-123 */
-            session?: string | null;
-            /** @example org/repo */
-            repo?: string | null;
-            /** @example Task description */
-            description?: string | null;
-            /**
-             * @example [
-             *       "Criterion 1",
-             *       "Criterion 2"
-             *     ]
-             */
-            acceptanceCriteria?: string[];
-            /** @example feature */
-            layer?: string | null;
-            /** @example feat/feature-x */
-            branch?: string | null;
-            /**
-             * @example [
-             *       "task-1",
-             *       "task-2"
-             *     ]
-             */
-            dependencies?: string[];
-            /** @example 42 */
-            pr?: number | null;
-            /** @example 5.5 */
-            hours?: number | null;
-            /** @example 2026-01-02T00:00:00.000Z */
-            startedAt?: string | null;
-            /** @example 2026-01-03T00:00:00.000Z */
-            prCreatedAt?: string | null;
-            /** @example 2026-01-04T00:00:00.000Z */
-            mergedAt?: string | null;
-            /** @example null */
-            blockedAt?: string | null;
-            /** @example Waiting on dependency */
-            blockedReason?: string | null;
-            /** @example Some notes */
-            note?: string | null;
-            /** @example feature */
-            type?: string | null;
-            /** @example high */
-            priority?: string | null;
-            /** @example null */
-            cancelledAt?: string | null;
-            /** @example 2026-01-05T00:00:00.000Z */
-            completedAt?: string | null;
-            /** @example 2026-01-06T00:00:00.000Z */
-            deployedAt?: string | null;
-            /** @example null */
-            releasedAt?: string | null;
-            /** @example 2 */
-            ciFixAttempts?: number | null;
-            /** @example abc123def456 */
-            mergeCommit?: string | null;
-            /** @example https://github.com/org/repo/pull/42 */
-            prUrl?: string | null;
-            /** @example user@example.com */
-            assignee?: string | null;
-            /** @example GH-123 */
-            issue?: string | null;
-            /** @example sonnet */
-            model?: string | null;
-            /** @example 7 */
-            complexity?: number | null;
-            /** @example true */
-            hitl?: boolean | null;
-            /**
-             * @description Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.
-             * @example dev@example.com
-             */
-            owner?: string | null;
-            /**
-             * @description Id of the plan document this task came from.
-             * @example doc-plan-1
-             */
-            planDocumentId?: string | null;
-            /**
-             * @description Id of the spec document this task implements.
-             * @example doc-spec-1
-             */
-            specDocumentId?: string | null;
-            /**
-             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
-             * @example skill
-             * @enum {string|null}
-             */
-            originKind?: "document" | "skill" | "cron" | "human" | null;
-            /**
-             * @description Names the origin: a document id, skill name, cron name, etc.
-             * @example plan-session
-             */
-            originRef?: string | null;
-            /**
-             * @description What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.
-             * @default dev
-             * @example dev
-             * @enum {string}
-             */
-            kind: "dev" | "prd" | "initiative" | "idea";
-            /**
-             * @description Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
-             * @default 0
-             * @example 0
-             */
-            skipCount: number;
-            /** @example 2026-01-02T00:00:00.000Z */
-            lastSkippedAt?: string | null;
-            /**
-             * @description The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `"unspecified"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.
-             * @example dev-task:deferred:unmet-hidden-requirement
-             */
-            lastSkipReason?: string | null;
-            /** @example agent-id-123 */
-            claimedBy?: string | null;
-            /** @example prefer-sonnet */
-            agentHint?: string | null;
-            /** @example 2026-01-02T00:00:00.000Z */
-            claimedAt?: string | null;
-            /** @example 2026-01-06T12:00:00.000Z */
-            heartbeatAt?: string | null;
-            /** @example 10 */
-            simplifyTotal?: number | null;
-            /** @example 2 */
-            simplifyDry?: number | null;
-            /** @example 3 */
-            simplifyDeadCode?: number | null;
-            /** @example 1 */
-            simplifyNaming?: number | null;
-            /** @example 2 */
-            simplifyComplexity?: number | null;
-            /** @example 2 */
-            simplifyConsistency?: number | null;
-            /** @example 5.5 */
-            coverageDelta?: number | null;
-            /** @example medium */
-            effortLevel?: string | null;
-            /** @example 1000 */
-            inputTokens?: number | null;
-            /** @example 500 */
-            outputTokens?: number | null;
-            /** @example 100 */
-            cacheReadTokens?: number | null;
-            /** @example 50 */
-            cacheCreationTokens?: number | null;
-            /** @example 0.02 */
-            costUsd?: number | null;
-            /**
-             * @example {
-             *       "customKey": "customValue"
-             *     }
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-06T12:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        Error: {
-            /** @example not found */
-            error: string;
-        };
-        CreateTaskBody: {
-            /** @example Implement feature X */
-            title?: string;
-            /** @example pending */
-            status?: string;
-            /** @example org/repo */
-            repo?: string | null;
-            /** @example session-123 */
-            session?: string;
-            /** @example Task description */
-            description?: string;
-            /** @example service */
-            layer?: string;
-            /** @example feat/feature-x */
-            branch?: string;
-            /**
-             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
-             * @example 42
-             */
-            pr?: unknown;
-            /** @example [] */
-            dependencies?: string[];
-            /** @example [] */
-            acceptanceCriteria?: string[];
-            /** @example user@example.com */
-            assignee?: string;
-            /** @example high */
-            priority?: string;
-            /** @example feature */
-            type?: string;
-            /** @example manual */
-            source?: string;
-            /** @example dev@example.com */
-            owner?: string | null;
-            /** @example doc-plan-1 */
-            planDocumentId?: string | null;
-            /** @example doc-spec-1 */
-            specDocumentId?: string | null;
-            /**
-             * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
-             * @example skill
-             * @enum {string|null}
-             */
-            originKind?: "document" | "skill" | "cron" | "human" | null;
-            /** @example plan-session */
-            originRef?: string | null;
-            /**
-             * @description What the task is (TKD-1.1). Defaults to `dev`.
-             * @example dev
-             * @enum {string}
-             */
-            kind?: "dev" | "prd" | "initiative" | "idea";
-        } & {
-            [key: string]: unknown;
-        };
-        BulkInsertResponse: {
-            /** @example 3 */
-            inserted: number;
-            /** @example 1 */
-            updated: number;
-            /**
-             * @description Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.
-             * @example []
-             */
-            skipped: string[];
-        };
-        /** @description Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it. */
-        BulkInsertBody: ({
-            /** @example Implement feature X */
-            title?: string;
-            /** @example pending */
-            status?: string;
-            /** @example org/repo */
-            repo?: string | null;
-            /**
-             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
-             * @example 42
-             */
-            pr?: unknown;
-        } & {
-            [key: string]: unknown;
-        })[];
-        PatchTasksByPrResponse: {
-            /** @description Ids of `merged` tasks moved to the requested status. */
-            updated: string[];
-            /** @description Ids of tasks already at the requested status (no-op). */
-            unchanged: string[];
-            /** @description Matching tasks in any other status; never modified. Carries their current status. */
-            skipped: {
-                id: string;
-                status: string;
-            }[];
-        };
-        PatchTasksByPrBody: {
-            /** @example org/repo */
-            repo: string;
-            /**
-             * @description PR numbers of `repo`, 1 to 100 positive integers.
-             * @example [
-             *       101,
-             *       102
-             *     ]
-             */
-            prNumbers: number[];
-            /**
-             * @example deployed
-             * @enum {string}
-             */
-            status: "deployed" | "released";
-            /**
-             * @description ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.
-             * @example 2026-07-02T00:00:00.000Z
-             */
-            at?: string;
-        };
-        DistinctResponse: {
-            /**
-             * @example [
-             *       "session-1"
-             *     ]
-             */
-            sessions: string[];
-            /**
-             * @example [
-             *       "org/repo"
-             *     ]
-             */
-            repos: string[];
-            /**
-             * @example [
-             *       "org"
-             *     ]
-             */
-            orgs: string[];
-        };
-        UpdateTaskBody: {
-            /**
-             * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
-             * @example 42
-             */
-            pr?: unknown;
-            /**
-             * @description Change what the task is (INI-1.1) — e.g. promote an `idea` to an `initiative`, or an `initiative` to `dev`.
-             * @example initiative
-             * @enum {string}
-             */
-            kind?: "dev" | "prd" | "initiative" | "idea";
-        } & {
-            [key: string]: unknown;
-        };
-        ClaimBody: {
-            /** @example agent-id-123 */
-            claimedBy?: string;
-        };
-        FailBody: {
-            /** @example build failed */
-            reason?: string;
-        };
-        SkipBody: {
-            /** @example dev-task:deferred:unmet-hidden-requirement */
-            reason?: string;
-        };
-        UnblockBody: {
-            /**
-             * @description Target status. Omit to infer from task.pr and the PR record (never deployed/released).
-             * @enum {string}
-             */
-            to?: "pending" | "pr_open" | "merged" | "deployed" | "released";
-        };
-        TaskEventsResponse: {
-            /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
-            events: components["schemas"]["TaskEvent"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        TaskEvent: {
-            /** @example clxevent123456 */
-            id: string;
-            /** @example clx0987654321 */
-            taskId: string;
-            /** @example status */
-            field: string;
-            /** @example pending */
-            oldValue: string | null;
-            /** @example in_progress */
-            newValue: string | null;
-            /** @example agent-abc123 */
-            actor: string | null;
-            /** @example claim */
-            method: string;
-            /** @example 2026-08-17T12:00:00.000Z */
-            at: string;
-            /**
-             * Format: date-time
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            createdAt: string;
-        };
-        TaskToken: {
-            /** @example clxtoken123456 */
-            id: string;
-            /** @example ci-runner */
-            label?: string | null;
-            /** @example agent-id-123 */
-            agentId?: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example null
-             */
-            revokedAt?: string | null;
-        };
-        TaskTokenWithRaw: components["schemas"]["TaskToken"] & {
-            /** @example raw-token-value-shown-once */
-            rawToken: string;
-        };
-        TokenBody: {
-            /** @example ci-runner */
-            label?: string;
-            /** @example agent-id-123 */
-            agentId?: string;
-        };
-        PrListResponse: {
-            /** @description Array of pull requests */
-            prs: components["schemas"]["PullRequest"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        PullRequest: {
-            /** @example clx0987654321 */
-            id: string;
-            /** @example org/repo */
-            repo: string;
-            /** @example 42 */
-            prNumber: number;
-            /**
-             * @default false
-             * @example false
-             */
-            staged: boolean;
-            /**
-             * @default open
-             * @example open
-             * @enum {string}
-             */
-            state: "open" | "merged" | "closed";
-            /**
-             * @default pending
-             * @example pending
-             * @enum {string}
-             */
-            reviewState: "pending" | "in_progress" | "posted" | "approved";
-            /** @example abc123def456 */
-            commitSha?: string | null;
-            /**
-             * @description The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping.
-             * @example abc123def456
-             */
-            reviewedCommitSha?: string | null;
-            /**
-             * @default 0
-             * @example 1
-             */
-            patchCycles: number;
-            /**
-             * @default 0
-             * @example 0
-             */
-            reviewCycles: number;
-            /** @example agent-id-123 */
-            agentId?: string | null;
-            /** @example 2026-01-03T00:00:00.000Z */
-            reviewedAt?: string | null;
-            /** @example null */
-            patchedAt?: string | null;
-            /** @example null */
-            mergedAt?: string | null;
-            /**
-             * @description ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            prCreatedAt?: string | null;
-            /** @example agent-id-123 */
-            claimedBy?: string | null;
-            /** @example 2026-01-02T00:00:00.000Z */
-            claimedAt?: string | null;
-            /** @example 2026-01-06T12:00:00.000Z */
-            heartbeatAt?: string | null;
-            /**
-             * @example review
-             * @enum {string|null}
-             */
-            phase?: "review" | "patch" | "merge" | null;
-            /** @example 2026-01-02T00:00:00.000Z */
-            readyForReviewAt?: string | null;
-            /** @example null */
-            readyForPatchAt?: string | null;
-            /** @example null */
-            readyForMergeAt?: string | null;
-            /**
-             * @default false
-             * @example false
-             */
-            blocked: boolean;
-            /** @example no linked task */
-            blockedReason?: string | null;
-            /**
-             * @description Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).
-             * @example shipwright
-             * @enum {string|null}
-             */
-            origin?: "shipwright" | "ci" | "dependency_bot" | "human" | "unknown" | null;
-            /** @example octocat */
-            authorLogin?: string | null;
-            /** @example feat/some-branch */
-            headRef?: string | null;
-            /** @example Add the origin metrics dimension */
-            title?: string | null;
-            /**
-             * @description Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.
-             * @example 12
-             */
-            commitCount?: number | null;
-            /**
-             * @description Commits attributed to the docs-refresher subagent (CPP-1.1).
-             * @example 1
-             */
-            commitsDocsRefresh?: number | null;
-            /**
-             * @description Commits attributed to the review/patch cycle (CPP-1.1).
-             * @example 3
-             */
-            commitsReviewPatch?: number | null;
-            /**
-             * @description Commits attributed to CI-fix cycles (CPP-1.1).
-             * @example 2
-             */
-            commitsCiFix?: number | null;
-            /**
-             * @description Commits attributed to the initial implementation (CPP-1.1).
-             * @example 6
-             */
-            commitsImplementation?: number | null;
-            /**
-             * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips') or starts with the patch no-progress escalation prefix ('patch dispatch made no progress'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
-             * @default 0
-             * @example 0
-             */
-            skipCount: number;
-            /** @example 2026-01-02T00:00:00.000Z */
-            lastSkippedAt?: string | null;
-            /**
-             * @description Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.
-             * @example npm-test-failed-foo.unit.test.ts
-             */
-            lastCiFailureSignature?: string | null;
-            /**
-             * @description Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).
-             * @default 0
-             * @example 0
-             */
-            consecutiveCiFailureCount: number;
-            /** @description Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then. */
-            blockedHeadSha?: string | null;
-            /** @description Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed. */
-            blockedReviewId?: string | null;
-            /** @description ISO timestamp of the most recent skip auto-block (PSL-3.1). */
-            blockedAt?: string | null;
-            /** @description blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
-            lastAutoBlockReason?: string | null;
-            /** @description ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
-            lastAutoBlockedAt?: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-06T12:00:00.000Z
-             */
-            updatedAt: string;
-            /** @description Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
-            findings?: components["schemas"]["PrFinding"][];
-            /** @description Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
-            events?: components["schemas"]["PullRequestEvent"][];
-        };
-        PrFinding: {
-            /** @example clxfinding123456 */
-            id: string;
-            /** @example clx0987654321 */
-            prRecordId: string;
-            /** @example src/foo.ts:42 */
-            ref: string;
-            /**
-             * @example resolved
-             * @enum {string}
-             */
-            disposition: "resolved" | "superseded" | "rejected";
-            /**
-             * @example review
-             * @enum {string}
-             */
-            source: "review" | "patch";
-            /** @example Fixed the null check in the follow-up commit. */
-            evidence: string;
-            /** @example 2026-08-17T12:00:00.000Z */
-            at: string;
-            /**
-             * @description Agent instance that triaged this finding, if any.
-             * @example agent-abc123
-             */
-            agentId: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            createdAt: string;
-        };
-        PullRequestEvent: {
-            /** @example clxevent123456 */
-            id: string;
-            /** @example clx0987654321 */
-            prRecordId: string;
-            /** @example reviewState */
-            field: string;
-            /** @example pending */
-            oldValue: string | null;
-            /** @example in_progress */
-            newValue: string | null;
-            /** @example agent-abc123 */
-            actor: string | null;
-            /** @example claim */
-            method: string;
-            /** @example 2026-08-17T12:00:00.000Z */
-            at: string;
-            /**
-             * Format: date-time
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            createdAt: string;
-        };
-        ClaimPrBody: {
-            /**
-             * @description Repository in org/repo format
-             * @example org/repo
-             */
-            repo: string;
-            /**
-             * @description Pull request number
-             * @example 42
-             */
-            prNumber: number;
-            /**
-             * @description Commit SHA to associate
-             * @example abc123def456
-             */
-            commitSha: string;
-            /**
-             * @description Agent claiming this PR (admin tokens only)
-             * @example agent-id-123
-             */
-            claimedBy?: string;
-            /**
-             * @description Pipeline phase this claim is for (defaults to 'review' when omitted)
-             * @example patch
-             * @enum {string}
-             */
-            phase?: "review" | "patch" | "merge";
-            /**
-             * @description ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            prCreatedAt?: string;
-            /**
-             * @description PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
-             * @example octocat
-             */
-            authorLogin?: string | null;
-            /**
-             * @description PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
-             * @example feat/some-branch
-             */
-            headRef?: string | null;
-            /**
-             * @description PR title (POM-1.2). Refreshed unconditionally on every claim.
-             * @example Add the origin metrics dimension
-             */
-            title?: string | null;
-            /**
-             * @description True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.
-             * @example true
-             */
-            authorIsBot?: boolean;
-            /**
-             * @description True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.
-             * @example false
-             */
-            hasAutomatedLabel?: boolean;
-            /**
-             * @description True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.
-             * @example false
-             */
-            hasShipwrightLabel?: boolean;
-        };
-        ClaimNextResponse: {
-            pr: components["schemas"]["PullRequest"];
-            /**
-             * @example review
-             * @enum {string}
-             */
-            phase: "review" | "patch" | "merge";
-        };
-        ClaimNextBody: {
-            /**
-             * @description Agent ID (admin tokens only; agent tokens use token identity)
-             * @example agent-id-123
-             */
-            agentId?: string;
-            /**
-             * @description Maximum concurrent PRs to claim
-             * @example 1
-             */
-            maxConcurrent?: number;
-        };
-        CensusResponse: {
-            /** @description The upserted PullRequest rows, one per input entry. */
-            prs: components["schemas"]["PullRequest"][];
-        };
-        /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
-        CensusBody: components["schemas"]["CensusEntry"][];
-        CensusEntry: {
-            /** @example org/repo */
-            repo: string;
-            /** @example 42 */
-            prNumber: number;
-            /**
-             * @description First-write-wins: only applied when the row's existing origin is currently null.
-             * @example unknown
-             * @enum {string}
-             */
-            origin?: "shipwright" | "ci" | "dependency_bot" | "human" | "unknown";
-            /** @example octocat */
-            authorLogin?: string | null;
-            /** @example feat/some-branch */
-            headRef?: string | null;
-            /** @example Add the origin metrics dimension */
-            title?: string | null;
-            /**
-             * @example merged
-             * @enum {string}
-             */
-            state?: "open" | "merged" | "closed";
-            /** @example 2026-01-04T00:00:00.000Z */
-            mergedAt?: string | null;
-            /** @example 2026-01-01T00:00:00.000Z */
-            prCreatedAt?: string | null;
-            /** @example 12 */
-            commitCount?: number | null;
-            /** @example 1 */
-            commitsDocsRefresh?: number | null;
-            /** @example 3 */
-            commitsReviewPatch?: number | null;
-            /** @example 2 */
-            commitsCiFix?: number | null;
-            /** @example 6 */
-            commitsImplementation?: number | null;
-        };
-        CensusCursorResponse: {
-            /**
-             * @description Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.
-             * @example 2026-01-04T00:00:00.000Z
-             */
-            cursor: string | null;
-        };
-        UpdatePrBody: {
-            [key: string]: unknown;
-        };
-        PatchPrBody: {
-            /**
-             * @description Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).
-             * @example abc123def456
-             */
-            commitSha?: string;
-            /**
-             * @description Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.
-             * @example npm-test-failed-foo.unit.test.ts
-             */
-            ciFailureSignature?: string;
-        };
-        CreateFindingBody: {
-            /**
-             * @description Identifier for the finding (e.g. file:line or a slug).
-             * @example src/foo.ts:42
-             */
-            ref: string;
-            /**
-             * @description Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.
-             * @example resolved
-             * @enum {string}
-             */
-            disposition: "resolved" | "superseded" | "rejected";
-            /**
-             * @description Which pipeline phase is recording this finding.
-             * @example review
-             * @enum {string}
-             */
-            source: "review" | "patch";
-            /** @example Fixed the null check in the follow-up commit. */
-            evidence: string;
-            /**
-             * @description ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.
-             * @example 2026-08-17T12:00:00.000Z
-             */
-            at?: string;
-            /**
-             * @description Agent instance that triaged this finding.
-             * @example agent-abc123
-             */
-            agentId?: string;
-        };
-        PrEventsResponse: {
-            /** @description This PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first). */
-            events: components["schemas"]["PullRequestEvent"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        SessionListResponse: {
-            sessions: components["schemas"]["Session"][];
-            /** @example 10 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        Session: {
-            /** @example shipwright-may-launch */
-            slug: string;
-            /**
-             * @description The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently.
-             * @example default
-             */
-            accountId: string;
-            /** @example May launch prep */
-            title?: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-06T12:00:00.000Z
-             */
-            updatedAt: string;
-            /** @example null */
-            archivedAt?: string | null;
-            /** @example null */
-            archivedBy?: string | null;
-            /**
-             * @description Owner email, set from the session's first document.
-             * @example dev@example.com
-             */
-            owner: string | null;
-            /**
-             * @description The org/repo the session's planning files live in.
-             * @example org/repo
-             */
-            homeRepo: string | null;
-            /** @description The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope. */
-            documents: components["schemas"]["PlanDocument"][];
-            /**
-             * @example active
-             * @enum {string}
-             */
-            state: "waiting" | "active" | "closed" | "empty";
-            /** @example 2026-01-01T00:00:00.000Z */
-            waitingSince: string | null;
-            /** @example 2026-01-06T12:00:00.000Z */
-            lastActivityAt: string | null;
-            /**
-             * @example {
-             *       "total": 3,
-             *       "open": 2,
-             *       "closed": 1
-             *     }
-             */
-            counts: {
-                total: number;
-                open: number;
-                closed: number;
-            };
-            /**
-             * @example [
-             *       "agent-1"
-             *     ]
-             */
-            agentIds: string[];
-            /**
-             * @description The session's task repos (derived; not writable).
-             * @example [
-             *       "org/repo"
-             *     ]
-             */
-            repos: string[];
-            /**
-             * @example [
-             *       {
-             *         "id": "task-1",
-             *         "kind": "hitl"
-             *       }
-             *     ]
-             */
-            waitingTasks: {
-                id: string;
-                /** @enum {string} */
-                kind: "hitl" | "blocked" | "pr_blocked";
-            }[];
-            /** @example false */
-            archived: boolean;
-        };
-        PlanDocument: {
-            /** @example clxdoc1234567890 */
-            id: string;
-            /** @example default */
-            accountId: string;
-            /** @example shipwright-may-launch */
-            session: string;
-            /**
-             * @example spec
-             * @enum {string}
-             */
-            kind: "spec" | "plan";
-            /**
-             * @description Specs: 1, 2, 3… within the session. Plans: always 1.
-             * @example 2
-             */
-            number: number;
-            /** @example org/repo */
-            repo: string;
-            /** @example planning/shipwright-may-launch/SPEC-0002.md */
-            path: string;
-            /** @example Planning documents */
-            title: string | null;
-            /** @example dev@example.com */
-            owner: string | null;
-            /**
-             * @example [
-             *       "org/repo"
-             *     ]
-             */
-            repos: string[];
-            /** @example https://github.com/org/repo/pull/12 */
-            prUrl: string | null;
-            /**
-             * @example draft
-             * @enum {string}
-             */
-            state: "draft" | "pr_open" | "merged" | "abandoned";
-            /** @example null */
-            commitSha: string | null;
-            /**
-             * Format: date-time
-             * @description Specs only.
-             * @example null
-             */
-            plannedAt: string | null;
-            /** @example null */
-            originTaskId: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-11-17T12:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-11-17T12:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        SessionPatchBody: {
-            /**
-             * @description Omitted: title untouched. A string: set. null: clears the title.
-             * @example May launch prep
-             */
-            title?: string | null;
-            /**
-             * @description Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.
-             * @example true
-             */
-            archived?: boolean;
-            /**
-             * @description Omitted: untouched. A string: set. null: clears.
-             * @example dev@example.com
-             */
-            owner?: string | null;
-            /**
-             * @description Omitted: untouched. A string: set. null: clears.
-             * @example org/repo
-             */
-            homeRepo?: string | null;
-        };
-        ScopePreflightResponse: {
-            /**
-             * @example [
-             *       "org/a"
-             *     ]
-             */
-            covered: string[];
-            /**
-             * @example [
-             *       "org/b"
-             *     ]
-             */
-            uncovered: string[];
-        };
-        SessionLock: {
-            /** @example agent-1 */
-            holder: string;
-            /** @example 2026-11-17T10:00:00.000Z */
-            acquiredAt: string;
-            /** @example 2026-11-17T10:15:00.000Z */
-            expiresAt: string;
-        };
-        SessionLockConflict: {
-            /** @example planning lock held by agent-1 since 2026-11-17T10:00:00.000Z */
-            error: string;
-            /** @example agent-1 */
-            holder: string;
-            /** @example 2026-11-17T10:00:00.000Z */
-            acquiredAt: string;
-            /** @example 2026-11-17T10:15:00.000Z */
-            expiresAt: string;
-        };
-        SessionLockBody: {
-            /**
-             * @description Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.
-             * @example agent-1
-             */
-            holder?: string;
-        };
-        SessionLockRelease: {
-            /** @enum {boolean} */
-            released: true;
-        };
-        SessionPlanResponse: {
-            /** @example clx0plan */
-            planDocumentId: string;
-            /** @example 3 */
-            inserted: number;
-        };
-        SessionPlanBody: {
-            plan: components["schemas"]["SessionPlanDocument"];
-            /** @description Tasks to create, same shape and validation as POST /tasks/bulk (at most 500). Each is stamped with the session, `planDocumentId` and `originRef` (both the plan document id) and `originKind: document`; a task's own `session` must be absent or equal the slug. */
-            tasks: ({
-                /** @example Implement feature X */
-                title?: string;
-                /** @example pending */
-                status?: string;
-                /** @example org/repo */
-                repo?: string | null;
-                /**
-                 * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
-                 * @example 42
-                 */
-                pr?: unknown;
-            } & {
-                [key: string]: unknown;
-            })[];
-            /**
-             * @description Spec numbers in this session to mark planned (`plannedAt`). An unregistered number is a 400 and rolls back the whole write; an already-planned spec keeps its `plannedAt`.
-             * @example [
-             *       1,
-             *       2
-             *     ]
-             */
-            specs?: number[];
-            /**
-             * @description Planning-lock identity. Defaults to the calling token's agent id (or 'admin'). A live lock held by anyone else is a 409.
-             * @example agent-1
-             */
-            holder?: string;
-        };
-        SessionPlanDocument: {
-            /**
-             * @description Home repo (org/repo) the plan file lives in.
-             * @example org/home
-             */
-            repo: string;
-            /** @example planning/shipwright-may-launch/PLAN.md */
-            path: string;
-            /** @example null */
-            title?: string | null;
-            /**
-             * @description Sets the session's owner when it has none (first one wins, as POST /documents).
-             * @example dev@example.com
-             */
-            owner?: string | null;
-            /**
-             * @example [
-             *       "org/repo",
-             *       "org/other"
-             *     ]
-             */
-            repos?: string[];
-        };
-        RegisterPlanDocumentBody: {
-            /** @example shipwright-may-launch */
-            session: string;
-            /**
-             * @example spec
-             * @enum {string}
-             */
-            kind: "spec" | "plan";
-            /**
-             * @description Required for specs; plans are always number 1 (omit it or send 1).
-             * @example 2
-             */
-            number?: number;
-            /**
-             * @description Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403).
-             * @example org/repo
-             */
-            repo: string;
-            /** @example planning/shipwright-may-launch/SPEC-0002.md */
-            path: string;
-            /** @example Spec title */
-            title?: string | null;
-            /** @example dev@example.com */
-            owner?: string | null;
-            /**
-             * @example [
-             *       "org/repo",
-             *       "org/other"
-             *     ]
-             */
-            repos?: string[];
-            /** @example https://github.com/org/repo/pull/12 */
-            prUrl?: string | null;
-            /**
-             * @description Defaults to draft on first registration.
-             * @example pr_open
-             * @enum {string}
-             */
-            state?: "draft" | "pr_open" | "merged" | "abandoned";
-            /** @example null */
-            commitSha?: string | null;
-            /** @example null */
-            originTaskId?: string | null;
-        };
-        PlanDocumentListResponse: {
-            documents: components["schemas"]["PlanDocument"][];
-            /** @example 1 */
-            total: number;
-        };
-        PatchPlanDocumentBody: {
-            /**
-             * Format: date-time
-             * @description ISO timestamp a planning pass consumed this spec; null clears it. Specs only.
-             * @example 2026-11-17T12:00:00.000Z
-             */
-            plannedAt?: string | null;
-            /** @example null */
-            prUrl?: string | null;
-            /** @example null */
-            owner?: string | null;
-            /**
-             * @example merged
-             * @enum {string}
-             */
-            state?: "draft" | "pr_open" | "merged" | "abandoned";
-        };
-        VerificationCheck: {
-            /** @example clxvcheck1234567 */
-            id: string;
-            /** @example null */
-            taskId: string | null;
-            /** @example clx0987654321 */
-            prRecordId: string | null;
-            /** @example org/repo */
-            repo: string;
-            /** @example unit */
-            checkName: string;
-            /**
-             * @description Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.
-             * @example ran_passed
-             * @enum {string}
-             */
-            status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
-            /**
-             * @description A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.
-             * @example null
-             * @enum {string|null}
-             */
-            reasonCategory: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip" | null;
-            /**
-             * @description Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.
-             * @example null
-             * @enum {string|null}
-             */
-            learnedFromCategory: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip" | null;
-            /** @example 4200 */
-            durationMs: number | null;
-            /** @example 2026-09-24T12:00:00.000Z */
-            at: string;
-            /**
-             * Format: date-time
-             * @example 2026-09-24T12:00:00.000Z
-             */
-            createdAt: string;
-        };
-        CreateVerificationCheckBody: {
-            /**
-             * @description Exactly one of taskId/prId is required — supplying neither or both is 400.
-             * @example clx1234567890
-             */
-            taskId?: string;
-            /** @example clx0987654321 */
-            prId?: string;
-            /** @example org/repo */
-            repo: string;
-            /**
-             * @description Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.
-             * @example unit
-             */
-            checkName: string;
-            /**
-             * @example ran_passed
-             * @enum {string}
-             */
-            status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
-            /**
-             * @description Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.
-             * @example missing_tool
-             * @enum {string}
-             */
-            reasonCategory?: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip";
-            /**
-             * @description Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.
-             * @example missing_tool
-             * @enum {string}
-             */
-            learnedFromCategory?: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip";
-            /** @example 4200 */
-            durationMs?: number;
-            /**
-             * @description ISO timestamp of when the check completed. Defaults to the current time when omitted.
-             * @example 2026-09-24T12:00:00.000Z
-             */
-            at?: string;
-        };
-        VerificationCheckListResponse: {
-            /** @description Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode. */
-            checks: components["schemas"]["VerificationCheck"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        CoverageSnapshot: {
-            /** @example clxcov1234567890 */
-            id: string;
-            /** @example default */
-            accountId: string;
-            /** @example org/repo */
-            repo: string;
-            /** @example main */
-            branch: string;
-            /** @example 9fceb02d0ae598e95dc970b74767f19372d61af8 */
-            commitSha: string;
-            /** @example 820 */
-            linesCovered: number;
-            /** @example 1000 */
-            linesTotal: number;
-            /**
-             * @description Computed server-side: linesCovered / linesTotal * 100.
-             * @example 82
-             */
-            linesPct: number;
-            /** @example 40 */
-            branchesCovered: number | null;
-            /** @example 50 */
-            branchesTotal: number | null;
-            /** @example 80 */
-            branchesPct: number | null;
-            /** @example 90 */
-            functionsCovered: number | null;
-            /** @example 100 */
-            functionsTotal: number | null;
-            /** @example 90 */
-            functionsPct: number | null;
-            /** @example bun */
-            tool: string;
-            /** @example https://github.com/org/repo/actions/runs/1 */
-            runUrl: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-11-17T12:00:00.000Z
-             */
-            measuredAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-11-17T12:00:05.000Z
-             */
-            createdAt: string;
-        };
-        CreateCoverageSnapshotBody: {
-            /**
-             * @description Repository in `owner/repo` form — anything else is 400.
-             * @example org/repo
-             */
-            repo: string;
-            /** @example main */
-            branch: string;
-            /**
-             * @description Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row.
-             * @example 9fceb02d0ae598e95dc970b74767f19372d61af8
-             */
-            commitSha: string;
-            /**
-             * @description Must be >= 0 and <= linesTotal.
-             * @example 820
-             */
-            linesCovered: number;
-            /**
-             * @description Must be > 0.
-             * @example 1000
-             */
-            linesTotal: number;
-            /** @example 40 */
-            branchesCovered?: number;
-            /**
-             * @description Optional; branchesCovered/branchesTotal must be given together with covered <= total.
-             * @example 50
-             */
-            branchesTotal?: number;
-            /** @example 90 */
-            functionsCovered?: number;
-            /**
-             * @description Optional; functionsCovered/functionsTotal must be given together with covered <= total.
-             * @example 100
-             */
-            functionsTotal?: number;
-            /**
-             * @description Tool that produced the measurement (bun, c8, nyc, ...).
-             * @example bun
-             */
-            tool: string;
-            /** @example https://github.com/org/repo/actions/runs/1 */
-            runUrl?: string;
-            /**
-             * @description ISO timestamp of the measurement. Defaults to the current time.
-             * @example 2026-11-17T12:00:00.000Z
-             */
-            measuredAt?: string;
-            /**
-             * @description Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account.
-             * @example default
-             */
-            accountId?: string;
-        };
-        CoverageSnapshotListResponse: {
-            /** @description Snapshots ordered by `measuredAt` descending (newest first). */
-            snapshots: components["schemas"]["CoverageSnapshot"][];
-            /** @example 1 */
-            total: number;
-            /** @example 50 */
-            limit: number;
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
-        CoverageSnapshotLatestResponse: {
-            /** @description Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo. */
-            snapshots: components["schemas"]["CoverageSnapshot"][];
-        };
-        SystemCronListResponse: {
-            systemCrons: components["schemas"]["SystemCronDefinition"][];
-        };
-        SystemCronDefinition: {
-            /**
-             * @description Lowercase slug ([a-z0-9][a-z0-9-]*, max 63 chars). Embedded verbatim in generated task ids.
-             * @example dep-audit
-             */
-            id: string;
-            /**
-             * @description The account this definition belongs to. Tasks it generates inherit it.
-             * @example default
-             */
-            accountId: string;
-            /** @example Dependency audit */
-            name: string;
-            /**
-             * @description 5-field cron expression, interpreted by the external scheduler that calls /fire.
-             * @example 0 9 * * 1
-             */
-            schedule: string;
-            /**
-             * @description IANA timezone the schedule is evaluated in.
-             * @example UTC
-             */
-            timezone: string;
-            /** @example true */
-            enabled: boolean;
-            /**
-             * Format: date-time
-             * @description When the definition last went disabled→enabled; null while disabled. The scheduler never fires a slot at or before it.
-             * @example 2026-11-14T00:00:00.000Z
-             */
-            enabledAt: string | null;
-            /**
-             * @description Task title template. `{repo}` is the only placeholder, replaced by plain substitution with the org/repo string; nothing else is evaluated.
-             * @example Dependency audit: {repo}
-             */
-            titleTemplate: string;
-            /**
-             * @description Task description template — same `{repo}`-only plain substitution as titleTemplate.
-             * @example Audit {repo}'s dependencies and open a PR for safe bumps.
-             */
-            descriptionTemplate: string;
-            /**
-             * @description Which repos the cron fans out to: every repo ('all') or only `repos` ('selected').
-             * @example all
-             * @enum {string}
-             */
-            repoScope: "all" | "selected";
-            /**
-             * @description org/repo list used when repoScope is 'selected'; always [] when 'all'.
-             * @example [
-             *       "acme/widgets"
-             *     ]
-             */
-            repos: string[];
-            /**
-             * Format: date-time
-             * @example 2026-11-14T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-11-14T00:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        CreateSystemCronBody: {
-            /** @example dep-audit */
-            id: string;
-            /** @example Dependency audit */
-            name: string;
-            /** @example 0 9 * * 1 */
-            schedule: string;
-            /**
-             * @description Defaults to UTC.
-             * @example UTC
-             */
-            timezone?: string;
-            /**
-             * @description Defaults to true.
-             * @example true
-             */
-            enabled?: boolean;
-            /** @example Dependency audit: {repo} */
-            titleTemplate: string;
-            /** @example Audit {repo}'s dependencies. */
-            descriptionTemplate: string;
-            /**
-             * @description Defaults to 'all'.
-             * @example all
-             * @enum {string}
-             */
-            repoScope?: "all" | "selected";
-            /**
-             * @description org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500.
-             * @example [
-             *       "acme/widgets"
-             *     ]
-             */
-            repos?: string[];
-        };
-        PatchSystemCronBody: {
-            name?: string;
-            schedule?: string;
-            timezone?: string;
-            titleTemplate?: string;
-            descriptionTemplate?: string;
-            /** @enum {string} */
-            repoScope?: "all" | "selected";
-            repos?: string[];
-        };
-        FireSystemCronResponse: {
-            /**
-             * @description true: this call claimed the slot and created the tasks. false: the slot was already claimed (or lost a concurrent race) — nothing was created.
-             * @example true
-             */
-            claimed: boolean;
-            /** @example dep-audit */
-            cronId: string;
-            /** @example 2026-11-14T09:00:00.000Z */
-            scheduledFor: string;
-            /**
-             * @description Compact UTC form of scheduledFor (YYYYMMDDTHHMMSSZ) used in task ids.
-             * @example 20261114T090000Z
-             */
-            slot: string;
-            /**
-             * @description Ids of tasks created by this call: SC-{cronId}-{slot}-{owner}-{repo}. Always empty when claimed is false.
-             * @example [
-             *       "SC-dep-audit-20261114T090000Z-org-repo-a",
-             *       "SC-dep-audit-20261114T090000Z-org-repo-b"
-             *     ]
-             */
-            taskIds: string[];
-        };
-        FireSystemCronBody: {
-            /**
-             * @description The slot being fired — ISO-8601 with an explicit timezone (`Z` or `±HH:MM`), truncated to whole seconds. Together with the cron id this is the idempotency key.
-             * @example 2026-11-14T09:00:00Z
-             */
-            scheduledFor: string;
-            /**
-             * @description One task is created per distinct org/repo (max 500).
-             * @example [
-             *       "org/repo-a",
-             *       "org/repo-b"
-             *     ]
-             */
-            repos: string[];
-        };
-        LastTriggerResponse: {
-            /**
-             * @description Max claimed scheduledFor (whole-second UTC ISO) for the definition; null when it has never fired.
-             * @example 2026-11-14T09:00:00.000Z
-             */
-            scheduledFor: string | null;
-        };
-        SystemCronTriggersResponse: {
-            /** @description Claimed slots, newest first by scheduledFor (createdAt desc tie-break). */
-            triggers: {
-                /** @example 2026-11-14T09:00:00.000Z */
-                scheduledFor: string;
-                /**
-                 * @description When the slot was claimed (trigger row createdAt).
-                 * @example 2026-11-14T09:00:01.234Z
-                 */
-                claimedAt: string;
-                /** @example 2 */
-                taskCount: number;
-            }[];
-            /**
-             * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
-             * @example null
-             */
-            nextCursor: string | null;
-        };
+  schemas: {
+    TaskListResponse: {
+      tasks: components["schemas"]["Task"][];
+      /** @example 10 */
+      total: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page and for `?ready=true` / `?state=blocked`.
+       * @example null
+       */
+      nextCursor: string | null;
+      /**
+       * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
+       * @example false
+       */
+      scopeDegraded: boolean;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    Task: {
+      /** @example clx1234567890 */
+      id: string;
+      /** @example Implement feature X */
+      title: string;
+      /**
+       * @example pending
+       * @enum {string}
+       */
+      status:
+        | "pending"
+        | "in_progress"
+        | "pr_open"
+        | "approved"
+        | "merged"
+        | "done"
+        | "deployed"
+        | "released"
+        | "blocked"
+        | "cancelled";
+      /** @example manual */
+      source?: string | null;
+      /** @example session-123 */
+      session?: string | null;
+      /** @example org/repo */
+      repo?: string | null;
+      /** @example Task description */
+      description?: string | null;
+      /**
+       * @example [
+       *       "Criterion 1",
+       *       "Criterion 2"
+       *     ]
+       */
+      acceptanceCriteria?: string[];
+      /** @example feature */
+      layer?: string | null;
+      /** @example feat/feature-x */
+      branch?: string | null;
+      /**
+       * @example [
+       *       "task-1",
+       *       "task-2"
+       *     ]
+       */
+      dependencies?: string[];
+      /** @example 42 */
+      pr?: number | null;
+      /** @example 5.5 */
+      hours?: number | null;
+      /** @example 2026-01-02T00:00:00.000Z */
+      startedAt?: string | null;
+      /** @example 2026-01-03T00:00:00.000Z */
+      prCreatedAt?: string | null;
+      /** @example 2026-01-04T00:00:00.000Z */
+      mergedAt?: string | null;
+      /** @example null */
+      blockedAt?: string | null;
+      /** @example Waiting on dependency */
+      blockedReason?: string | null;
+      /** @example Some notes */
+      note?: string | null;
+      /** @example feature */
+      type?: string | null;
+      /** @example high */
+      priority?: string | null;
+      /** @example null */
+      cancelledAt?: string | null;
+      /** @example 2026-01-05T00:00:00.000Z */
+      completedAt?: string | null;
+      /** @example 2026-01-06T00:00:00.000Z */
+      deployedAt?: string | null;
+      /** @example null */
+      releasedAt?: string | null;
+      /** @example 2 */
+      ciFixAttempts?: number | null;
+      /** @example abc123def456 */
+      mergeCommit?: string | null;
+      /** @example https://github.com/org/repo/pull/42 */
+      prUrl?: string | null;
+      /** @example user@example.com */
+      assignee?: string | null;
+      /** @example GH-123 */
+      issue?: string | null;
+      /** @example sonnet */
+      model?: string | null;
+      /** @example 7 */
+      complexity?: number | null;
+      /** @example true */
+      hitl?: boolean | null;
+      /**
+       * @description Requester's email (PLU-2.5). Null when unknown — never invented for scanner/cron tasks. Distinct from `assignee`/`claimedBy`, which identify agents.
+       * @example dev@example.com
+       */
+      owner?: string | null;
+      /**
+       * @description Id of the plan document this task came from.
+       * @example doc-plan-1
+       */
+      planDocumentId?: string | null;
+      /**
+       * @description Id of the spec document this task implements.
+       * @example doc-spec-1
+       */
+      specDocumentId?: string | null;
+      /**
+       * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+       * @example skill
+       * @enum {string|null}
+       */
+      originKind?: "document" | "skill" | "cron" | "human" | null;
+      /**
+       * @description Names the origin: a document id, skill name, cron name, etc.
+       * @example plan-session
+       */
+      originRef?: string | null;
+      /**
+       * @description What the task is: `dev` (ordinary work item, the default) `prd` (a product spec awaiting an autonomous plan session), `initiative` (rough work item the team intends to do soon) or `idea` (unprioritized, hidden by default in the UI). Only `dev` tasks are ever part of the `?ready=true` set.
+       * @default dev
+       * @example dev
+       * @enum {string}
+       */
+      kind: "dev" | "prd" | "initiative" | "idea";
+      /**
+       * @description Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
+       * @default 0
+       * @example 0
+       */
+      skipCount: number;
+      /** @example 2026-01-02T00:00:00.000Z */
+      lastSkippedAt?: string | null;
+      /**
+       * @description The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `"unspecified"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.
+       * @example dev-task:deferred:unmet-hidden-requirement
+       */
+      lastSkipReason?: string | null;
+      /** @example agent-id-123 */
+      claimedBy?: string | null;
+      /** @example prefer-sonnet */
+      agentHint?: string | null;
+      /** @example 2026-01-02T00:00:00.000Z */
+      claimedAt?: string | null;
+      /** @example 2026-01-06T12:00:00.000Z */
+      heartbeatAt?: string | null;
+      /** @example 10 */
+      simplifyTotal?: number | null;
+      /** @example 2 */
+      simplifyDry?: number | null;
+      /** @example 3 */
+      simplifyDeadCode?: number | null;
+      /** @example 1 */
+      simplifyNaming?: number | null;
+      /** @example 2 */
+      simplifyComplexity?: number | null;
+      /** @example 2 */
+      simplifyConsistency?: number | null;
+      /** @example 5.5 */
+      coverageDelta?: number | null;
+      /** @example medium */
+      effortLevel?: string | null;
+      /** @example 1000 */
+      inputTokens?: number | null;
+      /** @example 500 */
+      outputTokens?: number | null;
+      /** @example 100 */
+      cacheReadTokens?: number | null;
+      /** @example 50 */
+      cacheCreationTokens?: number | null;
+      /** @example 0.02 */
+      costUsd?: number | null;
+      /**
+       * @example {
+       *       "customKey": "customValue"
+       *     }
+       */
+      metadata?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-06T12:00:00.000Z
+       */
+      updatedAt: string;
+    };
+    Error: {
+      /** @example not found */
+      error: string;
+    };
+    CreateTaskBody: {
+      /** @example Implement feature X */
+      title?: string;
+      /** @example pending */
+      status?: string;
+      /** @example org/repo */
+      repo?: string | null;
+      /** @example session-123 */
+      session?: string;
+      /** @example Task description */
+      description?: string;
+      /** @example service */
+      layer?: string;
+      /** @example feat/feature-x */
+      branch?: string;
+      /**
+       * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+       * @example 42
+       */
+      pr?: unknown;
+      /** @example [] */
+      dependencies?: string[];
+      /** @example [] */
+      acceptanceCriteria?: string[];
+      /** @example user@example.com */
+      assignee?: string;
+      /** @example high */
+      priority?: string;
+      /** @example feature */
+      type?: string;
+      /** @example manual */
+      source?: string;
+      /** @example dev@example.com */
+      owner?: string | null;
+      /** @example doc-plan-1 */
+      planDocumentId?: string | null;
+      /** @example doc-spec-1 */
+      specDocumentId?: string | null;
+      /**
+       * @description Typed origin of the task: one of document, skill, cron, human. Writes and the `?originKind=` filter share this one list; any other value is 400.
+       * @example skill
+       * @enum {string|null}
+       */
+      originKind?: "document" | "skill" | "cron" | "human" | null;
+      /** @example plan-session */
+      originRef?: string | null;
+      /**
+       * @description What the task is (TKD-1.1). Defaults to `dev`.
+       * @example dev
+       * @enum {string}
+       */
+      kind?: "dev" | "prd" | "initiative" | "idea";
+    } & {
+      [key: string]: unknown;
+    };
+    BulkInsertResponse: {
+      /** @example 3 */
+      inserted: number;
+      /** @example 1 */
+      updated: number;
+      /**
+       * @description Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.
+       * @example []
+       */
+      skipped: string[];
+    };
+    /** @description Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it. */
+    BulkInsertBody: ({
+      /** @example Implement feature X */
+      title?: string;
+      /** @example pending */
+      status?: string;
+      /** @example org/repo */
+      repo?: string | null;
+      /**
+       * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+       * @example 42
+       */
+      pr?: unknown;
+    } & {
+      [key: string]: unknown;
+    })[];
+    PatchTasksByPrResponse: {
+      /** @description Ids of `merged` tasks moved to the requested status. */
+      updated: string[];
+      /** @description Ids of tasks already at the requested status (no-op). */
+      unchanged: string[];
+      /** @description Matching tasks in any other status; never modified. Carries their current status. */
+      skipped: {
+        id: string;
+        status: string;
+      }[];
+    };
+    PatchTasksByPrBody: {
+      /** @example org/repo */
+      repo: string;
+      /**
+       * @description PR numbers of `repo`, 1 to 100 positive integers.
+       * @example [
+       *       101,
+       *       102
+       *     ]
+       */
+      prNumbers: number[];
+      /**
+       * @example deployed
+       * @enum {string}
+       */
+      status: "deployed" | "released";
+      /**
+       * @description ISO timestamp stamped into deployedAt/releasedAt. Defaults to now.
+       * @example 2026-07-02T00:00:00.000Z
+       */
+      at?: string;
+    };
+    DistinctResponse: {
+      /**
+       * @example [
+       *       "session-1"
+       *     ]
+       */
+      sessions: string[];
+      /**
+       * @example [
+       *       "org/repo"
+       *     ]
+       */
+      repos: string[];
+      /**
+       * @example [
+       *       "org"
+       *     ]
+       */
+      orgs: string[];
+    };
+    UpdateTaskBody: {
+      /**
+       * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+       * @example 42
+       */
+      pr?: unknown;
+      /**
+       * @description Change what the task is (INI-1.1) — e.g. promote an `idea` to an `initiative`, or an `initiative` to `dev`.
+       * @example initiative
+       * @enum {string}
+       */
+      kind?: "dev" | "prd" | "initiative" | "idea";
+    } & {
+      [key: string]: unknown;
+    };
+    ClaimBody: {
+      /** @example agent-id-123 */
+      claimedBy?: string;
+    };
+    FailBody: {
+      /** @example build failed */
+      reason?: string;
+    };
+    SkipBody: {
+      /** @example dev-task:deferred:unmet-hidden-requirement */
+      reason?: string;
+    };
+    UnblockBody: {
+      /**
+       * @description Target status. Omit to infer from task.pr and the PR record (never deployed/released).
+       * @enum {string}
+       */
+      to?: "pending" | "pr_open" | "merged" | "deployed" | "released";
+    };
+    TaskEventsResponse: {
+      /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
+      events: components["schemas"]["TaskEvent"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    TaskEvent: {
+      /** @example clxevent123456 */
+      id: string;
+      /** @example clx0987654321 */
+      taskId: string;
+      /** @example status */
+      field: string;
+      /** @example pending */
+      oldValue: string | null;
+      /** @example in_progress */
+      newValue: string | null;
+      /** @example agent-abc123 */
+      actor: string | null;
+      /** @example claim */
+      method: string;
+      /** @example 2026-08-17T12:00:00.000Z */
+      at: string;
+      /**
+       * Format: date-time
+       * @example 2026-08-17T12:00:00.000Z
+       */
+      createdAt: string;
+    };
+    TaskToken: {
+      /** @example clxtoken123456 */
+      id: string;
+      /** @example ci-runner */
+      label?: string | null;
+      /** @example agent-id-123 */
+      agentId?: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example null
+       */
+      revokedAt?: string | null;
+    };
+    TaskTokenWithRaw: components["schemas"]["TaskToken"] & {
+      /** @example raw-token-value-shown-once */
+      rawToken: string;
+    };
+    TokenBody: {
+      /** @example ci-runner */
+      label?: string;
+      /** @example agent-id-123 */
+      agentId?: string;
+    };
+    PrListResponse: {
+      /** @description Array of pull requests */
+      prs: components["schemas"]["PullRequest"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    PullRequest: {
+      /** @example clx0987654321 */
+      id: string;
+      /** @example org/repo */
+      repo: string;
+      /** @example 42 */
+      prNumber: number;
+      /**
+       * @default false
+       * @example false
+       */
+      staged: boolean;
+      /**
+       * @default open
+       * @example open
+       * @enum {string}
+       */
+      state: "open" | "merged" | "closed";
+      /**
+       * @default pending
+       * @example pending
+       * @enum {string}
+       */
+      reviewState: "pending" | "in_progress" | "posted" | "approved";
+      /** @example abc123def456 */
+      commitSha?: string | null;
+      /**
+       * @description The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/merge for their own multi-phase bookkeeping.
+       * @example abc123def456
+       */
+      reviewedCommitSha?: string | null;
+      /**
+       * @default 0
+       * @example 1
+       */
+      patchCycles: number;
+      /**
+       * @default 0
+       * @example 0
+       */
+      reviewCycles: number;
+      /** @example agent-id-123 */
+      agentId?: string | null;
+      /** @example 2026-01-03T00:00:00.000Z */
+      reviewedAt?: string | null;
+      /** @example null */
+      patchedAt?: string | null;
+      /** @example null */
+      mergedAt?: string | null;
+      /**
+       * @description ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      prCreatedAt?: string | null;
+      /** @example agent-id-123 */
+      claimedBy?: string | null;
+      /** @example 2026-01-02T00:00:00.000Z */
+      claimedAt?: string | null;
+      /** @example 2026-01-06T12:00:00.000Z */
+      heartbeatAt?: string | null;
+      /**
+       * @example review
+       * @enum {string|null}
+       */
+      phase?: "review" | "patch" | "merge" | null;
+      /** @example 2026-01-02T00:00:00.000Z */
+      readyForReviewAt?: string | null;
+      /** @example null */
+      readyForPatchAt?: string | null;
+      /** @example null */
+      readyForMergeAt?: string | null;
+      /**
+       * @default false
+       * @example false
+       */
+      blocked: boolean;
+      /** @example no linked task */
+      blockedReason?: string | null;
+      /**
+       * @description Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).
+       * @example shipwright
+       * @enum {string|null}
+       */
+      origin?:
+        | "shipwright"
+        | "ci"
+        | "dependency_bot"
+        | "human"
+        | "unknown"
+        | null;
+      /** @example octocat */
+      authorLogin?: string | null;
+      /** @example feat/some-branch */
+      headRef?: string | null;
+      /** @example Add the origin metrics dimension */
+      title?: string | null;
+      /**
+       * @description Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.
+       * @example 12
+       */
+      commitCount?: number | null;
+      /**
+       * @description Commits attributed to the docs-refresher subagent (CPP-1.1).
+       * @example 1
+       */
+      commitsDocsRefresh?: number | null;
+      /**
+       * @description Commits attributed to the review/patch cycle (CPP-1.1).
+       * @example 3
+       */
+      commitsReviewPatch?: number | null;
+      /**
+       * @description Commits attributed to CI-fix cycles (CPP-1.1).
+       * @example 2
+       */
+      commitsCiFix?: number | null;
+      /**
+       * @description Commits attributed to the initial implementation (CPP-1.1).
+       * @example 6
+       */
+      commitsImplementation?: number | null;
+      /**
+       * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips') or starts with the patch no-progress escalation prefix ('patch dispatch made no progress'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
+       * @default 0
+       * @example 0
+       */
+      skipCount: number;
+      /** @example 2026-01-02T00:00:00.000Z */
+      lastSkippedAt?: string | null;
+      /**
+       * @description Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.
+       * @example npm-test-failed-foo.unit.test.ts
+       */
+      lastCiFailureSignature?: string | null;
+      /**
+       * @description Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).
+       * @default 0
+       * @example 0
+       */
+      consecutiveCiFailureCount: number;
+      /** @description Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then. */
+      blockedHeadSha?: string | null;
+      /** @description Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed. */
+      blockedReviewId?: string | null;
+      /** @description ISO timestamp of the most recent skip auto-block (PSL-3.1). */
+      blockedAt?: string | null;
+      /** @description blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
+      lastAutoBlockReason?: string | null;
+      /** @description ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1). */
+      lastAutoBlockedAt?: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-06T12:00:00.000Z
+       */
+      updatedAt: string;
+      /** @description Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
+      findings?: components["schemas"]["PrFinding"][];
+      /** @description Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
+      events?: components["schemas"]["PullRequestEvent"][];
+    };
+    PrFinding: {
+      /** @example clxfinding123456 */
+      id: string;
+      /** @example clx0987654321 */
+      prRecordId: string;
+      /** @example src/foo.ts:42 */
+      ref: string;
+      /**
+       * @example resolved
+       * @enum {string}
+       */
+      disposition: "resolved" | "superseded" | "rejected";
+      /**
+       * @example review
+       * @enum {string}
+       */
+      source: "review" | "patch";
+      /** @example Fixed the null check in the follow-up commit. */
+      evidence: string;
+      /** @example 2026-08-17T12:00:00.000Z */
+      at: string;
+      /**
+       * @description Agent instance that triaged this finding, if any.
+       * @example agent-abc123
+       */
+      agentId: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-08-17T12:00:00.000Z
+       */
+      createdAt: string;
+    };
+    PullRequestEvent: {
+      /** @example clxevent123456 */
+      id: string;
+      /** @example clx0987654321 */
+      prRecordId: string;
+      /** @example reviewState */
+      field: string;
+      /** @example pending */
+      oldValue: string | null;
+      /** @example in_progress */
+      newValue: string | null;
+      /** @example agent-abc123 */
+      actor: string | null;
+      /** @example claim */
+      method: string;
+      /** @example 2026-08-17T12:00:00.000Z */
+      at: string;
+      /**
+       * Format: date-time
+       * @example 2026-08-17T12:00:00.000Z
+       */
+      createdAt: string;
+    };
+    ClaimPrBody: {
+      /**
+       * @description Repository in org/repo format
+       * @example org/repo
+       */
+      repo: string;
+      /**
+       * @description Pull request number
+       * @example 42
+       */
+      prNumber: number;
+      /**
+       * @description Commit SHA to associate
+       * @example abc123def456
+       */
+      commitSha: string;
+      /**
+       * @description Agent claiming this PR (admin tokens only)
+       * @example agent-id-123
+       */
+      claimedBy?: string;
+      /**
+       * @description Pipeline phase this claim is for (defaults to 'review' when omitted)
+       * @example patch
+       * @enum {string}
+       */
+      phase?: "review" | "patch" | "merge";
+      /**
+       * @description ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      prCreatedAt?: string;
+      /**
+       * @description PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
+       * @example octocat
+       */
+      authorLogin?: string | null;
+      /**
+       * @description PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
+       * @example feat/some-branch
+       */
+      headRef?: string | null;
+      /**
+       * @description PR title (POM-1.2). Refreshed unconditionally on every claim.
+       * @example Add the origin metrics dimension
+       */
+      title?: string | null;
+      /**
+       * @description True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.
+       * @example true
+       */
+      authorIsBot?: boolean;
+      /**
+       * @description True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.
+       * @example false
+       */
+      hasAutomatedLabel?: boolean;
+      /**
+       * @description True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.
+       * @example false
+       */
+      hasShipwrightLabel?: boolean;
+    };
+    ClaimNextResponse: {
+      pr: components["schemas"]["PullRequest"];
+      /**
+       * @example review
+       * @enum {string}
+       */
+      phase: "review" | "patch" | "merge";
+    };
+    ClaimNextBody: {
+      /**
+       * @description Agent ID (admin tokens only; agent tokens use token identity)
+       * @example agent-id-123
+       */
+      agentId?: string;
+      /**
+       * @description Maximum concurrent PRs to claim
+       * @example 1
+       */
+      maxConcurrent?: number;
+    };
+    CensusResponse: {
+      /** @description The upserted PullRequest rows, one per input entry. */
+      prs: components["schemas"]["PullRequest"][];
+    };
+    /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
+    CensusBody: components["schemas"]["CensusEntry"][];
+    CensusEntry: {
+      /** @example org/repo */
+      repo: string;
+      /** @example 42 */
+      prNumber: number;
+      /**
+       * @description First-write-wins: only applied when the row's existing origin is currently null.
+       * @example unknown
+       * @enum {string}
+       */
+      origin?: "shipwright" | "ci" | "dependency_bot" | "human" | "unknown";
+      /** @example octocat */
+      authorLogin?: string | null;
+      /** @example feat/some-branch */
+      headRef?: string | null;
+      /** @example Add the origin metrics dimension */
+      title?: string | null;
+      /**
+       * @example merged
+       * @enum {string}
+       */
+      state?: "open" | "merged" | "closed";
+      /** @example 2026-01-04T00:00:00.000Z */
+      mergedAt?: string | null;
+      /** @example 2026-01-01T00:00:00.000Z */
+      prCreatedAt?: string | null;
+      /** @example 12 */
+      commitCount?: number | null;
+      /** @example 1 */
+      commitsDocsRefresh?: number | null;
+      /** @example 3 */
+      commitsReviewPatch?: number | null;
+      /** @example 2 */
+      commitsCiFix?: number | null;
+      /** @example 6 */
+      commitsImplementation?: number | null;
+    };
+    CensusCursorResponse: {
+      /**
+       * @description Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.
+       * @example 2026-01-04T00:00:00.000Z
+       */
+      cursor: string | null;
+    };
+    UpdatePrBody: {
+      [key: string]: unknown;
+    };
+    PatchPrBody: {
+      /**
+       * @description Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).
+       * @example abc123def456
+       */
+      commitSha?: string;
+      /**
+       * @description Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.
+       * @example npm-test-failed-foo.unit.test.ts
+       */
+      ciFailureSignature?: string;
+    };
+    CreateFindingBody: {
+      /**
+       * @description Identifier for the finding (e.g. file:line or a slug).
+       * @example src/foo.ts:42
+       */
+      ref: string;
+      /**
+       * @description Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.
+       * @example resolved
+       * @enum {string}
+       */
+      disposition: "resolved" | "superseded" | "rejected";
+      /**
+       * @description Which pipeline phase is recording this finding.
+       * @example review
+       * @enum {string}
+       */
+      source: "review" | "patch";
+      /** @example Fixed the null check in the follow-up commit. */
+      evidence: string;
+      /**
+       * @description ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.
+       * @example 2026-08-17T12:00:00.000Z
+       */
+      at?: string;
+      /**
+       * @description Agent instance that triaged this finding.
+       * @example agent-abc123
+       */
+      agentId?: string;
+    };
+    PrEventsResponse: {
+      /** @description This PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first). */
+      events: components["schemas"]["PullRequestEvent"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    SessionListResponse: {
+      sessions: components["schemas"]["Session"][];
+      /** @example 10 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    Session: {
+      /** @example shipwright-may-launch */
+      slug: string;
+      /**
+       * @description The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently.
+       * @example default
+       */
+      accountId: string;
+      /** @example May launch prep */
+      title?: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-01-01T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-01-06T12:00:00.000Z
+       */
+      updatedAt: string;
+      /** @example null */
+      archivedAt?: string | null;
+      /** @example null */
+      archivedBy?: string | null;
+      /**
+       * @description Owner email, set from the session's first document.
+       * @example dev@example.com
+       */
+      owner: string | null;
+      /**
+       * @description The org/repo the session's planning files live in.
+       * @example org/repo
+       */
+      homeRepo: string | null;
+      /** @description The session's planning documents. Agent tokens only see documents whose home repo or a target repo is in their scope. */
+      documents: components["schemas"]["PlanDocument"][];
+      /**
+       * @example active
+       * @enum {string}
+       */
+      state: "waiting" | "active" | "closed" | "empty";
+      /** @example 2026-01-01T00:00:00.000Z */
+      waitingSince: string | null;
+      /** @example 2026-01-06T12:00:00.000Z */
+      lastActivityAt: string | null;
+      /**
+       * @example {
+       *       "total": 3,
+       *       "open": 2,
+       *       "closed": 1
+       *     }
+       */
+      counts: {
+        total: number;
+        open: number;
+        closed: number;
+      };
+      /**
+       * @example [
+       *       "agent-1"
+       *     ]
+       */
+      agentIds: string[];
+      /**
+       * @description The session's task repos (derived; not writable).
+       * @example [
+       *       "org/repo"
+       *     ]
+       */
+      repos: string[];
+      /**
+       * @example [
+       *       {
+       *         "id": "task-1",
+       *         "kind": "hitl"
+       *       }
+       *     ]
+       */
+      waitingTasks: {
+        id: string;
+        /** @enum {string} */
+        kind: "hitl" | "blocked" | "pr_blocked";
+      }[];
+      /** @example false */
+      archived: boolean;
+    };
+    PlanDocument: {
+      /** @example clxdoc1234567890 */
+      id: string;
+      /** @example default */
+      accountId: string;
+      /** @example shipwright-may-launch */
+      session: string;
+      /**
+       * @example spec
+       * @enum {string}
+       */
+      kind: "spec" | "plan";
+      /**
+       * @description Specs: 1, 2, 3… within the session. Plans: always 1.
+       * @example 2
+       */
+      number: number;
+      /** @example org/repo */
+      repo: string;
+      /** @example planning/shipwright-may-launch/SPEC-0002.md */
+      path: string;
+      /** @example Planning documents */
+      title: string | null;
+      /** @example dev@example.com */
+      owner: string | null;
+      /**
+       * @example [
+       *       "org/repo"
+       *     ]
+       */
+      repos: string[];
+      /** @example https://github.com/org/repo/pull/12 */
+      prUrl: string | null;
+      /**
+       * @example draft
+       * @enum {string}
+       */
+      state: "draft" | "pr_open" | "merged" | "abandoned";
+      /** @example null */
+      commitSha: string | null;
+      /**
+       * Format: date-time
+       * @description Specs only.
+       * @example null
+       */
+      plannedAt: string | null;
+      /** @example null */
+      originTaskId: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-11-17T12:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-11-17T12:00:00.000Z
+       */
+      updatedAt: string;
+    };
+    SessionPatchBody: {
+      /**
+       * @description Omitted: title untouched. A string: set. null: clears the title.
+       * @example May launch prep
+       */
+      title?: string | null;
+      /**
+       * @description Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.
+       * @example true
+       */
+      archived?: boolean;
+      /**
+       * @description Omitted: untouched. A string: set. null: clears.
+       * @example dev@example.com
+       */
+      owner?: string | null;
+      /**
+       * @description Omitted: untouched. A string: set. null: clears.
+       * @example org/repo
+       */
+      homeRepo?: string | null;
+    };
+    ScopePreflightResponse: {
+      /**
+       * @example [
+       *       "org/a"
+       *     ]
+       */
+      covered: string[];
+      /**
+       * @example [
+       *       "org/b"
+       *     ]
+       */
+      uncovered: string[];
+    };
+    SessionLock: {
+      /** @example agent-1 */
+      holder: string;
+      /** @example 2026-11-17T10:00:00.000Z */
+      acquiredAt: string;
+      /** @example 2026-11-17T10:15:00.000Z */
+      expiresAt: string;
+    };
+    SessionLockConflict: {
+      /** @example planning lock held by agent-1 since 2026-11-17T10:00:00.000Z */
+      error: string;
+      /** @example agent-1 */
+      holder: string;
+      /** @example 2026-11-17T10:00:00.000Z */
+      acquiredAt: string;
+      /** @example 2026-11-17T10:15:00.000Z */
+      expiresAt: string;
+    };
+    SessionLockBody: {
+      /**
+       * @description Who holds the lock. Defaults to the calling token's agent id (or 'admin' for admin tokens). Release must name the same holder.
+       * @example agent-1
+       */
+      holder?: string;
+    };
+    SessionLockRelease: {
+      /** @enum {boolean} */
+      released: true;
+    };
+    SessionPlanResponse: {
+      /** @example clx0plan */
+      planDocumentId: string;
+      /** @example 3 */
+      inserted: number;
+    };
+    SessionPlanBody: {
+      plan: components["schemas"]["SessionPlanDocument"];
+      /** @description Tasks to create, same shape and validation as POST /tasks/bulk (at most 500). Each is stamped with the session, `planDocumentId` and `originRef` (both the plan document id) and `originKind: document`; a task's own `session` must be absent or equal the slug. */
+      tasks: ({
+        /** @example Implement feature X */
+        title?: string;
+        /** @example pending */
+        status?: string;
+        /** @example org/repo */
+        repo?: string | null;
+        /**
+         * @description PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).
+         * @example 42
+         */
+        pr?: unknown;
+      } & {
+        [key: string]: unknown;
+      })[];
+      /**
+       * @description Spec numbers in this session to mark planned (`plannedAt`). An unregistered number is a 400 and rolls back the whole write; an already-planned spec keeps its `plannedAt`.
+       * @example [
+       *       1,
+       *       2
+       *     ]
+       */
+      specs?: number[];
+      /**
+       * @description Planning-lock identity. Defaults to the calling token's agent id (or 'admin'). A live lock held by anyone else is a 409.
+       * @example agent-1
+       */
+      holder?: string;
+    };
+    SessionPlanDocument: {
+      /**
+       * @description Home repo (org/repo) the plan file lives in.
+       * @example org/home
+       */
+      repo: string;
+      /** @example planning/shipwright-may-launch/PLAN.md */
+      path: string;
+      /** @example null */
+      title?: string | null;
+      /**
+       * @description Sets the session's owner when it has none (first one wins, as POST /documents).
+       * @example dev@example.com
+       */
+      owner?: string | null;
+      /**
+       * @example [
+       *       "org/repo",
+       *       "org/other"
+       *     ]
+       */
+      repos?: string[];
+    };
+    RegisterPlanDocumentBody: {
+      /** @example shipwright-may-launch */
+      session: string;
+      /**
+       * @example spec
+       * @enum {string}
+       */
+      kind: "spec" | "plan";
+      /**
+       * @description Required for specs; plans are always number 1 (omit it or send 1).
+       * @example 2
+       */
+      number?: number;
+      /**
+       * @description Home repo (org/repo) the file lives in. Agent tokens: must be in the token's repo scope (else 403).
+       * @example org/repo
+       */
+      repo: string;
+      /** @example planning/shipwright-may-launch/SPEC-0002.md */
+      path: string;
+      /** @example Spec title */
+      title?: string | null;
+      /** @example dev@example.com */
+      owner?: string | null;
+      /**
+       * @example [
+       *       "org/repo",
+       *       "org/other"
+       *     ]
+       */
+      repos?: string[];
+      /** @example https://github.com/org/repo/pull/12 */
+      prUrl?: string | null;
+      /**
+       * @description Defaults to draft on first registration.
+       * @example pr_open
+       * @enum {string}
+       */
+      state?: "draft" | "pr_open" | "merged" | "abandoned";
+      /** @example null */
+      commitSha?: string | null;
+      /** @example null */
+      originTaskId?: string | null;
+    };
+    PlanDocumentListResponse: {
+      documents: components["schemas"]["PlanDocument"][];
+      /** @example 1 */
+      total: number;
+    };
+    PatchPlanDocumentBody: {
+      /**
+       * Format: date-time
+       * @description ISO timestamp a planning pass consumed this spec; null clears it. Specs only.
+       * @example 2026-11-17T12:00:00.000Z
+       */
+      plannedAt?: string | null;
+      /** @example null */
+      prUrl?: string | null;
+      /** @example null */
+      owner?: string | null;
+      /**
+       * @example merged
+       * @enum {string}
+       */
+      state?: "draft" | "pr_open" | "merged" | "abandoned";
+    };
+    VerificationCheck: {
+      /** @example clxvcheck1234567 */
+      id: string;
+      /** @example null */
+      taskId: string | null;
+      /** @example clx0987654321 */
+      prRecordId: string | null;
+      /** @example org/repo */
+      repo: string;
+      /** @example unit */
+      checkName: string;
+      /**
+       * @description Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.
+       * @example ran_passed
+       * @enum {string}
+       */
+      status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
+      /**
+       * @description A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.
+       * @example null
+       * @enum {string|null}
+       */
+      reasonCategory:
+        | "check_timeout"
+        | "install_timeout"
+        | "resource_limit"
+        | "missing_tool"
+        | "missing_secret"
+        | "missing_dependency"
+        | "not_configured"
+        | "learned_skip"
+        | null;
+      /**
+       * @description Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.
+       * @example null
+       * @enum {string|null}
+       */
+      learnedFromCategory:
+        | "check_timeout"
+        | "install_timeout"
+        | "resource_limit"
+        | "missing_tool"
+        | "missing_secret"
+        | "missing_dependency"
+        | "not_configured"
+        | "learned_skip"
+        | null;
+      /** @example 4200 */
+      durationMs: number | null;
+      /** @example 2026-09-24T12:00:00.000Z */
+      at: string;
+      /**
+       * Format: date-time
+       * @example 2026-09-24T12:00:00.000Z
+       */
+      createdAt: string;
+    };
+    CreateVerificationCheckBody: {
+      /**
+       * @description Exactly one of taskId/prId is required — supplying neither or both is 400.
+       * @example clx1234567890
+       */
+      taskId?: string;
+      /** @example clx0987654321 */
+      prId?: string;
+      /** @example org/repo */
+      repo: string;
+      /**
+       * @description Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.
+       * @example unit
+       */
+      checkName: string;
+      /**
+       * @example ran_passed
+       * @enum {string}
+       */
+      status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
+      /**
+       * @description Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.
+       * @example missing_tool
+       * @enum {string}
+       */
+      reasonCategory?:
+        | "check_timeout"
+        | "install_timeout"
+        | "resource_limit"
+        | "missing_tool"
+        | "missing_secret"
+        | "missing_dependency"
+        | "not_configured"
+        | "learned_skip";
+      /**
+       * @description Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.
+       * @example missing_tool
+       * @enum {string}
+       */
+      learnedFromCategory?:
+        | "check_timeout"
+        | "install_timeout"
+        | "resource_limit"
+        | "missing_tool"
+        | "missing_secret"
+        | "missing_dependency"
+        | "not_configured"
+        | "learned_skip";
+      /** @example 4200 */
+      durationMs?: number;
+      /**
+       * @description ISO timestamp of when the check completed. Defaults to the current time when omitted.
+       * @example 2026-09-24T12:00:00.000Z
+       */
+      at?: string;
+    };
+    VerificationCheckListResponse: {
+      /** @description Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode. */
+      checks: components["schemas"]["VerificationCheck"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    CoverageSnapshot: {
+      /** @example clxcov1234567890 */
+      id: string;
+      /** @example default */
+      accountId: string;
+      /** @example org/repo */
+      repo: string;
+      /** @example main */
+      branch: string;
+      /** @example 9fceb02d0ae598e95dc970b74767f19372d61af8 */
+      commitSha: string;
+      /** @example 820 */
+      linesCovered: number;
+      /** @example 1000 */
+      linesTotal: number;
+      /**
+       * @description Computed server-side: linesCovered / linesTotal * 100.
+       * @example 82
+       */
+      linesPct: number;
+      /** @example 40 */
+      branchesCovered: number | null;
+      /** @example 50 */
+      branchesTotal: number | null;
+      /** @example 80 */
+      branchesPct: number | null;
+      /** @example 90 */
+      functionsCovered: number | null;
+      /** @example 100 */
+      functionsTotal: number | null;
+      /** @example 90 */
+      functionsPct: number | null;
+      /** @example bun */
+      tool: string;
+      /** @example https://github.com/org/repo/actions/runs/1 */
+      runUrl: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-11-17T12:00:00.000Z
+       */
+      measuredAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-11-17T12:00:05.000Z
+       */
+      createdAt: string;
+    };
+    CreateCoverageSnapshotBody: {
+      /**
+       * @description Repository in `owner/repo` form — anything else is 400.
+       * @example org/repo
+       */
+      repo: string;
+      /** @example main */
+      branch: string;
+      /**
+       * @description Commit the coverage was measured at. (accountId, repo, commitSha) is unique — a repeat POST updates the row.
+       * @example 9fceb02d0ae598e95dc970b74767f19372d61af8
+       */
+      commitSha: string;
+      /**
+       * @description Must be >= 0 and <= linesTotal.
+       * @example 820
+       */
+      linesCovered: number;
+      /**
+       * @description Must be > 0.
+       * @example 1000
+       */
+      linesTotal: number;
+      /** @example 40 */
+      branchesCovered?: number;
+      /**
+       * @description Optional; branchesCovered/branchesTotal must be given together with covered <= total.
+       * @example 50
+       */
+      branchesTotal?: number;
+      /** @example 90 */
+      functionsCovered?: number;
+      /**
+       * @description Optional; functionsCovered/functionsTotal must be given together with covered <= total.
+       * @example 100
+       */
+      functionsTotal?: number;
+      /**
+       * @description Tool that produced the measurement (bun, c8, nyc, ...).
+       * @example bun
+       */
+      tool: string;
+      /** @example https://github.com/org/repo/actions/runs/1 */
+      runUrl?: string;
+      /**
+       * @description ISO timestamp of the measurement. Defaults to the current time.
+       * @example 2026-11-17T12:00:00.000Z
+       */
+      measuredAt?: string;
+      /**
+       * @description Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account.
+       * @example default
+       */
+      accountId?: string;
+    };
+    CoverageSnapshotListResponse: {
+      /** @description Snapshots ordered by `measuredAt` descending (newest first). */
+      snapshots: components["schemas"]["CoverageSnapshot"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    CoverageSnapshotLatestResponse: {
+      /** @description Exactly one snapshot per repo — the newest by `measuredAt` — ordered by repo. */
+      snapshots: components["schemas"]["CoverageSnapshot"][];
+    };
+    RepoCronRun: {
+      /** @example clxrcr1234567890 */
+      id: string;
+      /** @example default */
+      accountId: string;
+      /** @example error-patrol */
+      cronId: string;
+      /** @example org/repo */
+      repo: string;
+      /** @example SC-2026-11-27-1 */
+      taskId: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:00:00.000Z
+       */
+      scheduledFor: string | null;
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:00:05.000Z
+       */
+      startedAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:04:00.000Z
+       */
+      finishedAt: string;
+      /** @example 9fceb02d0ae598e95dc970b74767f19372d61af8 */
+      commitSha: string;
+      /** @enum {string} */
+      outcome: "ok" | "no_op" | "failed";
+      /**
+       * @description Object of finite numbers. `auto` / `review` / `plan` routing counts, when present, are non-negative integers.
+       * @example {
+       *       "scanned": 12,
+       *       "auto": 2,
+       *       "review": 1,
+       *       "plan": 0
+       *     }
+       */
+      metrics: {
+        [key: string]: number;
+      };
+      /** @description Small non-finding state (e.g. a Sentry project-to-repo mapping or page anchors). Omitted from list responses unless `includeDetail=true`; always present on `/latest`. */
+      machineState?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:04:01.000Z
+       */
+      createdAt: string;
+    };
+    CreateRepoCronRunBody: {
+      /** @example error-patrol */
+      cronId: string;
+      /**
+       * @description Repository in `owner/repo` form — anything else is 400.
+       * @example org/repo
+       */
+      repo: string;
+      /**
+       * @description The SC task that ran the cron.
+       * @example SC-2026-11-27-1
+       */
+      taskId?: string | null;
+      /**
+       * @description ISO timestamp of the trigger slot.
+       * @example 2026-11-27T06:00:00.000Z
+       */
+      scheduledFor?: string | null;
+      /** @example 2026-11-27T06:00:05.000Z */
+      startedAt: string;
+      /** @example 2026-11-27T06:04:00.000Z */
+      finishedAt: string;
+      /**
+       * @description Commit of the repo the run observed.
+       * @example 9fceb02d0ae598e95dc970b74767f19372d61af8
+       */
+      commitSha: string;
+      /** @enum {string} */
+      outcome: "ok" | "no_op" | "failed";
+      /**
+       * @description Object of finite numbers (else 400). `auto` / `review` / `plan`, when present, must be non-negative integers.
+       * @example {
+       *       "scanned": 12,
+       *       "auto": 2,
+       *       "review": 1,
+       *       "plan": 0
+       *     }
+       */
+      metrics: {
+        [key: string]: unknown;
+      };
+      machineState?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * @description Admin tokens only: the account to stamp the run with (defaults to `default`). Ignored for agent tokens.
+       * @example default
+       */
+      accountId?: string;
+    };
+    RepoCronRunListResponse: {
+      /** @description Runs ordered by `finishedAt` descending (newest first). */
+      runs: components["schemas"]["RepoCronRun"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    UpsertPatrolFindingsResponse: {
+      findings: components["schemas"]["PatrolFinding"][];
+    };
+    PatrolFinding: {
+      /** @example clxpf1234567890 */
+      id: string;
+      /** @example default */
+      accountId: string;
+      /** @example consolidation-patrol */
+      cronId: string;
+      /** @example org/repo */
+      repo: string;
+      /** @example dup-3f9a1c */
+      fingerprint: string;
+      /** @enum {string} */
+      status:
+        | "tracking"
+        | "ready_to_propose"
+        | "open"
+        | "resolved"
+        | "suppressed";
+      /**
+       * Format: date-time
+       * @example 2026-11-20T06:00:00.000Z
+       */
+      firstSeen: string;
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:00:00.000Z
+       */
+      lastSeen: string;
+      /** @example 3 */
+      occurrenceCount: number;
+      /** @description Append-only status history, oldest first; one entry per distinct observation. */
+      history: components["schemas"]["PatrolFindingHistoryEntry"][];
+      /** @description Patrol-specific fields (free-form JSON object). */
+      detail: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * @description Fix task, once filed.
+       * @example T-123
+       */
+      taskId: string | null;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    PatrolFindingHistoryEntry: {
+      /**
+       * Format: date-time
+       * @example 2026-11-27T06:00:00.000Z
+       */
+      at: string;
+      /** @enum {string} */
+      status:
+        | "tracking"
+        | "ready_to_propose"
+        | "open"
+        | "resolved"
+        | "suppressed";
+      /** @example 2 */
+      occurrenceCount: number;
+    };
+    UpsertPatrolFindingsBody: {
+      /** @example consolidation-patrol */
+      cronId: string;
+      /**
+       * @description Repository in `owner/repo` form — anything else is 400.
+       * @example org/repo
+       */
+      repo: string;
+      /**
+       * @description ISO timestamp of the scan (default: now). A finding whose `lastSeen` is already >= this is treated as a replay and left unchanged, which makes retries idempotent.
+       * @example 2026-11-27T06:00:00.000Z
+       */
+      observedAt?: string;
+      /** @description At most 500 findings; fingerprints unique. */
+      findings: {
+        /** @example dup-3f9a1c */
+        fingerprint: string;
+        /** @enum {string} */
+        status:
+          | "tracking"
+          | "ready_to_propose"
+          | "open"
+          | "resolved"
+          | "suppressed";
+        detail?: {
+          [key: string]: unknown;
+        } | null;
+        taskId?: string | null;
+      }[];
+      /**
+       * @description Admin tokens only: the account to stamp the rows with (defaults to `default`). Ignored for agent tokens.
+       * @example default
+       */
+      accountId?: string;
+    };
+    PatrolFindingListResponse: {
+      /** @description Findings ordered by `lastSeen` descending (newest first). */
+      findings: components["schemas"]["PatrolFinding"][];
+      /** @example 1 */
+      total: number;
+      /** @example 50 */
+      limit: number;
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+    SystemCronListResponse: {
+      systemCrons: components["schemas"]["SystemCronDefinition"][];
+    };
+    SystemCronDefinition: {
+      /**
+       * @description Lowercase slug ([a-z0-9][a-z0-9-]*, max 63 chars). Embedded verbatim in generated task ids.
+       * @example dep-audit
+       */
+      id: string;
+      /**
+       * @description The account this definition belongs to. Tasks it generates inherit it.
+       * @example default
+       */
+      accountId: string;
+      /** @example Dependency audit */
+      name: string;
+      /**
+       * @description 5-field cron expression, interpreted by the external scheduler that calls /fire.
+       * @example 0 9 * * 1
+       */
+      schedule: string;
+      /**
+       * @description IANA timezone the schedule is evaluated in.
+       * @example UTC
+       */
+      timezone: string;
+      /** @example true */
+      enabled: boolean;
+      /**
+       * Format: date-time
+       * @description When the definition last went disabled→enabled; null while disabled. The scheduler never fires a slot at or before it.
+       * @example 2026-11-14T00:00:00.000Z
+       */
+      enabledAt: string | null;
+      /**
+       * @description Task title template. `{repo}` is the only placeholder, replaced by plain substitution with the org/repo string; nothing else is evaluated.
+       * @example Dependency audit: {repo}
+       */
+      titleTemplate: string;
+      /**
+       * @description Task description template — same `{repo}`-only plain substitution as titleTemplate.
+       * @example Audit {repo}'s dependencies and open a PR for safe bumps.
+       */
+      descriptionTemplate: string;
+      /**
+       * @description Which repos the cron fans out to: every repo ('all') or only `repos` ('selected').
+       * @example all
+       * @enum {string}
+       */
+      repoScope: "all" | "selected";
+      /**
+       * @description org/repo list used when repoScope is 'selected'; always [] when 'all'.
+       * @example [
+       *       "acme/widgets"
+       *     ]
+       */
+      repos: string[];
+      /**
+       * Format: date-time
+       * @example 2026-11-14T00:00:00.000Z
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @example 2026-11-14T00:00:00.000Z
+       */
+      updatedAt: string;
+    };
+    CreateSystemCronBody: {
+      /** @example dep-audit */
+      id: string;
+      /** @example Dependency audit */
+      name: string;
+      /** @example 0 9 * * 1 */
+      schedule: string;
+      /**
+       * @description Defaults to UTC.
+       * @example UTC
+       */
+      timezone?: string;
+      /**
+       * @description Defaults to true.
+       * @example true
+       */
+      enabled?: boolean;
+      /** @example Dependency audit: {repo} */
+      titleTemplate: string;
+      /** @example Audit {repo}'s dependencies. */
+      descriptionTemplate: string;
+      /**
+       * @description Defaults to 'all'.
+       * @example all
+       * @enum {string}
+       */
+      repoScope?: "all" | "selected";
+      /**
+       * @description org/repo list; required non-empty when repoScope is 'selected', ignored when 'all'. De-duplicated; capped at 500.
+       * @example [
+       *       "acme/widgets"
+       *     ]
+       */
+      repos?: string[];
+    };
+    PatchSystemCronBody: {
+      name?: string;
+      schedule?: string;
+      timezone?: string;
+      titleTemplate?: string;
+      descriptionTemplate?: string;
+      /** @enum {string} */
+      repoScope?: "all" | "selected";
+      repos?: string[];
+    };
+    FireSystemCronResponse: {
+      /**
+       * @description true: this call claimed the slot and created the tasks. false: the slot was already claimed (or lost a concurrent race) — nothing was created.
+       * @example true
+       */
+      claimed: boolean;
+      /** @example dep-audit */
+      cronId: string;
+      /** @example 2026-11-14T09:00:00.000Z */
+      scheduledFor: string;
+      /**
+       * @description Compact UTC form of scheduledFor (YYYYMMDDTHHMMSSZ) used in task ids.
+       * @example 20261114T090000Z
+       */
+      slot: string;
+      /**
+       * @description Ids of tasks created by this call: SC-{cronId}-{slot}-{owner}-{repo}. Always empty when claimed is false.
+       * @example [
+       *       "SC-dep-audit-20261114T090000Z-org-repo-a",
+       *       "SC-dep-audit-20261114T090000Z-org-repo-b"
+       *     ]
+       */
+      taskIds: string[];
+    };
+    FireSystemCronBody: {
+      /**
+       * @description The slot being fired — ISO-8601 with an explicit timezone (`Z` or `±HH:MM`), truncated to whole seconds. Together with the cron id this is the idempotency key.
+       * @example 2026-11-14T09:00:00Z
+       */
+      scheduledFor: string;
+      /**
+       * @description One task is created per distinct org/repo (max 500).
+       * @example [
+       *       "org/repo-a",
+       *       "org/repo-b"
+       *     ]
+       */
+      repos: string[];
+    };
+    LastTriggerResponse: {
+      /**
+       * @description Max claimed scheduledFor (whole-second UTC ISO) for the definition; null when it has never fired.
+       * @example 2026-11-14T09:00:00.000Z
+       */
+      scheduledFor: string | null;
+    };
+    SystemCronTriggersResponse: {
+      /** @description Claimed slots, newest first by scheduledFor (createdAt desc tie-break). */
+      triggers: {
+        /** @example 2026-11-14T09:00:00.000Z */
+        scheduledFor: string;
+        /**
+         * @description When the slot was claimed (trigger row createdAt).
+         * @example 2026-11-14T09:00:01.234Z
+         */
+        claimedAt: string;
+        /** @example 2 */
+        taskCount: number;
+      }[];
+      /**
+       * @description Opaque cursor for the next page (pass as `?cursor=`); null on the last page.
+       * @example null
+       */
+      nextCursor: string | null;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export type operations = Record<string, never>;

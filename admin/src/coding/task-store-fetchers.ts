@@ -290,6 +290,15 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
         "/system-crons/:id/triggers",
       ),
 
+    /** GET /cron-runs?cronId=&repo=&limit= (PCR-1.1) → { runs }, newest first; machineState omitted. */
+    fetchCronRuns: <T>(cronId: string, repo: string, limit: number) =>
+      getJson<T>(
+        "/cron-runs",
+        new URLSearchParams({ cronId, repo, limit: String(limit) }),
+        undefined,
+        "/cron-runs",
+      ),
+
     /** PATCH /system-crons/:id — resolves null on 404; throws on other non-2xx. */
     patchSystemCron: async (
       id: string,
