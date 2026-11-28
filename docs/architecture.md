@@ -23,7 +23,7 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 
 - **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `environments-scan`, `environments-fix`, `agent-readiness`, `security-scan`, `security-fix`, `investigate-stuck`, `learning-capture`, `task-store`, `test-readiness`, and `test-debt`.
-- **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-learn-dream.ts`, `check-patrol-scope.ts`, etc.), and supporting tooling.
+- **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-learn-dream.ts`, `check-prompt-audit.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
 `dev-task`, `review`, `patch`, and `merge` are item-addressed executors, not self-discovering

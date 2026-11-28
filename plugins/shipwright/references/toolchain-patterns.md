@@ -32,7 +32,7 @@ Set `test` to the fastest/default layer (usually unit or the project's main test
 
 ## Caching Across Runs
 
-Toolchain detection (docs-first + config-file fallback) is redundant to redo on every single command invocation — most projects don't change their toolchain often. Cache the result **one level up from the repo checkout** (same tier as `state/error-patrol-ledger.json`), **one file per repo**, so `/dev-task` and `/patch` share one cache instead of each redetecting independently:
+Toolchain detection (docs-first + config-file fallback) is redundant to redo on every single command invocation — most projects don't change their toolchain often. Cache the result **one level up from the repo checkout** (same tier as the other agent-local `state/` files), **one file per repo**, so `/dev-task` and `/patch` share one cache instead of each redetecting independently:
 
 ```
 state/toolchain-cache/{repo}.json

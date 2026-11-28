@@ -116,47 +116,6 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: null,
   },
   {
-    name: "entropy-patrol-maintenance",
-    schedule: "0 4 * * 1",
-    prompt:
-      '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-patrol-scope.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "error-patrol-maintenance",
-    schedule: "0 4 * * *",
-    prompt:
-      "/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nThese three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained cron session. Continue automatically through all three commands before doing anything else.\n" +
-      'After the chain completes, write state/error-patrol-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.',
-    silent: true,
-    preCheck: "shipwright:check-error-patrol.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "security-patrol-maintenance",
-    schedule: "0 6 * * 1",
-    prompt:
-      '/shipwright:security-scan\n/shipwright:security-fix\nAfter the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-patrol-scope.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "consolidation-patrol-maintenance",
-    schedule: "0 5 * * 1",
-    prompt:
-      '/shipwright:consolidation-scan\n/shipwright:consolidation-fix\nAfter the chain completes, write state/consolidation-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no ready_to_propose findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-consolidation-patrol.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
     name: "prompt-audit-maintenance",
     schedule: "0 7 * * 1",
     prompt: "/shipwright:prompt-scan --with-doctor\n/shipwright:prompt-fix",
@@ -324,6 +283,43 @@ describeOrSkip("AgentCronJobService coding golden set (integration)", () => {
     const names = systemJobs.map((j) => j.name);
     expect(names).not.toContain("shipwright-test-readiness");
     expect(names).not.toContain("shipwright-docs-freshness");
+    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
+  });
+
+  // PCR-6.1: the four patrols moved to admin-run system crons; reconcile's
+  // orphan pass must delete rows already seeded on existing coding agents.
+  it("reconcileSystemCrons() deletes the four legacy patrol rows and leaves other crons untouched", async () => {
+    const agentId = await createAgent(prisma, "Coding Agent", "coding");
+    await service.reconcileSystemCrons(agentId);
+    const legacy = [
+      "entropy-patrol-maintenance",
+      "error-patrol-maintenance",
+      "security-patrol-maintenance",
+      "consolidation-patrol-maintenance",
+    ];
+    for (const name of legacy) {
+      await prisma.agentCronJob.create({
+        data: {
+          agentId,
+          name,
+          system: true,
+          schedule: "0 4 * * 1",
+          prompt: `/shipwright:${name}`,
+          preCheck: "shipwright:check-patrol-scope.ts",
+          silent: true,
+          enabled: false,
+        },
+      });
+    }
+
+    const result = await service.reconcileSystemCrons(agentId);
+
+    expect(result.deleted).toBe(4);
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    const names = systemJobs.map((j) => j.name);
+    for (const name of legacy) expect(names).not.toContain(name);
+    expect(names).toContain("prompt-audit-maintenance");
+    expect(names).toContain("learn-dream");
     expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
   });
 });
