@@ -17,6 +17,7 @@ import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
+import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 
 // ─── Session detail page (ASV-1.1) ──────────────────────────────────────────
@@ -1148,7 +1149,6 @@ describe("admin UI — session detail page", () => {
 
 describe("admin UI — session detail documents block", () => {
   let cookie: string;
-  const realFetch = globalThis.fetch;
   const fetched: string[] = [];
 
   beforeAll(async () => {
@@ -1156,7 +1156,6 @@ describe("admin UI — session detail documents block", () => {
   });
 
   afterEach(() => {
-    globalThis.fetch = realFetch;
     fetched.length = 0;
   });
 
@@ -1186,11 +1185,9 @@ describe("admin UI — session detail documents block", () => {
   }
 
   it("renders owner, repos and a working link per merged and unmerged document, without calling GitHub", async () => {
-    globalThis.fetch = ((input: unknown, init?: unknown) => {
-      fetched.push(String(input));
-      return realFetch(input as never, init as never);
-    }) as typeof fetch;
-    const app = appWithSession({
+    // Real task-store fetcher over an injected recording fetch: every
+    // outbound URL is captured without touching globalThis.fetch.
+    const session = {
       agentIds: [],
       repos: ["org/target"],
       owner: "dev@example.com",
@@ -1212,7 +1209,28 @@ describe("admin UI — session detail documents block", () => {
           state: "draft",
         },
       ],
+    };
+    const fetchers = createTaskStoreFetchers({
+      url: "http://task-store.test",
+      adminToken: "t",
+      fetch: async (input) => {
+        fetched.push(String(input));
+        return new Response(JSON.stringify(session), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
     });
+    const app = createCodingTestApp(
+      makeCodingMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+        }),
+        fetchTaskStoreSession: fetchers.fetchTaskStoreSession,
+      }),
+    );
     const res = await app.request("/admin/sessions/s", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
@@ -1226,6 +1244,10 @@ describe("admin UI — session detail documents block", () => {
     expect(html).toContain("Owner: <strong>dev@example.com</strong>");
     expect(html).toContain("org/target");
     expect(html).toContain("org/home");
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.every((u) => u.startsWith("http://task-store.test/"))).toBe(
+      true,
+    );
     expect(fetched.filter((u) => u.includes("github.com"))).toEqual([]);
   });
 
