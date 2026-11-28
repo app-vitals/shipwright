@@ -340,3 +340,38 @@ describe("old per-service build workflows are gone", () => {
     }
   });
 });
+
+describe("release.yml empty-tag guard (RTG-1.2)", () => {
+  const GUARD = "steps.tag.outputs.new_tag != ''";
+
+  it("gates every step that reads the computed tag", () => {
+    const after = steps.slice(stepIndex(steps, /Compute next tag/) + 1);
+    const readers = after.filter(
+      (s) =>
+        JSON.stringify(s).includes("steps.tag.outputs.new_tag") &&
+        !/Skip release/.test(s.name),
+    );
+    expect(readers.length).toBeGreaterThanOrEqual(4);
+    for (const s of readers) expect(s.if).toBe(GUARD);
+  });
+
+  it("gates every step after compute except the notice", () => {
+    const after = steps.slice(stepIndex(steps, /Compute next tag/) + 1);
+    for (const s of after) {
+      if (/Skip release/.test(s.name)) continue;
+      expect(s.if).toBe(GUARD);
+    }
+  });
+
+  it("emits a ::notice:: when the tag is empty", () => {
+    const s = steps[stepIndex(steps, /Skip release/)];
+    expect(s.if).toBe("steps.tag.outputs.new_tag == ''");
+    expect(s.run).toContain("::notice::");
+  });
+
+  it("leaves the filter and whisper jobs unguarded", () => {
+    for (const job of ["filter", "whisper-validate", "whisper-changes", "whisper-publish"]) {
+      expect(JSON.stringify(wf.jobs[job])).not.toContain("steps.tag.outputs");
+    }
+  });
+});
