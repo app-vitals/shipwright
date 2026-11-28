@@ -19,8 +19,6 @@ A `preCheck` is a script whose stdout becomes the cron's live prompt; a non-zero
 skips the tick. Plugin scripts use the `plugin:script.ts` form and resolve to the plugin's `scripts/` dir:
 
 - `shipwright:check-site-docs-freshness.ts` — site docs freshness guard; needs `SHIPWRIGHT_TASK_STORE_URL`/`SHIPWRIGHT_TASK_STORE_TOKEN` because per-page anchors are read from the task store's latest `site-docs-freshness` run (`/cron-runs/latest`), not a local state file
-- `shipwright:check-error-patrol.ts` — error patrol
-- `shipwright:check-consolidation-patrol.ts` — consolidation patrol
 - `shipwright:check-prompt-audit.ts` — prompt audit patrol
 - `shipwright:check-learn-dream.ts` — learn-dream batch
 

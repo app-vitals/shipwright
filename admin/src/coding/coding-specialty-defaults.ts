@@ -70,42 +70,6 @@ export const CODING_SPECIALTY_DEFAULTS: SpecialtyDefaults = {
       enabled: false,
     },
     {
-      name: "entropy-patrol-maintenance",
-      schedule: "0 4 * * 1",
-      prompt:
-        '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-      preCheck: "shipwright:check-patrol-scope.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
-      name: "error-patrol-maintenance",
-      schedule: "0 4 * * *",
-      prompt:
-        "/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nThese three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained cron session. Continue automatically through all three commands before doing anything else.\nAfter the chain completes, write state/error-patrol-ledger.json's lastRun field: \"<ISO timestamp>\". Use [silent] if no new or regressed issues are found.",
-      preCheck: "shipwright:check-error-patrol.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
-      name: "security-patrol-maintenance",
-      schedule: "0 6 * * 1",
-      prompt:
-        '/shipwright:security-scan\n/shipwright:security-fix\nAfter the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-      preCheck: "shipwright:check-patrol-scope.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
-      name: "consolidation-patrol-maintenance",
-      schedule: "0 5 * * 1",
-      prompt:
-        '/shipwright:consolidation-scan\n/shipwright:consolidation-fix\nAfter the chain completes, write state/consolidation-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no ready_to_propose findings are found.',
-      preCheck: "shipwright:check-consolidation-patrol.ts",
-      silent: true,
-      enabled: false,
-    },
-    {
       name: "prompt-audit-maintenance",
       schedule: "0 7 * * 1",
       prompt: "/shipwright:prompt-scan --with-doctor\n/shipwright:prompt-fix",

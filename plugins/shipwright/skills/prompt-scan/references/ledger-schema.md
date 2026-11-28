@@ -1,7 +1,7 @@
 # Prompt-Audit Ledger Schema
 
 `prompt-scan` persists every finding it has seen to `state/prompt-audit-ledger.json` —
-agent workspace state, git-ignored, the same tier as `state/consolidation-ledger.json`.
+agent workspace state, git-ignored, the same tier as the other agent-local `state/` files.
 Like that ledger it is a **current-state snapshot**, fully overwritten each run, except
 each finding's own `history` array, which is append-only. The merge logic is
 `mergeScan` in `plugins/shipwright/scripts/prompt-audit/ledger.ts`; the types there

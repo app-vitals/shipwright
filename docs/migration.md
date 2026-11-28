@@ -4,6 +4,27 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Behavior: the four patrol crons become admin system crons _(PCR-6.1)_
+
+**Version**: next (PCR-6.1)
+
+**Who this affects**: every coding agent. The entropy, error, security and consolidation patrols no
+longer run as per-agent crons.
+
+- `entropy-patrol-maintenance`, `error-patrol-maintenance`, `security-patrol-maintenance` and
+  `consolidation-patrol-maintenance` are removed from the coding specialty defaults, and
+  `reconcileSystemCrons()` deletes the four seeded rows from existing coding agents on the next
+  reconcile. The other crons (including `learn-dream` and `prompt-audit-maintenance`) are untouched.
+- The `check-patrol-scope.ts`, `check-error-patrol.ts` and `check-consolidation-patrol.ts`
+  prechecks are deleted.
+- The patrols are now admin system crons that queue one task per repo. They ship disabled: enable
+  them on the admin system-crons settings page.
+- Legacy agent-local ledgers (`state/*-patrol-*.json`, `state/consolidation-ledger.json`) are
+  imported once per repo, on its first run, by `cron-run-recorder.ts`. Nothing else reads them.
+  The RSF-3.1 note below about `check-patrol-scope.ts` no longer applies.
+
+---
+
 ## Breaking: `?offset` removed from list endpoints _(TPG-3.1)_
 
 **Version**: next (TPG-3.1)

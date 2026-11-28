@@ -23,7 +23,7 @@ describe("coding specialtyDefaults hook", () => {
     expect(defaults).toBe(CODING_SPECIALTY_DEFAULTS);
   });
 
-  it("returns exactly the 12 system crons, by name and in order", () => {
+  it("returns exactly the 8 system crons, by name and in order", () => {
     expect(crons.map((c) => c.name)).toEqual([
       "shipwright-plan",
       "shipwright-dev-task",
@@ -32,10 +32,6 @@ describe("coding specialtyDefaults hook", () => {
       "shipwright-merge",
       "shipwright-loop",
       "learn-dream",
-      "entropy-patrol-maintenance",
-      "error-patrol-maintenance",
-      "security-patrol-maintenance",
-      "consolidation-patrol-maintenance",
       "prompt-audit-maintenance",
     ]);
   });
@@ -77,15 +73,13 @@ describe("coding specialtyDefaults hook", () => {
     );
   });
 
-  it("error-patrol-maintenance prompt carries the explicit chaining instruction", () => {
-    const prompt = byName("error-patrol-maintenance")?.prompt ?? "";
-    for (const keyword of [
-      "invoke each one immediately",
-      "Do not stop after",
-      "Continue automatically",
-    ]) {
-      expect(prompt).toContain(keyword);
+  it("no longer seeds the four retired patrol crons", () => {
+    const names = crons.map((c) => c.name);
+    for (const n of ["entropy", "error", "security", "consolidation"]) {
+      expect(names).not.toContain(`${n}-patrol-maintenance`);
     }
+    expect(names).toContain("prompt-audit-maintenance");
+    expect(names).toContain("learn-dream");
   });
 
   it("prompt-audit-maintenance has the weekly scan + fix prompt and preCheck", () => {

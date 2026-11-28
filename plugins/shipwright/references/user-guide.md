@@ -238,10 +238,6 @@ crons — each fully self-contained, doing its own discovery with no dependency 
 | Cron | Default | What it does |
 |---|---|---|
 | `learn-dream` | off | Mines the last day of merged PRs for durable learnings. |
-| `entropy-patrol-maintenance` | off | Scans for code entropy (dead code, duplication, layering drift) and fixes what's PR-worthy. |
-| `error-patrol-maintenance` | off | Scans unresolved Sentry errors and fixes what's PR-worthy. |
-| `security-patrol-maintenance` | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
-| `consolidation-patrol-maintenance` | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
 | `prompt-audit-maintenance` | off | Scans plugin prompts for drift and proposes fixes (propose-only). |
 
 Docs freshness and test-readiness are no longer agent crons: the admin system-cron scheduler queues one `/shipwright:research-docs --auto --repo {repo}` or `/shipwright:test-readiness --repo {repo} --full --publish` task per repo, and both skills require `--repo`.
