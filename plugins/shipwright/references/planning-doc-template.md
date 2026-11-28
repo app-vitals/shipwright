@@ -45,10 +45,10 @@ This template is used by `/plan-session` Phase 4 to generate the task breakdown 
 
 ### {N.M} {Sub-feature Name}
 
-#### Task {PREFIX-N.M}: {Task Title}
+#### Task {session-slug-N.M}: {Task Title}
 | Field | Value |
 |-------|-------|
-| **ID** | {PREFIX-N.M} |
+| **ID** | {session-slug-N.M} |
 | **Hours** | {hours} |
 | **Layer** | {auto-detected layer for this task} |
 | **Dependencies** | {None or comma-separated task IDs} |
@@ -96,7 +96,7 @@ This template is used by `/plan-session` Phase 4 to generate the task breakdown 
 - {Which user flows need integration/e2e coverage and why}
 - {Edge cases that must be covered to maintain >{coverage_threshold}%}
 
-{Then dedicated test tasks using the same task structure above, with Test Type field and T-suffix IDs: PREFIX-N.T1, PREFIX-N.T2, etc. Each test task's AC must include a coverage criterion, e.g.:}
+{Then dedicated test tasks using the same task structure above, with Test Type field and T-suffix IDs: session-slug-N.T1, session-slug-N.T2, etc. Each test task's AC must include a coverage criterion, e.g.:}
 - [ ] Unit test coverage for {package/module} remains >{coverage_threshold}%
 - [ ] Integration test coverage for {flow} remains >{coverage_threshold}%
 
@@ -105,7 +105,7 @@ This template is used by `/plan-session` Phase 4 to generate the task breakdown 
 ### {Feature Name} Summary
 | Status | ID | Task | Hours | Layer | Dependencies |
 |--------|-----|------|-------|-------|--------------|
-| [ ] | {PREFIX-N.M} | {task title} | {hours} | {layer} | {deps} |
+| [ ] | {session-slug-N.M} | {task title} | {hours} | {layer} | {deps} |
 | | | **Subtotal** | **{subtotal}** | | |
 
 ---
@@ -125,7 +125,7 @@ This template is used by `/plan-session` Phase 4 to generate the task breakdown 
 
 | Status | ID | Task | Hours | Layer | Dependencies |
 |--------|-----|------|-------|-------|--------------|
-| [ ] | {PREFIX-N.M} | {task title} | {hours} | {layer} | {deps} |
+| [ ] | {session-slug-N.M} | {task title} | {hours} | {layer} | {deps} |
 | | | **Total** | **{total_hours}** | | |
 ```
 

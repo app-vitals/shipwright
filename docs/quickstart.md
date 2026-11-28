@@ -106,7 +106,7 @@ Plan-session reads the spec, explores your repo, and writes a task breakdown int
 
 It also opens a docs-only **plan PR** on your repo with the plan files, before the build PR in step 4. That plan PR stays open until you merge or close it.
 
-Plan-session picks its own task id prefix, so the id you get will not match any example in this doc. Use the id it prints. It may also end by saying an execution cron will pick up ready tasks; with no agent configured, as in this path, nothing does, so you run `/shipwright:dev-task` yourself in the next step.
+Plan-session builds task ids from the session slug (`{session-slug}-{N}.{M}`), so the id you get will not match any example in this doc. Use the id it prints. It may also end by saying an execution cron will pick up ready tasks; with no agent configured, as in this path, nothing does, so you run `/shipwright:dev-task` yourself in the next step.
 
 ## Step 4 — Build it (inside Claude Code)
 

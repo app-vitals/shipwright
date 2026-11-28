@@ -924,7 +924,9 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
 
   it("checks id format, non-empty branch, and dependency-id resolvability", () => {
     const sub = extractDispatchSubsection(content, HEADING);
-    expect(sub).toContain("{PREFIX}-{N}.{M}");
+    expect(sub).toContain("{STEM}-{N}.{M}");
+    expect(sub.toLowerCase()).toContain("session slug");
+    expect(sub.toLowerCase()).toContain("legacy");
     expect(sub).toContain("branch");
     expect(sub.toLowerCase()).toContain("non-empty string");
     expect(sub).toContain("dependencies");
@@ -1665,13 +1667,28 @@ describe("plan-session.md — sessions and repos (PLU-4.2)", () => {
     expect(step0).toMatch(/today's behaviour/);
   });
 
-  it("keeps the existing task prefix and continues the milestone number, derived from the session's task ids", () => {
+  it("builds ids from the session slug, keeping the existing id stem (legacy prefix for old sessions) and continuing the milestone number", () => {
     const step5 = content.slice(content.indexOf("## Step 5: Task Breakdown"));
     const idLine = step5.split("\n").find((l) => l.startsWith("- **ID**")) ?? "";
     const lower = prose(idLine);
-    expect(lower).toMatch(/existing task prefix/);
+    expect(idLine).toContain("{session-slug}-{N}.{M}");
+    expect(lower).toMatch(/existing id stem/);
+    expect(lower).toMatch(/legacy prefix/);
     expect(lower).toMatch(/continue the milestone number/);
     expect(lower).toMatch(/highest/);
+    expect(lower).not.toMatch(/2-3 letters/);
+  });
+
+  it("validates a new session slug before the Step 0.7 planning lock and asks for a different name", () => {
+    const step0 = extractStep0Section(content);
+    const slugIdx = step0.indexOf("**0.2a Session slug.**");
+    expect(slugIdx).toBeGreaterThan(-1);
+    expect(slugIdx).toBeLessThan(step0.indexOf("**0.7 Planning lock.**"));
+    const para = prose(step0.slice(slugIdx, step0.indexOf("**0.3 ")));
+    expect(para).toContain("^[a-z][a-z0-9-]{0,63}$");
+    expect(para).toMatch(/never truncated/);
+    expect(para).toMatch(/different name/);
+    expect(para).toMatch(/grandfathered/);
   });
 
   it("resolves owner by --owner, initiative, spec/plan inheritance and never writes it to a file", () => {
