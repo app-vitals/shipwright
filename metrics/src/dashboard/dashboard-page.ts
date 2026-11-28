@@ -143,6 +143,36 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
         <p id="coverage-empty" class="empty-state" style="display:none">No coverage snapshots yet. A repo starts reporting when its CI posts a coverage report to the task store (POST /coverage-snapshots with repo, commitSha, and line/branch/function counts); it then appears here with its next snapshot.</p>
       </section>`;
 
+  // Readiness by repo reads the authenticated-only /metrics/readiness endpoint
+  // (there is no public variant), so the section is omitted when readOnly.
+  const readinessSection = readOnly
+    ? ""
+    : `      <!-- Readiness by repo -->
+      <section class="section" id="readiness-section" aria-label="Readiness by repo">
+        <div class="section-header">
+          <h2 class="section-title">Readiness by repo</h2>
+        </div>
+        <div id="readiness-content">
+          <p class="readiness-headline"><span id="readiness-headline" class="stat-value">--</span> <span id="readiness-count" class="readiness-count"></span></p>
+          <div class="chart-container">
+            <canvas id="readiness-trend-chart" aria-label="Share of repos at Level 3 or above, weekly over the last 12 weeks"></canvas>
+          </div>
+          <div class="readiness-table-wrapper">
+            <table class="token-table" id="readiness-repo-table">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Level${infoIcon("Highest agent-readiness level the repo passes; rows not scored in the last 7 days are marked stale")}</th>
+                  <th>Failing checks${infoIcon("Lowest level first, each with the system cron that owns the fix")}</th>
+                </tr>
+              </thead>
+              <tbody id="readiness-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <p id="readiness-empty" class="empty-state" style="display:none">No readiness snapshots yet. A repo starts reporting once the agent-readiness cron has scored it; it then appears here with its level and failing checks.</p>
+      </section>`;
+
   // System-cron work reads the authenticated-only /metrics/system-crons
   // endpoint (SCM-8.4), so the tile is omitted when readOnly.
   const systemCronsSection = readOnly
@@ -298,6 +328,8 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
       </section>
 
 ${coverageSection}
+
+${readinessSection}
 
 ${systemCronsSection}
 

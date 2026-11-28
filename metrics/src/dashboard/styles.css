@@ -514,6 +514,32 @@ body {
   text-transform: uppercase;
 }
 
+/* ─── Readiness by Repo ─────────────────────────────────────────────────── */
+
+.readiness-headline {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+.readiness-count {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.readiness-table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.readiness-check {
+  display: block;
+}
+
+.readiness-no-owner {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 /* ─── Error Toast ───────────────────────────────────────────────────────── */
 
 #error-toast {
