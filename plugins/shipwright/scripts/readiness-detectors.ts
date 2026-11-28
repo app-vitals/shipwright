@@ -190,11 +190,12 @@ export const detectLinterConfigured: Detector = (r) =>
 export const detectTypeCheckerConfigured: Detector = (r) =>
   perToolchain(r, {
     node: (rd, fs) => {
-      if (hasBase(fs, /^tsconfig(\.[\w-]+)?\.json$/) || /"typescript"/.test(pkgJson(rd, fs))) {
-        return hasBase(fs, /^tsconfig(\.[\w-]+)?\.json$/) ? "pass" : "fail";
-      }
-      // Plain JavaScript: only fail if TypeScript sources exist without a tsconfig.
-      return fs.some((f) => /\.tsx?$/.test(f) && !f.endsWith(".d.ts")) ? "fail" : "n/a";
+      if (hasBase(fs, /^tsconfig(\.[\w-]+)?\.json$/)) return "pass";
+      // Plain JavaScript: only fail if TypeScript is declared or its sources exist without a tsconfig.
+      const usesTs =
+        /"typescript"/.test(pkgJson(rd, fs)) ||
+        fs.some((f) => /\.tsx?$/.test(f) && !f.endsWith(".d.ts"));
+      return usesTs ? "fail" : "n/a";
     },
     python: (rd, fs) =>
       yn(
