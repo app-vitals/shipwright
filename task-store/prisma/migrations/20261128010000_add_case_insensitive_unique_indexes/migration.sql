@@ -11,7 +11,7 @@ BEGIN
   SELECT string_agg(format('%s/%s => [%s]', "accountId", lslug, vals), '; ' ORDER BY "accountId", lslug)
     INTO slug_collisions
     FROM (
-      SELECT "accountId", lower("slug") AS lslug, string_agg("slug", ', ' ORDER BY "slug") AS vals
+      SELECT "accountId", lower("slug") AS lslug, string_agg("slug", ', ' ORDER BY "slug" COLLATE "C") AS vals
         FROM "Session"
        GROUP BY "accountId", lower("slug")
       HAVING count(*) > 1
@@ -20,7 +20,7 @@ BEGIN
   SELECT string_agg(format('%s => [%s]', lid, vals), '; ' ORDER BY lid)
     INTO id_collisions
     FROM (
-      SELECT lower("id") AS lid, string_agg("id", ', ' ORDER BY "id") AS vals
+      SELECT lower("id") AS lid, string_agg("id", ', ' ORDER BY "id" COLLATE "C") AS vals
         FROM "Task"
        GROUP BY lower("id")
       HAVING count(*) > 1
