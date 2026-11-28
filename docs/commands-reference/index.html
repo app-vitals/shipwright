@@ -126,11 +126,11 @@ duplication. Each pair follows the same shape: a <code>-scan</code> command that
 <tbody>
 <tr>
 <td><code>/shipwright:entropy-scan</code></td>
-<td>Scan the codebase against your golden principles and generate <code>entropy-report.md</code>. Report only — no code changes. Wraps the <a href="/docs/agent-skills#entropy-scan"><code>entropy-scan</code> skill</a>.</td>
+<td>Scan one repo (<code>--repo org/repo</code>, required) against your golden principles and write <code>docs/patrols/entropy.md</code>, opening a docs PR only on material change. Report only — no code changes. Wraps the <a href="/docs/agent-skills#entropy-scan"><code>entropy-scan</code> skill</a>.</td>
 </tr>
 <tr>
 <td><code>/shipwright:entropy-fix</code></td>
-<td>Read <code>entropy-report.md</code> and queue <code>pr_worthy</code> violations as task-store tasks, one task per golden principle, with per-finding HITL classification. Requires <code>/entropy-scan</code> first. Wraps the <a href="/docs/agent-skills#entropy-fix"><code>entropy-fix</code> skill</a>.</td>
+<td>Route a repo’s <code>pr_worthy</code> violations (<code>--repo org/repo</code>, required) as task-store tasks, one task per golden principle, each auto, review or plan, and record the patrol run. Requires <code>/entropy-scan</code> first. Wraps the <a href="/docs/agent-skills#entropy-fix"><code>entropy-fix</code> skill</a>.</td>
 </tr>
 <tr>
 <td><code>/shipwright:error-scan</code></td>

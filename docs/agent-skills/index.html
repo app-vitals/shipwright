@@ -125,14 +125,17 @@ the <code>rebuild</code> bucket.</p>
 <h2 id="maintenance-patrols">Maintenance Patrols</h2>
 <p>Scheduled or on-demand scans that find and fix code entropy, production errors, and code
 duplication. Each pair follows the same shape: a <code>-scan</code> skill that reports
-only, and a <code>-fix</code> skill that reads the scan’s report and queues task-store tasks.</p>
+only, and a <code>-fix</code> skill that reads the scan’s output and queues task-store tasks.</p>
 <h3 id="entropy-scan">entropy-scan</h3>
-<p>Scan codebase for principle deviations. Report only — no code changes.</p>
+<p>Scan one repo (<code>--repo org/repo</code>, required) for principle deviations and write the open items to
+<code>docs/patrols/entropy.md</code>, opening a docs PR only on material change. Report only — no code changes.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:entropy-scan</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="entropy-fix">entropy-fix</h3>
-<p>Read <code>entropy-report.md</code> and queue PR-worthy violations as task-store tasks, one task per rule,
-with per-finding HITL classification. Requires entropy-scan to have run first.</p>
+<p>Read the entropy-scan handoff for one repo (<code>--repo org/repo</code>, required) and route PR-worthy
+violations as task-store tasks, one per rule: auto (pending dev task), review (blocked dev task
+with a <code>needs-review:</code> question) or plan (<code>kind: prd</code>, human-planned). Records one run with
+separate auto/review/plan counts. Requires entropy-scan to have run first.</p>
 <p><em>Invocation:</em> Backs the <code>/shipwright:entropy-fix</code> command — see
 <a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
 <h3 id="error-scan">error-scan</h3>
