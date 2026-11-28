@@ -101,7 +101,7 @@ describe("docs-sync.md — new flag/diff/propose/confirm flow present", () => {
   });
 
   it("reads anchors from the task store's latest site-docs-freshness run, not a state file", () => {
-    expect(content).toContain("/cron-runs/latest?cronId=site-docs-freshness");
+    expect(content).toContain("/cron-runs/latest?cronId=site-docs-freshness&repo={org/repo}");
     expect(content).toContain("machineState");
     expect(content).not.toContain("site-docs-last-synced");
     expect(content).not.toContain("state/site-docs");
