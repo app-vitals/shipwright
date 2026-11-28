@@ -131,7 +131,7 @@ The registry is always re-checked live by `consolidation-scan` before promotion,
 
 ## The cron: `consolidation-patrol`
 
-`consolidation-patrol` is a system cron: the admin scheduler queues one task per repo (`/shipwright:consolidation-scan --repo {repo}` then `/shipwright:consolidation-fix --repo {repo}`) on a weekly schedule (Monday at 05:00 UTC, cron expr `0 5 * * 1`). It is seeded **disabled**; an operator enables it and scopes it to repos on the admin system-crons page. Each run appends one run record (outcome, commit, metrics) to the repo's run history. See the system-cron contract in [`docs/task-store.md`](./task-store.md#system-cron-contract).
+`consolidation-patrol` is a system cron: the admin scheduler queues one task per repo (`/shipwright:consolidation-scan --repo {repo}` then `/shipwright:consolidation-fix --repo {repo}`) on a weekly schedule (Monday at 05:00 UTC, cron expr `0 5 * * 1`). It is seeded **disabled**; an operator enables it and scopes it to repos on the admin system-crons page. Each run appends one run record (outcome, commit, metrics) to the repo's run history. See the system-cron contract in [`docs/task-store.md`](./task-store.md#system-crons).
 
 ## See also
 
