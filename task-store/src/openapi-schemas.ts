@@ -1950,6 +1950,153 @@ export const CoverageSnapshotLatestResponseSchema = z
   })
   .openapi("CoverageSnapshotLatestResponse");
 
+// ─── Readiness Snapshot (RDY-1.2) ──────────────────────────────────────────────
+
+/** Per-check result: `n/a` counts as a pass when computing the level. */
+export const READINESS_CHECK_RESULTS = ["pass", "fail", "n/a"] as const;
+
+/** One scored check inside a readiness snapshot. */
+export const ReadinessCheckResultSchema = z
+  .object({
+    id: z.string().min(1).openapi({ example: "readme-present" }),
+    level: z.number().int().min(1).max(5).openapi({ example: 1 }),
+    result: z.enum(READINESS_CHECK_RESULTS).openapi({ example: "pass" }),
+    owner: z.string().min(1).openapi({ example: "docs-freshness" }),
+  })
+  .openapi("ReadinessCheckResult");
+
+export const ReadinessSnapshotSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxrdy1234567890" }),
+    accountId: z.string().openapi({ example: "default" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    commitSha: z
+      .string()
+      .openapi({ example: "9fceb02d0ae598e95dc970b74767f19372d61af8" }),
+    level: z.number().int().min(0).max(5).openapi({
+      example: 3,
+      description: "Readiness level 0-5 (0 = a Level 1 check fails).",
+    }),
+    passing: z.number().int().openapi({ example: 17 }),
+    failing: z.number().int().openapi({ example: 5 }),
+    checks: z.array(ReadinessCheckResultSchema),
+    catalogueVersion: z.string().openapi({ example: "1" }),
+    measuredAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-28T06:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-11-28T06:00:05.000Z" }),
+  })
+  .openapi("ReadinessSnapshot");
+
+export type ReadinessSnapshot = z.infer<typeof ReadinessSnapshotSchema>;
+
+/** Request body for POST /readiness-snapshots. */
+export const CreateReadinessSnapshotBodySchema = z
+  .object({
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in `owner/repo` form — anything else is 400.",
+    }),
+    commitSha: z.string().openapi({
+      example: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+      description:
+        "Commit the repo was scored at. (accountId, repo, commitSha) is unique — a repeat POST updates the row.",
+    }),
+    level: z.number().int().openapi({
+      example: 3,
+      description: "Integer 0-5; anything else is 400.",
+    }),
+    passing: z.number().int().openapi({
+      example: 17,
+      description: "Count of passing checks; must be >= 0.",
+    }),
+    failing: z.number().int().openapi({
+      example: 5,
+      description: "Count of failing checks; must be >= 0.",
+    }),
+    checks: z.array(ReadinessCheckResultSchema).openapi({
+      description:
+        "Per-check results. Each entry needs `id`, integer `level` 1-5, `result` (`pass` | `fail` | `n/a`) and `owner`; a malformed entry is 400.",
+    }),
+    catalogueVersion: z.string().openapi({ example: "1" }),
+    measuredAt: z.string().optional().openapi({
+      example: "2026-11-28T06:00:00.000Z",
+      description:
+        "ISO timestamp of the measurement. Defaults to the current time.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account to stamp the snapshot with (defaults to `default`). Ignored for agent tokens, which always write to their own account.",
+    }),
+  })
+  .openapi("CreateReadinessSnapshotBody");
+
+/** Query params for GET /readiness-snapshots */
+export const ReadinessSnapshotListQuerySchema = z
+  .object({
+    repo: z.string().optional().openapi({
+      example: "org/repo",
+      description: "Only snapshots for this repo.",
+    }),
+    since: z.string().optional().openapi({
+      example: "2026-11-01T00:00:00.000Z",
+      description: "ISO timestamp; only snapshots measured at or after it.",
+    }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+    cursor: cursorQueryParam("snapshots"),
+  })
+  .openapi("ReadinessSnapshotListQuery");
+
+/** Query params for GET /readiness-snapshots/latest */
+export const ReadinessSnapshotLatestQuerySchema = z
+  .object({
+    repo: z.string().optional().openapi({
+      example: "org/repo",
+      description:
+        "Only this repo's newest snapshot. An out-of-scope repo is 403 for agent tokens.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description: "Admin tokens only: narrow to one account.",
+    }),
+  })
+  .openapi("ReadinessSnapshotLatestQuery");
+
+/** Response for GET /readiness-snapshots */
+export const ReadinessSnapshotListResponseSchema = z
+  .object({
+    snapshots: z.array(ReadinessSnapshotSchema).openapi({
+      description:
+        "Snapshots ordered by `measuredAt` descending (newest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    nextCursor: nextCursorField,
+  })
+  .openapi("ReadinessSnapshotListResponse");
+
+/** Response for GET /readiness-snapshots/latest */
+export const ReadinessSnapshotLatestResponseSchema = z
+  .object({
+    snapshots: z.array(ReadinessSnapshotSchema).openapi({
+      description:
+        "One snapshot per repo — the newest by `measuredAt` — ordered by repo. With `?repo=` it holds that repo's newest snapshot, or is empty when none exists.",
+    }),
+  })
+  .openapi("ReadinessSnapshotLatestResponse");
+
 // ─── Repo Cron Run (PCR-1.1) ──────────────────────────────────────────────────
 
 const REPO_CRON_RUN_OUTCOME = z.enum(["ok", "no_op", "failed"]);
