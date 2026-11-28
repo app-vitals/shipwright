@@ -22,9 +22,11 @@ describe("error-resolve SKILL.md — per-repo contract (PCR-3.4)", () => {
 
   it("resolves only on deployed/done and never on merged, released or pr_open", () => {
     expect(content).toContain(
-      "only when its gating task is `deployed` or `done`",
+      "resolves only when its gating task is `deployed` or `done`",
     );
-    expect(content).toContain("never `merged`");
+    expect(content).toContain(
+      "`merged`, `released` and `pr_open` never resolve",
+    );
     expect(content).toContain("`pr_open`");
     const gate = content.indexOf("## Step 3");
     expect(gate).toBeGreaterThan(0);

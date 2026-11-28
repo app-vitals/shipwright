@@ -78,9 +78,9 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ## Step 4: Decide Readiness
 
-An issue resolves only when its gating task is `deployed` or `done` — never `merged`, never
-`released`, never `pr_open`, never anything else. `released` means a library was published,
-which does not change a running service until a consumer deploys it. Every non-ready issue is
+An issue resolves only when its gating task is `deployed` or `done`. `deployed` and `done` are the only resolving statuses.
+`merged`, `released` and `pr_open` never resolve: `released` means a library was published, and a published library does not change a running service until a consumer deploys it. Every other status is also not ready.
+Every non-ready issue is
 left untouched: no Sentry call and no store write.
 
 ---
