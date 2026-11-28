@@ -304,6 +304,9 @@ export function isoWeekSuffix(d: Date): string {
 
 const ACTIVE = new Set(["pending", "in_progress", "blocked", "pr_open"]);
 
+/** Shipwright's own preview-environment pattern, cited by the preview plan task. */
+export const PREVIEW_PATTERN = `Reference pattern (Shipwright's own preview environment): one bring-up script used both locally and by a CI composite action, which brings the whole stack up from the PR's source in a throwaway cluster with no real credentials, then runs the smoke/canary and e2e suites against it. See docs/preview-environment.md, scripts/preview-env.ts, .github/actions/preview-env and preview/canary/ in app-vitals/shipwright.`;
+
 /** One task per finding; skips findings that already have an active task. */
 export function planTasks(
   findings: EnvFinding[],
@@ -334,6 +337,10 @@ export function planTasks(
         kind: "prd",
         status: "pending",
         hitl: true,
+        description:
+          f.id === "preview-environment"
+            ? `${base.description}\n\n${PREVIEW_PATTERN}`
+            : base.description,
       });
     } else {
       const branch = `fix/environments-${f.id}`;

@@ -43,11 +43,17 @@ and stop. If the handoff's repo differs from `--repo`, stop with an error.
 `originKind: "cron"`, `originRef: "environments"` and `repo`. The scan already planned the
 tasks (`tasks` in the handoff) with ids `environments-{check}-{repo-slug}-{YYYY-Www}`.
 
+The `preview-environment` plan task's description cites Shipwright's own pattern: one bring-up
+script used locally and by a CI composite action, bringing the whole stack up from the PR's source
+in a throwaway cluster with no real credentials, then running smoke/canary and e2e suites
+(`docs/preview-environment.md`, `scripts/preview-env.ts`, `.github/actions/preview-env`,
+`preview/canary/`).
+
 ## Step 3: Dedup and queue
 
 The scan's planned tasks already exclude checks with an active task. Re-check right before
 writing: query `pending`, `in_progress`, `pr_open` and `blocked` tasks for the repo (`limit=1000`, follow
-`nextCursor`) and drop any planned task whose check already has an id starting
+`nextCursor` until it is null) and drop any planned task whose check already has an id starting
 `environments-{check}-{repo-slug}-`. Then `POST /tasks/bulk` the rest. A re-run on an unchanged
 repo therefore queues nothing. Count the accepted tasks per route.
 
