@@ -56,8 +56,8 @@ duplication. Each pair follows the same shape: a `-scan` command that reports on
 
 | Command | What it does |
 |---------|--------------|
-| `/shipwright:entropy-scan` | Scan the codebase against your golden principles and generate `entropy-report.md`. Report only — no code changes. Wraps the [`entropy-scan` skill](/docs/agent-skills#entropy-scan). |
-| `/shipwright:entropy-fix` | Read `entropy-report.md` and queue `pr_worthy` violations as task-store tasks, one task per golden principle, with per-finding HITL classification. Requires `/entropy-scan` first. Wraps the [`entropy-fix` skill](/docs/agent-skills#entropy-fix). |
+| `/shipwright:entropy-scan` | Scan one repo (`--repo org/repo`, required) against your golden principles and write `docs/patrols/entropy.md`, opening a docs PR only on material change. Report only — no code changes. Wraps the [`entropy-scan` skill](/docs/agent-skills#entropy-scan). |
+| `/shipwright:entropy-fix` | Route a repo's `pr_worthy` violations (`--repo org/repo`, required) as task-store tasks, one task per golden principle, each auto, review or plan, and record the patrol run. Requires `/entropy-scan` first. Wraps the [`entropy-fix` skill](/docs/agent-skills#entropy-fix). |
 | `/shipwright:error-scan` | Query the Sentry Issues API for unresolved issues, diff against the error-patrol ledger to find what's new or regressed, and generate `error-report.md`. Report only — no code changes. Wraps the [`error-scan` skill](/docs/agent-skills#error-scan). |
 | `/shipwright:error-fix` | Read `error-report.md`, fetch each New/Regressed issue's Sentry detail and stack trace, classify HITL per issue, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires `/error-scan` first. Wraps the [`error-fix` skill](/docs/agent-skills#error-fix). |
 | `/shipwright:error-resolve` | Read the error-patrol ledger, check each linked task's current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached `deployed`/`done`. Wraps the [`error-resolve` skill](/docs/agent-skills#error-resolve). |

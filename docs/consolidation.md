@@ -45,7 +45,7 @@ Supports `--dry-run` (preview only) and `--pattern {fingerprint}` (queue only on
 
 ## The ledger: `state/consolidation-ledger.json`
 
-The consolidation ledger is agent workspace state (`state/` directory, git-ignored), the same tier as `state/entropy-patrol-last-run.json` and `state/error-patrol-ledger.json`. It's a **current-state snapshot** — fully overwritten each run (same convention as `state/error-patrol-ledger.json`), except each entry's own `history` array, which is append-only.
+The consolidation ledger is agent workspace state (`state/` directory, git-ignored), the same tier as `state/error-patrol-ledger.json`. It's a **current-state snapshot** — fully overwritten each run (same convention as `state/error-patrol-ledger.json`), except each entry's own `history` array, which is append-only.
 
 ### Top-level shape
 

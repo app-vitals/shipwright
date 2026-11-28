@@ -26,7 +26,7 @@ JSONL — one JSON object per line, append-only. Never rewrite or truncate the f
     "missing_test_file": 4
   },
   "suppressed": 2,
-  "reportPath": "entropy-report.md"
+  "reportPath": "docs/patrols/entropy.md"
 }
 ```
 
@@ -47,9 +47,9 @@ JSONL — one JSON object per line, append-only. Never rewrite or truncate the f
 ## Example: Three consecutive scans
 
 ```jsonl
-{"timestamp":"2026-03-26T08:00:00.000Z","commitSha":"a1b2c3d","totalViolations":18,"bySeverity":{"high":3,"medium":9,"low":6},"byRule":{"dead_exports":5,"todo_fixme_hack":8,"missing_test_file":5},"reportPath":"entropy-report.md"}
-{"timestamp":"2026-03-27T08:00:00.000Z","commitSha":"e4f5a6b","totalViolations":12,"bySeverity":{"high":1,"medium":7,"low":4},"byRule":{"dead_exports":2,"todo_fixme_hack":6,"missing_test_file":4},"reportPath":"entropy-report.md"}
-{"timestamp":"2026-03-28T08:00:00.000Z","commitSha":"c7d8e9f","totalViolations":8,"bySeverity":{"high":0,"medium":5,"low":3},"byRule":{"todo_fixme_hack":4,"missing_test_file":4},"reportPath":"entropy-report.md"}
+{"timestamp":"2026-03-26T08:00:00.000Z","commitSha":"a1b2c3d","totalViolations":18,"bySeverity":{"high":3,"medium":9,"low":6},"byRule":{"dead_exports":5,"todo_fixme_hack":8,"missing_test_file":5},"reportPath":"docs/patrols/entropy.md"}
+{"timestamp":"2026-03-27T08:00:00.000Z","commitSha":"e4f5a6b","totalViolations":12,"bySeverity":{"high":1,"medium":7,"low":4},"byRule":{"dead_exports":2,"todo_fixme_hack":6,"missing_test_file":4},"reportPath":"docs/patrols/entropy.md"}
+{"timestamp":"2026-03-28T08:00:00.000Z","commitSha":"c7d8e9f","totalViolations":8,"bySeverity":{"high":0,"medium":5,"low":3},"byRule":{"todo_fixme_hack":4,"missing_test_file":4},"reportPath":"docs/patrols/entropy.md"}
 ```
 
 Reading this log: violations dropped from 18 → 12 → 8 across three days. `dead_exports` was cleaned up entirely. `todo_fixme_hack` improved but still has 4 open. No high-severity findings remain.
