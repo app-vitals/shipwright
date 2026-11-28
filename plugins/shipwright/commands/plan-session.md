@@ -80,6 +80,8 @@ Runs before any file is written. Use `$SHIPWRIGHT_TASK_STORE_URL` and `Authoriza
 
 **0.2 Home repo.** Look the session up with `GET /sessions/{session}`. For an existing session its stored `homeRepo` wins (fall back to the `repo` of its document rows); in the two-argument form the named repo is added as a target. For a new session the named (or auto-detected and confirmed) repo is home and, in the two-argument form, sole target. `{home}` below is the resolved home repo.
 
+**0.2a Session slug.** For a **new** session (the lookup in 0.2 returned 404), validate `session` against `^[a-z][a-z0-9-]{0,63}$` before anything else runs — in particular before the Step 0.7 lock is acquired. An invalid slug is never truncated or rewritten: stop, write nothing, and ask for a different name (`⚠ Session slug '{session}' must match ^[a-z][a-z0-9-]{0,63}$ (lowercase, starts with a letter, at most 64 characters). Choose a different name and re-run.`). Under `--autonomous` block the originating task with `plan_session_invalid_session_slug` instead of asking. Existing sessions are grandfathered and skip this check.
+
 **0.3 Specs and target repos.** Fetch `GET /documents?session=$SESSION&kind=spec&planned=false` — the session's unplanned specs — and read each spec's content from git at its `path` in the home repo. With no unplanned specs and a human is present, ask what to add (point to `/shipwright:prd` for a full spec, or collect a short description as in Step 1); under `--autonomous` the spec arrives through Step 1's materialization. Target repos are the union of the unplanned specs' `repos` and `--repos`, plus `{home}`; each task's `repo` must be one of them.
 
 **0.4 Checkouts.** Each target repo is explored from its checkout under `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}` (the current checkout counts for the repo it is). A missing checkout stops the run naming the repo — nothing is written.
@@ -130,7 +132,7 @@ Run `plan_lock_acquire`. On `PLAN_LOCK=held` **stop**: print the holder and time
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" \
      | jq --arg t "${AUTONOMOUS_TASK_ID:-}" '.tasks | map(select(.id != $t))'
    ```
-   The response is a paginated envelope — unwrap `.tasks` to get the array. The `select(.id != $t)` drops the originating PRD task in autonomous mode: it shares this session slug because it is the session's *input*, not a duplicate of the work it produces. If the result is non-empty, print the existing task IDs and skip re-adding them. When adding to a session, take the existing task prefix and the highest milestone number `N` from these ids (`{PREFIX}-{N}.{M}`) for Step 5.
+   The response is a paginated envelope — unwrap `.tasks` to get the array. The `select(.id != $t)` drops the originating PRD task in autonomous mode: it shares this session slug because it is the session's *input*, not a duplicate of the work it produces. If the result is non-empty, print the existing task IDs and skip re-adding them. When adding to a session, take the existing id stem (the session slug for a new session, the legacy prefix for an older one) and the highest milestone number `N` from these ids (`{STEM}-{N}.{M}`) for Step 5.
 4. Scan for open tasks from prior sessions that may be prerequisites for this work:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -340,7 +342,7 @@ Before writing tasks, load the principles file:
 Let its `architecture`, `testing`, and `security` domain entries inform each task's scope and acceptance criteria (e.g. respecting `architecture_layering` when splitting a task across layers, citing a relevant `security_*` principle entry when writing security-specific acceptance criteria, or citing the relevant `t*` testing entry when writing the test decision bullet below).
 
 For each task:
-- **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name; when adding to a session, keep the existing task prefix and continue the milestone number — new milestones start at highest existing `N` + 1 (Step 1.3), with `M` restarting at 1 in each — instead of restarting at 1
+- **ID**: `{session-slug}-{N}.{M}` — the stem is the session slug (e.g. `session-slug-task-ids-1.1`); when adding to a session, keep the existing id stem (the slug for a new session, the legacy prefix for an older one) and continue the milestone number — new milestones start at highest existing `N` + 1 (Step 1.3), with `M` restarting at 1 in each — instead of restarting at 1
 - **Repo**: one of the session's target repos (Step 0.3), full `org/repo`; `{home}` when the task has no other target
 - **Title**: a Conventional-Commit subject, `type: verb-first summary` (e.g., "feat: add billing schema migration"). dev-task uses the title verbatim as the PR title, which the repo's pr-title-lint checks. `type` must be one of `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, chosen by the nature of the work: docs-only → `docs`; tests only → `test`; CI/workflow → `ci`; build/dependency → `build`; behavior change → `feat` or `fix`; refactor → `refactor`; otherwise `chore`
 - **Description**: what to build, not how
@@ -380,7 +382,7 @@ Tasks that are tightly coupled — where splitting into separate PRs would produ
 
 **Dependency semantics for bundles:** A downstream task that lists an upstream bundle-mate as a dependency only requires it to reach `pr_open` (code on the branch) — not `merged`. This allows the execution cron to queue bundle-mates sequentially on the same PR without waiting for a merge gate.
 
-**Branch naming for bundles:** Use a shared branch that describes the whole bundle, not one task: `feat/{prefix}-{short-feature-slug}` (e.g., `feat/iq-db-api-frontend`).
+**Branch naming for bundles:** Use a shared branch that describes the whole bundle, not one task: `feat/{session-slug}-{short-feature-slug}` (e.g., `feat/billing-db-api-frontend`).
 
 **Deploy gate for bundles:** The merge phase holds until all tasks on the shared branch reach `pr_open` or beyond. A bundle PR will not be merged while any sibling task is still `pending`, `in_progress`, or `blocked`. This prevents shipping a PR that only contains half the bundle's work.
 
@@ -398,19 +400,19 @@ Build the map in two forms. Both are written to `PLAN.md` only — they are not 
   └─ {PRIOR-ID}: {title} [{status}]  (session: {prior_session})
 
 [START]
-  ├─ {PREFIX}-1.1: {title} (no deps)
-  └─ {PREFIX}-1.2: {title} (no deps, depends on {PRIOR-ID} from prior session)
-        └─ {PREFIX}-2.1: {title} (needs 1.1, 1.2)
-              └─ {PREFIX}-2.2: {title} (needs 2.1)
+  ├─ {STEM}-1.1: {title} (no deps)
+  └─ {STEM}-1.2: {title} (no deps, depends on {PRIOR-ID} from prior session)
+        └─ {STEM}-2.1: {title} (needs 1.1, 1.2)
+              └─ {STEM}-2.2: {title} (needs 2.1)
 ```
 
 **2. Summary table:**
 ```
 Task         | Depends on  | Blocks | HITL
-{PREFIX}-1.1 | —           | 2.1    |
-{PREFIX}-1.2 | —           | 2.1    |
-{PREFIX}-2.1 | 1.1, 1.2    | 2.2    | ⚠ HITL
-{PREFIX}-2.2 | 2.1         | —      |
+{STEM}-1.1 | —           | 2.1    |
+{STEM}-1.2 | —           | 2.1    |
+{STEM}-2.1 | 1.1, 1.2    | 2.2    | ⚠ HITL
+{STEM}-2.2 | 2.1         | —      |
 ```
 
 ### Breaking Change Safety
@@ -549,7 +551,7 @@ Action: a human applies the change to .claude/commands/docs-sync.md directly and
 After scanning, list any flagged tasks:
 ```
 HITL tasks detected: {count}
-{PREFIX}-X.Y — {title} — flagged by: {keyword match / judgment} (Type A)
+{STEM}-X.Y — {title} — flagged by: {keyword match / judgment} (Type A)
 ```
 
 If no tasks are flagged, print:
@@ -684,7 +686,7 @@ failure — a top-level failure is not attributable to any task id.
 
 **Per-task — for each entry in `tasks[]`, check all of:**
 
-1. **`id`** matches `{PREFIX}-{N}.{M}` — a 2-3 letter uppercase prefix, then `-{N}.{M}`.
+1. **`id`** matches `{STEM}-{N}.{M}` — the stem is the session slug, or, when adding to a session whose ids use a legacy 2-3 letter uppercase prefix, that existing prefix; then `-{N}.{M}`.
 2. **`branch`** is present and a non-empty string. `dev-task` hard-blocks any task with no
    branch, so a branchless task is never executable.
 3. Every entry in **`dependencies`** resolves to a real task id — one of: another `id` in
@@ -864,7 +866,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 ```json
 [
   {
-    "id": "{PREFIX}-{N}.{M}",
+    "id": "{STEM}-{N}.{M}",
     "source": "planning/{session}/PLAN.md",
     "session": "{session}",
     "repo": "{target-repo}",

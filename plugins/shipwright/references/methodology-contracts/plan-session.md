@@ -76,7 +76,7 @@ A single JSON object:
 {
   "tasks": [
     {
-      "id": "PREFIX-1.1",
+      "id": "billing-1.1",
       "source": "planning/{session}/PLAN.md",
       "session": "{session}",
       "specNumber": 1,
@@ -85,7 +85,7 @@ A single JSON object:
       "description": "What to build, not how.",
       "acceptanceCriteria": ["Criterion 1", "Criterion 2"],
       "layer": "API",
-      "branch": "feat/prefix-1-1-add-billing-schema-migration",
+      "branch": "feat/billing-1-1-add-billing-schema-migration",
       "dependencies": [],
       "status": "pending",
       "hitl": false,
@@ -109,7 +109,7 @@ A single JSON object:
   passes `tasks[]` straight through to `/tasks/bulk` as the request body — the subagent must
   not include any field the bulk endpoint doesn't recognize, and every field below maps 1:1
   to a `Task` model column:
-  - `id` — `{PREFIX}-{N}.{M}`, prefix 2-3 letters from the feature name. Maps to `Task.id`
+  - `id` — `{STEM}-{N}.{M}`, where the stem is the session slug (`^[a-z][a-z0-9-]{0,63}$`); when adding to an existing session, keep that session's existing stem (a legacy 2-3 letter prefix for older sessions). Maps to `Task.id`
     (`String @id`).
   - `source` — always `"planning/{session}/PLAN.md"` — links the task back to the plan file
     the caller writes to disk in Step 6a. Maps to `Task.source` (`String?`).
