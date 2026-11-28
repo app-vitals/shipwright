@@ -134,6 +134,10 @@ describe("SKILL.md — Setup: flags", () => {
   it("documents --rule flag", () => {
     expect(content).toContain("--rule");
   });
+
+  it("instructs to cd into the --repo local clone", () => {
+    expect(content).toContain("`cd` into the repo's local clone before Step 1");
+  });
 });
 
 describe("SKILL.md — bulk task-store POST pattern", () => {

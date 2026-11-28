@@ -30,7 +30,9 @@ this skill reads no report file and writes no finding to any repo path.
 - `--rule {id}` — route only findings of one rule (e.g. `--rule osv-cve`)
 
 Set `REPO` to the `--repo` value and derive `repo-slug`: the last path segment, lowercased
-(`app-vitals/shipwright` → `shipwright`). Queueing is the only mode — no PR mode.
+(`app-vitals/shipwright` → `shipwright`). `cd` into the repo's local clone before Step 1 so
+verification, suppressions and `git rev-parse HEAD` run against `--repo`. Queueing is the only
+mode — no PR mode.
 
 ---
 
